@@ -189,6 +189,49 @@ which is what Stage 5b already earmarks Colab for.
 
 ---
 
+## Artifact-detection codebases assessed
+
+### DIAGNijmegen / pathology-artifact-detection
+
+> [github.com/DIAGNijmegen/pathology-artifact-detection](https://github.com/DIAGNijmegen/pathology-artifact-detection)
+> Radboud UMC Diagnostic Image Analysis Group.
+
+Multi-class semantic segmentation of six artifact types — tissue folds, ink, dust, air bubbles,
+marker, out-of-focus — with DeepLabV3+ and an EfficientNet-B2 encoder. 142 slides, 3,278
+annotations, four scanner manufacturers.
+
+**Adopted: the working resolution.** It runs at **4.0 µm/px** in 1024 px tiles with 256 px overlap.
+That is the single most useful fact in the repository, because this project's overviews are already
+at **5.20 µm/px** — essentially the same scale. Artifact detection does not need full resolution,
+so `04g_artifact_mask.py` runs on PNGs that already exist rather than re-reading ~730,000 tiles
+from the CZIs. That is the difference between a Colab job and a ten-minute local run.
+
+**Not adopted: the model.** Trained on brightfield H&E and chromogenic IHC (CD3, CD45RO, CD8, PAS,
+CK20), and it requires an 11 GB GPU, 2 CPUs and 48 GB RAM. This dataset is fluorescence and this
+machine has 11.8 GB of system RAM and no CUDA.
+
+### IAWG-CSBC-PSON / hack2022-01-artifacts
+
+> [github.com/IAWG-CSBC-PSON/hack2022-01-artifacts](https://github.com/IAWG-CSBC-PSON/hack2022-01-artifacts)
+> Hackathon challenge, CyCIF multiplex immunofluorescence, 40 channels over 8 rounds.
+
+**A challenge repository, not a method** — it ships `roc.py` and `pr.py` for scoring submissions
+and reports no results. So there is nothing to implement from it, and it should not be cited as a
+technique.
+
+Two things are still worth taking. Its artifact vocabulary is the only one of the three that names
+**"uneven immunolabeling"** and **"fluorescence aberration"** as classes in their own right — and
+the AF568 contrast inversion measured across all twelve animals here is precisely an
+uneven-immunolabelling problem, not a bubble or a fold. It belongs in the methods as a named
+artifact rather than an unexplained oddity.
+
+Second, it scores artifacts **per detected cell**, from features already computed for other
+purposes — integrated intensity, nuclear morphology, position — rather than from a separate
+pixel-level model. That is the cheap route for Stage 5: once cells are detected, an artifact score
+per object costs almost nothing.
+
+---
+
 ## Whole-slide-image artifact QC
 
 > Jurgas A, Wodzinski M, D'Amato M, van der Laak J, Atzori M, Müller H (2024).

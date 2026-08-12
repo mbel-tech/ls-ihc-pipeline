@@ -9,6 +9,66 @@ where things landed, not which plausible-looking route was tried and abandoned, 
 
 ---
 
+## 2026-08-12 - Artifacts masked: new 04g, built at overview resolution on the DIAGNijmegen finding
+
+**Changed:** new `04g_artifact_mask.py`. Detects bright artifacts inside the tissue and writes a
+per-section label mask (`artifacts/<uid>_artifact.png`: 0 clean, 1 compact bubble/aggregate,
+2 elongated fibre/debris) plus `artifact_summary.csv` carrying `measurable_mm2` - tissue minus
+artifacts, the denominator any later density should use. `load_artifact_mask()` and `measurable()`
+are the public entry points for Stages 3 and 5.
+
+**Why it runs on the overviews, which is the whole reason this was cheap.** DIAGNijmegen's
+`pathology-artifact-detection` runs at **4.0 µm/px**. The overviews here are at **5.20 µm/px** -
+the same scale. Artifact detection does not need full resolution. That turned a ~730,000-tile
+Colab job into a local run over PNGs that already existed.
+
+Neither repository could be run. DIAGNijmegen's DeepLabV3+/EfficientNet-B2 is trained on
+brightfield H&E and chromogenic IHC and wants an 11 GB GPU; this is fluorescence on a machine with
+11.8 GB of system RAM and no CUDA. The IAWG repository is a **hackathon challenge with no method** -
+it ships `roc.py` and `pr.py` for scoring submissions and reports no results. What transferred was
+the working resolution, the class vocabulary, and QUALIFAI's channel-agnostic/channel-specific
+split.
+
+**Two bugs found by looking at crops, not at summary statistics.**
+
+*The mask covered only the centre of each artifact.* The smoothness test finds the flat interior of
+a bubble but fails at its edge, where the intensity gradient is steep and the texture measure is
+therefore high. The result masked each artifact's core and left its bright halo - which defeats the
+purpose entirely, since the halo is still among the brightest pixels in the section and still skews
+normalisation. Fixed with hysteresis: seed on bright AND smooth AND away from the rim, then grow
+into the merely-bright region. Masked areas roughly doubled (43,291 -> 109,512 µm² on one object).
+Growth is capped at 25 dilations because the tissue rim is bright and connected all the way round a
+section, and unbounded propagation from a seed touching it would flood the whole outline; an object
+that still exceeds 1.2 mm² falls back to its seed rather than being dropped.
+
+*The shape classifier called curved fibres "compact".* Bounding-box aspect ratio is near 1 for a
+C-shaped worm. Fixed by also testing fill (area / bbox area): a disc packs its box, a worm does not.
+
+**The tissue rim is eroded by 6 px (31 µm) before anything is decided.** The edge of a section is
+genuinely DAPI-bright - pial surface, ventricular lining - and a brightness rule without this step
+masks real anatomy.
+
+**State the size of the effect honestly.** Full run, all 1,381 sections: **1,147 (83%) carry at
+least one artifact**, 2,894 compact and 1,268 elongated objects, and the masked area is **median
+0.615% of tissue, p95 1.79%, max 4.44%**.
+
+Those figures are ~4x the ones measured before the hysteresis fix (median 0.134%, p95 0.478%) and
+the difference is the fix, not a change of threshold: the earlier numbers counted only the flat
+cores that the smoothness test could reach. The halo was always there and always unmasked.
+
+Even at 0.6%, for a density per mm² this is nearly nothing. The reason to do it is
+intensity: these are by construction the brightest pixels in the section, and Andhari et al. 2024
+showed artifact-inflated intensities skewing normalisation so badly that cell labels changed
+*outside* the artifact regions. Apply the mask **before** normalising.
+
+**Not masked, and said plainly rather than implied:** tissue folds (named by all three sources; a
+fold in fluorescence is doubled tissue - brighter but with normal granularity, so the smoothness
+test that finds bubbles cannot find it) and channel-specific antibody aggregates (would require the
+marker channel, which would break the blinding). Very large artifacts are masked only partially,
+where the 25-dilation cap truncates them.
+
+---
+
 ## 2026-08-12 - QUALIFAI assessed: 91% of sections carry bright artifacts our rules cannot see
 
 **Changed:** REFERENCES.md gains QUALIFAI (Andhari et al. 2024, *Cell Rep Phys Sci* 5:102220). No
