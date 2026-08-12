@@ -189,6 +189,78 @@ which is what Stage 5b already earmarks Colab for.
 
 ---
 
+## Brain symmetry-axis detection
+
+Three papers, all aimed at finding the mid-sagittal / midline axis. **Only the shape-based idea
+survived measurement on this dataset**, and the reason is a property of the data worth recording.
+
+### Wu et al. 2013 — SIFT-pair matching and Hough voting
+
+> Wu H, Wang D, Shi L, Wen Z, Ming Z (2013). **Fast and robust symmetry detection for brain images
+> based on parallel scale-invariant feature transform matching and voting.**
+> *International Journal of Imaging Systems and Technology* 23(4):314–326.
+> https://doi.org/10.1002/ima.22066
+
+SIFT keypoints are detected in a single image and matched *against each other* using a symmetric
+similarity metric that combines relative scale, mirrored orientation (a reflection about a line at
+angle α maps a gradient at φ to 2α − φ) and the **flipped descriptor**. Each accepted pair votes in
+a Hough space for the perpendicular bisector of the segment joining it; the accumulator peak is the
+axis. Reported accuracy on MRI: polar angle error within 0.69°.
+
+**Implemented in full here** — including the 128-bin reindexing that mirrors a SIFT descriptor
+(4×4 spatial cells → column-flipped, 8 orientation bins → negated). Measured against synthetic
+ground truth on 24 sections: **median error 24.1°, 12% of sections within 5°.** Unusable.
+
+**Why it fails, which is not an implementation detail.** The method assumes local image features
+have genuine mirror counterparts. In MRI they do. In DAPI fluorescence at 5.20 µm/px the internal
+texture is nuclear speckle — an individual nucleus on the left has no mirror twin on the right,
+because cellular detail is not bilaterally symmetric even though the anatomy is. There is nothing
+to match.
+
+Confirmed independently by scoring the *same* candidate axes two ways: intensity normalised
+cross-correlation put 59% of sections within 2°, shape overlap put 91%. **Bilateral symmetry in
+this data lives in shape and gross anatomy, not in local image features.**
+
+### Wu et al. 2021 — 2-channel CNN patch similarity
+
+> Wu H, Chen X, Li P, Wen Z (2021). **Automatic symmetry detection from brain MRI based on a
+> 2-channel convolutional neural network.** *IEEE Transactions on Cybernetics.*
+
+Replaces the hand-designed similarity metric with a CNN trained to judge whether two brain patches
+(Poisson-sampled from the slice) are mirror images, then scores and ranks candidate axes. Evaluated
+on 2,166 synthetic and real MR slices.
+
+**Not attempted, and the reason is the measurement above rather than the cost.** It is a better
+similarity metric for patch pairs — but the 2013 result shows the mirrored-patch signal is not
+present in this data, so a better metric has nothing to measure. It would also need a GPU (none
+here) and salmonid training data (none exists).
+
+### Willemse et al. 2020 — local symmetry in FIJI
+
+> Willemse J, van der Vaart M, Yang W, Briegel A (2020). **Mathematical mirroring for
+> identification of local symmetry centers in microscopic images: local symmetry detection in
+> FIJI.** *Microscopy and Microanalysis* 26(5):978–987.
+
+An interactive FIJI plugin that assigns a **local** symmetry score to every pixel, so the
+*symmetry centres of small objects* can be thresholded out — demonstrated on bacterial
+chemoreceptor arrays and vesicle trafficking. The authors note it is the first such method easily
+usable from ImageJ/FIJI.
+
+**Different problem.** This is point symmetry of many small structures, not one global reflection
+axis per section. Its transferable trick — combining the reflection axes of a square (0/45/90/135°)
+for cheap coverage in all directions — is unnecessary once the search is restricted to a narrow
+residual range around an existing estimate.
+
+**What was implemented instead** (`04h_symmetry_axis.py`): direct reflective symmetry of the tissue
+*shape*. For each candidate angle, rotate so that angle would be vertical, mirror left-right, slide
+the mirror over a range of offsets, keep the best overlap. Restricted to ±30° because `04a` has
+already put the midline approximately vertical — searching the full 180° produced ~90° failures on
+a third of sections, since a roughly elliptical section is also near-symmetric about its long axis.
+Held-out synthetic validation over three samples of 28 sections: **median error 0.20–0.45°, 86–96%
+within 5°.**
+
+---
+
 ## Artifact-detection codebases assessed
 
 ### DIAGNijmegen / pathology-artifact-detection

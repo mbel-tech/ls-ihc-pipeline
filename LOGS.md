@@ -9,6 +9,59 @@ where things landed, not which plausible-looking route was tried and abandoned, 
 
 ---
 
+## 2026-08-12 - Symmetry-axis auto-rotation; the published SIFT method measured at 24 deg error
+
+**Changed:** new `04h_symmetry_axis.py` proposes the residual rotation that puts each section's
+bilateral symmetry axis vertical. The curator pre-applies it (purple border, `N deg auto` tag) and
+the export gains a `rotation_source` column (`auto_symmetry` / `manual` / `manual_overrode_auto`).
+1,227 proposals over 1,381 sections, 903 (74%) high confidence.
+
+**Why:** the user's observation, and it is correct. `04a` orients each section by the **principal
+axis** of its tissue mask, which is a property of *elongation*, not of symmetry - it drifts on
+nearly round sections and is dragged off by a damaged lobe. Measuring the symmetry directly is the
+right cue. Only **23% of sections were already within 2 deg**; 42% needed 3-10 deg and 29% needed
+11-29 deg. That is a real manual workload being removed.
+
+**Wu et al. 2013 was implemented in full and does not work on this data.** SIFT keypoints matched
+within one image by a symmetric similarity metric (relative scale, mirrored orientation, flipped
+descriptor - including the 128-bin reindexing that mirrors a SIFT descriptor), each pair voting for
+the perpendicular bisector in a Hough space. Measured against synthetic ground truth on 24 sections:
+**median error 24.1 deg, 12% within 5 deg**, against 0.34 deg and 83% for shape reflection on the
+same sections and the same rotations.
+
+**The reason is a property of the data, not of the implementation, and it rules out a whole family.**
+Their method assumes local features have genuine mirror counterparts, which holds in MRI. In DAPI
+fluorescence at 5.20 um/px the internal texture is nuclear speckle: an individual nucleus on the
+left has no mirror twin on the right, because cellular detail is not bilaterally symmetric even
+though the anatomy is. Confirmed independently by scoring the *same* candidate axes two ways -
+intensity cross-correlation put 59% of sections within 2 deg, shape overlap put 91%. **Symmetry here
+lives in shape and gross anatomy, not in local image features.** That also rules out Wu et al. 2021,
+whose CNN learns a better patch-similarity metric for a signal that is not present. Willemse et al.
+2020 solves a different problem - local symmetry *centres* of small objects, not one global axis.
+
+`opencv-python-headless` was installed (cv2 5.0.0) to do this properly rather than dismissing the
+SIFT approach untested. It stays installed; SIFT may be useful for the Stage 4 template alignment.
+
+**The search is restricted to +/-30 deg deliberately.** Searching the full 180 deg produced ~90 deg
+failures on a third of sections, because a roughly elliptical section is also near-symmetric about
+its *long* axis. This refines rather than searches. 71 proposals (5.8%) sit at the +/-30 boundary
+and are therefore probably incomplete - those need the human.
+
+**A confidence signal that was nearly shipped wrong.** The natural choice was the peak's *margin*
+over the rest of the sweep. Measured, it was **anti-correlated** with correctness: failures had a
+higher median margin (0.0140) than correct proposals (0.0099). Shipping it would have labelled bad
+proposals good. Peak sharpness and IoU-versus-distance-transform agreement each caught only ~50% of
+failures. The peak IoU is the best available - but it is **not** a clean gate, and the code says so:
+on three held-out samples of 28 sections it caught 100% of failures in two and **0% in the third**,
+where a failure scored higher than that sample's median correct proposal. Some sections are
+genuinely near-symmetric about more than one axis inside the window and no score separates those.
+
+**Honest performance, held out:** median error 0.20-0.45 deg, 86-96% within 5 deg. Roughly one
+proposal in ten is wrong. The curator showing each section already rotated is what actually verifies
+them - which is why the proposal is applied but stays visibly a proposal.
+
+---
+
 ## 2026-08-12 - Artifacts masked: new 04g, built at overview resolution on the DIAGNijmegen finding
 
 **Changed:** new `04g_artifact_mask.py`. Detects bright artifacts inside the tissue and writes a

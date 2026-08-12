@@ -58,6 +58,7 @@ REFORMAT_DIR = os.path.join(OUT_ROOT, "reformatted")
 INDEX_CSV = os.path.join(REFORMAT_DIR, "reformat_index.csv")
 MATCH_CSV = os.path.join(OUT_ROOT, "qc", "atlasmatch", "atlas_proposals_v2.csv")
 CANDIDATES_CSV = os.path.join(REFORMAT_DIR, "exclusion_candidates.csv")
+SYMMETRY_CSV = os.path.join(REFORMAT_DIR, "symmetry_proposals.csv")
 CURATOR_HTML = os.path.join(REFORMAT_DIR, "rotation_curator.html")
 
 PAGE = """<!doctype html>
@@ -91,6 +92,8 @@ button.on{border-color:var(--ok);color:var(--ok)}
 .cell.excluded.auto{border-style:dashed;border-color:var(--warn);background:#161208}
 .cell.excluded.auto .stack{opacity:.42}
 .cell.excluded.auto .stack::after{content:"PROPOSED";color:var(--warn)}
+.cell.symauto{border-color:#7c5cff;background:#141026}
+.cell.symauto .tag{color:#a48bff}
 .cell.restored{border-color:var(--ok)}
 .cell.restored .cap::after{content:" kept";color:var(--ok);font-weight:600}
 .why{color:var(--warn);font-size:9px;line-height:1.3;margin-top:2px;
@@ -116,6 +119,7 @@ kbd{display:inline-block;padding:1px 6px;border:1px solid var(--line);border-rad
   <span class="row"><b id="changed"></b> adjusted</span>
   <span class="row" style="color:#ff6b5e"><b id="excl"></b> excluded</span>
   <span class="row" style="color:#d29922">(<b id="auto"></b> unreviewed)</span>
+  <span class="row" style="color:#a48bff"><b id="symauto"></b> auto-rotated</span>
   <span class="row" id="restoredWrap" style="color:#3fb950"><b id="restored"></b> kept</span>
   <button id="reviewBtn" onclick="toggleReview()">review proposals: off</button>
   <button id="hideBtn" onclick="toggleHide()">hide excluded: off</button>
@@ -130,7 +134,8 @@ kbd{display:inline-block;padding:1px 6px;border:1px solid var(--line);border-rad
   <kbd>shift+drag</kbd> snap 15&deg; &middot;
   <kbd>&larr;</kbd><kbd>&rarr;</kbd> nudge 1&deg; (hold shift for 10&deg;) &middot;
   <kbd>right-click</kbd> exclude / restore &middot;
-  dashed amber = proposed, not yet reviewed &middot;
+  dashed amber = exclusion proposed &middot;
+  purple = auto-rotated to its symmetry axis (04h) &middot;
   <kbd>f</kbd> flip &middot; <kbd>r</kbd> reset &middot; <kbd>0</kbd> zero &middot; <kbd>x</kbd> exclude &middot;
   changes autosave
 </footer>
@@ -175,8 +180,20 @@ el("animal").innerHTML = ['<option value="">all animals</option>']
 // becomes unanswerable.
 const AUTO = __AUTO__;
 
+// Symmetry proposals from 04h, keyed by uid: {r: degrees, score, conf}. Same
+// tri-state discipline as exclusions - a proposal the user has not touched is
+// applied but stays visibly a proposal, so "how often was it right" remains
+// answerable. ~1 in 10 is wrong, so these are shown, not assumed.
+const SYM = __SYM__;
+
+const symOf = uid => (SYM[uid] ? SYM[uid].r : 0);
+// The user's own rotation wins; with none, the symmetry proposal stands.
+const isSymAuto = uid => !!SYM[uid] && !(state[uid] && state[uid].r !== undefined);
+
 const save = () => localStorage.setItem(KEY, JSON.stringify(state));
-const get  = uid => state[uid] || {r:0, f:false};
+// Effective rotation: the user's if they have set one, otherwise 04h's proposal.
+// Dragging writes into `state` and takes over from then on.
+const get  = uid => state[uid] || {r: symOf(uid), f:false};
 
 // Tri-state. The user's explicit decision wins; with no decision the proposal
 // stands. `x` is absent, not false, until they actually click.
@@ -208,6 +225,7 @@ function counts(){
   el("changed").textContent = vis.filter(d => { const s = get(d.uid); return s.r || s.f; }).length;
   el("excl").textContent    = vis.filter(d => isExcluded(d.uid)).length;
   el("auto").textContent    = vis.filter(d => isAuto(d.uid)).length;
+  el("symauto").textContent = vis.filter(d => isSymAuto(d.uid) && symOf(d.uid)).length;
   const restored = vis.filter(d => isRestored(d.uid)).length;
   el("restored").textContent = restored;
   el("restoredWrap").style.display = restored ? "" : "none";
@@ -240,6 +258,7 @@ function paint(uid){
     `rotate(${s.r}deg) scaleX(${s.f ? -1 : 1})`;
   const adjusted = !!(state[uid] && (s.r || s.f));
   const excl = isExcluded(uid);
+  const symAuto = isSymAuto(uid) && s.r;
   cell.classList.toggle("changed", adjusted && !excl);
   cell.classList.toggle("excluded", excl);
   // Amber-dashed for a proposal nobody has looked at, solid red once the
@@ -247,8 +266,10 @@ function paint(uid){
   // at a glance how much of the exclusion list is still unreviewed.
   cell.classList.toggle("auto", excl && isAuto(uid));
   cell.classList.toggle("restored", isRestored(uid));
-  cell.querySelector(".tag").textContent =
-    excl ? "" : (adjusted ? `${s.r}\\u00B0${s.f ? " flip" : ""}` : "");
+  cell.classList.toggle("symauto", !!symAuto && !excl);
+  cell.querySelector(".tag").textContent = excl ? ""
+    : symAuto ? `${s.r}\\u00B0 auto${SYM[uid].conf === "low" ? "?" : ""}`
+    : (adjusted ? `${s.r}\\u00B0${s.f ? " flip" : ""}` : "");
 }
 
 // --- free rotation by dragging around the cell centre ------------------------
@@ -361,7 +382,9 @@ function exportCsv(){
   // effective outcome rather than only what was clicked.
   const seen = new Set(Object.keys(state));
   Object.keys(AUTO).forEach(u => seen.add(u));
-  const rows = [["scene_uid","extra_rotation","flip","excluded","decision","reason"]];
+  Object.keys(SYM).forEach(u => seen.add(u));
+  const rows = [["scene_uid","extra_rotation","flip","excluded",
+                 "rotation_source","decision","reason"]];
   DATA.filter(d => seen.has(d.uid)).forEach(d => {
     const s = get(d.uid), excl = isExcluded(d.uid);
     if(!s.r && !s.f && !excl && !AUTO[d.uid]) return;
@@ -369,7 +392,15 @@ function exportCsv(){
                           : (AUTO[d.uid] ? "restored" : "");
     const reason = excl && AUTO[d.uid] ? AUTO[d.uid].reason
                  : excl ? "manually excluded: tissue too damaged to measure" : "";
-    rows.push([d.uid, s.r||0, s.f?1:0, excl?1:0, decision, '"'+reason.replace(/"/g,"'")+'"']);
+    // Where the angle came from. Same reason as `decision`: without it there is
+    // no way to report how often 04h's proposal was accepted, and "the operator
+    // rotated 1,278 sections" and "the operator accepted 1,150 proposals" are
+    // different claims in a methods section.
+    const rsrc = !s.r ? ""
+               : isSymAuto(d.uid) ? "auto_symmetry"
+               : (SYM[d.uid] ? "manual_overrode_auto" : "manual");
+    rows.push([d.uid, s.r||0, s.f?1:0, excl?1:0, rsrc, decision,
+               '"'+reason.replace(/"/g,"'")+'"']);
   });
   const b = new Blob([rows.map(r=>r.join(",")).join("\\n")], {type:"text/csv"});
   const a = document.createElement("a");
@@ -427,6 +458,26 @@ def main():
         print("no exclusion proposals - run 04f_exclusion_candidates.py to enable them")
     auto = {k: v for k, v in auto.items() if k in {r["id"] for r in rows}}
 
+    # Symmetry-axis proposals from 04h. Only non-zero, non-excluded ones are
+    # embedded: a zero correction is not a proposal, it is agreement.
+    sym = {}
+    if os.path.exists(SYMMETRY_CSV) and not args.no_proposals:
+        with open(SYMMETRY_CSV, newline="", encoding="utf-8") as fh:
+            for r in csv.DictReader(fh):
+                if not r["proposed_rotation"]:
+                    continue
+                deg = int(r["proposed_rotation"])
+                if deg == 0:
+                    continue
+                sym[r["scene_uid"]] = {"r": deg, "score": r["sym_score"],
+                                       "conf": r["confidence"]}
+        n_low = sum(1 for v in sym.values() if v["conf"] == "low")
+        print(f"{len(sym)} symmetry rotations loaded from 04h "
+              f"({n_low} low confidence)")
+    elif not args.no_proposals:
+        print("no symmetry proposals - run 04h_symmetry_axis.py to pre-rotate sections")
+    sym = {k: v for k, v in sym.items() if k in {r["id"] for r in rows}}
+
     data = []
     for r in rows:
         plate = proposed.get(r["id"])
@@ -439,6 +490,7 @@ def main():
 
     page = (PAGE.replace("__DATA__", json.dumps(data))
                 .replace("__AUTO__", json.dumps(auto))
+                .replace("__SYM__", json.dumps(sym))
                 .replace("__THUMB__", str(args.thumb)))
     with open(CURATOR_HTML, "w", encoding="utf-8") as fh:
         fh.write(page)

@@ -18,3 +18,4 @@ pymupdf>=1.24
 
 # Affine + B-spline registration (BrainJ, AnNoBrainer). abi3 wheel: works on 3.14.
 itk-elastix>=0.25
+opencv-python-headless
