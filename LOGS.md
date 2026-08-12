@@ -9,6 +9,58 @@ where things landed, not which plausible-looking route was tried and abandoned, 
 
 ---
 
+## 2026-08-12 - Implemented the four adopted methods; matching 0.24 -> 0.61
+
+**Changed:** `04a_reformat.py` (new), `04c_atlas_match.py` (new, replaces the matcher in 04b),
+`04e_register_elastix.py` (new). itk-elastix installed - an abi3 wheel, so it works on 3.14 with
+no venv and no separate elastix binary.
+
+**1. Reformat before matching (BrainJ).** Sections and plates are centred, rotated horizontal by
+the mask's principal axis, stripped of debris and rescaled to a common grid. The matcher had been
+comparing raw hand-drawn scan regions against arbitrarily cropped plates, leaving position, scale
+and rotation as free parameters to search over. Tissue fill is now comparable between the two
+populations - sections 0.40, plates 0.46 - which it was not before.
+
+The 180-degree ambiguity in a principal axis is resolved by putting the heavier half consistently
+on one side. Left-right mirroring is deliberately NOT resolved here; see below.
+
+**2. Per-section flip (BrainJ).** Free-floating sections land face up or face down, so flipping is
+a per-section property rather than the single global transform previously assumed. Both
+hypotheses are scored per section.
+
+**Honest result: the evidence is usually too thin to decide.** 77 of 141 sections score better
+flipped, but the margin is under 0.02 on **55%** of them - a coin toss. That is not a defect in
+the implementation; a bilaterally near-symmetric section simply carries little shape evidence of
+which face is up, which is why BrainJ makes flipping a manual step. The margin is now reported so
+the curator can see which calls are arbitrary.
+
+**3. Synthetic augmentation (DeepSlice).** Each plate is expanded into a bank of variants -
+small rotations, scale jitter, smooth elastic warps - and a section scores against its best
+variant. A real section is a deformed, obliquely-cut version of the plate, so matching only
+against the pristine plate systematically under-scores the correct one. 101 plates become 1,010
+variants.
+
+**4. Elastix (BrainJ, and AirLab in AnNoBrainer).** Affine then B-spline, via itk-elastix.
+Direction is the classic trap: elastix computes T mapping *fixed* coordinates into *moving*
+coordinates, so to carry atlas seeds from plate space into section space the **plate must be
+fixed and the section moving**. Registering the intuitive way round produces a transform that
+maps the points backwards. Written down in the module docstring because it is invisible in the
+output when wrong.
+
+**Measured, on LS45, 141 sections:**
+
+| stage | mean IoU |
+|---|---|
+| original silhouettes (broken) | 0.242 |
+| silhouettes fixed | 0.510 |
+| + reformatting + augmentation | **0.614** (median 0.665) |
+| + elastix registration | **0.628** from 0.528 on the same subset |
+
+**Known gap:** the matcher does not yet filter to the variant Stage 2 chose, so superseded
+re-scans (LS45_s08c) still appear. Cosmetic for proposals, wrong for final counts.
+
+---
+
 ## 2026-08-12 - Reviewed prior art; four method changes and two documented limitations
 
 **Changed:** added `REFERENCES.md`. Stage 4 gains section reformatting, per-section flip
