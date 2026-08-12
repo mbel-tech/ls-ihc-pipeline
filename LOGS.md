@@ -9,6 +9,75 @@ where things landed, not which plausible-looking route was tried and abandoned, 
 
 ---
 
+## 2026-08-12 - Marker identity resolved: AF568 = pERK, AF488 = PCNA. The damaged channel is pERK.
+
+**Changed:** `config.json` `marker_identity` filled in on the operator's confirmation - **AF568 =
+pERK, AF488 = PCNA**, DAPI 358 nm excitation / 461 nm emission. This was the longest-open question
+in the project and every downstream stage was blocked on it.
+
+**It resolves the wrong way round.** Every optical problem measured over the past weeks is on
+AF568, which is now known to be **pERK - the activity marker, and presumably the primary readout**:
+
+| | AF488 = **PCNA** | AF568 = **pERK** |
+|---|---|---|
+| sections | 1,381 | 1,191 |
+| median contrast (tissue / background) | **2.97** | **0.48** |
+| sections with contrast inverted (< 1) | **0%** | **93%** |
+| sections with any clipped pixels | 59% | **73%** |
+| median clipped fraction | 0.0000 | 0.0002, but ~10% in five animals |
+
+Clipping is severe and animal-specific: LS53 100% of sections with a median **11.8% of pixels
+clipped**, LS85 95% / 10.0%, LS105 90% / 10.5%, LS138 89% / 10.1%, LS69 81% / 9.9%. The other seven
+animals clip on 55-68% of sections but at a median fraction of ~0.
+
+**So the proliferation readout is in good shape and the activity readout is not.** PCNA has clean,
+correctly-signed contrast on every section. pERK has background outshining tissue 2x on 93% of
+sections, and in five of twelve animals a tenth of the pixels are at the ceiling - inside the
+tissue, not just on background.
+
+**This compounds with two limitations already recorded, and the stack matters more than any one:**
+
+1. **No tERK channel.** Randlett et al. 2015 uses the same pERK primary (CST #4370) and normalises
+   every measurement to total ERK, explicitly because *"high baseline pERK staining makes finding
+   stimulus- or behavior-dependent changes in staining challenging."* That control does not exist
+   here.
+2. **No negative control**, so an unknown additive background cannot be subtracted.
+
+A marker with a documented high baseline, no normaliser, no negative control, inverted contrast on
+93% of sections and ceiling clipping in five animals. **Relative comparisons at matched anatomical
+levels remain defensible; absolute pERK positivity does not, and the write-up has to say so.**
+
+**Coverage: 127 of the 788 curated sections have no pERK scan at all.**
+
+| | curated (PCNA n) | with pERK | % |
+|---|---|---|---|
+| LS22 | 60 | 60 | 100% |
+| LS37 | 81 | 80 | 99% |
+| LS45 | 87 | 77 | 89% |
+| **LS53** | **73** | **13** | **18%** |
+| LS61 | 72 | 50 | 69% |
+| LS69 | 66 | 58 | 88% |
+| LS85 | 60 | 58 | 97% |
+| LS87 | 51 | 49 | 96% |
+| LS105 | 75 | 64 | 85% |
+| LS120 | 68 | 63 | 93% |
+| LS136 | 45 | 39 | 87% |
+| LS138 | 50 | 50 | 100% |
+| **total** | **788** | **661** | **84%** |
+
+**LS53 effectively has no pERK data** - 13 usable sections against 73 for PCNA - and its AF568 scans
+are also the worst clipped in the dataset. It should probably be dropped from the pERK analysis
+entirely, which is a decision for the operator, not for this pipeline.
+
+**A consequence that needs acting on before any pERK measurement.** All curation so far - rotations,
+exclusions, artifact masks - was done on the **DAPI channel of the AF488 (PCNA) scan**. The AF568
+scan of the same physical section is a *separate* acquisition with its own hand-drawn scan box, so
+it has different framing and therefore a different reformat geometry. Stage 2's pairing links the
+two, but **the rotations and artifact masks do not transfer automatically**. Either the curation has
+to be propagated through the pairing, or the pERK scans need their own pass.
+
+---
+
 ## 2026-08-12 - Second curation pass MERGED, not replaced: 788 sections
 
 **Changed:** the operator's second pass applied. **The two passes were combined rather than the
