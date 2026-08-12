@@ -9,6 +9,31 @@ where things landed, not which plausible-looking route was tried and abandoned, 
 
 ---
 
+## 2026-08-12 — Normalised metrics promoted to primary; raw pERK demoted
+
+**Changed:** the Stage 6 hierarchy is now explicit. **DAPI-normalised and reference-region
+metrics are the primary readouts; raw density is a sensitivity check.** Previously all three were
+to be reported side by side with the choice left open.
+
+**Why:** Randlett et al. 2015 (*Nat Methods*, the MAP-mapping paper) uses the same pERK primary
+this study does — Cell Signaling #4370 — and normalises every measurement to **total ERK**
+(CST #4696) acquired in a parallel channel. Their stated reason: *"High baseline pERK staining
+makes finding stimulus- or behavior-dependent changes in staining challenging."*
+
+This dataset has **no tERK channel**. So the field's standard control for pERK's high, variable
+baseline is unavailable, and something has to stand in for it. DAPI density normalises for cell
+number and section thickness; a reference region normalises for staining batch. Neither is as
+good as tERK, and saying so is part of the result.
+
+**Cost:** none computationally. It constrains how findings may be phrased, which is the point.
+
+**Compounding factor:** if AF568 turns out to be pERK, the universal contrast inversion measured
+across 2,572 sections (AF568 median contrast 0.48, 93% inverted; AF488 2.97, 0% inverted) sits
+directly on top of a marker already known for a high baseline. Those two problems multiply rather
+than add.
+
+---
+
 ## 2026-08-12 — Illumination field measured from raw tiles
 
 **Changed:** new `01h_tilefield_raw.py`. Samples raw per-tile pixels via czifile, takes a
