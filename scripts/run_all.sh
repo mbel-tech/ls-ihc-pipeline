@@ -7,11 +7,16 @@
 #
 set -u
 
-FIJI="C:/Users/marti/Fiji.app/ImageJ-win64.exe"
+# Everything is derived from this script's own location so the pipeline is
+# portable; each value can still be overridden from the environment.
+SCRIPTS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$SCRIPTS/.." && pwd)"
+LOGS="${LS_LOGS:-$ROOT/logs}"
+# Groovy cannot resolve its own path, so the config location is passed in.
+export LS_CONFIG="${LS_CONFIG:-$ROOT/config.json}"
+FIJI="${FIJI:-C:/Users/marti/Fiji.app/ImageJ-win64.exe}"
 # pylibCZIrw has no cp314 wheel, so the CZI stages run in a 3.13 venv.
-CZIPY="D:/LS-analysis/work/czienv/Scripts/python.exe"
-SCRIPTS="D:/LS-analysis/scripts"
-LOGS="D:/LS-analysis/logs"
+CZIPY="${CZIPY:-$ROOT/work/czienv/Scripts/python.exe}"
 mkdir -p "$LOGS"
 
 START_AT=1
@@ -61,7 +66,7 @@ step 3 "pick sections for the tile field" \
   python 01b_pick_sections.py --n 96 --scenes-per-file 4 || exit 1
 
 if [ "$START_AT" -le 4 ]; then
-  export EX_LIST="D:/LS-analysis/qc/tilefield_sample.csv"
+  export EX_LIST="$ROOT/qc/tilefield_sample.csv"
   export EX_UMPX=2.6
   step 4 "export sample sections at 2.6 um px" \
     fiji "$SCRIPTS/01b_export_section.groovy" || exit 1
@@ -78,7 +83,7 @@ step 7 "measure the tile artifact BEFORE correction" \
   python 01c_measure_tile_artifact.py || true
 
 step 8 "measure the tile artifact AFTER correction" \
-  bash -c 'python 01c_measure_tile_artifact.py "D:/LS-analysis/qc/test_sections_corrected"/*.tif' || true
+  bash -c "python 01c_measure_tile_artifact.py '$ROOT/qc/test_sections_corrected'/*.tif" || true
 
 # Every section at exactly 5.2 um/px. Ported from Fiji to pylibCZIrw:
 # ~36 min instead of ~306, no Memoizer to silently hand back a tile-mode reader
@@ -104,9 +109,9 @@ step 13 "infer which fluorophore is pERK and which is PCNA" \
 
 printf '\n========================================================================\n'
 printf 'PIPELINE COMPLETE\n'
-printf '  contact sheets : D:/LS-analysis/contactsheets/\n'
-printf '  gallery        : D:/LS-analysis/contactsheets/gallery.html\n'
+printf '  contact sheets : %s/contactsheets/\n' "$ROOT"
+printf '  gallery        : %s/contactsheets/gallery.html\n' "$ROOT"
 printf '  tile artifact  : compare step 7 (before) against step 8 (after)\n'
-printf '  channel call   : D:/LS-analysis/qc/channel_identity/channel_identity.png\n'
+printf '  channel call   : %s/qc/channel_identity/channel_identity.png\n' "$ROOT"
 printf '  logs           : %s\n' "$LOGS"
 printf '========================================================================\n'

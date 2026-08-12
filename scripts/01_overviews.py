@@ -21,9 +21,9 @@ Sampling the whole frame let the AF568 background - brighter than the brain on
 many sections - pin the top of the range at 65535, leaving real tissue rendering
 around 20/255.
 
-Requires the Python 3.13 venv: D:/LS-analysis/work/czienv (no cp314 wheel yet).
+Requires the Python 3.13 venv at <root>/work/czienv (pylibCZIrw has no cp314 wheel).
 
-Run:  D:/LS-analysis/work/czienv/Scripts/python.exe 01_overviews.py
+Run:  <root>/work/czienv/Scripts/python.exe 01_overviews.py
       ... --limit 20 --force
 """
 

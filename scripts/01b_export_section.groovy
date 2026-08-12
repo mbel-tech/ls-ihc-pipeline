@@ -23,7 +23,13 @@ import loci.formats.Memoizer
 import loci.formats.in.DynamicMetadataOptions
 import loci.formats.in.ZeissCZIReader
 
-def config = new JsonSlurper().parse(new File("D:/LS-analysis/config.json"))
+// Groovy cannot resolve its own script path, so run_all.sh exports LS_CONFIG.
+def configPath = System.getenv("LS_CONFIG")
+if (!configPath) {
+    throw new IllegalStateException(
+        "LS_CONFIG is not set. Run via run_all.sh, or set it to your config.json path.")
+}
+def config = new JsonSlurper().parse(new File(configPath))
 def sourceDir = config.source_dir
 def outRoot = config.out_root
 double basePx = config.pixel_size_um as double
