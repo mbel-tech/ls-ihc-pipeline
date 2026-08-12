@@ -9,6 +9,43 @@ where things landed, not which plausible-looking route was tried and abandoned, 
 
 ---
 
+## 2026-08-12 - The last 10 flagged sections dropped: 831 sections, screen now fully clean
+
+**Changed:** the 10 sections that passed manual curation but still tripped `04f` are now excluded
+on the operator's instruction. `reformat_index.csv` holds **831**. `04a`, `04f` and `04g` re-run.
+
+**All 10 were exactly the ones the operator had restored.** They had `decision = restored` in the
+curated export - proposals the operator overruled on the first pass - and `04f`, re-run on the
+curated set, flagged the same ten again. Shown as a montage, they were dropped. The overrule rate
+on automatic proposals goes **24% (10 of 41) to 0%**: every automatic proposal now stands.
+
+**The screen is now clean, and that is a real check rather than a tautology.** `04f` measures the
+source overviews and has no knowledge of which sections were kept:
+
+| | 1,381 (all) | 841 (curated) | 831 (final) |
+|---|---|---|---|
+| proposed for exclusion | 154 (11.2%) | 10 (1.2%) | **0 (0.0%)** |
+| p0.5 of largest tissue piece | 0.16 mm² | 1.54 mm² | **3.21 mm²** |
+| sections with no piece >= 0.5 mm² | 31 | 2 | **0** |
+
+**Final artifact state:** 764 of 831 sections (92%) carry at least one, 2,029 compact and 822
+elongated objects, median **0.641%** of tissue masked, p95 1.598%, max 3.91%. Of **21,904 mm² of
+tissue, 21,752 mm² survives masking**. The maximum fell from 4.44% because the worst-affected
+section, `LS53_s01b_sc01`, was one of the ten.
+
+**Kept per animal:** LS22 61, LS37 83, LS45 94, LS53 73, LS61 75, LS69 68, LS85 66, LS87 58,
+LS105 80, LS120 73, LS136 48, LS138 52. The 28-59% exclusion spread noted previously is essentially
+unchanged - ten sections do not move it - and still needs checking against group at unblinding.
+
+`excluded_sections.csv`: 550 rows, 509 manual and 41 auto. Nothing was dropped silently -
+`lost_sections.csv` was not written. The operator's pre-drop file is preserved as
+`rotation_overrides_before_10drop.csv`.
+
+**Unchanged and still outstanding:** the 15 physical sections appearing under two scan variants,
+and the atlas assignment, which the previous entry establishes does not work.
+
+---
+
 ## 2026-08-12 - 04c re-run, and it does not work: silhouette matching carries no level information
 
 **Changed:** `04c_atlas_match.py` re-run on the curated 841. `best_path` gained a step cost, and
