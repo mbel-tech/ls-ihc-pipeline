@@ -9,6 +9,53 @@ where things landed, not which plausible-looking route was tried and abandoned, 
 
 ---
 
+## 2026-08-12 - Atlas level curator: anchor a few sections, interpolate the rest
+
+**Changed:** new `04k_level_curator.py`, writing `reformatted/level_curator.html`. 788 sections,
+12 animals, 101 plates.
+
+**Why this shape rather than better matching.** `04c` tried to read level off the silhouette and
+does not work - correlation between serial order and best-matching plate is -0.05 to 0.17, and
+adjacent sections score IoU 0.595 against 0.551 for sections thirty apart. Rather than keep
+attacking that, this uses the constraint that is actually strong: **the sections were cut serially
+at uniform thickness, so level is close to linear in section number.** Two anchors fix the line.
+
+**Interaction.** Click a section, drag the plate slider or use the arrow keys until the red plate
+behind it matches, press `a`. Everything between two anchors interpolates **live**, so the
+consequence of an anchor is visible across the whole series immediately - which is the point of
+doing it this way rather than section by section.
+
+**Three design choices worth recording.**
+
+*Interpolation is on section **order**, not list index.* Tested on a series with a gap - sections
+1-5 then 40-44 - the plate assignment jumps with the gap instead of spreading evenly. Index-based
+interpolation would have quietly mis-assigned every section after any missing run, and 43% of
+sections have been excluded, so gaps are the normal case here, not an edge case.
+
+*One anchor is treated as insufficient and labelled as such.* One anchor fixes an offset but not a
+rate, so the curator holds the level flat and marks every other section `extrapolated` rather than
+pretending to a slope it cannot know.
+
+*Extrapolation beyond the outermost anchors is marked separately and shown faded.* It continues at
+the fitted rate, which is a weaker claim than interpolating between two known points, and the export
+records `source` as anchor / interp / extrap so that distinction survives into the analysis.
+
+**Anchors are forced monotonic** - an anchor that would put a later section at an earlier plate is
+rejected with the reason, because serial sections cannot run backwards.
+
+Algorithm verified against a port of the curator's own function: zero anchors give nothing, one
+gives a flat extrapolation, two give clean piecewise-linear interpolation with extrapolation
+outside, three give piecewise linear throughout, and every case is monotonic.
+
+**A limitation the curator states rather than hides:** only **24 of 101 plates carry region labels**
+(plate_009-plate_032, telencephalon and POA). A section assigned outside that range gets a level but
+no regions can be propagated to it. Marked in the interface per plate.
+
+Levels are curated on the **PCNA** sections - the fuller set, 788 against 454 - and will carry to
+pERK through the pairing already in `perk_overrides.csv`.
+
+---
+
 ## 2026-08-12 - Clipped pERK pixels censored; analysis set fixed at 1% tolerance
 
 **Changed:** new `04j_censor_clipped.py`. `04a_reformat.py` gains `--censor`, which carries the
