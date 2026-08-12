@@ -9,6 +9,45 @@ where things landed, not which plausible-looking route was tried and abandoned, 
 
 ---
 
+## 2026-08-12 - Reviewed prior art; four method changes and two documented limitations
+
+**Changed:** added `REFERENCES.md`. Stage 4 gains section reformatting, per-section flip
+detection, synthetic training data, and Elastix over bUnwarpJ.
+
+**Why:** four prior tools were reviewed - AnNoBrainer (Peter et al. 2024, Neuroinformatics,
+MIT-licensed), DeepSlice (Carey et al. 2023, Nat Commun), BrainJ (Hammond, Fiji), and a review of
+automated FISH/IHC analysis (Theodosiou et al. 2007, Cytometry A). All three tools target the
+mouse Allen CCF, so none is usable directly on a salmonid - but their methods transfer.
+
+**Taken:**
+- *Reformat before matching* (BrainJ): centre, rotate horizontal, strip debris. The current
+  matcher compares raw hand-drawn scan regions, which is why it needed an orientation search.
+- *Per-section flips* (BrainJ): free-floating sections land face up or face down, so flipping is
+  per-section, not the single global transform currently assumed.
+- *Synthetic training data* (DeepSlice): they rendered ~920k virtual sections from the template
+  with stochastic angles and noise. The same trick turns 101 salmon plates into a training set,
+  removing the need to hand-label thousands of reals.
+- *Elastix* over bUnwarpJ: scriptable, standard, used by BrainJ and paralleled by AirLab in
+  AnNoBrainer.
+
+**Two findings here are corroborated by the literature rather than being local defects:**
+- AnNoBrainer states DAPI registers poorly against an H&E/Nissl atlas due to data sparsity and
+  poor morphological correspondence. That is exactly the DAPI-to-Nissl-plate pairing here, and it
+  explains the silhouette IoU ceiling near 0.51.
+- DeepSlice reports underperformance where anatomical landmarks are obscured by low background
+  staining or extreme contrast - which describes the AF568 channel measured here.
+
+**Expectations recalibrated:** AnNoBrainer's layer classifier reaches 59% exact, 86% within one
+layer, 94% within two. Exact match is not the standard. And two expert neuroscientists scoring the
+same annotations agreed at Kappa 0.17 - there is no single human ground truth to converge on,
+which is the strongest argument for the propose-then-adjudicate curators.
+
+**Convergent, worth noting:** AnNoBrainer uses Hungarian assignment to link detected brains to a
+metadata grid. `02_pair_passes.py` independently used the same algorithm for cross-marker section
+pairing.
+
+---
+
 ## 2026-08-12 — Curation GUIs: the pipeline proposes, the user adjudicates
 
 **Changed:** two local HTML curators, on the working pattern agreed with the user.
