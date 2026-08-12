@@ -129,6 +129,66 @@ pipeline keeps every judgement auditable and every threshold explicit rather tha
 
 ---
 
+## Immunofluorescence artifact QC — QUALIFAI
+
+> Andhari MD, Rinaldi G, Nazari P, Vets J, Shankar G, Dubroja N, Ostyn T, Vanmechelen M,
+> Decraene B, Arnould A, Mestdagh W, De Moor B, De Smet F, Bosisio F, Antoranz A (2024).
+> **Quality control of immunofluorescence images using artificial intelligence.**
+> *Cell Reports Physical Science* 5(10):102220. https://doi.org/10.1016/j.xcrp.2024.102220
+> [github.com/TCWO/QualIFAI](https://github.com/TCWO/QualIFAI) — code and pretrained models
+
+**The closest match to this dataset of anything evaluated here**, and the reason is one line of
+their Table 1: the MILAN training set was acquired on a **Zeiss Axioscan Z1 at 0.65 µm/px**. That
+is this study's acquisition — same instrument class, same pixel size, same modality. Every other
+tool assessed either targets brightfield or targets the mouse Allen CCF.
+
+Five artifact classes, each a separate binary model: **out-of-focus areas, air bubbles, tissue
+folds, external artifacts** (dust, hair, fibres) **and antibody aggregates**. Two-tier — classify
+the tile, then segment it with U-Net if positive. >90% classification accuracy; segmentation IoU
+0.65–0.82 across platforms. 512 px tiles, 20 px overlap, q99 normalisation, ImageNet-pretrained
+backbones with the last four layers unfrozen, 7,508 tiles annotated by active learning.
+
+**Two design choices worth copying regardless of whether the tool is run.**
+
+*Channel-agnostic vs channel-specific.* Bubbles, folds, external artifacts and OOF were annotated
+**on DAPI only**, because they affect every channel identically. Antibody aggregates were annotated
+per affected channel, because they do not. That is the correct split for this project too: the
+curation here is deliberately done on DAPI, blinded to marker, and aggregates are the one class
+that cannot be.
+
+*Binary models over one multiclass model*, because the classes have genuinely different character —
+external artifacts are easy on intensity alone, OOF is subjective and magnification-dependent.
+The same reasoning applies to `04f_exclusion_candidates.py` keeping `no_tissue` and `out_of_focus`
+as separate rules rather than one exclusion score.
+
+**Contradicts Jurgas et al. on generalisation.** Jurgas report their model *"does not generalize
+well to a new dataset"*; QUALIFAI reports consistent accuracy and IoU **across three technologies
+at 0.22, 0.37 and 0.65 µm/px**. Their stated caveat is narrower: *"acquisition technologies not
+included in our study might require fine-tuning"* — and this acquisition is effectively one of the
+included ones. The unaddressed risk is species: all three datasets are human, though brain is
+among the tissues.
+
+**The result that bears on the analysis plan, not just the QC.** On a 10-core DLBCL TMA, removing
+artifacts changed the cytotoxic-T-cell fraction by **46.28%** in an affected core, against a
+maximum of 10.12% in unaffected ones. More importantly, **cells outside the artifact areas changed
+label too** — artifact-inflated intensities skew normalisation, which shifts the expression space,
+which shifts clustering. This project's primary readouts are DAPI-normalised and reference-region
+metrics; those are precisely the machinery an artifact corrupts *globally* rather than locally. It
+is an argument for masking artifacts before normalising, not after.
+
+**Measured on this dataset before deciding:** in a random sample of 250 sections, **91% carry at
+least one bright, compact, texture-free object** inside the tissue — median 3 per section, up to
+15, median 0.028 mm² total. Present at 68–100% in all twelve animals, so not obviously a
+group-specific confound, but that must be re-checked at unblinding. These sit *inside* otherwise
+good tissue, so the geometric rules in `04f` cannot touch them; they are a detection-stage quality
+mask problem, not a section-exclusion one.
+
+**Cost of actually running it:** Keras/TensorFlow, which this stack does not have, and roughly
+730,000 tiles of 512 px at 0.65 µm/px for 1,381 sections. Infeasible on this CPU; a Colab GPU job,
+which is what Stage 5b already earmarks Colab for.
+
+---
+
 ## Whole-slide-image artifact QC
 
 > Jurgas A, Wodzinski M, D'Amato M, van der Laak J, Atzori M, Müller H (2024).

@@ -9,6 +9,59 @@ where things landed, not which plausible-looking route was tried and abandoned, 
 
 ---
 
+## 2026-08-12 - QUALIFAI assessed: 91% of sections carry bright artifacts our rules cannot see
+
+**Changed:** REFERENCES.md gains QUALIFAI (Andhari et al. 2024, *Cell Rep Phys Sci* 5:102220). No
+code change yet - this entry records an assessment and a measurement that should shape Stage 3/5.
+
+**Why it outranks everything else read so far:** their MILAN training set was acquired on a **Zeiss
+Axioscan Z1 at 0.65 µm/px**. That is this study's acquisition. Every other tool assessed targets
+brightfield histopathology or the mouse Allen CCF.
+
+**The measurement that decides whether it is worth running.** Random sample of 250 sections,
+looking for bright, compact, texture-free objects inside the tissue - the signature of a bubble or
+an antibody aggregate rather than bright tissue:
+
+| | |
+|---|---|
+| sections with >= 1 such object | **227 / 250 (91%)** |
+| objects per affected section | median 3, max 15 |
+| total area per affected section | median 0.028 mm², max 0.16 mm² |
+| per-animal rate | 68-100%, all twelve animals |
+
+Uniform across animals, so not obviously a group confound - **but that has to be re-checked the
+moment the key is joined**, alongside the saturation split.
+
+**These are invisible to everything built so far.** `04f` asks whether there is enough tissue and
+whether it is in focus. Both pass on a section carrying fifteen bright blobs, because the blobs sit
+*inside* good tissue. This is a detection-stage quality mask, not a section-level exclusion, and it
+belongs in Stage 3 rather than the curator.
+
+**The finding that touches the analysis plan, not just QC.** On a DLBCL TMA, removing artifacts
+changed one core's cytotoxic-T-cell fraction by **46.28%** against a 10.12% maximum in unaffected
+cores - and **cells outside the artifact areas changed label too**, because artifact-inflated
+intensities skew normalisation, which shifts clustering. The plan here makes DAPI-normalised and
+reference-region metrics the primary readouts. Those are exactly what a bright artifact corrupts
+globally. **Artifacts must be masked before normalising, not after.**
+
+**Not run, and why not.** Keras/TensorFlow is not in this stack, and 1,381 sections at 0.65 µm/px
+in 512 px tiles is ~730,000 tiles through a VGG19 classifier plus a U-Net. Infeasible on this CPU.
+It is a Colab GPU job, which is what Stage 5b already reserves Colab for. Proposed order: run the
+aggregate and bubble models on a stratified sample of ~100 sections first, and compare against the
+cheap bright-smooth-blob detector used for the measurement above. If they agree, keep the cheap
+rule and cite QUALIFAI as its validation; if the models find substantially more, the Colab job is
+justified.
+
+**Nothing is retracted from the previous entry.** The `out_of_focus` class was set from this
+dataset's own montages, not on Jurgas's authority, and QUALIFAI independently lists OOF as one of
+its five classes - so it is corroborated, not undermined. What changes is the ranking: QUALIFAI is
+the reference to follow for artifact QC, and Jurgas's contribution reduces to having named a class
+that was missing.
+
+**Still not detected by anything here:** tissue folds.
+
+---
+
 ## 2026-08-12 - An artifact taxonomy from the literature found 51 unmeasurable sections we were keeping
 
 **Changed:** `04f_exclusion_candidates.py` gains a second, independent proposal class,
