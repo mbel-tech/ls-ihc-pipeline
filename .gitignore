@@ -15,7 +15,6 @@ triage/
 template/
 registered/
 qupath/
-colab/
 results/
 logs/
 
@@ -42,3 +41,8 @@ Thumbs.db
 .DS_Store
 desktop.ini
 artifacts/
+
+# Colab: the notebook and its module ARE source and are tracked.
+# Only run outputs are not.
+colab/out/
+colab/*.csv
