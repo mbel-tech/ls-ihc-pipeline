@@ -91,6 +91,18 @@ BRIGHT_PCTL = 99.0          # seed: of in-tissue intensity
 SMOOTH_FRAC = 0.35          # seed: texture below this fraction of median in-tissue texture
 GROW_PCTL = 95.0            # grow: the artifact's halo is bright but not flat
 GROW_ITERS = 25             # 130 um - bounds growth so it cannot flood the tissue rim
+# Second growth pass, to swallow the halo the first one leaves behind.
+#
+# The first pass stops at GROW_PCTL, and on large artifacts the outer glow falls
+# below that, so the mask came out as a black hole ringed by the brightest part
+# of the thing it was supposed to remove. Measured on the worst sections, the
+# pixels immediately outside the base mask have a median brightness of 37-49
+# against a tissue median of 5 - unambiguously still artifact.
+#
+# Deliberately gentler and bounded: a lower threshold but only 10 dilations.
+# Sweeping further (p85/15, p80/20) kept adding area without a reason to.
+HALO_PCTL = 90.0
+HALO_ITERS = 10
 MIN_OBJ_PX = 15             # ~0.0004 mm2; below this it is noise
 MAX_OBJ_MM2 = 1.2           # above this it is not an artifact, it is anatomy
 ELONGATION_SPLIT = 3.0      # bbox aspect ratio dividing compact from elongated
@@ -166,6 +178,30 @@ def detect(im, tis):
         region[m] = lbl
         records.append({"label": lbl, "area_mm2": area * UM_PX ** 2,
                         "elongation": round(float(elong), 2), "fill": round(float(fill), 2)})
+
+    # Halo pass. New pixels inherit the label of the nearest existing one, so an
+    # object cannot change class merely by growing.
+    base = out > 0
+    if base.any():
+        halo2 = ndimage.binary_fill_holes(im > float(np.percentile(im[tis], HALO_PCTL)))
+        ext = ndimage.binary_dilation(base, np.ones((3, 3), bool),
+                                      iterations=HALO_ITERS, mask=halo2) & tis
+        if int(ext.sum()) > int(base.sum()):
+            near = ndimage.distance_transform_edt(~base, return_distances=False,
+                                                  return_indices=True)
+            out = np.where(ext & ~base, out[tuple(near)], out).astype(np.uint8)
+            # Areas are recomputed from the final mask by the caller, so the
+            # per-object records are refreshed rather than left stale.
+            labels2, n2 = ndimage.label(out > 0)
+            records = []
+            for i, sl in enumerate(ndimage.find_objects(labels2), 1):
+                m = labels2[sl] == i
+                a = int(m.sum())
+                if a < MIN_OBJ_PX:
+                    continue
+                vals = out[sl][m]
+                records.append({"label": int(np.bincount(vals).argmax()),
+                                "area_mm2": a * UM_PX ** 2})
     return out, records
 
 

@@ -124,7 +124,16 @@ def resolve_180(mask):
     return mask[: h // 2].sum() < mask[h // 2:].sum()
 
 
-def reformat(path, light_background, extra_angle=0.0, flip=False):
+def load_artifact(uid, shape):
+    """04g's artifact mask, resized to the analysis grid. None when absent."""
+    p = os.path.join(OUT_ROOT, "artifacts", uid + "_artifact.png")
+    if not os.path.exists(p):
+        return None
+    a = Image.open(p).resize(shape, Image.NEAREST)
+    return np.asarray(a) > 0
+
+
+def reformat(path, light_background, extra_angle=0.0, flip=False, artifact=None):
     """Return (normalised grayscale, normalised mask, angle applied).
 
     `extra_angle` is the curator's manual correction, in degrees. It is folded
@@ -162,13 +171,20 @@ def reformat(path, light_background, extra_angle=0.0, flip=False):
     rot_img = ndimage.rotate(work, angle, order=1, reshape=True)
     if rot_mask.sum() < 100:
         return None
+    # The artifact mask rides the SAME geometry, so it stays registered to the
+    # image through rotation, crop and resize.
+    rot_art = (ndimage.rotate(artifact.astype(np.uint8), angle, order=0, reshape=True) > 0
+               if artifact is not None else None)
     if flip:
         rot_mask, rot_img = rot_mask[:, ::-1], rot_img[:, ::-1]
+        if rot_art is not None:
+            rot_art = rot_art[:, ::-1]
 
     ys, xs = np.nonzero(rot_mask)
     y0, y1, x0, x1 = ys.min(), ys.max() + 1, xs.min(), xs.max() + 1
     crop_m = rot_mask[y0:y1, x0:x1]
     crop_i = np.where(rot_mask, rot_img, 0.0)[y0:y1, x0:x1]
+    crop_a = rot_art[y0:y1, x0:x1] if rot_art is not None else None
 
     # Square-pad rather than stretch, so aspect - which is real shape
     # information - survives the resize.
@@ -176,9 +192,12 @@ def reformat(path, light_background, extra_angle=0.0, flip=False):
     side = max(h, w)
     pm = np.zeros((side, side), bool)
     pi = np.zeros((side, side), np.float32)
+    pa = np.zeros((side, side), bool)
     oy, ox = (side - h) // 2, (side - w) // 2
     pm[oy:oy + h, ox:ox + w] = crop_m
     pi[oy:oy + h, ox:ox + w] = crop_i
+    if crop_a is not None:
+        pa[oy:oy + h, ox:ox + w] = crop_a
 
     out_m = np.asarray(Image.fromarray(pm.astype(np.uint8) * 255).resize((GRID, GRID), Image.BILINEAR)) > 127
 
@@ -194,7 +213,11 @@ def reformat(path, light_background, extra_angle=0.0, flip=False):
     #
     # MAD is outlier-resistant by construction, so it does not care what
     # fraction of the mask the specks occupy.
-    inside = pi[pm]
+    # Artifact pixels are excluded from the stretch statistics as well as being
+    # blanked. They are the brightest pixels in the section by construction, so
+    # leaving them in the median and MAD would darken the real tissue - which is
+    # the same failure that made sections look blank three attempts ago.
+    inside = pi[pm & ~pa]
     if inside.size > 50:
         med = float(np.median(inside))
         mad = float(np.median(np.abs(inside - med))) * 1.4826
@@ -205,8 +228,20 @@ def reformat(path, light_background, extra_angle=0.0, flip=False):
         lo, hi = float(pi.min()), float(pi.max())
     norm = np.clip((pi - lo) / max(hi - lo, 1e-6), 0, 1) * 255.0
     norm[~pm] = 0
+    norm[pa] = 0
     out_i = np.asarray(Image.fromarray(norm.astype(np.uint8)).resize((GRID, GRID), Image.BILINEAR))
-    return out_i, out_m, angle % 360.0
+    # The tissue mask is deliberately NOT reduced by the artifact mask. It is the
+    # section's silhouette, used for orientation and matching, and punching holes
+    # in it would change the shape those depend on. What is masked is the
+    # measurement and the picture, not the outline.
+    out_a = np.asarray(Image.fromarray(pa.astype(np.uint8) * 255)
+                       .resize((GRID, GRID), Image.NEAREST)) > 127
+    # Blank AFTER the resize as well as before it. The image is downsampled
+    # bilinearly, which smears bright neighbours back into the hole - measured at
+    # up to full intensity on a 190 px artifact. Zeroing before the resize alone
+    # leaves the artifact faintly visible in exactly the place it was removed.
+    out_i = np.where(out_a, 0, out_i).astype(np.uint8)
+    return out_i, out_m, angle % 360.0, out_a
 
 
 def load_overrides():
@@ -263,6 +298,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--preview", type=int, default=8)
     ap.add_argument("--marker", default="AF488")
+    ap.add_argument("--mask-artifacts", action="store_true",
+                    help="blank 04g artifact pixels in the reformatted output")
     ap.add_argument("--apply-overrides", action="store_true",
                     help="apply manual rotations from rotation_overrides.csv")
     args = ap.parse_args()
@@ -282,7 +319,7 @@ def main():
         out = reformat(os.path.join(PLATE_DIR, p["image_file"]), light_background=True)
         if out is None:
             continue
-        img, mask, angle = out
+        img, mask, angle, _ = out
         Image.fromarray(img).save(os.path.join(plate_dir, p["plate_id"] + ".png"))
         np.save(os.path.join(plate_dir, p["plate_id"] + "_mask.npy"), mask)
         rows.append({"kind": "plate", "id": p["plate_id"], "angle": round(angle, 1),
@@ -295,6 +332,7 @@ def main():
     ok = 0
     n_excluded = 0
     lost = []
+    no_mask = []
     for i, r in enumerate(secs):
         # Excluded sections are dropped here rather than filtered later, so
         # nothing downstream can accidentally pick them up: they simply do not
@@ -312,13 +350,18 @@ def main():
             lost.append((r["scene_uid"], "overview PNG missing"))
             continue
         extra, flip = overrides.get(r["scene_uid"], (0.0, False))
-        out = reformat(src, light_background=False, extra_angle=extra, flip=flip)
+        art = load_artifact(r["scene_uid"], (WORK_SIZE, WORK_SIZE)) if args.mask_artifacts else None
+        if args.mask_artifacts and art is None:
+            no_mask.append(r["scene_uid"])
+        out = reformat(src, light_background=False, extra_angle=extra, flip=flip, artifact=art)
         if out is None:
             lost.append((r["scene_uid"], "no tissue mask could be formed"))
             continue
-        img, mask, angle = out
+        img, mask, angle, amask = out
         Image.fromarray(img).save(os.path.join(sec_dir, r["scene_uid"] + ".png"))
         np.save(os.path.join(sec_dir, r["scene_uid"] + "_mask.npy"), mask)
+        if args.mask_artifacts:
+            np.save(os.path.join(sec_dir, r["scene_uid"] + "_artifact.npy"), amask)
         rows.append({"kind": "section", "id": r["scene_uid"], "angle": round(angle, 1),
                      "fill": round(float(mask.mean()), 4),
                      "animal": r["animal"], "section_order": r["section_order"],
@@ -348,6 +391,11 @@ def main():
     if fills and pfills:
         print(f"tissue fill  sections median {np.median(fills):.3f} | plates median {np.median(pfills):.3f}")
         print("  these should now be comparable - they were not before reformatting")
+    if no_mask:
+        print(f"WARNING: {len(no_mask)} section(s) had no 04g artifact mask and were "
+              f"left unmasked - run 04g_artifact_mask.py first")
+        for u in no_mask[:5]:
+            print(f"    {u}")
     if lost:
         # Loud, and written out, because these are sections the operator chose to
         # KEEP that did not make it through anyway.

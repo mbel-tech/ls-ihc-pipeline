@@ -9,6 +9,58 @@ where things landed, not which plausible-looking route was tried and abandoned, 
 
 ---
 
+## 2026-08-12 - Artifacts carried into the reformatted images, so curation happens on masked sections
+
+**Changed:** `04a_reformat.py` gains `--mask-artifacts`. `04g`'s mask rides the same geometry as
+the image - rotation, flip, crop, square pad, resize - so it stays registered, and artifact pixels
+are blanked in the reformatted output. A per-section `<uid>_artifact.npy` is saved alongside the
+tissue mask. `04g` gains a second growth pass.
+
+**Why:** the operator asked to re-curate on sections that already have the artefacts masked, which
+is the right order - a bright blob is exactly the thing that draws the eye when judging whether a
+section is usable.
+
+**Geometry is deliberately untouched.** The tissue mask is still computed on the *unmasked* image,
+so the principal angle, the 180 decision and the bounding box are bit-identical with and without
+masking - verified on 8 sections. Masking the image before computing geometry would have been
+defensible, but it would have shifted every frame and invalidated the rotations already curated.
+What is masked is the measurement and the picture, not the outline.
+
+For the same reason the tissue mask is **not** reduced by the artifact mask. It is the section's
+silhouette, used for orientation and matching, and punching holes in it would change the shape
+those depend on.
+
+**Two defects found by looking at the output rather than the summary.**
+
+*Artifact pixels reappeared after the resize.* Blanking before the bilinear downsample to 256x256
+is not enough - interpolation smears bright neighbours straight back into the hole, at up to full
+intensity on a 190 px artifact. The output is now blanked again *after* the resize, using the
+resized mask.
+
+*The masks were donuts.* `04g`'s single growth pass stops at the 95th percentile, and on large
+artifacts the outer glow falls below it, so the mask came out as a black hole ringed by the
+brightest part of the thing it was meant to remove. Measured: the pixels immediately outside the
+base mask have a median brightness of **37-49 against a tissue median of 5**. Unambiguously still
+artifact. Added a second, gentler pass - 90th percentile, 10 dilations, constrained to inside the
+tissue - with new pixels inheriting the nearest existing label so nothing changes class by growing.
+p85/15 and p80/20 were swept too and kept adding area without a reason to.
+
+Effect across the 831: median masked fraction **0.641% -> 0.756%**, p95 1.598 -> 1.936, max
+3.91 -> 5.74. Of 21,904 mm² of tissue, 21,723 mm² measurable - **0.82% removed**.
+
+**Two stale inputs moved aside rather than left to mislead:**
+
+* `symmetry_proposals.csv` - computed on pre-rotation masks. The curator would have applied it on
+  top of rotations that are now baked into the images, double-rotating every section.
+* `atlas_proposals_v2.csv` - the previous entry establishes that assignment carries no level
+  information, so the reference underlay would have shown a meaningless plate behind each section.
+  Renamed `atlas_proposals_v2_NOT_VALID_see_LOGS.csv`.
+
+The curator therefore opens with **831 sections, no auto-rotation, no exclusion proposals and no
+underlay** - the operator's own rotations, with artefacts blanked.
+
+---
+
 ## 2026-08-12 - The last 10 flagged sections dropped: 831 sections, screen now fully clean
 
 **Changed:** the 10 sections that passed manual curation but still tripped `04f` are now excluded
