@@ -164,13 +164,25 @@ def reformat(path, light_background):
 
     out_m = np.asarray(Image.fromarray(pm.astype(np.uint8) * 255).resize((GRID, GRID), Image.BILINEAR)) > 127
 
-    # Stretch on percentiles of in-tissue pixels, not min/max. A single bright
-    # speck inside the mask - debris, a saturated nucleus - sets the max and
-    # crushes the whole section to near black, which is what the first preview
-    # showed.
+    # Stretch on a ROBUST range of in-tissue pixels: median +/- multiples of the
+    # MAD, not min/max and not percentiles.
+    #
+    # Two earlier attempts failed here. min/max let one saturated pixel set the
+    # top. Switching to the 1st/99th percentile was not enough either: debris
+    # flecks routinely exceed 1% of the mask, so p99 still landed on them and
+    # tissue rendered at an in-mask mean of 8 out of 255 - which is why sections
+    # containing perfectly good tissue looked blank. Measured on the same
+    # sections, this gives ~80.
+    #
+    # MAD is outlier-resistant by construction, so it does not care what
+    # fraction of the mask the specks occupy.
     inside = pi[pm]
     if inside.size > 50:
-        lo, hi = np.percentile(inside, [1, 99])
+        med = float(np.median(inside))
+        mad = float(np.median(np.abs(inside - med))) * 1.4826
+        if mad <= 0:
+            mad = max(float(inside.std()), 1.0)
+        lo, hi = med - mad, med + 4.0 * mad
     else:
         lo, hi = float(pi.min()), float(pi.max())
     norm = np.clip((pi - lo) / max(hi - lo, 1e-6), 0, 1) * 255.0

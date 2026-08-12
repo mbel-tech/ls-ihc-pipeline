@@ -1,25 +1,33 @@
-"""Stage 4d - manual rotation curator.
+"""Stage 4d - manual rotation curator, with free-angle drag.
 
 The hand-drawn scan regions are one-section-accurate, so section *division* needs
 no adjudication. Orientation does: `04a_reformat.py` rotates each section by the
 principal axis of its tissue mask, which gets the long axis horizontal but cannot
-know which way round is correct. For a roughly symmetric outline the axis is
-right and the quadrant is a guess.
+know which way round is correct, and for an obliquely cut section the axis itself
+is only approximate.
 
-This is a wall, not a queue. Most sections are already correct and the task is to
-*spot* the wrong ones, so showing many at once and clicking the offenders is far
-faster than stepping through 2,572 one at a time. Each click rotates 90 degrees;
-shift-click flips.
+Interaction:
 
-Rotation is stored as a correction *on top of* the automatic angle, not as an
-absolute. That way re-running the reformatter with a better auto-rotation does
-not invalidate the manual work.
+  **drag to rotate freely**, 1 degree resolution - grab the section and turn it,
+  the angle following the pointer around the centre of the cell. Quantising to
+  90 degrees was wrong for this task: matching to an atlas plate needs the
+  section turned to the plate's actual angle, not to the nearest quadrant.
+
+  **reference underlay** - the proposed atlas plate can be shown behind the
+  section in red, so rotating to align is a direct visual comparison rather than
+  a judgement made from memory. This is the whole reason fine rotation matters.
+
+  a wall rather than a queue, because most sections are already close and the
+  task is to spot and fix the ones that are not.
+
+Corrections are stored as a delta *on top of* the automatic angle, so improving
+the auto-rotation later does not invalidate the manual work.
 
 Output: `reformatted/rotation_overrides.csv` (scene_uid, extra_rotation, flip),
 read back by `04a_reformat.py --apply-overrides`.
 
 Run:  python 04d_rotation_curator.py
-      python 04d_rotation_curator.py --animal LS45
+      python 04d_rotation_curator.py --animal LS45 --thumb 190
 """
 
 import argparse
@@ -34,6 +42,7 @@ with open(CONFIG_PATH, encoding="utf-8") as _fh:
 OUT_ROOT = CONFIG["out_root"]
 REFORMAT_DIR = os.path.join(OUT_ROOT, "reformatted")
 INDEX_CSV = os.path.join(REFORMAT_DIR, "reformat_index.csv")
+MATCH_CSV = os.path.join(OUT_ROOT, "qc", "atlasmatch", "atlas_proposals_v2.csv")
 CURATOR_HTML = os.path.join(REFORMAT_DIR, "rotation_curator.html")
 
 PAGE = """<!doctype html>
@@ -43,23 +52,27 @@ PAGE = """<!doctype html>
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 system-ui,sans-serif}
 header{position:sticky;top:0;z-index:9;background:var(--bg);border-bottom:1px solid var(--line);
-       padding:10px 16px;display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+       padding:10px 16px;display:flex;gap:14px;align-items:center;flex-wrap:wrap}
 h1{font-size:15px;margin:0;font-weight:600}.grow{flex:1}
 .row{color:var(--dim)}.row b{color:var(--fg)}
-button{background:#1c2027;color:var(--fg);border:1px solid var(--line);border-radius:7px;
-       padding:7px 12px;cursor:pointer;font:inherit}
+button,select{background:#1c2027;color:var(--fg);border:1px solid var(--line);border-radius:7px;
+       padding:7px 11px;cursor:pointer;font:inherit}
 button:hover{border-color:var(--accent)}
 button.primary{background:var(--accent);border-color:var(--accent);color:#04121f;font-weight:600}
-select{background:#1c2027;color:var(--fg);border:1px solid var(--line);border-radius:7px;padding:6px 9px;font:inherit}
-#wall{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;padding:14px}
-.cell{border:2px solid var(--line);border-radius:8px;background:#0e1014;padding:5px;cursor:pointer;
-      display:flex;flex-direction:column;align-items:center;user-select:none}
+button.on{border-color:var(--ok);color:var(--ok)}
+#wall{display:grid;gap:8px;padding:14px}
+.cell{border:2px solid var(--line);border-radius:8px;background:#0e1014;padding:5px;
+      display:flex;flex-direction:column;align-items:center;user-select:none;touch-action:none}
 .cell:hover{border-color:var(--accent)}
 .cell.changed{border-color:var(--warn);background:#1a1610}
-.cell .imgwrap{width:100%;aspect-ratio:1;display:flex;align-items:center;justify-content:center;overflow:hidden}
-.cell img{max-width:100%;max-height:100%;transition:transform .12s ease}
-.cap{font-size:10px;color:var(--dim);margin-top:3px;text-align:center;word-break:break-all;line-height:1.25}
-.cap b{color:var(--warn)}
+.cell.active{border-color:var(--accent);box-shadow:0 0 0 2px rgba(77,163,255,.25)}
+.stack{position:relative;width:100%;aspect-ratio:1;cursor:grab;overflow:hidden;border-radius:5px}
+.stack:active{cursor:grabbing}
+.stack img{position:absolute;inset:0;margin:auto;max-width:100%;max-height:100%}
+.ref{opacity:0;filter:sepia(1) saturate(6) hue-rotate(-30deg)}
+.showref .ref{opacity:.45}
+.cap{font-size:10px;color:var(--dim);margin-top:3px;text-align:center;line-height:1.25;word-break:break-all}
+.tag{color:var(--warn);font-weight:600}
 footer{position:sticky;bottom:0;background:var(--bg);border-top:1px solid var(--line);
        padding:9px 16px;font-size:12px;color:var(--dim)}
 kbd{display:inline-block;padding:1px 6px;border:1px solid var(--line);border-radius:4px;
@@ -68,42 +81,44 @@ kbd{display:inline-block;padding:1px 6px;border:1px solid var(--line);border-rad
 <header>
   <h1>Rotation curator</h1>
   <select id="animal" onchange="render()"></select>
+  <button id="refBtn" onclick="toggleRef()">reference: off</button>
   <span class="row"><b id="count"></b> shown</span>
-  <span class="row"><b id="changed"></b> rotated</span>
+  <span class="row"><b id="changed"></b> adjusted</span>
+  <span class="row" id="live"></span>
   <span class="grow"></span>
   <button onclick="resetAll()">Reset visible</button>
   <button class="primary" onclick="exportCsv()">Export CSV</button>
 </header>
 <div id="wall"></div>
 <footer>
-  <kbd>click</kbd> rotate 90&deg; &middot;
-  <kbd>shift+click</kbd> flip horizontally &middot;
-  <kbd>alt+click</kbd> reset one &middot;
-  changes autosave in this browser
+  <kbd>drag</kbd> rotate freely (1&deg;) &middot;
+  <kbd>shift+drag</kbd> snap 15&deg; &middot;
+  <kbd>&larr;</kbd><kbd>&rarr;</kbd> nudge 1&deg; (hold shift for 10&deg;) &middot;
+  <kbd>f</kbd> flip &middot; <kbd>r</kbd> reset &middot; <kbd>0</kbd> zero &middot;
+  changes autosave
 </footer>
 <script>
 const DATA = __DATA__;
-const KEY = "ls_rotation_curator_v1";
+const THUMB = __THUMB__;
+const KEY = "ls_rotation_curator_v2";
 let state = JSON.parse(localStorage.getItem(KEY) || "{}");   // uid -> {r:deg, f:bool}
+let showRef = false;
+let active = null;
 
 const el = id => document.getElementById(id);
+document.getElementById("wall").style.gridTemplateColumns =
+  `repeat(auto-fill,minmax(${THUMB}px,1fr))`;
+
 const animals = [...new Set(DATA.map(d => d.animal))].sort((a,b)=>+a.slice(2)-+b.slice(2));
 el("animal").innerHTML = ['<option value="">all animals</option>']
   .concat(animals.map(a => `<option>${a}</option>`)).join("");
 
-function save(){ localStorage.setItem(KEY, JSON.stringify(state)); }
+const save = () => localStorage.setItem(KEY, JSON.stringify(state));
+const get  = uid => state[uid] || {r:0, f:false};
 
-function get(uid){ return state[uid] || {r:0, f:false}; }
-
-function bump(uid, e){
-  e.preventDefault();
-  const s = get(uid);
-  if(e.altKey){ delete state[uid]; }
-  else if(e.shiftKey){ state[uid] = {r:s.r, f:!s.f}; }
-  else { state[uid] = {r:(s.r+90)%360, f:s.f}; }
-  // Drop entries that are back to no-op, so the export stays minimal.
-  const t = state[uid];
-  if(t && t.r === 0 && !t.f) delete state[uid];
+function setState(uid, r, f){
+  r = ((Math.round(r) % 360) + 360) % 360;
+  if(r === 0 && !f) delete state[uid]; else state[uid] = {r, f};
   save(); paint(uid);
   el("changed").textContent = Object.keys(state).length;
 }
@@ -112,11 +127,65 @@ function paint(uid){
   const cell = document.querySelector(`[data-uid="${CSS.escape(uid)}"]`);
   if(!cell) return;
   const s = get(uid);
-  const img = cell.querySelector("img");
-  img.style.transform = `rotate(${s.r}deg) scaleX(${s.f ? -1 : 1})`;
+  // Only the section turns; the reference underlay stays fixed, so the section
+  // is being rotated INTO the atlas frame rather than both moving together.
+  cell.querySelector(".sec").style.transform =
+    `rotate(${s.r}deg) scaleX(${s.f ? -1 : 1})`;
   cell.classList.toggle("changed", !!state[uid]);
-  cell.querySelector(".tag").innerHTML =
-    state[uid] ? `<b>${s.r}&deg;${s.f ? " flip" : ""}</b>` : "";
+  cell.querySelector(".tag").textContent =
+    state[uid] ? `${s.r}\\u00B0${s.f ? " flip" : ""}` : "";
+}
+
+// --- free rotation by dragging around the cell centre ------------------------
+let drag = null;
+function angleOf(e, rect){
+  return Math.atan2(e.clientY - (rect.top + rect.height/2),
+                    e.clientX - (rect.left + rect.width/2)) * 180 / Math.PI;
+}
+function onDown(e, uid){
+  if(e.button !== 0) return;
+  const stack = e.currentTarget;
+  const rect = stack.getBoundingClientRect();
+  drag = {uid, rect, start: angleOf(e, rect), base: get(uid).r, moved:false};
+  setActive(uid);
+  stack.setPointerCapture(e.pointerId);
+  e.preventDefault();
+}
+function onMove(e){
+  if(!drag) return;
+  let delta = angleOf(e, drag.rect) - drag.start;
+  if(Math.abs(delta) > 0.5) drag.moved = true;
+  let r = drag.base + delta;
+  if(e.shiftKey) r = Math.round(r/15)*15;
+  setState(drag.uid, r, get(drag.uid).f);
+  el("live").textContent = `${drag.uid}: ${get(drag.uid).r}\\u00B0`;
+}
+function onUp(){ drag = null; }
+
+function setActive(uid){
+  document.querySelectorAll(".cell.active").forEach(c => c.classList.remove("active"));
+  const c = document.querySelector(`[data-uid="${CSS.escape(uid)}"]`);
+  if(c) c.classList.add("active");
+  active = uid;
+}
+
+addEventListener("keydown", e => {
+  if(!active) return;
+  const s = get(active);
+  const step = e.shiftKey ? 10 : 1;
+  if(e.key === "ArrowRight"){ setState(active, s.r + step, s.f); e.preventDefault(); }
+  else if(e.key === "ArrowLeft"){ setState(active, s.r - step, s.f); e.preventDefault(); }
+  else if(e.key === "f"){ setState(active, s.r, !s.f); }
+  else if(e.key === "r"){ setState(active, 0, false); }
+  else if(e.key === "0"){ setState(active, 0, s.f); }
+  if(active) el("live").textContent = `${active}: ${get(active).r}\\u00B0`;
+});
+
+function toggleRef(){
+  showRef = !showRef;
+  el("refBtn").textContent = "reference: " + (showRef ? "on" : "off");
+  el("refBtn").classList.toggle("on", showRef);
+  document.querySelectorAll(".stack").forEach(s => s.classList.toggle("showref", showRef));
 }
 
 function render(){
@@ -125,18 +194,28 @@ function render(){
   el("count").textContent = rows.length;
   el("changed").textContent = Object.keys(state).length;
   el("wall").innerHTML = rows.map(d => `
-    <div class="cell" data-uid="${d.uid}" onclick="bump('${d.uid}',event)">
-      <div class="imgwrap"><img src="${d.img}" loading="lazy" alt=""></div>
+    <div class="cell" data-uid="${d.uid}">
+      <div class="stack${showRef?' showref':''}">
+        ${d.ref ? `<img class="ref" src="${d.ref}" loading="lazy" alt="">` : ""}
+        <img class="sec" src="${d.img}" loading="lazy" alt="" draggable="false">
+      </div>
       <div class="cap">${d.order} &middot; ${d.uid.split('_').slice(1).join('_')}
-        <span class="tag"></span></div>
+        ${d.plate ? '&middot; ' + d.plate : ''} <span class="tag"></span></div>
     </div>`).join("");
-  rows.forEach(d => paint(d.uid));
+  rows.forEach(d => {
+    const cell = document.querySelector(`[data-uid="${CSS.escape(d.uid)}"]`);
+    const stack = cell.querySelector(".stack");
+    stack.addEventListener("pointerdown", e => onDown(e, d.uid));
+    stack.addEventListener("pointermove", onMove);
+    stack.addEventListener("pointerup", onUp);
+    stack.addEventListener("pointercancel", onUp);
+    paint(d.uid);
+  });
 }
 
 function resetAll(){
   const a = el("animal").value;
-  const rows = a ? DATA.filter(d => d.animal === a) : DATA;
-  rows.forEach(d => delete state[d.uid]);
+  (a ? DATA.filter(d => d.animal === a) : DATA).forEach(d => delete state[d.uid]);
   save(); render();
 }
 
@@ -145,9 +224,7 @@ function exportCsv(){
     Object.entries(state).map(([uid,s]) => [uid, s.r, s.f ? 1 : 0]));
   const b = new Blob([rows.map(r=>r.join(",")).join("\\n")], {type:"text/csv"});
   const a = document.createElement("a");
-  a.href = URL.createObjectURL(b);
-  a.download = "rotation_overrides.csv";
-  a.click();
+  a.href = URL.createObjectURL(b); a.download = "rotation_overrides.csv"; a.click();
 }
 render();
 </script>
@@ -157,6 +234,8 @@ render();
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--animal", default=None)
+    ap.add_argument("--thumb", type=int, default=170,
+                    help="thumbnail size in px; bigger gives finer drag control")
     args = ap.parse_args()
 
     if not os.path.exists(INDEX_CSV):
@@ -167,23 +246,43 @@ def main():
         rows = [r for r in rows if r["animal"] == args.animal]
     rows.sort(key=lambda r: (r["animal"], int(r["section_order"] or 0)))
 
-    data = [{
-        "uid": r["id"],
-        "animal": r["animal"],
-        "order": r["section_order"],
-        "img": ("sections/" + r["id"] + ".png"),
-    } for r in rows]
+    # Proposed atlas plate per section, for the reference underlay. Optional:
+    # the curator still works for plain orientation fixing without it.
+    proposed = {}
+    if os.path.exists(MATCH_CSV):
+        with open(MATCH_CSV, newline="", encoding="utf-8") as fh:
+            for r in csv.DictReader(fh):
+                plate = r.get("confirmed_plate") or r.get("proposed_plate")
+                if plate:
+                    proposed[r["scene_uid"]] = plate
+        print(f"reference underlay available for {len(proposed)} sections")
+    else:
+        print("no atlas proposals yet - reference underlay disabled "
+              "(run 04c_atlas_match.py to enable it)")
 
+    data = []
+    for r in rows:
+        plate = proposed.get(r["id"])
+        ref = f"plates/{plate}.png" if plate and os.path.exists(
+            os.path.join(REFORMAT_DIR, "plates", plate + ".png")) else None
+        data.append({
+            "uid": r["id"], "animal": r["animal"], "order": r["section_order"],
+            "img": f"sections/{r['id']}.png", "ref": ref, "plate": plate or "",
+        })
+
+    page = PAGE.replace("__DATA__", json.dumps(data)).replace("__THUMB__", str(args.thumb))
     with open(CURATOR_HTML, "w", encoding="utf-8") as fh:
-        fh.write(PAGE.replace("__DATA__", json.dumps(data)))
+        fh.write(page)
 
+    with_ref = sum(1 for d in data if d["ref"])
     print(f"wrote {CURATOR_HTML}")
-    print(f"  {len(data)} sections across {len({d['animal'] for d in data})} animals")
+    print(f"  {len(data)} sections, {len({d['animal'] for d in data})} animals, "
+          f"{with_ref} with a reference plate")
     print()
-    print("Open it in a browser. Click a section to rotate it 90 degrees,")
-    print("shift-click to flip, alt-click to reset. Filter by animal from the")
-    print("dropdown. Export when done, save the CSV into reformatted/, then:")
-    print("  python 04a_reformat.py --apply-overrides")
+    print("Drag a section to rotate it freely (1 degree). Shift-drag snaps to 15.")
+    print("Arrow keys nudge the last-touched section by 1 degree, 10 with shift.")
+    print("Turn the reference on to see the proposed atlas plate behind it in red -")
+    print("only the section rotates, so you are turning it into the atlas frame.")
 
 
 if __name__ == "__main__":

@@ -9,6 +9,49 @@ where things landed, not which plausible-looking route was tried and abandoned, 
 
 ---
 
+## 2026-08-12 - Robust intensity stretch; a removal sweep avoided
+
+**Changed:** `04a_reformat.py` stretches on median +/- MAD of in-tissue pixels instead of
+percentiles. `04d_rotation_curator.py` gains free-angle drag and an atlas reference underlay.
+
+**Why:** the user reported that some reformatted sections looked blank - "completely dark ...
+meaning that even if they were marked they dont contain tissue" - and asked for a sweep to remove
+them from the dataset.
+
+**They were not blank.** Rendering the darkest sections at three scalings showed clear brain
+tissue with visible structure in every one. The sections were fine; the *display stretch* was
+broken. Bright specks - debris, saturated flecks - were setting the top of the range and crushing
+the tissue underneath. **The proposed sweep would have deleted good data.**
+
+**Third time for this same trap.** min/max let one saturated pixel set the ceiling. The 1st/99th
+percentile was not enough either, because debris routinely exceeds 1% of the mask, so p99 still
+landed on it. Measured on the same sections, in-mask mean out of 255:
+
+| stretch | in-mask mean |
+|---|---|
+| min/max | crushed |
+| p1-p99 | 8-9 |
+| p1-p95 | 64-79 |
+| median +/- MAD | 74-85 |
+
+MAD is outlier-resistant by construction, so unlike a percentile it does not care what fraction
+of the mask the specks occupy. After the fix: p1 55, p5 63, median 73, and **0 of 1381 sections
+below 20**, where before 5% were under 12.
+
+**The masks were never affected** - they come from log-space Otsu, not the display stretch - so
+atlas matching results were correct throughout. Only visibility changed.
+
+**Also:** rotation is now free-angle by drag at 1 degree resolution rather than 90 degree steps,
+because matching to an atlas plate needs the section at the plate's actual angle. The proposed
+plate can be shown behind the section in red, with only the section rotating, so alignment is a
+direct comparison rather than a judgement from memory.
+
+**Atlas matching extended to all 12 animals:** 1,381 sections, median score 0.635. The flip call
+remains too close to call on 58% - not a code problem, and the reference underlay is the practical
+answer to it.
+
+---
+
 ## 2026-08-12 - Section-division curation retired; rotation curation added
 
 **Changed:** `01i_multisection_review.py` and `01j_build_curator.py` removed. New
