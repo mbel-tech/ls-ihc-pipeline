@@ -1,0 +1,43 @@
+# Nothing derived from the imaging data belongs in this repository.
+# The source dataset is 392.7 GB of CZI; the derived outputs are ~20 GB.
+
+# Source and derived image data
+*.czi
+*.zip
+*.tif
+*.tiff
+*.png
+*.npy
+overviews/
+contactsheets/
+qc/
+triage/
+template/
+registered/
+qupath/
+colab/
+results/
+logs/
+
+# Atlas plates are extracted from Salmon Atlas.pdf - 107 MB, and not ours to
+# redistribute. The extraction script is here; run it against your own copy.
+atlas/
+
+# Working directories: Bio-Formats memo caches, the Python 3.13 venv, extracted CZIs
+work/
+
+# Machine-specific: absolute paths and the marker-identity assignment.
+# Commit config.example.json instead.
+config.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# OS
+Thumbs.db
+.DS_Store
+desktop.ini

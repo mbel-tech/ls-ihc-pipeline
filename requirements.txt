@@ -1,0 +1,17 @@
+# Main environment (Python 3.14 tested).
+# Installs everything except pylibCZIrw - see requirements-czi.txt for that.
+numpy>=2.0
+scipy>=1.14
+pandas>=2.0
+pillow>=10.0
+matplotlib>=3.9
+tifffile>=2025.1.1
+
+# CZI access for instrument characterisation only (raw tiles, tile geometry).
+# Third-party reimplementation of the ZISRAW spec - NOT used for pixel values
+# that reach a result. See README "Reader architecture".
+czifile>=2026.6.12
+imagecodecs>=2026.6.6   # required by czifile: the tiles are JPEG-XR compressed
+
+# Atlas plate extraction from Salmon Atlas.pdf
+pymupdf>=1.24

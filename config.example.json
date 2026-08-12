@@ -1,0 +1,63 @@
+{
+  "_comment": "Copy to config.json and fill in the three paths. The real config.json is gitignored because it holds machine-specific absolute paths.",
+  "source_dir": "<ABSOLUTE PATH TO THE FOLDER OF .czi FILES>",
+  "out_root": "<ABSOLUTE PATH FOR PIPELINE OUTPUT>",
+  "atlas_pdf": "<ABSOLUTE PATH TO Salmon Atlas.pdf>",
+  "section_order_convention": "S_scan_order",
+  "_section_order_note": "Confirmed by user 2026-08-11. Serial order = scene index as acquired. The scanner ran column-major (s0 top-left, s1 below it, s2 next column top), and on staggered slides such as LS120_1a no grid model reproduces the physical layout at all.",
+  "pixel_size_um": 0.65,
+  "overview_target_um_per_px": 5.2,
+  "triage_target_um_per_px": 2.6,
+  "detection_target_um_per_px": 1.3,
+  "channels": {
+    "dapi_index": 0,
+    "marker_index": 1,
+    "exposure_ms": {
+      "DAPI": 5.0,
+      "AF568": 1000.0,
+      "AF488": 300.0
+    }
+  },
+  "marker_identity": {
+    "_note": "Filled in by 00c_channel_identity.py, then confirmed by the user. Until then neither fluorophore may be referred to as pERK or PCNA downstream.",
+    "AF568": null,
+    "AF488": null
+  },
+  "flatfield": {
+    "tile_sample_per_channel": 2000,
+    "downsample_to_px": 128,
+    "smoothing_sigma_px": 4,
+    "_note": "Per-pixel median across many randomly-positioned tiles, computed at reduced resolution because vignetting is low-frequency. BaSiC is the fallback if the tile-pitch power-spectrum test does not pass."
+  },
+  "detection": {
+    "nucleus_diameter_um": 7.0,
+    "local_contrast_inner_factor": 1.5,
+    "local_contrast_outer_factor": 4.0,
+    "local_contrast_threshold": null,
+    "_note": "Threshold is set once from the 03a calibration sweep, reviewed across more than one animal. With no negative control this is the most consequential parameter in the pipeline."
+  },
+  "atlas_scope": {
+    "mode": "sbn_nodes",
+    "_note": "Confirmed by user 2026-08-11. The atlas already labels Dm, Dl, Vv, Vs, Vd, Vc and POA. Add only the missing caudal social-behaviour-network nodes, using Wullimann 1996 and Nieuwenhuys 1982 as guides.",
+    "existing_regions": [
+      "Dl",
+      "Dm",
+      "Vd",
+      "Vl",
+      "Vv",
+      "Vs",
+      "Vc",
+      "POA"
+    ],
+    "regions_to_add": [
+      "vTn",
+      "TPp",
+      "PAG"
+    ],
+    "_regions_to_add_note": "vTn = ventral tuberal nucleus, TPp = periventricular nucleus of posterior tuberculum (dopaminergic), PAG = periaqueductal / central grey."
+  },
+  "blinding": {
+    "enabled": true,
+    "_note": "No stage before 06b may read a group label. Outputs are keyed by animal ID only."
+  }
+}
