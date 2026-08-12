@@ -9,6 +9,59 @@ where things landed, not which plausible-looking route was tried and abandoned, 
 
 ---
 
+## 2026-08-12 - Second curation pass MERGED, not replaced: 788 sections
+
+**Changed:** the operator's second pass applied. **The two passes were combined rather than the
+second replacing the first**, and `04a_reformat.py` now performs a full accounting on every run.
+
+**Applying the new file as-is would have silently destroyed the first pass.** The curator was
+rebuilt on images that already had pass-1 rotations baked in, and the curator's slider starts every
+untouched section at zero. So the exported angles are **residuals relative to already-rotated
+images**, not absolute corrections. `04a` adds `extra_angle` to the *automatic* angle, so writing
+the new file straight over the old would have given `auto + pass2` instead of
+`auto + pass1 + pass2`.
+
+**500 sections had a rotation in both passes and would have lost the first.** Examples:
+
+| section | pass 1 | pass 2 | correct total |
+|---|---|---|---|
+| LS105_s01b_sc00 | 266 | 163 | **69** |
+| LS105_s01b_sc10 | 215 | 58 | **273** |
+| LS105_s02b_sc03 | 208 | 47 | **255** |
+
+Merged as `(pass1 + pass2) mod 360`, exclusions unioned, flips XORed. Both source files are kept:
+`rotation_overrides_pass1.csv` and `rotation_overrides_pass2_raw.csv`.
+
+**Result:** 43 new exclusions (none previously excluded), 593 total, **788 sections kept**, 770
+carrying a rotation.
+
+**"Everything not explicitly excluded is kept" - verified exhaustively, against the full universe
+rather than the CSV rows:**
+
+| check | result |
+|---|---|
+| universe (AF488 sections in focus.csv) | 1,381 |
+| kept + excluded | 788 + 593 = **1,381** |
+| in neither | **0** |
+| not explicitly excluded but not kept | **0** |
+| explicitly excluded but still kept | **0** |
+| sections with no row in the overrides at all | 18, **all 18 kept** |
+
+That check is now built into `04a` and prints on every run, because `lost_sections.csv` only catches
+sections that reached the loop and failed - it would not have caught a section dropped before that.
+
+**Re-run on the 788:** `04f` proposes **0** exclusions and no section lacks a piece above 0.5 mm².
+`04g` finds artifacts in 725 of 788 (92%), 1,948 compact and 790 elongated objects, median 0.751% of
+tissue masked; of 20,810 mm² of tissue, **20,639 mm² measurable (0.82% removed)**.
+
+**Exclusion is now 43% overall and the per-animal spread has widened:** LS37 30% to LS136 61%.
+Kept counts: LS22 60, LS37 81, LS45 87, LS53 73, LS61 72, LS69 66, LS85 60, LS87 51, LS105 75,
+LS120 68, LS136 45, LS138 50. LS136 and LS87 are now down to 45 and 51 sections. This must be
+checked against experimental group at unblinding - a 31-point spread in exclusion rate is large
+enough to matter if it correlates with treatment.
+
+---
+
 ## 2026-08-12 - Artifacts carried into the reformatted images, so curation happens on masked sections
 
 **Changed:** `04a_reformat.py` gains `--mask-artifacts`. `04g`'s mask rides the same geometry as

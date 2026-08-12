@@ -372,6 +372,22 @@ def main():
     print(f"\rsections reformatted: {ok}/{len(secs)}"
           + (f"  ({n_excluded} manually excluded)" if n_excluded else "") + "          ")
 
+    # Full accounting, every run. The operator's standing requirement is that
+    # everything not explicitly excluded is kept, and `lost` only catches
+    # sections that reached the loop and failed - this catches anything else.
+    universe = {r["scene_uid"] for r in secs}
+    kept_ids = {r["id"] for r in rows if r["kind"] == "section"}
+    unaccounted = universe - kept_ids - set(excluded)
+    print()
+    print(f"accounting: {len(universe)} sections = {len(kept_ids)} kept "
+          f"+ {len(excluded & universe)} excluded + {len(unaccounted)} unaccounted")
+    if unaccounted:
+        print("!" * 74)
+        print(f"{len(unaccounted)} section(s) are neither kept nor excluded:")
+        for uid in sorted(unaccounted)[:20]:
+            print(f"    {uid}")
+        print("!" * 74)
+
     out_csv = os.path.join(REFORMAT_DIR, "reformat_index.csv")
     keys = ["kind", "id", "angle", "fill", "animal", "section_order", "regions",
             "manual_rotation", "manual_flip"]
