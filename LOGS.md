@@ -9,6 +9,57 @@ where things landed, not which plausible-looking route was tried and abandoned, 
 
 ---
 
+## 2026-08-12 - Colab GPU notebook for the cleaning stages, with delete-after-verify
+
+**Changed:** new `colab/` — `ls_gpu_preprocess.py` (the module), `build_notebook.py` (generates the
+notebook from it, so the two cannot drift) and `LS_preprocess_gpu.ipynb`. Runs 04f, 04g and 04h in
+**one pass per section** instead of three, on GPU via CuPy with a transparent scipy fallback.
+
+**Why one pass matters more than the GPU.** The three local scripts each re-derive the same tissue
+mask from the same PNG. Merging them removes that duplication regardless of hardware.
+
+**Drive space, as asked.** Each section produces `<uid>_clean.png` (the overview with artifact
+pixels zeroed - the processed copy, same size as the input), `<uid>_artifact.png` (the label mask,
+mostly zeros so nearly free) and one CSV row. The input is then deleted, so usage stays flat.
+`DELETE_INPUTS` defaults to **False**, and deletion happens only after every output exists and
+exceeds 512 bytes. Tested: a truncated write fails verification and the input is kept.
+
+**Parity checking caught a real bug before it shipped.** The first version measured the symmetry
+residual on an unrotated mask, while `04h` measures it on top of `04a`'s principal-axis rotation.
+A residual is only meaningful relative to what it is a residual *from*: the two disagreed by a
+median of **12.5 degrees and a maximum of 35**. After reproducing `04a`'s full geometry (principal
+angle, 180 degree resolution, crop, square pad, resize), parity on 14 sections is:
+
+| quantity | agreement |
+|---|---|
+| `largest_mm2` | exact, 0.0000 mm2 |
+| symmetry residual | exact, 0 degrees, 100% within 1 |
+| artifact % of tissue | median 0.012 pp, max 0.216 pp |
+
+**The artifact residual is a pre-existing inconsistency, now documented.** `04g` builds its tissue
+mask by resizing the *float* array; `04a` resizes the *8-bit image*. PIL's F-mode and L-mode
+resampling differ slightly. The module follows `04a`, the canonical path. `04g` is worth aligning.
+
+**An algorithmic win that is not about hardware.** Intersection under a circular shift is a
+cross-correlation, and |A| and |B| do not change with the shift, so
+`IoU(s) = I(s) / (|A| + |B| - I(s))` gives **every** offset from one FFT. That replaces `04h`'s loop
+*and* its `SHIFT_STEP = 2` approximation - every integer offset is now evaluated rather than every
+second one. `selftest()` checks it against the loop it replaces and against scipy's tissue mask;
+both pass exactly.
+
+**One quantity genuinely cannot be reproduced, and it is flagged rather than fudged.**
+`focus_score` in `qc/focus.csv` was computed on the **16-bit** DAPI at export; the notebook sees
+the display-ranged 8-bit PNG. The ratio (edge energy / mean) survives a scale but not a
+scale-plus-offset, and the PNG is also clipped. So `focus_png` is a different quantity with the
+same shape, and `calibrate_focus()` transfers the 0.070 cut by matching **what fraction of sections
+it removes**, not its value. The notebook says so where a user would otherwise compare them.
+
+**No speedup is claimed here.** There is no CUDA on this machine, so the notebook ships a benchmark
+cell that measures GPU against CPU on the user's own data instead. Local reference for the same
+work, done separately: 04f ~10 min, 04g 14.7 min, 04h ~25 min.
+
+---
+
 ## 2026-08-12 - Symmetry-axis auto-rotation; the published SIFT method measured at 24 deg error
 
 **Changed:** new `04h_symmetry_axis.py` proposes the residual rotation that puts each section's
