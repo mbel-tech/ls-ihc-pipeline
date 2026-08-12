@@ -244,20 +244,45 @@ def reformat(path, light_background, extra_angle=0.0, flip=False, artifact=None)
     return out_i, out_m, angle % 360.0, out_a
 
 
-def load_overrides():
+def marker_paths(marker):
+    """Per-marker output paths and override source.
+
+    The two markers are separate acquisitions of the same sections, so they get
+    separate index files and separate section directories. Scene uids differ
+    anyway (`..._s03b_...` vs `..._s03a_...`), but sharing an index would let one
+    run silently overwrite the other's.
+    """
+    if marker == "AF488":
+        return {"overrides": os.path.join(REFORMAT_DIR, "rotation_overrides.csv"),
+                "uid_col": "scene_uid",
+                "sections": os.path.join(REFORMAT_DIR, "sections"),
+                "index": os.path.join(REFORMAT_DIR, "reformat_index.csv"),
+                "excluded": os.path.join(REFORMAT_DIR, "excluded_sections.csv"),
+                "lost": os.path.join(REFORMAT_DIR, "lost_sections.csv")}
+    return {"overrides": os.path.join(REFORMAT_DIR, f"perk_overrides.csv"),
+            # 04i writes the pERK scene under its own column name.
+            "uid_col": "perk_scene_uid",
+            "sections": os.path.join(REFORMAT_DIR, f"sections_{marker}"),
+            "index": os.path.join(REFORMAT_DIR, f"reformat_index_{marker}.csv"),
+            "excluded": os.path.join(REFORMAT_DIR, f"excluded_sections_{marker}.csv"),
+            "lost": os.path.join(REFORMAT_DIR, f"lost_sections_{marker}.csv")}
+
+
+def load_overrides(paths=None):
     """Manual rotation corrections from 04d_rotation_curator.py.
 
     Stored as a correction *on top of* the automatic angle rather than as an
     absolute orientation, so improving the auto-rotation later does not
     invalidate the manual work.
     """
-    path = os.path.join(REFORMAT_DIR, "rotation_overrides.csv")
+    paths = paths or marker_paths("AF488")
+    path, uid_col = paths["overrides"], paths["uid_col"]
     if not os.path.exists(path):
         return {}, {}
     out, excluded = {}, {}
     for r in csv.DictReader(open(path, newline="", encoding="utf-8")):
         if r.get("excluded") == "1":
-            excluded[r["scene_uid"]] = (r.get("decision") or "manual",
+            excluded[r[uid_col]] = (r.get("decision") or "manual",
                                         r.get("reason") or "too damaged to measure")
             continue
         # float, not int: the curator rotates freely to 1 degree, and an earlier
@@ -265,7 +290,7 @@ def load_overrides():
         # would have thrown away the manual work silently.
         rot, flip = float(r["extra_rotation"] or 0), r["flip"] == "1"
         if rot or flip:
-            out[r["scene_uid"]] = (rot, flip)
+            out[r[uid_col]] = (rot, flip)
 
     n_auto = sum(1 for d, _ in excluded.values() if d == "auto")
     n_manual = len(excluded) - n_auto
@@ -285,8 +310,7 @@ def load_overrides():
     # Written out separately as the canonical list, so any stage can honour
     # exclusions without parsing the curator's export format.
     if excluded:
-        with open(os.path.join(REFORMAT_DIR, "excluded_sections.csv"),
-                  "w", newline="", encoding="utf-8") as fh:
+        with open(paths["excluded"], "w", newline="", encoding="utf-8") as fh:
             w = csv.writer(fh)
             w.writerow(["scene_uid", "decision", "reason"])
             for uid in sorted(excluded):
@@ -297,15 +321,17 @@ def load_overrides():
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--preview", type=int, default=8)
-    ap.add_argument("--marker", default="AF488")
+    ap.add_argument("--marker", default="AF488", choices=["AF488", "AF568"],
+                    help="AF488 = PCNA (default), AF568 = pERK")
     ap.add_argument("--mask-artifacts", action="store_true",
                     help="blank 04g artifact pixels in the reformatted output")
     ap.add_argument("--apply-overrides", action="store_true",
                     help="apply manual rotations from rotation_overrides.csv")
     args = ap.parse_args()
-    overrides, excluded = load_overrides() if args.apply_overrides else ({}, {})
+    paths = marker_paths(args.marker)
+    overrides, excluded = load_overrides(paths) if args.apply_overrides else ({}, {})
 
-    sec_dir = os.path.join(REFORMAT_DIR, "sections")
+    sec_dir = paths["sections"]
     plate_dir = os.path.join(REFORMAT_DIR, "plates")
     os.makedirs(sec_dir, exist_ok=True)
     os.makedirs(plate_dir, exist_ok=True)
@@ -377,10 +403,11 @@ def main():
     # sections that reached the loop and failed - this catches anything else.
     universe = {r["scene_uid"] for r in secs}
     kept_ids = {r["id"] for r in rows if r["kind"] == "section"}
-    unaccounted = universe - kept_ids - set(excluded)
+    excl_ids = set(excluded)          # `excluded` maps uid -> (decision, reason)
+    unaccounted = universe - kept_ids - excl_ids
     print()
     print(f"accounting: {len(universe)} sections = {len(kept_ids)} kept "
-          f"+ {len(excluded & universe)} excluded + {len(unaccounted)} unaccounted")
+          f"+ {len(excl_ids & universe)} excluded + {len(unaccounted)} unaccounted")
     if unaccounted:
         print("!" * 74)
         print(f"{len(unaccounted)} section(s) are neither kept nor excluded:")
@@ -388,7 +415,7 @@ def main():
             print(f"    {uid}")
         print("!" * 74)
 
-    out_csv = os.path.join(REFORMAT_DIR, "reformat_index.csv")
+    out_csv = paths["index"]
     keys = ["kind", "id", "angle", "fill", "animal", "section_order", "regions",
             "manual_rotation", "manual_flip"]
     with open(out_csv, "w", newline="", encoding="utf-8") as fh:
@@ -415,7 +442,7 @@ def main():
     if lost:
         # Loud, and written out, because these are sections the operator chose to
         # KEEP that did not make it through anyway.
-        path = os.path.join(REFORMAT_DIR, "lost_sections.csv")
+        path = paths["lost"]
         with open(path, "w", newline="", encoding="utf-8") as fh:
             w = csv.writer(fh); w.writerow(["scene_uid", "reason"]); w.writerows(lost)
         print()
@@ -429,8 +456,9 @@ def main():
         print("!" * 74)
     if n_excluded:
         print(f"excluded {n_excluded} section(s) marked as too damaged in the curator;")
-        print(f"  the list is in {os.path.join(REFORMAT_DIR, 'excluded_sections.csv')}")
-        print("  they are absent from reformat_index.csv, so no later stage can pick them up")
+        print(f"  the list is in {paths['excluded']}")
+        print(f"  they are absent from {os.path.basename(paths['index'])}, "
+              f"so no later stage can pick them up")
     print("NEXT: 04c_atlas_match.py")
     print("=" * 72)
 

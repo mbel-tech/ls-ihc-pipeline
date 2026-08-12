@@ -246,6 +246,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--preview", type=int, default=0, help="render N overlays and stop")
     ap.add_argument("--limit", type=int, default=0)
+    ap.add_argument("--marker", default="AF488", choices=["AF488", "AF568"],
+                    help="AF488 = PCNA (default), AF568 = pERK")
     args = ap.parse_args()
     os.makedirs(MASK_DIR, exist_ok=True)
     os.makedirs(REPORT_DIR, exist_ok=True)
@@ -259,7 +261,9 @@ def main():
             except (KeyError, ValueError):
                 pass
 
-    with open(os.path.join(REFORMAT_DIR, "reformat_index.csv"), newline="", encoding="utf-8") as fh:
+    index_csv = (os.path.join(REFORMAT_DIR, "reformat_index.csv") if args.marker == "AF488"
+                 else os.path.join(REFORMAT_DIR, f"reformat_index_{args.marker}.csv"))
+    with open(index_csv, newline="", encoding="utf-8") as fh:
         index = [r for r in csv.DictReader(fh) if r["kind"] == "section"]
     if args.limit:
         index = index[: args.limit]
@@ -267,7 +271,7 @@ def main():
     rows, previews = [], []
     for i, r in enumerate(index):
         uid = r["id"]
-        src = os.path.join(OVERVIEW_DIR, r["animal"], chan.get(uid, "AF488"), uid + "_DAPI.png")
+        src = os.path.join(OVERVIEW_DIR, r["animal"], chan.get(uid, args.marker), uid + "_DAPI.png")
         if not os.path.exists(src):
             continue
         im = np.asarray(Image.open(src).convert("L")).astype(np.float32)
@@ -311,7 +315,8 @@ def main():
         if args.preview:
             return
 
-    out = os.path.join(MASK_DIR, "artifact_summary.csv")
+    out = os.path.join(MASK_DIR, "artifact_summary.csv" if args.marker == "AF488"
+                       else f"artifact_summary_{args.marker}.csv")
     with open(out, "w", newline="", encoding="utf-8") as fh:
         w = csv.DictWriter(fh, fieldnames=list(rows[0].keys()))
         w.writeheader()

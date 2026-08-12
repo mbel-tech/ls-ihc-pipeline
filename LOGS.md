@@ -9,6 +9,49 @@ where things landed, not which plausible-looking route was tried and abandoned, 
 
 ---
 
+## 2026-08-12 - AF568 path added to 04a and 04g; both channels now cleaned
+
+**Changed:** `--marker AF568` through `04a_reformat.py` and `04g_artifact_mask.py`, and both run.
+The two markers now have separate section directories, indexes and summaries, because scene uids
+differ (`_s03b_` vs `_s03a_`) but a shared index would let one run silently overwrite the other's.
+
+**Both channels, final:**
+
+| | PCNA (AF488) | pERK (AF568) |
+|---|---|---|
+| sections | **788** | **718** |
+| with >= 1 artifact | 725 (92%) | 652 (91%) |
+| tissue masked, median | 0.751% | 0.871% |
+| tissue -> measurable | 20,810 -> 20,639 mm² | 16,952 -> 16,793 mm² |
+
+Artifact burden is near-identical between the two channels (92% vs 91%, 0.75% vs 0.87% of tissue),
+which is what should happen: bubbles and fibres are in the mounting medium and affect both.
+
+**Two mistakes of mine, both caught by guards rather than by luck.**
+
+*The accounting block I added last entry had never been executed.* It did `excluded & universe`
+where `excluded` is a dict, not a set - a `TypeError` on the first real run. I added a verification
+check and did not exercise it, which is the same class of error the check exists to catch. Fixed;
+it now reports `1191 sections = 718 kept + 473 excluded + 0 unaccounted`.
+
+*The `--marker` patch to `04g` silently did not apply.* I matched on an `--montage` argument that
+exists in `04f`, not `04g`, so the string replacement did nothing and reported success. The failure
+surfaced two steps later as `unrecognized arguments: --marker AF568`, and then as
+`WARNING: 718 section(s) had no 04g artifact mask and were left unmasked` from the guard added
+earlier in the day. Without that warning the pERK sections would have gone through unmasked and
+looked fine.
+
+**57 pERK sections have no curation at all** - AF568 scans with no AF488 partner in `pairs.csv`, so
+there was nothing to propagate. Kept under the standing rule that only explicit exclusions remove a
+section, but their orientation is `04a`'s automatic angle rather than the operator's. Spread:
+LS136 11, LS85 10, LS120 7, LS69 7, LS37 5, LS105 4, and 1-3 elsewhere.
+
+**Housekeeping, not done:** `reformatted/sections/` holds 1,381 PNGs against 788 in the index - 593
+orphans from before the exclusions. The index is authoritative and nothing reads the directory
+listing, so they are inert, but they are misleading to a human browsing the folder.
+
+---
+
 ## 2026-08-12 - Curation propagated from the PCNA scans to the paired pERK scans
 
 **Changed:** new `04i_propagate_to_perk.py`. Writes `reformatted/perk_overrides.csv`: 473
