@@ -179,11 +179,41 @@ def reformat(path, light_background):
     return out_i, out_m, angle % 360.0
 
 
+def load_overrides():
+    """Manual rotation corrections from 04d_rotation_curator.py.
+
+    Stored as a correction *on top of* the automatic angle rather than as an
+    absolute orientation, so improving the auto-rotation later does not
+    invalidate the manual work.
+    """
+    path = os.path.join(REFORMAT_DIR, "rotation_overrides.csv")
+    if not os.path.exists(path):
+        return {}
+    out = {}
+    with open(path, newline="", encoding="utf-8") as fh:
+        for r in csv.DictReader(fh):
+            out[r["scene_uid"]] = (int(r["extra_rotation"] or 0), r["flip"] == "1")
+    print(f"loaded {len(out)} manual rotation override(s)")
+    return out
+
+
+def apply_override(img, mask, rotation, flip):
+    k = (rotation // 90) % 4
+    if k:
+        img, mask = np.rot90(img, k), np.rot90(mask, k)
+    if flip:
+        img, mask = img[:, ::-1], mask[:, ::-1]
+    return np.ascontiguousarray(img), np.ascontiguousarray(mask)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--preview", type=int, default=8)
     ap.add_argument("--marker", default="AF488")
+    ap.add_argument("--apply-overrides", action="store_true",
+                    help="apply manual rotations from rotation_overrides.csv")
     args = ap.parse_args()
+    overrides = load_overrides() if args.apply_overrides else {}
 
     sec_dir = os.path.join(REFORMAT_DIR, "sections")
     plate_dir = os.path.join(REFORMAT_DIR, "plates")
@@ -219,18 +249,23 @@ def main():
         if out is None:
             continue
         img, mask, angle = out
+        extra, flip = overrides.get(r["scene_uid"], (0, False))
+        if extra or flip:
+            img, mask = apply_override(img, mask, extra, flip)
         Image.fromarray(img).save(os.path.join(sec_dir, r["scene_uid"] + ".png"))
         np.save(os.path.join(sec_dir, r["scene_uid"] + "_mask.npy"), mask)
         rows.append({"kind": "section", "id": r["scene_uid"], "angle": round(angle, 1),
                      "fill": round(float(mask.mean()), 4),
-                     "animal": r["animal"], "section_order": r["section_order"]})
+                     "animal": r["animal"], "section_order": r["section_order"],
+                     "manual_rotation": extra, "manual_flip": int(flip)})
         ok += 1
         if (i + 1) % 200 == 0:
             print(f"\r  sections {i + 1}/{len(secs)}  ok {ok}", end="")
     print(f"\rsections reformatted: {ok}/{len(secs)}          ")
 
     out_csv = os.path.join(REFORMAT_DIR, "reformat_index.csv")
-    keys = ["kind", "id", "angle", "fill", "animal", "section_order", "regions"]
+    keys = ["kind", "id", "angle", "fill", "animal", "section_order", "regions",
+            "manual_rotation", "manual_flip"]
     with open(out_csv, "w", newline="", encoding="utf-8") as fh:
         w = csv.DictWriter(fh, fieldnames=keys, extrasaction="ignore")
         w.writeheader()

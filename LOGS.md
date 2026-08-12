@@ -9,6 +9,37 @@ where things landed, not which plausible-looking route was tried and abandoned, 
 
 ---
 
+## 2026-08-12 - Section-division curation retired; rotation curation added
+
+**Changed:** `01i_multisection_review.py` and `01j_build_curator.py` removed. New
+`04d_rotation_curator.py`, and `04a_reformat.py --apply-overrides`.
+
+**Why:** the user confirmed the hand-drawn scan regions are already one-section-accurate, so
+section *division* needs no adjudication. The tooling built to ask about it was solving a problem
+that does not exist.
+
+**The measurement was right; the interpretation was wrong.** 23% of scenes do contain two or more
+large tissue blobs - that finding stands. But those are the bilateral lobes of a single
+telencephalic section, not two sections. This is exactly the ambiguity flagged when the tool was
+built ("a rostral telencephalic section is naturally two separate lobes"), and the resolution came
+from asking rather than from more geometry. Worth keeping as a reminder that a correct measurement
+can still support a wrong conclusion.
+
+**What does need adjudication is orientation.** `04a_reformat.py` rotates each section by the
+principal axis of its mask, which gets the long axis horizontal but cannot know which quadrant is
+correct - for a roughly symmetric outline the axis is right and the direction is a guess.
+
+**Design:** a clickable wall, not a queue. Most sections are already correct and the task is to
+*spot* the wrong ones, so showing many at once beats stepping through 2,572. Click rotates 90
+degrees, shift-click flips, alt-click resets. Corrections are stored as a delta *on top of* the
+automatic angle, so improving the auto-rotation later does not invalidate the manual work.
+
+**One loose end:** `LS136_s05b_sc10` still looks like two complete stacked sections rather than
+two lobes - 180.7 mm2 of tissue in a 235.8 mm2 frame. Left flagged for a human eye rather than
+silently dropped with the rest of the multi-section work.
+
+---
+
 ## 2026-08-12 - Implemented the four adopted methods; matching 0.24 -> 0.61
 
 **Changed:** `04a_reformat.py` (new), `04c_atlas_match.py` (new, replaces the matcher in 04b),
