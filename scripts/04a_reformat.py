@@ -218,28 +218,44 @@ def load_overrides():
     """
     path = os.path.join(REFORMAT_DIR, "rotation_overrides.csv")
     if not os.path.exists(path):
-        return {}, set()
-    out, excluded = {}, set()
-    with open(path, newline="", encoding="utf-8") as fh:
-        for r in csv.DictReader(fh):
-            if r.get("excluded") == "1":
-                excluded.add(r["scene_uid"])
-                continue
-            # float, not int: the curator rotates freely to 1 degree, and an
-            # earlier version of this loader floored everything to a multiple
-            # of 90 - which would have thrown away the manual work silently.
-            out[r["scene_uid"]] = (float(r["extra_rotation"] or 0), r["flip"] == "1")
-    print(f"loaded {len(out)} rotation override(s), {len(excluded)} exclusion(s)")
+        return {}, {}
+    out, excluded = {}, {}
+    for r in csv.DictReader(open(path, newline="", encoding="utf-8")):
+        if r.get("excluded") == "1":
+            excluded[r["scene_uid"]] = (r.get("decision") or "manual",
+                                        r.get("reason") or "too damaged to measure")
+            continue
+        # float, not int: the curator rotates freely to 1 degree, and an earlier
+        # version of this loader floored everything to a multiple of 90 - which
+        # would have thrown away the manual work silently.
+        rot, flip = float(r["extra_rotation"] or 0), r["flip"] == "1"
+        if rot or flip:
+            out[r["scene_uid"]] = (rot, flip)
 
-    # Exclusions are written out separately as the canonical list, so any stage
-    # can honour them without having to parse the curator's export format.
+    n_auto = sum(1 for d, _ in excluded.values() if d == "auto")
+    n_manual = len(excluded) - n_auto
+    print(f"loaded {len(out)} rotation override(s), {len(excluded)} exclusion(s) "
+          f"({n_auto} auto-accepted, {n_manual} manual)")
+
+    # How often the 04f proposal was overruled. This is the honest measure of
+    # whether the automatic rule is set in the right place, and it costs nothing
+    # to report - so it gets reported rather than assumed.
+    restored = sum(1 for r in csv.DictReader(open(path, newline="", encoding="utf-8"))
+                   if (r.get("decision") or "") == "restored")
+    if restored:
+        prop = n_auto + restored
+        print(f"  {restored} of {prop} automatic proposals were overruled "
+              f"({100 * restored / prop:.0f}%) - see LOGS.md if that rate is high")
+
+    # Written out separately as the canonical list, so any stage can honour
+    # exclusions without parsing the curator's export format.
     if excluded:
         with open(os.path.join(REFORMAT_DIR, "excluded_sections.csv"),
                   "w", newline="", encoding="utf-8") as fh:
             w = csv.writer(fh)
-            w.writerow(["scene_uid", "reason"])
+            w.writerow(["scene_uid", "decision", "reason"])
             for uid in sorted(excluded):
-                w.writerow([uid, "manually excluded: tissue too damaged to measure"])
+                w.writerow([uid, excluded[uid][0], excluded[uid][1]])
     return out, excluded
 
 
@@ -250,7 +266,7 @@ def main():
     ap.add_argument("--apply-overrides", action="store_true",
                     help="apply manual rotations from rotation_overrides.csv")
     args = ap.parse_args()
-    overrides, excluded = load_overrides() if args.apply_overrides else ({}, set())
+    overrides, excluded = load_overrides() if args.apply_overrides else ({}, {})
 
     sec_dir = os.path.join(REFORMAT_DIR, "sections")
     plate_dir = os.path.join(REFORMAT_DIR, "plates")

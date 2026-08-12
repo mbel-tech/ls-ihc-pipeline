@@ -9,6 +9,72 @@ where things landed, not which plausible-looking route was tried and abandoned, 
 
 ---
 
+## 2026-08-12 - Pre-select empty sections; two plausible measures thrown away first
+
+**Changed:** new `04f_exclusion_candidates.py` proposes sections with no measurable tissue;
+the curator pre-marks them (dashed amber, "PROPOSED") and right-click reverts. 103 of 1381
+sections (7.5%) are proposed.
+
+**Why:** the user asked for it - "can't you pre-select the one that look empty and i have the
+option to right-click to revert". Right shape for the task: adjudicating 103 proposals is minutes,
+searching 1,381 sections by eye is an hour and gets less consistent as it goes.
+
+**Three measures were tried. Two were wrong, and only the montage showed it.**
+
+*Solidity* (mask area / convex hull area) looked principled and was actively harmful. A transverse
+brain section at telencephalic level is **two bilaterally separated lobes**, so its hull spans the
+midline gap and solidity collapses. It proposed excluding **334 sections, 24% of the dataset**, and
+the montage showed them to be good telencephalon - the region of interest. It punished precisely
+the anatomy the study is about.
+
+*In-mask median intensity* is a **constant by construction**. The reformat stretches every section
+on its own median +/- MAD, so the in-mask median always lands near 51/255: p1 47, median 51, p95 55
+across all 1,381. Zero information, and it would have been easy to report as a working filter.
+
+*Largest connected tissue component in mm2* survived - but the first implementation of it was also
+wrong. Thresholding the source directly returns a thin bright rim, because sections are bright at
+the edge and dim inside; it reported **0.83 mm2 for a frame holding two intact, obviously textured
+lobes**. Fixed by using `04a_reformat.tissue_mask`, which closes and fills, and by importing that
+function rather than copying it so the two stages cannot drift. Remeasured on the same
+hand-labelled sections: good tissue 4.0-11.6 mm2, debris-only frames 0.8-1.9 mm2. The cut sits at
+**2.5 mm2**, inside that gap.
+
+**`tissue_area_mm2` in `qc/focus.csv` is not comparable between sections** and nothing should treat
+it as if it were. It is computed per image with its own auto-threshold, and those thresholds span
+**27 to 2274 within a single slide**. It reported 59.4 mm2 of "tissue" for a frame containing only
+specks (threshold collapsed to 37, calling 82% of the frame tissue) and 2.6 mm2 for a frame with
+two intact lobes. This weakens the plan's verification step 2, which used its range as a check.
+
+**The proposals are not uniform along the brain, and that is reported rather than tuned away:**
+
+| position | proposed | rate |
+|---|---|---|
+| rostral | 51/281 | 18.1% |
+| | 27/275 | 9.8% |
+| mid | 9/277 | 3.2% |
+| | 7/275 | 2.5% |
+| caudal | 9/273 | 3.3% |
+
+A **6x gradient**. Probably real - rostral tips are genuinely small and often fragmentary - but it
+means accepting all 103 trims *rostral coverage specifically*, not a random sample. The curator
+prints this before you start clicking. Making the threshold position-aware was considered and
+rejected: it would start keeping rostral debris on the grounds that rostral is expected to be
+small, and "under 2.5 mm2 of contiguous tissue" is an honest statement about measurability at any
+position.
+
+**A proposal is not a decision, and the state model keeps them apart.** The curator stores a
+tri-state - no decision, explicitly excluded, explicitly kept - so an unreviewed proposal never
+looks like a confirmed one. The export records `decision` as auto / manual / restored, and
+`04a_reformat.py` prints what fraction of proposals were overruled. Without that split, "how often
+was the automatic rule wrong" would be unanswerable.
+
+**Cost:** localStorage key bumped to v3, with a migration. v2 wrote `x:false` on every touched
+section, which under the tri-state rule would read as "explicitly kept" and silently suppress the
+proposal on every section that had ever been rotated. The migration drops those and keeps the
+rotations.
+
+---
+
 ## 2026-08-12 - Manual exclusion of damaged sections; free-angle overrides were being discarded
 
 **Changed:** `04d_rotation_curator.py` gains right-click (or `x`) exclusion, an excluded counter
