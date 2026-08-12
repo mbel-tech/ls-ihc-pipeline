@@ -9,6 +9,44 @@ where things landed, not which plausible-looking route was tried and abandoned, 
 
 ---
 
+## 2026-08-12 - 04f and 04g re-run on the curated 841: the manual pass validates cleanly
+
+**Changed:** nothing in the code. `04f_exclusion_candidates.py` and `04g_artifact_mask.py` re-run
+now that `reformat_index.csv` holds the curated 841, so both outputs describe the sections actually
+in play rather than a superset.
+
+**The manual curation holds up against the automatic screen.** Of 841 kept sections, **10 (1.2%)**
+still trip `04f`'s rules - down from 154 of 1,381 (11.2%). The whole size distribution moved up:
+
+| percentile | before (1,381) | after (841) |
+|---|---|---|
+| p0.5 | 0.16 mm² | 1.54 mm² |
+| p5 | 1.49 mm² | 4.98 mm² |
+| p50 | 19.12 mm² | 24.14 mm² |
+
+Sections with no piece at all above 0.5 mm²: **31 → 2**.
+
+This is not the screen agreeing with itself - `04f` measures the source overviews and knows nothing
+about which sections were kept. It is independent evidence that the manual pass removed the
+fragments and the unmeasurable frames.
+
+**The 10 residuals are worth a second look, listed rather than acted on.** Five fail on tissue
+amount alone (1.0-2.4 mm², plus `LS69_s06b_sc10` at 0.13 mm² which is specks), three fail on both,
+and two fail on focus alone - including **`LS22_s05b_sc06`, 54.15 mm² of tissue at focus 0.066**,
+which is a large intact-looking section with no resolvable nuclear detail. Rendered to
+`qc/exclusion/kept_but_flagged.png`. These stay in unless the operator says otherwise.
+
+**Artifacts on the curated set:** 768 of 841 (91%) carry at least one, 2,034 compact and 826
+elongated objects, median **0.640%** of tissue masked, p95 1.611%, max 4.44%. The affected fraction
+rose from 83% to 91% because the sections that had no detectable artifacts were largely the empty
+and fragmentary ones now excluded.
+
+**Housekeeping, not done:** `artifacts/` still holds 1,381 mask PNGs, 540 of them orphans from
+excluded sections. Left in place - they are regenerable and nothing reads them, since
+`artifact_summary.csv` has 841 rows.
+
+---
+
 ## 2026-08-12 - Curated rotations and exclusions applied: 841 sections kept, 540 excluded
 
 **Changed:** the operator's curated `rotation_overrides.csv` applied via
