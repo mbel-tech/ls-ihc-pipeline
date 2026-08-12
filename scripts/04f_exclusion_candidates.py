@@ -1,4 +1,4 @@
-"""Stage 4f - propose sections that hold no measurable tissue.
+"""Stage 4f - propose sections that cannot be measured.
 
 The curator lets you exclude sections by hand. Doing that by eye across 1,381
 sections is slow and, worse, inconsistent: the twelfth animal gets judged by a
@@ -13,15 +13,28 @@ carries the numbers that produced each call, and every one is reversible with a
 right-click. Torn-but-substantial sections are *not* proposed - that is a
 judgement about how much damage is too much, and it belongs to the eye.
 
-The measure, and two that were tried and rejected
-------------------------------------------------
+Two failure modes, kept separate
+-------------------------------
 
-**Kept: largest connected tissue component, in mm2.** Measured on the source
-overview at a known 5.20 um/px, so it is a physical size rather than a fraction
-of a hand-drawn scan box. A section reduced to debris has no piece of any real
-size, whatever threshold you pick, because the specks are physically small. On
-the eight sections used to set this up the separation was an order of magnitude:
-0.1-0.2 mm2 for debris-only frames against 1.8-7.2 mm2 for real tissue.
+**`no_tissue` - largest connected tissue component below 2.5 mm2.** Measured on
+the source overview at a known 5.20 um/px, so it is a physical size rather than
+a fraction of a hand-drawn scan box. A section reduced to debris has no piece of
+any real size, whatever threshold you pick, because specks are physically small.
+On hand-labelled examples the separation was clean: 0.8-1.9 mm2 for debris-only
+frames against 4.0-11.6 mm2 for real tissue.
+
+**`out_of_focus` - focus_score below 0.070.** Tissue is present, sometimes a lot
+of it, but there is no resolvable nuclear detail, so no cell can be counted in
+it. This class exists because of the artifact taxonomy in Jurgas et al. 2024
+(see REFERENCES.md), which lists focus as one of six standard whole-slide-image
+artifact types. Looking for it found **51 sections the area rule was keeping**,
+up to 54 mm2 of tissue each - large, complete-looking sections that are entirely
+smooth, with the tile mosaic showing through where nuclei should be.
+
+The threshold was placed by rendering sections in 0.01-wide focus bands and
+asking where granularity appears: 0.050-0.070 is smooth with no visible nuclei,
+and from 0.070 up granularity is plainly there. The two classes overlap on only
+8 sections, so they really are measuring different things.
 
 **Rejected: solidity** (mask area / convex hull area). It looked principled and
 it is actively wrong here. A transverse brain section at telencephalic level is
@@ -80,10 +93,16 @@ REPORT_DIR = os.path.join(OUT_ROOT, "qc", "exclusion")
 UM_PX = 5.20e-3        # mm per pixel in the overviews - verified constant, all 222 files
 PIECE_MIN_MM2 = 0.5    # a "piece" of tissue rather than a speck
 
-# The single proposal rule, placed inside the gap that separated hand-labelled
+# Rule 1 - not enough tissue. Placed inside the gap that separated hand-labelled
 # good sections (4.0-11.6 mm2) from debris-only frames (0.8-1.9 mm2), not at a
 # round number chosen in advance.
 LARGEST_MIN_MM2 = 2.5
+
+# Rule 2 - tissue present but not resolvable. Placed by rendering sections in
+# 0.01-wide focus bands and looking for where nuclear granularity appears:
+# 0.050-0.070 is smooth, with the tile mosaic showing through and no visible
+# nuclei; from 0.070 up, granularity is plainly there. See LOGS.md.
+FOCUS_MIN = 0.070
 
 
 def measure(path):
@@ -143,10 +162,14 @@ def main():
     args = ap.parse_args()
     os.makedirs(REPORT_DIR, exist_ok=True)
 
-    chan = {}
+    chan, focus = {}, {}
     with open(QC_CSV, newline="", encoding="utf-8") as fh:
         for r in csv.DictReader(fh):
             chan[r["scene_uid"]] = r["marker_channel"]
+            try:
+                focus[r["scene_uid"]] = float(r["focus_score"])
+            except (KeyError, ValueError):
+                pass
 
     with open(os.path.join(REFORMAT_DIR, "reformat_index.csv"), newline="", encoding="utf-8") as fh:
         index = [r for r in csv.DictReader(fh) if r["kind"] == "section"]
@@ -158,7 +181,8 @@ def main():
         m = measure(src)
         if m is None:
             continue
-        m.update(uid=r["id"], animal=r["animal"], section_order=int(r["section_order"]))
+        m.update(uid=r["id"], animal=r["animal"], section_order=int(r["section_order"]),
+                 focus_score=round(focus.get(r["id"], float("nan")), 4))
         rows.append(m)
         if (i + 1) % 100 == 0:
             print(f"\r  measured {i + 1}/{len(index)}", end="")
@@ -168,9 +192,24 @@ def main():
 
     largest = np.array([r["largest_mm2"] for r in rows])
     for r in rows:
-        r["proposed"] = int(r["largest_mm2"] < LARGEST_MIN_MM2) if not args.survey else 0
-        r["reason"] = (f"no tissue piece larger than {r['largest_mm2']:.2f} mm2 "
-                       f"(threshold {LARGEST_MIN_MM2:.1f})") if r["proposed"] else ""
+        # Two independent failure modes, reported separately. "Not enough tissue"
+        # and "tissue you cannot resolve" are different problems with different
+        # causes, and lumping them would hide that the second one exists at all.
+        cls = []
+        if r["largest_mm2"] < LARGEST_MIN_MM2:
+            cls.append(("no_tissue",
+                        f"no tissue piece larger than {r['largest_mm2']:.2f} mm2 "
+                        f"(threshold {LARGEST_MIN_MM2:.1f})"))
+        f = r.get("focus_score", float("nan"))
+        if np.isfinite(f) and f < FOCUS_MIN:
+            cls.append(("out_of_focus",
+                        f"no resolvable nuclear detail (focus {f:.3f}, "
+                        f"threshold {FOCUS_MIN:.3f})"))
+        if args.survey:
+            cls = []
+        r["proposed"] = int(bool(cls))
+        r["artifact_class"] = "+".join(c for c, _ in cls)
+        r["reason"] = "; ".join(t for _, t in cls)
 
     n_prop = sum(r["proposed"] for r in rows)
 
@@ -186,6 +225,13 @@ def main():
     print()
     if not args.survey:
         print(f"proposed for exclusion: {n_prop} ({100 * n_prop / len(rows):.1f}%)")
+        by_class = {}
+        for r in rows:
+            if r["artifact_class"]:
+                by_class[r["artifact_class"]] = by_class.get(r["artifact_class"], 0) + 1
+        for c, n in sorted(by_class.items(), key=lambda kv: -kv[1]):
+            print(f"    {c:<22} {n:>4}")
+        print()
         per = {}
         for r in rows:
             if r["proposed"]:
@@ -200,8 +246,8 @@ def main():
     print("=" * 74)
 
     out = os.path.join(REFORMAT_DIR, "exclusion_candidates.csv")
-    keys = ["uid", "animal", "section_order", "proposed", "reason",
-            "largest_mm2", "total_mm2", "n_pieces", "frame_mm2"]
+    keys = ["uid", "animal", "section_order", "proposed", "artifact_class", "reason",
+            "largest_mm2", "total_mm2", "n_pieces", "focus_score", "frame_mm2"]
     with open(out, "w", newline="", encoding="utf-8") as fh:
         w = csv.DictWriter(fh, fieldnames=keys, extrasaction="ignore")
         w.writeheader()
@@ -224,10 +270,13 @@ def montage(rows, n):
 
     sec_dir = os.path.join(REFORMAT_DIR, "sections")
     prop = sorted((r for r in rows if r["proposed"]), key=lambda r: -r["largest_mm2"])[:n]
+    blur = sorted((r for r in rows if r["artifact_class"] == "out_of_focus"),
+                  key=lambda r: -r["focus_score"])[:n]
     keep = sorted((r for r in rows if not r["proposed"]), key=lambda r: r["largest_mm2"])[:n]
 
     for name, sel, title in (
             ("proposed", prop, "PROPOSED for exclusion - largest first (closest to the cut)"),
+            ("out_of_focus", blur, "PROPOSED: out of focus only - sharpest first (closest to the cut)"),
             ("kept_borderline", keep, "KEPT - smallest first (just above the cut)")):
         if not sel:
             continue

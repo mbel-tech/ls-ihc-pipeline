@@ -129,6 +129,45 @@ pipeline keeps every judgement auditable and every threshold explicit rather tha
 
 ---
 
+## Whole-slide-image artifact QC
+
+> Jurgas A, Wodzinski M, D'Amato M, van der Laak J, Atzori M, Müller H (2024).
+> **Improving quality control of whole slide images by explicit artifact augmentation.**
+> *Scientific Reports* 14:17847. https://doi.org/10.1038/s41598-024-68667-2
+> [github.com/Jarartur/HistopathologyAugmentationResearch](https://github.com/Jarartur/HistopathologyAugmentationResearch)
+
+**Adopted: the artifact taxonomy, not the method.** The paper's six standard WSI artifact classes
+are *air* (bubbles), *dust* (debris), *tissue* (folds), *ink*, *marker*, and *focus*. Four of the
+six exist in this dataset; ink and marker do not, because those are chromogenic/brightfield
+problems and these are fluorescence scans.
+
+Reading that list is what prompted checking **focus** as an exclusion class separate from tissue
+amount — `04f_exclusion_candidates.py` had only a "not enough tissue" rule. The check found **51
+sections, up to 54 mm² of tissue each, with no resolvable nuclear detail**, every one of which the
+area rule was keeping and would have sent to cell counting. The taxonomy earned its place by
+naming a failure mode that was being missed.
+
+**Not adopted: the augmentation pipeline or the released weights.** Three reasons, in order of
+weight:
+
+1. **Modality.** The method blends annotated artifacts into H&E and chromogenic IHC — RGB
+   brightfield. Reinhard colour normalisation for ink transfer, stain-invariant segmentation and
+   a ResNet50 over colour patches all assume colour. This dataset is 16-bit fluorescence, one
+   channel at a time, on black.
+2. **Their own generalisation result.** Table 3 reports that the model *"does not generalize well
+   to a new dataset"*, with the lack of significance confirmed by Wilcoxon tests. Taking the
+   released weights and running them on salmonid fluorescence would be a much larger domain shift
+   than the one that already failed.
+3. **Cost against benefit.** Reported gains are 0.01–0.10 AUROC, they used A100s, and this machine
+   has no CUDA. The geometric rules here already flag 154 of 1,381 sections with a montage that
+   can be checked in minutes.
+
+**Corroborates a method already in use.** Synthesising training data by transforming a small
+annotated set is the same principle taken from DeepSlice for the atlas-plate variant bank in
+`04c_atlas_match.py`. Two independent groups reaching for it is worth noting in the methods.
+
+---
+
 ## Other tools named in the above, not yet evaluated
 
 | | |

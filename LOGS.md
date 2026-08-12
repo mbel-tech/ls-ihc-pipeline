@@ -9,6 +9,54 @@ where things landed, not which plausible-looking route was tried and abandoned, 
 
 ---
 
+## 2026-08-12 - An artifact taxonomy from the literature found 51 unmeasurable sections we were keeping
+
+**Changed:** `04f_exclusion_candidates.py` gains a second, independent proposal class,
+`out_of_focus` (focus_score < 0.070), alongside `no_tissue` (largest piece < 2.5 mm²). Proposals go
+from 103 to 154 of 1,381. `artifact_class` and `focus_score` are now columns in
+`exclusion_candidates.csv`.
+
+**Why:** reading Jurgas et al. 2024 (*Sci Rep* 14:17847), whose six-class WSI artifact taxonomy is
+air / dust / tissue-fold / ink / marker / **focus**. The exclusion rule here had only a
+tissue-amount test. Focus was not on the list because nobody had thought to put it there.
+
+**What the check found.** `focus_score` has been computed in `qc/focus.csv` since Stage 1 and was
+never used for anything. Two tests:
+
+*Test 1, per-animal robust z:* **zero** sections more than 3.5 MADs below their animal's median
+that were not already proposed. That result reads as "no blur problem" and is misleading - the
+distribution is smooth and continuous, so a MAD-outlier test finds nothing even when the bottom of
+the range is unusable.
+
+*Test 2, render the extremes:* decisive. The lowest-focus sections are smooth and textureless with
+the tile mosaic showing through where nuclei should be. **Looking at the images contradicted the
+statistic.**
+
+Threshold placed by rendering 0.01-wide bands and asking where nuclear granularity appears:
+0.050-0.060 and 0.060-0.070 are smooth with no visible nuclei; 0.070-0.080 and above plainly have
+it. Cut at **0.070**, flagging 51 sections *that the area rule keeps* - large, complete-looking
+sections, up to **54 mm² of tissue**, with no measurable cellular detail. All 51 were headed for
+cell counting.
+
+The two classes overlap on only 8 sections, so they are genuinely independent failure modes and
+are reported separately rather than merged into one exclusion count.
+
+**Not adopted from the paper: its actual method.** The augmentation pipeline blends annotated
+artifacts into H&E and chromogenic IHC using Reinhard colour normalisation and a ResNet50 over RGB
+patches - all of which assume colour, where this is 16-bit fluorescence on black. Their Table 3
+reports the model *"does not generalize well to a new dataset"* with Wilcoxon tests confirming the
+lack of significance, and salmonid fluorescence is a far larger domain shift than the one that
+already failed. Gains are 0.01-0.10 AUROC and they trained on A100s; this machine has no CUDA.
+
+**Cost:** none in runtime - `focus_score` was already computed and sitting unused.
+
+**Worth noting for the write-up:** ink and marker, two of the paper's six classes, cannot occur in
+this dataset. Of the remaining four, air bubbles and debris are visible in the montages and are
+currently caught only indirectly, when they leave too little real tissue behind. Folds are not
+detected at all and remain a manual judgement.
+
+---
+
 ## 2026-08-12 - Pre-select empty sections; two plausible measures thrown away first
 
 **Changed:** new `04f_exclusion_candidates.py` proposes sections with no measurable tissue;
