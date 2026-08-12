@@ -9,6 +9,55 @@ where things landed, not which plausible-looking route was tried and abandoned, 
 
 ---
 
+## 2026-08-12 - Curated rotations and exclusions applied: 841 sections kept, 540 excluded
+
+**Changed:** the operator's curated `rotation_overrides.csv` applied via
+`04a_reformat.py --apply-overrides`. 806 rotations, 540 exclusions. `reformat_index.csv` now holds
+**841 sections**. Separately, `04a` now records sections that were *not* excluded but failed to
+survive anyway.
+
+**Why that last change.** Two paths in the reformat loop were silent `continue`s - a missing
+overview PNG, and a mask that could not be formed. Either removed a section from the analysis with
+no record, indistinguishable from a deliberate exclusion. The operator's instruction was that
+everything not excluded must be kept, which is exactly the guarantee those two lines could break.
+They now append to `lost_sections.csv` and print a block that is hard to miss. **This run: zero
+lost**, and the file was not written.
+
+**Verified rather than assumed:**
+
+| check | result |
+|---|---|
+| sections in index | 841 = 1381 − 540 |
+| excluded sections still present | 0 |
+| kept-in-CSV sections missing | 0 |
+| silently dropped | 0 |
+
+**The operator excluded far more than the machine proposed: 509 manual against 154 proposed.** That
+is the conservative design working as intended - `04f` only ever flagged sections with no
+measurable tissue or no resolvable detail, and left "how much damage is too much" to the eye, which
+is where it belongs. Of the automatic proposals that were reviewed, **10 of 41 were overruled
+(24%)**, which is the honest false-positive rate for that rule on reviewed cases.
+
+**Exclusion is not uniform across animals and this needs watching.** Rates run from 28% (LS37) to
+59% (LS136), a 31-point spread:
+
+| | LS22 | LS37 | LS45 | LS53 | LS61 | LS69 | LS85 | LS87 | LS105 | LS120 | LS136 | LS138 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| kept | 64 | 83 | 95 | 74 | 75 | 69 | 66 | 58 | 82 | 74 | 48 | 53 |
+| % excluded | 37 | 28 | 33 | 36 | 47 | 38 | 36 | 47 | 32 | 33 | 59 | 44 |
+
+Every animal retains 48-95 sections, so nothing is lost outright. But if exclusion rate turns out
+to correlate with experimental group at unblinding, that is a bias in the comparison, not a
+curiosity - it goes on the list with the AF568 saturation split to check the moment the key is
+joined.
+
+**Now stale and needing a re-run:** `04c_atlas_match.py` and anything downstream of it, because the
+reformatted masks and the section set both changed. `04h`'s symmetry proposals are moot - the
+rotations are now decided. `04f` and `04g` outputs are still *correct* per section, since they
+measure the original overviews, but they now describe a superset of the sections in play.
+
+---
+
 ## 2026-08-12 - Colab GPU notebook for the cleaning stages, with delete-after-verify
 
 **Changed:** new `colab/` — `ls_gpu_preprocess.py` (the module), `build_notebook.py` (generates the

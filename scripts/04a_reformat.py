@@ -294,6 +294,7 @@ def main():
         secs = [r for r in csv.DictReader(fh) if r["marker_channel"] == args.marker]
     ok = 0
     n_excluded = 0
+    lost = []
     for i, r in enumerate(secs):
         # Excluded sections are dropped here rather than filtered later, so
         # nothing downstream can accidentally pick them up: they simply do not
@@ -303,11 +304,17 @@ def main():
             continue
         src = os.path.join(OVERVIEW_DIR, r["animal"], r["marker_channel"],
                            r["scene_uid"] + "_DAPI.png")
+        # A section that was NOT excluded must survive, or it must be reported.
+        # Both of these used to be silent `continue`s, so a missing overview or a
+        # failed mask removed a section from the analysis with no record at all -
+        # indistinguishable from a deliberate exclusion.
         if not os.path.exists(src):
+            lost.append((r["scene_uid"], "overview PNG missing"))
             continue
         extra, flip = overrides.get(r["scene_uid"], (0.0, False))
         out = reformat(src, light_background=False, extra_angle=extra, flip=flip)
         if out is None:
+            lost.append((r["scene_uid"], "no tissue mask could be formed"))
             continue
         img, mask, angle = out
         Image.fromarray(img).save(os.path.join(sec_dir, r["scene_uid"] + ".png"))
@@ -341,6 +348,21 @@ def main():
     if fills and pfills:
         print(f"tissue fill  sections median {np.median(fills):.3f} | plates median {np.median(pfills):.3f}")
         print("  these should now be comparable - they were not before reformatting")
+    if lost:
+        # Loud, and written out, because these are sections the operator chose to
+        # KEEP that did not make it through anyway.
+        path = os.path.join(REFORMAT_DIR, "lost_sections.csv")
+        with open(path, "w", newline="", encoding="utf-8") as fh:
+            w = csv.writer(fh); w.writerow(["scene_uid", "reason"]); w.writerows(lost)
+        print()
+        print("!" * 74)
+        print(f"{len(lost)} section(s) were NOT excluded but still did not survive:")
+        for uid, why in lost[:15]:
+            print(f"    {uid:<24} {why}")
+        if len(lost) > 15:
+            print(f"    ... and {len(lost) - 15} more")
+        print(f"  full list: {path}")
+        print("!" * 74)
     if n_excluded:
         print(f"excluded {n_excluded} section(s) marked as too damaged in the curator;")
         print(f"  the list is in {os.path.join(REFORMAT_DIR, 'excluded_sections.csv')}")
