@@ -9,6 +9,64 @@ where things landed, not which plausible-looking route was tried and abandoned, 
 
 ---
 
+## 2026-08-12 - UniFORM assessed, and it led to a correction of our own AF568 diagnosis
+
+**Changed:** REFERENCES.md gains UniFORM (Wang et al. 2025, *Cell Rep Methods* 5:101172). No code
+change. What changed is the **diagnosis of the AF568 problem**, and it needed correcting.
+
+**The method.** Normalise by aligning the **negative population** - the leftmost mode of the
+log-intensity histogram - across samples by maximum cross-correlation. Non-parametric, feature and
+pixel level, Python, open source. It answers the hardest open problem here: with no tERK and no
+negative control, *the non-expressing population within each image is the control*. Its critique of
+mean division - unstable on right-skewed heterogeneous data - applies to this dataset directly.
+
+**Testing its premise produced a finding that contradicts what this log said earlier.** Measuring
+background level per animal on AF568 showed what looked like a clean two-group batch effect:
+
+| group | animals | background | clipping |
+|---|---|---|---|
+| LOW | LS45, LS61, LS37, LS22, LS120, LS136, LS87 | 10,661-12,305 | median 0.00004 |
+| HIGH | LS85, LS105, LS69, LS53, LS138 | 21,037-22,215 | median 0.10136 |
+
+The gap between groups is **8,732** against within-group spreads of 1,643 and 1,178 - binary, not a
+gradient. It looked like five animals stained or imaged at roughly double the gain.
+
+**That reading is wrong, and the check that showed it was restricting to clip-free sections:**
+
+| | LOW | HIGH |
+|---|---|---|
+| background | 10,844 | 12,300 |
+| tissue | 5,542 | 5,494 |
+| tissue / background | 0.52 | 0.50 |
+
+**On sections that do not clip, the two groups are the same.** The 1.86x background gap across all
+sections is produced *by the clipping* - pixels pinned at 65,535 drag the measured mean up. There is
+no gain difference to correct, and therefore nothing for UniFORM's multiplicative factor to remove.
+
+**So the AF568 problem is information loss, not miscalibration, and that is worse.** A gain
+difference is correctable; clipped pixels have lost their value permanently. Restated honestly: the
+contrast inversion is real and universal, but the five-animal split previously described as a
+staining-batch difference is a *consequence of clipping*, not a separate effect.
+
+**The number that now matters - clip-free pERK sections among the curated 718:**
+
+| | LS22 | LS37 | LS45 | LS53 | LS61 | LS69 | LS85 | LS87 | LS105 | LS120 | LS136 | LS138 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| curated | 62 | 85 | 80 | 13 | 53 | 65 | 68 | 51 | 68 | 70 | 50 | 53 |
+| clip-free | 22 | 32 | 23 | **0** | 16 | 14 | **1** | 16 | 8 | 27 | 15 | 9 |
+| under 1% clipped | 62 | 67 | 55 | **0** | 53 | 24 | **3** | 49 | 28 | 70 | 27 | 16 |
+
+**183 of 718 (25%) are clip-free; 454 (63%) are under 1% clipped.** LS53 has none and LS85 has one,
+so a strictly clip-free pERK analysis loses two animals outright. A 1% tolerance keeps ten animals
+but still excludes LS53 and LS85.
+
+**Recommendation:** treat clipped pixels as censored rather than dropping whole sections, and adopt
+UniFORM's *method* - align the negative population, do not divide by a mean - at Stage 5/6 on raw
+16-bit per-object intensities. It cannot run on the overviews, which are 8-bit and display-ranged
+per section, destroying the very comparability it operates on.
+
+---
+
 ## 2026-08-12 - AF568 path added to 04a and 04g; both channels now cleaned
 
 **Changed:** `--marker AF568` through `04a_reformat.py` and `04g_artifact_mask.py`, and both run.

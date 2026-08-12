@@ -129,6 +129,48 @@ pipeline keeps every judgement auditable and every threshold explicit rather tha
 
 ---
 
+## Immunofluorescence normalisation — UniFORM
+
+> Wang K, Ait-Ahmad K, Kupp S, Sims Z, Cramer E, Sayar Z, Yu J, Wong MH, Mills GB, Eksi SE,
+> Chang YH (2025). **Toward universal immunofluorescence normalization for multiplex tissue
+> imaging with UniFORM.** *Cell Reports Methods* 5(9):101172.
+> https://doi.org/10.1016/j.crmeth.2025.101172 ·
+> [github.com/kunlunW/UniFORM](https://github.com/kunlunW/UniFORM)
+
+Normalises marker intensity by **aligning the negative population** — the leftmost mode of the
+log-intensity histogram, inferred without any phenotyping — across samples, by maximum
+cross-correlation. Non-parametric, works at feature and pixel level, Python, open source.
+
+**Directly relevant to the hardest open problem here.** This project has no tERK channel and no
+negative control, so the plan falls back on DAPI density and a reference region. UniFORM supplies a
+third internal reference and a better-founded one: **the non-expressing population within each
+image is the control**. Its critique of the alternatives lands on this dataset specifically —
+mean division "relies on the arithmetic mean, which can be unstable in right-skewed, heterogeneous
+marker distributions", and Z score / ComBat assume symmetry that fluorescence does not have.
+
+Its consequence also matches a principle already in the plan: once distributions are aligned, **one
+uniform gating threshold works across the whole dataset**, removing the per-sample thresholds this
+pipeline has refused to use since Stage 1.
+
+**Two reasons it cannot simply be run here.**
+
+*It corrects a multiplicative factor, and the problem measured on AF568 is not multiplicative.*
+UniFORM applies linear normalisation factors — a shift in log space — and its own limitations
+section notes this suits IF but not chromogenic assays. Testing the AF568 batch split here on
+**clip-free sections only**, the two apparent groups turn out to be nearly identical: background
+10,844 vs 12,300, tissue 5,542 vs 5,494, tissue/background 0.52 vs 0.50. The 1.86x gap seen across
+all sections is an artefact of **ceiling clipping**, not a gain difference. There is no
+multiplicative factor to remove.
+
+*It needs raw intensities.* The overviews here are 8-bit with per-section display ranging applied,
+which destroys exactly the cross-section comparability UniFORM operates on. It belongs at Stage 5/6
+on 16-bit data, not on the overview PNGs.
+
+**Adopted as method, deferred as software:** normalise by aligning the negative population rather
+than dividing by a mean, and apply it to raw per-object intensities once detection exists.
+
+---
+
 ## Immunofluorescence artifact QC — QUALIFAI
 
 > Andhari MD, Rinaldi G, Nazari P, Vets J, Shankar G, Dubroja N, Ostyn T, Vanmechelen M,
