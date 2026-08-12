@@ -25,6 +25,45 @@ only the pristine plate systematically under-scores the correct one.
 Ordering remains a monotonic dynamic program: serial sections cannot run
 backwards along the brain.
 
+DOES NOT WORK - measured, and the reason is in the data
+=======================================================
+
+Run on the curated 841 sections this produces a median score of 0.688, and the
+assignments are **not informative about rostro-caudal level**. Three measurements
+say so:
+
+1. **Correlation between a section's serial order and its best-matching plate:
+   -0.05, 0.00, 0.17, -0.04** across four animals. Effectively zero. Each section
+   picks a plate confidently - only 2-3 plates tie within 0.02 of the best, and
+   the best is 0.185 above a typical plate - and those picks spread over 71-87 of
+   the 101 plates. Confident, well spread, and unrelated to where the section
+   actually came from.
+
+2. **Silhouettes barely change along the brain.** In LS45 the median IoU between
+   *adjacent* sections is 0.595; between sections *30 apart* it is 0.551. A gap
+   of 0.044 over thirty sections is not something a matcher can exploit.
+
+3. The monotonic DP therefore collapses - many sections onto few plates - and a
+   step-cost prior does not rescue it, because there is no signal to order.
+
+**What the shape normalisation costs.** `04a` square-pads and resizes every
+section to 256x256, which deletes absolute size. Size *does* carry position:
+correlation between section order and tissue area is 0.45 median across animals
+(LS138 0.84, LS37 0.72). That is a real cue thrown away - though at 0.45 it is
+too weak on its own to place a section to +/-1 plate.
+
+This is consistent with AnNoBrainer's stated limitation, already in
+REFERENCES.md: *DAPI is unlikely to register well against an H&E/Nissl atlas due
+to data sparsity and poor morphological correspondence.* The earlier IoU ceiling
+near 0.51 was the same problem, not a tuning failure.
+
+**The route that fits the data** is not better image matching. The sections are
+already in known serial order at uniform thickness, which is a far stronger
+constraint than their outlines: anchor a small number of levels per animal by eye
+and interpolate the rest by section number - the QUINT/VisuAlign shape of
+workflow. That is a curation task of a few minutes per brain rather than an
+unsolved vision problem.
+
 Run:  python 04c_atlas_match.py
       python 04c_atlas_match.py --animal LS45 --variants 12
 """
@@ -49,6 +88,13 @@ REPORT_DIR = os.path.join(OUT_ROOT, "qc", "atlasmatch")
 
 TOP_K = 4
 SEED = 20260812
+
+# Cost per plate of deviating from an even progression through the atlas.
+# Scores are IoU in [0, 1] and the median gap between the monotonic assignment
+# and the unconstrained best is ~0.03, so this is deliberately of that order:
+# big enough to stop the path standing still, small enough that a genuinely
+# better-matching plate still wins. Swept before choosing - see LOGS.md.
+STEP_WEIGHT = 0.02
 
 # Augmentation ranges. Deliberately modest: these model plausible differences
 # between a real section and its plate - a slightly oblique cut, a little
@@ -117,19 +163,41 @@ def score(section, bank):
     return max(iou(section, v) for v in bank)
 
 
-def best_path(sim):
-    """Monotonic assignment maximising total similarity."""
+def best_path(sim, step_weight=STEP_WEIGHT):
+    """Monotonic assignment maximising total similarity, with a cost on the step.
+
+    **This does not fix the collapse, and the docstring says so because the
+    measurement says so.** Without a step cost the path parks many sections on
+    one plate: LS120 put 74 sections on 8 plates with 43 on one, LS37 put 53 of
+    83 on a single plate. Adding the cost was the obvious remedy and it barely
+    moved anything - swept over 0 to 0.08, LS120 went from 8 plates to 12 and
+    LS37 got slightly *worse* (18 plates to 16).
+
+    The reason is upstream, and it is not a tuning problem. See the module
+    docstring: silhouette shape carries essentially no rostro-caudal signal in
+    this data, so the DP is imposing an order on noise. The step cost is kept
+    because it is the right prior and costs nothing, not because it works.
+    """
     n, m = sim.shape
+    if n < 2:
+        return np.array([int(np.argmax(sim[0]))], dtype=np.int32)
+
+    # Expected step: how fast this brain ought to move through the atlas,
+    # estimated from where its sections match best when unconstrained.
+    local = np.argmax(sim, axis=1)
+    span = float(np.percentile(local, 90) - np.percentile(local, 10))
+    s0 = max(span / max(n - 1, 1), 0.0)
+
+    steps = np.arange(m)[None, :] - np.arange(m)[:, None]      # step[k, j] = j - k
+    cost = np.where(steps < 0, -np.inf, -step_weight * np.abs(steps - s0))
+
     dp = np.full((n, m), -np.inf)
     back = np.zeros((n, m), dtype=np.int32)
     dp[0] = sim[0]
     for i in range(1, n):
-        run, arg = -np.inf, 0
-        for j in range(m):
-            if dp[i - 1, j] > run:
-                run, arg = dp[i - 1, j], j
-            dp[i, j] = sim[i, j] + run
-            back[i, j] = arg
+        cand = dp[i - 1][:, None] + cost                       # (from k) x (to j)
+        back[i] = np.argmax(cand, axis=0)
+        dp[i] = sim[i] + cand[back[i], np.arange(m)]
     path = np.zeros(n, dtype=np.int32)
     path[-1] = int(np.argmax(dp[-1]))
     for i in range(n - 1, 0, -1):

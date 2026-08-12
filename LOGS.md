@@ -9,6 +9,61 @@ where things landed, not which plausible-looking route was tried and abandoned, 
 
 ---
 
+## 2026-08-12 - 04c re-run, and it does not work: silhouette matching carries no level information
+
+**Changed:** `04c_atlas_match.py` re-run on the curated 841. `best_path` gained a step cost, and
+both docstrings were rewritten to state what was measured rather than what was hoped.
+
+**The re-run looked like an improvement and was not.** Median score rose 0.635 -> 0.688, every
+animal matched, plate spans looked plausible. Three measurements say the assignments are **not
+informative about rostro-caudal level**:
+
+| measurement | result |
+|---|---|
+| corr(section serial order, best-matching plate) | **-0.05, 0.00, 0.17, -0.04** across four animals |
+| plates tying within 0.02 of the best | only 2-3 of 101 |
+| best plate's margin over a typical plate | 0.185 |
+| spread of unconstrained best plates | 71-87 of 101 |
+
+So each section picks a plate *confidently and distinctly*, those picks spread across nearly the
+whole atlas, and they bear **no relationship to where the section actually came from**. A
+confident-looking match on a signal that is not there.
+
+**The direct evidence.** In LS45 the median silhouette IoU between *adjacent* sections is 0.595;
+between sections *thirty apart* it is 0.551. A 0.044 gap over thirty sections is nothing a matcher
+can exploit. Rendered to `qc/atlasmatch/no_shape_signal.png`.
+
+**The DP collapse was a symptom, not the bug.** LS120 put 74 sections on 8 plates with 43 on one;
+LS37 put 53 of 83 on a single plate. That looks like a dynamic-programming defect, and I wrote a
+step-cost prior expecting it to be the fix - **it was not**. Swept over 0 to 0.08: LS120 went from
+8 plates to 12, and LS37 got slightly *worse*, 18 plates to 16. With no ordering signal, forcing
+monotonicity onto noise has no good solution. The step cost is kept because it is the right prior
+and free, and its docstring now says plainly that it does not fix anything.
+
+**What the normalisation costs, measured.** `04a` square-pads and resizes every section to 256x256,
+deleting absolute size - and size *does* track position: correlation between section order and
+tissue area is **0.45 median** across animals (LS138 0.84, LS37 0.72, LS136 0.57). A real cue,
+discarded. At 0.45 it is too weak alone to place a section to +/-1 plate, but it should not have
+been thrown away.
+
+**This is consistent with prior art already cited here**, not a surprise in hindsight: AnNoBrainer
+states that *DAPI is unlikely to register well against an H&E/Nissl atlas due to data sparsity and
+poor morphological correspondence*. The earlier IoU ceiling near 0.51 was this same problem being
+read as a tuning failure.
+
+**Recommended route, not yet built.** Stop trying to identify level from images. The sections are
+already in known serial order at uniform thickness, which is a far stronger constraint than their
+outlines. Anchor a few levels per animal by eye and interpolate the rest by section number - the
+QUINT/VisuAlign shape of workflow, already listed in REFERENCES.md. A few minutes of curation per
+brain instead of an unsolved vision problem. **`atlas_proposals_v2.csv` should not be used for
+anything until that is done.**
+
+**Also found: 15 physical sections still appear under two scan variants** (LS45_s08b/_s08c,
+LS45_s09b/_s09c and others), so the same tissue is matched and would be counted twice. Stage 2
+chose a variant per section; 04c does not filter to it. Small, but it needs fixing before counting.
+
+---
+
 ## 2026-08-12 - 04f and 04g re-run on the curated 841: the manual pass validates cleanly
 
 **Changed:** nothing in the code. `04f_exclusion_candidates.py` and `04g_artifact_mask.py` re-run
