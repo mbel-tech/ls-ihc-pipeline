@@ -9,6 +9,47 @@ where things landed, not which plausible-looking route was tried and abandoned, 
 
 ---
 
+## 2026-08-12 - Manual exclusion of damaged sections; free-angle overrides were being discarded
+
+**Changed:** `04d_rotation_curator.py` gains right-click (or `x`) exclusion, an excluded counter
+and a hide toggle; the export grows an `excluded` column. `04a_reformat.py` skips excluded
+sections entirely and writes `reformatted/excluded_sections.csv`. Separately, the override
+*application* path was rewritten.
+
+**Why exclusion:** the user asked for it directly - "there are still some section that are too
+ruined and might only skew the data if included". Correct call: a torn or folded section is not a
+rotation problem, and averaging it into a group comparison adds noise dressed as evidence.
+
+**Where the exclusion is enforced matters.** It would have been easier to filter excluded sections
+at the point of quantification. Instead they are dropped in `04a`, so they never enter
+`reformat_index.csv` and therefore cannot reach matching, registration or counting - the later
+stages need no exclusion logic at all and cannot forget to apply it. `excluded_sections.csv` is
+written as the canonical list for stages that do not read the reformat index.
+
+**The bug this uncovered.** `apply_override()` did `k = (rotation // 90) % 4` and `np.rot90`. That
+was correct for the *previous* curator, which offered 90 degree steps. The curator has since gone
+free-angle at 1 degree resolution, and nothing updated this: a manual 37 degree correction would
+have been floored to 0 and **silently discarded**. Not an error, not a warning - the section would
+simply come back unrotated, and the user would have re-done the same work and watched it vanish
+again.
+
+Fixed by folding the manual angle into the automatic one and applying both in a single rotation,
+*after* the 180 degree resolution (so a manual 180 is not cancelled by the automatic one) and
+*before* the crop (so rotating by 37 degrees cannot push tissue corners outside the frame - the
+bounding box is recomputed afterwards). One interpolation instead of two, and no clipping.
+
+Verified on a real section: +37 gives mean |diff| 30.2 against the base render with tissue fill
+0.3335 -> 0.3542 and no new frame contact; +90 is bit-stable in fill, as an exact quadrant
+rotation should be.
+
+**Cost:** one extra mask rotation per section, at `order=0` on a binary array - negligible next to
+the image rotation it replaces.
+
+**Reverses:** the 90-degree-quantised `apply_override()` from the 2026-08-12 rotation curator
+entry, which was already stale when it was written.
+
+---
+
 ## 2026-08-12 - Robust intensity stretch; a removal sweep avoided
 
 **Changed:** `04a_reformat.py` stretches on median +/- MAD of in-tissue pixels instead of

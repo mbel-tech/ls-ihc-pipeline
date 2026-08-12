@@ -17,14 +17,28 @@ Interaction:
   section in red, so rotating to align is a direct visual comparison rather than
   a judgement made from memory. This is the whole reason fine rotation matters.
 
+  **right-click to exclude** a section that is too damaged to measure. Some
+  sections are torn or folded badly enough that including them would add noise
+  to a group comparison rather than evidence, and no amount of rotation fixes
+  that. Right-click again to bring one back; `x` does the same from the keyboard.
+  Excluded sections drop out of *everything* downstream, not just the rotation:
+  `04a_reformat.py` skips them, so they never enter `reformat_index.csv` and
+  therefore cannot reach matching, registration or quantification.
+
+  This is a judgement about tissue quality, made on the DAPI channel before any
+  marker signal has been looked at, and it is recorded per section with a reason
+  - so it stays a documented exclusion criterion rather than a silent one.
+
   a wall rather than a queue, because most sections are already close and the
   task is to spot and fix the ones that are not.
 
 Corrections are stored as a delta *on top of* the automatic angle, so improving
 the auto-rotation later does not invalidate the manual work.
 
-Output: `reformatted/rotation_overrides.csv` (scene_uid, extra_rotation, flip),
-read back by `04a_reformat.py --apply-overrides`.
+Output: `reformatted/rotation_overrides.csv` (scene_uid, extra_rotation, flip,
+excluded), read back by `04a_reformat.py --apply-overrides`, which also writes
+`reformatted/excluded_sections.csv` as the canonical exclusion list for stages
+that do not read the reformat index.
 
 Run:  python 04d_rotation_curator.py
       python 04d_rotation_curator.py --animal LS45 --thumb 190
@@ -66,6 +80,12 @@ button.on{border-color:var(--ok);color:var(--ok)}
 .cell:hover{border-color:var(--accent)}
 .cell.changed{border-color:var(--warn);background:#1a1610}
 .cell.active{border-color:var(--accent);box-shadow:0 0 0 2px rgba(77,163,255,.25)}
+.cell.excluded{border-color:#c0392b;background:#1c1010}
+.cell.excluded .stack{opacity:.32;filter:grayscale(1)}
+.cell.excluded .stack::after{content:"EXCLUDED";position:absolute;inset:0;display:flex;
+  align-items:center;justify-content:center;color:#ff6b5e;font:700 12px system-ui;
+  letter-spacing:.08em;pointer-events:none}
+body.hideexcl .cell.excluded{display:none}
 .stack{position:relative;width:100%;aspect-ratio:1;cursor:grab;overflow:hidden;border-radius:5px}
 .stack:active{cursor:grabbing}
 .stack img{position:absolute;inset:0;margin:auto;max-width:100%;max-height:100%}
@@ -84,6 +104,8 @@ kbd{display:inline-block;padding:1px 6px;border:1px solid var(--line);border-rad
   <button id="refBtn" onclick="toggleRef()">reference: off</button>
   <span class="row"><b id="count"></b> shown</span>
   <span class="row"><b id="changed"></b> adjusted</span>
+  <span class="row" style="color:#ff6b5e"><b id="excl"></b> excluded</span>
+  <button id="hideBtn" onclick="toggleHide()">hide excluded: off</button>
   <span class="row" id="live"></span>
   <span class="grow"></span>
   <button onclick="resetAll()">Reset visible</button>
@@ -94,7 +116,8 @@ kbd{display:inline-block;padding:1px 6px;border:1px solid var(--line);border-rad
   <kbd>drag</kbd> rotate freely (1&deg;) &middot;
   <kbd>shift+drag</kbd> snap 15&deg; &middot;
   <kbd>&larr;</kbd><kbd>&rarr;</kbd> nudge 1&deg; (hold shift for 10&deg;) &middot;
-  <kbd>f</kbd> flip &middot; <kbd>r</kbd> reset &middot; <kbd>0</kbd> zero &middot;
+  <kbd>right-click</kbd> exclude / restore &middot;
+  <kbd>f</kbd> flip &middot; <kbd>r</kbd> reset &middot; <kbd>0</kbd> zero &middot; <kbd>x</kbd> exclude &middot;
   changes autosave
 </footer>
 <script>
@@ -114,13 +137,34 @@ el("animal").innerHTML = ['<option value="">all animals</option>']
   .concat(animals.map(a => `<option>${a}</option>`)).join("");
 
 const save = () => localStorage.setItem(KEY, JSON.stringify(state));
-const get  = uid => state[uid] || {r:0, f:false};
+const get  = uid => state[uid] || {r:0, f:false, x:false};
+const isExcluded = uid => !!(state[uid] && state[uid].x);
 
-function setState(uid, r, f){
+function setState(uid, r, f, x){
   r = ((Math.round(r) % 360) + 360) % 360;
-  if(r === 0 && !f) delete state[uid]; else state[uid] = {r, f};
-  save(); paint(uid);
-  el("changed").textContent = Object.keys(state).length;
+  if(x === undefined) x = isExcluded(uid);
+  // Drop the entry only when it carries no information at all, so the export
+  // stays minimal but an exclusion is never silently lost.
+  if(r === 0 && !f && !x) delete state[uid]; else state[uid] = {r, f, x};
+  save(); paint(uid); counts();
+}
+
+function toggleExclude(uid){
+  const s = get(uid);
+  setState(uid, s.r, s.f, !s.x);
+}
+
+function counts(){
+  const vals = Object.values(state);
+  el("changed").textContent = vals.filter(v => v.r || v.f).length;
+  el("excl").textContent = vals.filter(v => v.x).length;
+}
+
+function toggleHide(){
+  document.body.classList.toggle("hideexcl");
+  const on = document.body.classList.contains("hideexcl");
+  el("hideBtn").textContent = "hide excluded: " + (on ? "on" : "off");
+  el("hideBtn").classList.toggle("on", on);
 }
 
 function paint(uid){
@@ -131,9 +175,11 @@ function paint(uid){
   // is being rotated INTO the atlas frame rather than both moving together.
   cell.querySelector(".sec").style.transform =
     `rotate(${s.r}deg) scaleX(${s.f ? -1 : 1})`;
-  cell.classList.toggle("changed", !!state[uid]);
+  const adjusted = !!(state[uid] && (s.r || s.f));
+  cell.classList.toggle("changed", adjusted && !s.x);
+  cell.classList.toggle("excluded", !!s.x);
   cell.querySelector(".tag").textContent =
-    state[uid] ? `${s.r}\\u00B0${s.f ? " flip" : ""}` : "";
+    s.x ? "" : (adjusted ? `${s.r}\\u00B0${s.f ? " flip" : ""}` : "");
 }
 
 // --- free rotation by dragging around the cell centre ------------------------
@@ -178,6 +224,7 @@ addEventListener("keydown", e => {
   else if(e.key === "f"){ setState(active, s.r, !s.f); }
   else if(e.key === "r"){ setState(active, 0, false); }
   else if(e.key === "0"){ setState(active, 0, s.f); }
+  else if(e.key === "x"){ toggleExclude(active); }
   if(active) el("live").textContent = `${active}: ${get(active).r}\\u00B0`;
 });
 
@@ -192,7 +239,7 @@ function render(){
   const a = el("animal").value;
   const rows = a ? DATA.filter(d => d.animal === a) : DATA;
   el("count").textContent = rows.length;
-  el("changed").textContent = Object.keys(state).length;
+  counts();
   el("wall").innerHTML = rows.map(d => `
     <div class="cell" data-uid="${d.uid}">
       <div class="stack${showRef?' showref':''}">
@@ -209,6 +256,7 @@ function render(){
     stack.addEventListener("pointermove", onMove);
     stack.addEventListener("pointerup", onUp);
     stack.addEventListener("pointercancel", onUp);
+    cell.addEventListener("contextmenu", e => { e.preventDefault(); setActive(d.uid); toggleExclude(d.uid); });
     paint(d.uid);
   });
 }
@@ -220,8 +268,8 @@ function resetAll(){
 }
 
 function exportCsv(){
-  const rows = [["scene_uid","extra_rotation","flip"]].concat(
-    Object.entries(state).map(([uid,s]) => [uid, s.r, s.f ? 1 : 0]));
+  const rows = [["scene_uid","extra_rotation","flip","excluded"]].concat(
+    Object.entries(state).map(([uid,s]) => [uid, s.r, s.f ? 1 : 0, s.x ? 1 : 0]));
   const b = new Blob([rows.map(r=>r.join(",")).join("\\n")], {type:"text/csv"});
   const a = document.createElement("a");
   a.href = URL.createObjectURL(b); a.download = "rotation_overrides.csv"; a.click();

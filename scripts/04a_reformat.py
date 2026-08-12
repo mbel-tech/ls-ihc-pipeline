@@ -124,8 +124,19 @@ def resolve_180(mask):
     return mask[: h // 2].sum() < mask[h // 2:].sum()
 
 
-def reformat(path, light_background):
-    """Return (normalised grayscale, normalised mask, angle applied)."""
+def reformat(path, light_background, extra_angle=0.0, flip=False):
+    """Return (normalised grayscale, normalised mask, angle applied).
+
+    `extra_angle` is the curator's manual correction, in degrees. It is folded
+    into the automatic angle and applied in the SAME rotation, for two reasons.
+
+    Interpolating twice would blur the image for no gain; more importantly, the
+    curator allows any angle, and rotating an already-cropped square frame by,
+    say, 40 degrees pushes the corners of the tissue outside it. Rotating before
+    the crop means the bounding box is recomputed afterwards and nothing is ever
+    clipped. The manual angle is added *after* the 180 degree resolution below,
+    so a manual 180 is not silently cancelled by the automatic one.
+    """
     try:
         img = Image.open(path).convert("L")
     except OSError:
@@ -137,15 +148,22 @@ def reformat(path, light_background):
         return None
 
     angle = principal_angle(mask)
-    # Rotate the mask and the image by the same angle; order=0 on the mask keeps
-    # it binary, order=1 on the image avoids blocking.
+    # The 180 decision needs the rotated mask, so rotate the mask alone first -
+    # order=0 on a binary array is cheap. The image is rotated once, afterwards,
+    # by the final combined angle.
+    probe = ndimage.rotate(mask.astype(np.uint8), angle, order=0, reshape=True) > 0
+    if probe.sum() < 100:
+        return None
+    if resolve_180(probe):
+        angle += 180.0
+    angle += extra_angle
+
     rot_mask = ndimage.rotate(mask.astype(np.uint8), angle, order=0, reshape=True) > 0
     rot_img = ndimage.rotate(work, angle, order=1, reshape=True)
     if rot_mask.sum() < 100:
         return None
-    if resolve_180(rot_mask):
-        rot_mask, rot_img = rot_mask[::-1, ::-1], rot_img[::-1, ::-1]
-        angle += 180.0
+    if flip:
+        rot_mask, rot_img = rot_mask[:, ::-1], rot_img[:, ::-1]
 
     ys, xs = np.nonzero(rot_mask)
     y0, y1, x0, x1 = ys.min(), ys.max() + 1, xs.min(), xs.max() + 1
@@ -200,22 +218,29 @@ def load_overrides():
     """
     path = os.path.join(REFORMAT_DIR, "rotation_overrides.csv")
     if not os.path.exists(path):
-        return {}
-    out = {}
+        return {}, set()
+    out, excluded = {}, set()
     with open(path, newline="", encoding="utf-8") as fh:
         for r in csv.DictReader(fh):
-            out[r["scene_uid"]] = (int(r["extra_rotation"] or 0), r["flip"] == "1")
-    print(f"loaded {len(out)} manual rotation override(s)")
-    return out
+            if r.get("excluded") == "1":
+                excluded.add(r["scene_uid"])
+                continue
+            # float, not int: the curator rotates freely to 1 degree, and an
+            # earlier version of this loader floored everything to a multiple
+            # of 90 - which would have thrown away the manual work silently.
+            out[r["scene_uid"]] = (float(r["extra_rotation"] or 0), r["flip"] == "1")
+    print(f"loaded {len(out)} rotation override(s), {len(excluded)} exclusion(s)")
 
-
-def apply_override(img, mask, rotation, flip):
-    k = (rotation // 90) % 4
-    if k:
-        img, mask = np.rot90(img, k), np.rot90(mask, k)
-    if flip:
-        img, mask = img[:, ::-1], mask[:, ::-1]
-    return np.ascontiguousarray(img), np.ascontiguousarray(mask)
+    # Exclusions are written out separately as the canonical list, so any stage
+    # can honour them without having to parse the curator's export format.
+    if excluded:
+        with open(os.path.join(REFORMAT_DIR, "excluded_sections.csv"),
+                  "w", newline="", encoding="utf-8") as fh:
+            w = csv.writer(fh)
+            w.writerow(["scene_uid", "reason"])
+            for uid in sorted(excluded):
+                w.writerow([uid, "manually excluded: tissue too damaged to measure"])
+    return out, excluded
 
 
 def main():
@@ -225,7 +250,7 @@ def main():
     ap.add_argument("--apply-overrides", action="store_true",
                     help="apply manual rotations from rotation_overrides.csv")
     args = ap.parse_args()
-    overrides = load_overrides() if args.apply_overrides else {}
+    overrides, excluded = load_overrides() if args.apply_overrides else ({}, set())
 
     sec_dir = os.path.join(REFORMAT_DIR, "sections")
     plate_dir = os.path.join(REFORMAT_DIR, "plates")
@@ -252,18 +277,23 @@ def main():
     with open(QC_CSV, newline="", encoding="utf-8") as fh:
         secs = [r for r in csv.DictReader(fh) if r["marker_channel"] == args.marker]
     ok = 0
+    n_excluded = 0
     for i, r in enumerate(secs):
+        # Excluded sections are dropped here rather than filtered later, so
+        # nothing downstream can accidentally pick them up: they simply do not
+        # appear in reformatted/ or in the index.
+        if r["scene_uid"] in excluded:
+            n_excluded += 1
+            continue
         src = os.path.join(OVERVIEW_DIR, r["animal"], r["marker_channel"],
                            r["scene_uid"] + "_DAPI.png")
         if not os.path.exists(src):
             continue
-        out = reformat(src, light_background=False)
+        extra, flip = overrides.get(r["scene_uid"], (0.0, False))
+        out = reformat(src, light_background=False, extra_angle=extra, flip=flip)
         if out is None:
             continue
         img, mask, angle = out
-        extra, flip = overrides.get(r["scene_uid"], (0, False))
-        if extra or flip:
-            img, mask = apply_override(img, mask, extra, flip)
         Image.fromarray(img).save(os.path.join(sec_dir, r["scene_uid"] + ".png"))
         np.save(os.path.join(sec_dir, r["scene_uid"] + "_mask.npy"), mask)
         rows.append({"kind": "section", "id": r["scene_uid"], "angle": round(angle, 1),
@@ -273,7 +303,8 @@ def main():
         ok += 1
         if (i + 1) % 200 == 0:
             print(f"\r  sections {i + 1}/{len(secs)}  ok {ok}", end="")
-    print(f"\rsections reformatted: {ok}/{len(secs)}          ")
+    print(f"\rsections reformatted: {ok}/{len(secs)}"
+          + (f"  ({n_excluded} manually excluded)" if n_excluded else "") + "          ")
 
     out_csv = os.path.join(REFORMAT_DIR, "reformat_index.csv")
     keys = ["kind", "id", "angle", "fill", "animal", "section_order", "regions",
@@ -294,7 +325,11 @@ def main():
     if fills and pfills:
         print(f"tissue fill  sections median {np.median(fills):.3f} | plates median {np.median(pfills):.3f}")
         print("  these should now be comparable - they were not before reformatting")
-    print("NEXT: 04b_atlas_match.py --reformatted")
+    if n_excluded:
+        print(f"excluded {n_excluded} section(s) marked as too damaged in the curator;")
+        print(f"  the list is in {os.path.join(REFORMAT_DIR, 'excluded_sections.csv')}")
+        print("  they are absent from reformat_index.csv, so no later stage can pick them up")
+    print("NEXT: 04c_atlas_match.py")
     print("=" * 72)
 
 
