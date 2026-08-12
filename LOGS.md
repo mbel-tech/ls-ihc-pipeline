@@ -9,6 +9,55 @@ where things landed, not which plausible-looking route was tried and abandoned, 
 
 ---
 
+## 2026-08-12 - Clipped pERK pixels censored; analysis set fixed at 1% tolerance
+
+**Changed:** new `04j_censor_clipped.py`. `04a_reformat.py` gains `--censor`, which carries the
+censor mask through the same geometry as the image and **never blanks it**. Written:
+`censor/<uid>_censor.png` for all 718 pERK sections, `<uid>_censor.npy` in the reformatted frame,
+and `reformatted/perk_analysis_set.csv`.
+
+**Censored is not masked, and the distinction is the point.** An artifact pixel is not tissue and
+leaves the analysis. A clipped pixel is real signal whose value is lost, so it is **right-censored**:
+true value unknown but at least the ceiling. Therefore
+
+* **exclude it from every intensity statistic** - mean, median, and the negative peak UniFORM
+  aligns on - because a floor value biases all of them downward;
+* **keep it for detection and positivity**, because a pixel at the ceiling is unambiguously
+  positive.
+
+Getting that backwards would bias positive rates *down* in exactly the animals with the brightest
+staining - turning a data-quality problem into a group difference. The script says so where someone
+would otherwise reach for the artifact mask by analogy.
+
+**The mask comes free, and only because of a coincidence worth recording.** `display_ranges.json`
+gives AF568 as `lo 1070, hi 65535` - the display high **is** the 16-bit ceiling - so in the exported
+8-bit marker overview, 255 means 16-bit >= 65535, exactly the clipped set. Verified against
+`saturated_fraction`, computed independently on 16-bit data at export: **median absolute difference
+0.00000** over 12 random sections. This does **not** generalise: DAPI (hi 27993) and AF488
+(hi 37263) have display highs below the ceiling, so 255 there means "at or above the display high",
+not "clipped".
+
+**Section level, 1% tolerance as instructed:** 454 of 718 pERK sections (63%) are in the analysis
+set; 264 set aside, recorded rather than deleted. Within the set the censored fraction is tiny -
+median 0.00003, p95 0.00078, max 0.00952 - and 183 sections have no censored pixels at all.
+
+**The cost, per animal:**
+
+| | LS22 | LS37 | LS45 | LS53 | LS61 | LS69 | LS85 | LS87 | LS105 | LS120 | LS136 | LS138 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| PCNA | 60 | 81 | 87 | 73 | 72 | 66 | 60 | 51 | 75 | 68 | 45 | 50 |
+| pERK | 62 | 67 | 55 | **0** | 53 | 24 | **3** | 49 | 28 | 70 | 27 | 16 |
+
+**788 sections for PCNA against 454 for pERK.** LS53 contributes nothing to pERK at this tolerance
+and LS85 contributes three, so the pERK comparison is effectively **ten animals, two of them
+thin** (LS138 16, LS69 24). That is a statement about achievable n, not about thresholds - no
+tolerance recovers LS53, whose sections are all clipped.
+
+Verified that adding the censor layer leaves the reformatted image and tissue mask **bit-identical**,
+and that censored pixels are not blanked.
+
+---
+
 ## 2026-08-12 - UniFORM assessed, and it led to a correction of our own AF568 diagnosis
 
 **Changed:** REFERENCES.md gains UniFORM (Wang et al. 2025, *Cell Rep Methods* 5:101172). No code

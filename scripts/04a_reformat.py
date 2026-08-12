@@ -124,6 +124,14 @@ def resolve_180(mask):
     return mask[: h // 2].sum() < mask[h // 2:].sum()
 
 
+def load_censor(uid, shape):
+    """04j's right-censored mask. Carried through the geometry, never blanked."""
+    p = os.path.join(OUT_ROOT, "censor", uid + "_censor.png")
+    if not os.path.exists(p):
+        return None
+    return np.asarray(Image.open(p).resize(shape, Image.NEAREST)) > 127
+
+
 def load_artifact(uid, shape):
     """04g's artifact mask, resized to the analysis grid. None when absent."""
     p = os.path.join(OUT_ROOT, "artifacts", uid + "_artifact.png")
@@ -133,7 +141,8 @@ def load_artifact(uid, shape):
     return np.asarray(a) > 0
 
 
-def reformat(path, light_background, extra_angle=0.0, flip=False, artifact=None):
+def reformat(path, light_background, extra_angle=0.0, flip=False, artifact=None,
+             censor=None):
     """Return (normalised grayscale, normalised mask, angle applied).
 
     `extra_angle` is the curator's manual correction, in degrees. It is folded
@@ -175,16 +184,24 @@ def reformat(path, light_background, extra_angle=0.0, flip=False, artifact=None)
     # image through rotation, crop and resize.
     rot_art = (ndimage.rotate(artifact.astype(np.uint8), angle, order=0, reshape=True) > 0
                if artifact is not None else None)
+    # Censored pixels ride the same geometry but are NEVER blanked: a clipped
+    # pixel is real signal whose value is lost, not an artifact to remove. See
+    # 04j_censor_clipped.py.
+    rot_cen = (ndimage.rotate(censor.astype(np.uint8), angle, order=0, reshape=True) > 0
+               if censor is not None else None)
     if flip:
         rot_mask, rot_img = rot_mask[:, ::-1], rot_img[:, ::-1]
         if rot_art is not None:
             rot_art = rot_art[:, ::-1]
+        if rot_cen is not None:
+            rot_cen = rot_cen[:, ::-1]
 
     ys, xs = np.nonzero(rot_mask)
     y0, y1, x0, x1 = ys.min(), ys.max() + 1, xs.min(), xs.max() + 1
     crop_m = rot_mask[y0:y1, x0:x1]
     crop_i = np.where(rot_mask, rot_img, 0.0)[y0:y1, x0:x1]
     crop_a = rot_art[y0:y1, x0:x1] if rot_art is not None else None
+    crop_c = rot_cen[y0:y1, x0:x1] if rot_cen is not None else None
 
     # Square-pad rather than stretch, so aspect - which is real shape
     # information - survives the resize.
@@ -193,11 +210,14 @@ def reformat(path, light_background, extra_angle=0.0, flip=False, artifact=None)
     pm = np.zeros((side, side), bool)
     pi = np.zeros((side, side), np.float32)
     pa = np.zeros((side, side), bool)
+    pc = np.zeros((side, side), bool)
     oy, ox = (side - h) // 2, (side - w) // 2
     pm[oy:oy + h, ox:ox + w] = crop_m
     pi[oy:oy + h, ox:ox + w] = crop_i
     if crop_a is not None:
         pa[oy:oy + h, ox:ox + w] = crop_a
+    if crop_c is not None:
+        pc[oy:oy + h, ox:ox + w] = crop_c
 
     out_m = np.asarray(Image.fromarray(pm.astype(np.uint8) * 255).resize((GRID, GRID), Image.BILINEAR)) > 127
 
@@ -241,7 +261,9 @@ def reformat(path, light_background, extra_angle=0.0, flip=False, artifact=None)
     # up to full intensity on a 190 px artifact. Zeroing before the resize alone
     # leaves the artifact faintly visible in exactly the place it was removed.
     out_i = np.where(out_a, 0, out_i).astype(np.uint8)
-    return out_i, out_m, angle % 360.0, out_a
+    out_c = np.asarray(Image.fromarray(pc.astype(np.uint8) * 255)
+                       .resize((GRID, GRID), Image.NEAREST)) > 127
+    return out_i, out_m, angle % 360.0, out_a, out_c
 
 
 def marker_paths(marker):
@@ -323,6 +345,8 @@ def main():
     ap.add_argument("--preview", type=int, default=8)
     ap.add_argument("--marker", default="AF488", choices=["AF488", "AF568"],
                     help="AF488 = PCNA (default), AF568 = pERK")
+    ap.add_argument("--censor", action="store_true",
+                    help="carry 04j clipped-pixel censor masks through the geometry")
     ap.add_argument("--mask-artifacts", action="store_true",
                     help="blank 04g artifact pixels in the reformatted output")
     ap.add_argument("--apply-overrides", action="store_true",
@@ -345,7 +369,7 @@ def main():
         out = reformat(os.path.join(PLATE_DIR, p["image_file"]), light_background=True)
         if out is None:
             continue
-        img, mask, angle, _ = out
+        img, mask, angle, _, _ = out
         Image.fromarray(img).save(os.path.join(plate_dir, p["plate_id"] + ".png"))
         np.save(os.path.join(plate_dir, p["plate_id"] + "_mask.npy"), mask)
         rows.append({"kind": "plate", "id": p["plate_id"], "angle": round(angle, 1),
@@ -377,17 +401,21 @@ def main():
             continue
         extra, flip = overrides.get(r["scene_uid"], (0.0, False))
         art = load_artifact(r["scene_uid"], (WORK_SIZE, WORK_SIZE)) if args.mask_artifacts else None
+        cen = load_censor(r["scene_uid"], (WORK_SIZE, WORK_SIZE)) if args.censor else None
         if args.mask_artifacts and art is None:
             no_mask.append(r["scene_uid"])
-        out = reformat(src, light_background=False, extra_angle=extra, flip=flip, artifact=art)
+        out = reformat(src, light_background=False, extra_angle=extra, flip=flip,
+                       artifact=art, censor=cen)
         if out is None:
             lost.append((r["scene_uid"], "no tissue mask could be formed"))
             continue
-        img, mask, angle, amask = out
+        img, mask, angle, amask, cmask = out
         Image.fromarray(img).save(os.path.join(sec_dir, r["scene_uid"] + ".png"))
         np.save(os.path.join(sec_dir, r["scene_uid"] + "_mask.npy"), mask)
         if args.mask_artifacts:
             np.save(os.path.join(sec_dir, r["scene_uid"] + "_artifact.npy"), amask)
+        if args.censor:
+            np.save(os.path.join(sec_dir, r["scene_uid"] + "_censor.npy"), cmask)
         rows.append({"kind": "section", "id": r["scene_uid"], "angle": round(angle, 1),
                      "fill": round(float(mask.mean()), 4),
                      "animal": r["animal"], "section_order": r["section_order"],

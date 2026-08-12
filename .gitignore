@@ -46,3 +46,4 @@ artifacts/
 # Only run outputs are not.
 colab/out/
 colab/*.csv
+censor/
