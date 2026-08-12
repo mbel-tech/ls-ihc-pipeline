@@ -9,6 +9,50 @@ where things landed, not which plausible-looking route was tried and abandoned, 
 
 ---
 
+## 2026-08-12 — Illumination field measured from raw tiles
+
+**Changed:** new `01h_tilefield_raw.py`. Samples raw per-tile pixels via czifile, takes a
+per-pixel median across thousands of them, then maps that tile-domain field into the stitched
+domain by reading the real tile rectangles and M indices and applying the documented overlap rule
+(highest M wins).
+
+**Why:** `01f_tilefield.py` could only fold *stitched* sections, so anatomy had to be divided out
+first and the stitcher's overlap behaviour was baked in. It got the artifact from 18% to 14.7% —
+real, but short of the 6% target. A median across raw tiles *is* the illumination profile, with
+no baseline model and no folding assumption, because tissue sits at a random position relative to
+the tile frame.
+
+**Cost:** czifile, and a geometry derivation to relate a 2040 px tile field to an 1836 px pitch.
+The derivation checks out: it reports 11% of a pitch cell coming from a tile's trailing region,
+and 204/1836 = 11.1%.
+
+**Not yet promoted.** Written as `tilefield_raw_<CHANNEL>.npy`, deliberately not under the
+`tilefield_c{0,1}` names the apply path reads. At 60 tiles the AF568 field spans 0.44–2.53, which
+is not an illumination profile — it is an unconverged median. AF568's background outshines its
+tissue, so individual tiles are dominated by whatever sits behind the section. Needs far more
+tiles before it is trustworthy, and must pass `01c` at prominence < 2.0× before replacing
+anything.
+
+**Bug found while doing this:** the apply path loads `tilefield_c1` as "the marker channel of
+this file", which silently gives AF568 and AF488 files the *same* correction despite measurably
+different fields. The new script names fields by channel so that cannot happen.
+
+---
+
+## 2026-08-12 — Made every path portable
+
+**Changed:** `run_all.sh` derives `SCRIPTS`, `ROOT` and `LOGS` from its own location, with
+environment overrides; it exports `LS_CONFIG`, which the Groovy scripts now read because Groovy
+cannot resolve its own script path.
+
+**Why:** five files carried hardcoded `D:/LS-analysis` and `C:/Users` paths, which made the
+published repository unusable by anyone else.
+
+**How it was nearly missed:** the first verification grep used broken shell escaping and reported
+clean. The check was only trustworthy once re-run with a pattern that demonstrably matched.
+
+---
+
 ## 2026-08-12 — Split CZI readers by provenance, not speed
 
 **Changed:** `pylibCZIrw` is the reader for every pixel whose value reaches a result. `czifile`
