@@ -9,6 +9,47 @@ where things landed, not which plausible-looking route was tried and abandoned, 
 
 ---
 
+## 2026-08-12 — Curation GUIs: the pipeline proposes, the user adjudicates
+
+**Changed:** two local HTML curators, on the working pattern agreed with the user.
+`01j_build_curator.py` asks how many brain sections are in each ambiguous scene;
+`04b_atlas_match.py` proposes a rostro-caudal atlas plate per section and offers the top
+candidates side by side.
+
+**Why:** several judgements here are anatomical, not computational. Whether two blobs are one
+telencephalic section's lobes or two stacked sections cannot be settled by geometry without
+encoding a guess about salmonid neuroanatomy. Better to propose, let the user decide, and
+calibrate the rule on their answers.
+
+**Design points that matter:** both order the queue **most-ambiguous-first**, so attention goes
+where it changes the outcome. Both autosave to localStorage, so a closed tab costs nothing. Data
+is embedded in the HTML rather than fetched, because a browser on a `file://` page will not fetch
+a sibling JSON. Atlas assignment is constrained **monotonic** via dynamic programming — serial
+sections cannot run backwards along the brain, so a correction improves its neighbours too.
+
+**Two silhouette bugs, both found only by rendering what the code actually saw:**
+
+*Atlas plates came out as thin rims.* They are dark tissue on a light background; inverting and
+taking a high percentile selects the darkest pixels, which are the section's *edges*, discarding
+the body. Fixed by treating anything meaningfully darker than the background as tissue, then
+filling.
+
+*Sections came out as scattered speckle.* Those DAPI overviews are faint against black, and a
+percentile threshold on a mostly-black frame picks bright specks. Fixed with log-space Otsu, as
+everywhere else in this pipeline, then filling and dropping small components.
+
+**How it was caught:** the orientation search reported all eight dihedral transforms scoring
+within 0.014 of each other. That is not a weak signal — if rotation changes nothing, there is no
+shape to rotate. Mean best IoU went 0.284 → **0.563** once fixed, and weak matches fell from
+141/141 to 57/141.
+
+**Worth noting:** the aspect statistics had suggested a real 90° mounting mismatch (plates 2.07,
+sections 0.86). After the fix, `identity` wins the orientation search — the mismatch was an
+artifact of the broken silhouettes. Solving for the transform rather than hardcoding the
+plausible-looking `rot90` is what kept that from becoming a permanent silent error.
+
+---
+
 ## 2026-08-12 — Normalised metrics promoted to primary; raw pERK demoted
 
 **Changed:** the Stage 6 hierarchy is now explicit. **DAPI-normalised and reference-region
