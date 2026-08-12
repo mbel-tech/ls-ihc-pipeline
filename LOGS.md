@@ -9,6 +9,49 @@ where things landed, not which plausible-looking route was tried and abandoned, 
 
 ---
 
+## 2026-08-12 - Curation propagated from the PCNA scans to the paired pERK scans
+
+**Changed:** new `04i_propagate_to_perk.py`. Writes `reformatted/perk_overrides.csv`: 473
+exclusions transferred and **661 rotations re-derived**, with an alignment IoU per section.
+
+**The three kinds of decision transfer differently and were handled separately.** Exclusions are a
+property of the physical section, so they go straight through `pairs.csv`. Rotations cannot be
+copied - `extra_rotation` is a correction on top of `04a`'s automatic angle, and that angle differs
+between the two scans because the scan boxes differ - so they are re-derived by alignment.
+Artifacts are properties of the imaged field and the two scans image different fields, so they are
+not propagated at all; `04g` should be run on the pERK overviews directly.
+
+**A first attempt failed, and the reason is worth keeping.** Aligning the two *reformatted* masks
+gave a median IoU of **0.548** with flips winning a third of the time. The reformat crops each scan
+to its own tissue bounding box and resizes to 256x256, so when the two scan boxes contain different
+amounts of debris the tissue ends up at **different scales** - and no rotation can fix a scale
+mismatch. Rebuilt to align on a shared **physical** grid instead: both overviews are at a verified
+5.20 um/px, so downsampling both by 4 leaves only rotation and translation free. Translation is
+handled for every offset at once by the same FFT identity used in `04h`. Median IoU **0.548 ->
+0.785**, p90 0.930, p99 0.970.
+
+**Flipping is measured and deliberately never applied.** Scored during development it won on 18.5%
+of sections, which tripped the script's own warning. Investigated rather than accepted: the flip
+advantage is a median of **0.0056 IoU**, with 96% of wins under 0.05 - coin tosses on
+near-symmetric shapes. Two scans of one section on one slide cannot be mirror images, and a
+spurious flip would **swap left and right hemispheres in the pERK data relative to PCNA**, which is
+precisely what a lateralisation result would be read off. The margin is kept as a reported column;
+the correction is not applied.
+
+**Result:** median alignment IoU 0.785, **87% at or above 0.55**. Per-animal medians run 0.653
+(LS136) to 0.876 (LS22). Checked by eye at each animal's median - the orientations match. The worst
+cases (IoU 0.16-0.23) are sections where the pERK scan caught only wisps against substantial tissue
+in the PCNA scan; those are either bad pairings or genuinely different captures and need a human.
+
+**Coverage, unchanged:** 127 of the 788 curated sections have no pERK partner at all, so the pERK
+analysis starts from **661 sections** against 788 for PCNA - and LS53 contributes 13.
+
+**Still to do for a pERK measurement:** reformat the pERK scans with these overrides, then run
+`04g` on them for their own artifact masks. Both need a `--marker AF568` path through `04a` and
+`04g`, which currently default to AF488.
+
+---
+
 ## 2026-08-12 - Marker identity resolved: AF568 = pERK, AF488 = PCNA. The damaged channel is pERK.
 
 **Changed:** `config.json` `marker_identity` filled in on the operator's confirmation - **AF568 =
