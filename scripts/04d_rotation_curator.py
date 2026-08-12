@@ -263,7 +263,13 @@ function render(){
 
 function resetAll(){
   const a = el("animal").value;
-  (a ? DATA.filter(d => d.animal === a) : DATA).forEach(d => delete state[d.uid]);
+  const rows = a ? DATA.filter(d => d.animal === a) : DATA;
+  // Exclusions are quality judgements made by eye and are expensive to redo, so
+  // clearing them gets a confirmation that says how many. Rotations alone go
+  // without one - they are cheap to re-drag.
+  const nx = rows.filter(d => isExcluded(d.uid)).length;
+  if(nx && !confirm(`This also clears ${nx} exclusion${nx>1?"s":""}${a?" for "+a:""}. Continue?`)) return;
+  rows.forEach(d => delete state[d.uid]);
   save(); render();
 }
 
@@ -331,6 +337,13 @@ def main():
     print("Arrow keys nudge the last-touched section by 1 degree, 10 with shift.")
     print("Turn the reference on to see the proposed atlas plate behind it in red -")
     print("only the section rotates, so you are turning it into the atlas frame.")
+    print()
+    print("Right-click (or 'x') marks a section as too damaged to measure.")
+    print("Excluded sections are skipped by 04a_reformat.py, so they never reach")
+    print("matching, registration or counting - not filtered out later, absent.")
+    print()
+    print("Export when done, save next to this file, then:")
+    print("  python 04a_reformat.py --apply-overrides")
 
 
 if __name__ == "__main__":
