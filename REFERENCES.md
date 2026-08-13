@@ -231,6 +231,74 @@ which is what Stage 5b already earmarks Colab for.
 
 ---
 
+## Slice-to-atlas registration tools
+
+Three tools aimed at the problem this project has not solved: assigning each section an atlas level
+and propagating regions onto it. **None can be run against the salmon atlas**, and one of them was
+tested here and fails on this data for a measurable reason.
+
+### SHARCQ — Lauridsen et al. 2022
+
+> Lauridsen K, Ly A, Prévost ED, McNulty C, McGovern DJ, Tay JW, Dragavon J, Root DH (2022).
+> **A semi-automated workflow for brain slice histology alignment, registration, and cell
+> quantification (SHARCQ).** *eNeuro* 9(2):ENEURO.0483-21.2022.
+> [github.com/wildrootlab/SHARCQ](https://github.com/wildrootlab/SHARCQ)
+
+MATLAB GUI derived from SHARP-Track. Allen Brain Atlas or the digitised Franklin-Paxinos atlas.
+
+**The important thing about it is what it does *not* automate.** The user "must scroll to the
+correct AP coordinate and DV/ML tilt" by eye, then press `t` and click **numbered corresponding
+points** between the Slice Viewer and the Atlas Viewer; points can be added or deleted until the
+overlay looks right. What SHARCQ automates is the landmark **registration**, the warping of the
+cell-location matrix through the same transform (`Warp_ROI.m`), and the per-region cell counts.
+
+So the published, peer-reviewed tool for exactly this task **selects the matching atlas slice
+manually**. That is worth stating plainly: automatic level assignment is not the standard here, and
+this project's failure to achieve it is not unusual.
+
+**Adoptable:** the workflow shape - assign the plate, place a few corresponding landmarks, warp the
+atlas regions onto the section, count within them. Not the code: MATLAB, and bound to a 3D rodent
+atlas we do not have an equivalent of.
+
+### giRAff — Piluso et al. 2024
+
+> Piluso S, Souedet N, Jan C, Hérard A-S, et al. (2024). **giRAff: an automated atlas segmentation
+> tool adapted to single histological slices.** *Frontiers in Neuroscience* 17:1230814.
+
+Estimates a single slice's z-position in the atlas volume by registering it against every candidate
+template slice with **linear registration by Block Matching using a cross-correlation similarity**
+metric, then taking the optimum. Explicitly designed for single slices without anatomical context -
+our situation - and runs in about a minute per slice.
+
+**Tested on this data, and it does not work.** giRAff differs from `04c` in scoring *registered
+image intensity* rather than silhouette overlap, so it was the one real untested idea. Built a
+regional cell-density map per section (rim eroded, interior re-stretched, smoothed to suppress
+pixel noise) and per plate, scored by normalised cross-correlation, and measured the same rank
+correlation between serial order and best-matching plate that condemned `04c`:
+
+| animal | n | direct | inverted |
+|---|---|---|---|
+| LS45 | 87 | −0.18 | −0.06 |
+| LS120 | 68 | 0.00 | −0.11 |
+| LS22 | 60 | −0.02 | 0.09 |
+
+Against `04c`'s silhouette figures of −0.05, 0.00, 0.17, −0.04. **No improvement, in either
+polarity.** Interior intensity carries no more level information here than shape does.
+
+Two reasons, both visible in `qc/atlasmatch/interior_structure.png`: the interior *does* carry real
+architecture - the periventricular cell layer is clear - but it is contaminated by the **uncorrected
+tile mosaic grid**, a strong periodic pattern identical in every section; and DAPI at 5.20 µm/px
+does not resolve the lamination the Nissl plates show. Making giRAff's approach viable would need
+the tile flat-field fixed (unresolved since Stage 1) and re-extraction at 0.65-1.3 µm/px.
+
+### DeepSlice — already assessed
+
+See below. A CNN trained on ~920k virtual mouse sections rendered from a **volumetric** template.
+There is no salmon volume to render from - the atlas here is 101 discrete plates from a book - so
+there is no training set to build, before considering that the network is mouse-specific.
+
+---
+
 ## Brain symmetry-axis detection
 
 Three papers, all aimed at finding the mid-sagittal / midline axis. **Only the shape-based idea

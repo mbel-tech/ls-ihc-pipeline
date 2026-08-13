@@ -9,6 +9,48 @@ where things landed, not which plausible-looking route was tried and abandoned, 
 
 ---
 
+## 2026-08-13 - SHARCQ, giRAff and DeepSlice assessed; giRAff's method tested and it fails here
+
+**Changed:** REFERENCES.md gains all three. No code change - this records an assessment and a
+measurement.
+
+**None can be run against the salmon atlas.** SHARCQ is MATLAB bound to the Allen or
+Franklin-Paxinos 3D atlas; DeepSlice is a CNN trained on ~920k virtual sections rendered from a
+volumetric mouse template, and there is no salmon volume to render from - the atlas here is 101
+discrete plates from a book; giRAff needs the Allen template volume.
+
+**giRAff was the one genuinely untested idea, and it was tested.** It differs from `04c` in scoring
+*registered image intensity* by cross-correlation rather than silhouette overlap. Built a regional
+cell-density map per section - rim eroded, interior re-stretched, smoothed - and per plate, then
+measured the same rank correlation between serial order and best-matching plate:
+
+| animal | n | direct | inverted |
+|---|---|---|---|
+| LS45 | 87 | -0.18 | -0.06 |
+| LS120 | 68 | 0.00 | -0.11 |
+| LS22 | 60 | -0.02 | 0.09 |
+
+Against `04c`'s silhouette figures of -0.05, 0.00, 0.17, -0.04. **No improvement in either
+polarity.** Interior intensity carries no more level information here than shape does, so the
+failure is not specific to silhouettes - it is the pairing of this DAPI with these Nissl plates.
+
+**Two identified causes, and both are fixable in principle.** The interior *does* carry real
+architecture - the periventricular cell layer is obvious in `qc/atlasmatch/interior_structure.png` -
+but it is contaminated by the **uncorrected tile mosaic grid**, a strong periodic pattern identical
+in every section, which adds a constant similarity floor. And DAPI at 5.20 um/px does not resolve
+the lamination the Nissl plates show. Making the giRAff route viable would need the tile flat-field
+fixed - open since Stage 1, where the raw-tile estimate never converged - and re-extraction at
+0.65-1.3 um/px. That is a substantial piece of work with no guarantee.
+
+**The most useful thing in the three papers is what SHARCQ does not automate.** Its user "must
+scroll to the correct AP coordinate and DV/ML tilt" by eye, then clicks numbered corresponding
+points between the slice and the atlas. What it automates is the landmark registration, warping the
+cell-location matrix through the same transform, and counting per region. **The published tool for
+this exact task selects the matching slice manually.** Automatic level assignment is not the
+standard, and this project not achieving it is not unusual.
+
+---
+
 ## 2026-08-12 - Atlas level curator: anchor a few sections, interpolate the rest
 
 **Changed:** new `04k_level_curator.py`, writing `reformatted/level_curator.html`. 788 sections,
