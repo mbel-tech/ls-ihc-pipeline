@@ -1,0 +1,434 @@
+"""Stage 4l - assign a plate, place landmarks, warp the atlas regions onto the section.
+
+This is SHARCQ's workflow (Lauridsen et al. 2022, eNeuro), rebuilt for the salmon
+atlas. SHARCQ cannot be used directly - MATLAB, and bound to the Allen or
+Franklin-Paxinos 3D atlas - but its shape is the right one, and the important
+thing about it is what it does **not** automate: its user "must scroll to the
+correct AP coordinate and DV/ML tilt" by eye, then clicks numbered corresponding
+points between the slice and the atlas. What it automates is the landmark
+registration, the warping, and the per-region counting.
+
+That matters here because automatic level assignment has now been measured to
+fail twice on this data, for a reason in the data rather than in the algorithm:
+
+  * `04c`, silhouette IoU: correlation between serial order and best-matching
+    plate is -0.05, 0.00, 0.17, -0.04;
+  * giRAff's method, registered-intensity cross-correlation: -0.18 to +0.09 in
+    both polarities.
+
+See REFERENCES.md. The published tool for this exact task picks the plate by
+hand, so this does too.
+
+Interaction
+-----------
+
+  **Scrub the plate slider** until the plate matches the section, then **click
+  matching points** - once on the section, once on the plate, alternating. Three
+  pairs are the minimum for an affine; more improves it.
+
+  From three pairs on, the atlas **region seeds are warped live onto the section**
+  in their atlas colours. That is the actual deliverable: it shows immediately
+  whether the registration is placing Dl, Dm, Vv and POA where they belong, which
+  is the only check that matters.
+
+  The residual per landmark is shown, so a mis-clicked pair is visible as a large
+  error rather than quietly degrading the fit.
+
+Scope, deliberately bounded
+---------------------------
+
+**Only 24 of the 101 plates carry region seeds** - plate_009 to plate_032,
+telencephalon and POA, 316 seeds over 8 regions (Dl 142, Dm 114, Vv 16, POA 16,
+Vd 10, Vl 10, Vs 4, Vc 4). A section assigned to any other plate has no regions to
+receive, so the tool marks those plates and there is no reason to place landmarks
+on such a section. The working subset is therefore self-selecting: it is whatever
+lands in that 24-plate window.
+
+Why an affine, and not something richer
+---------------------------------------
+
+Three or more clicked pairs determine an affine by least squares. A thin-plate
+spline through the same points would fit them exactly and look better, which is
+the problem: with 3-6 landmarks it would also invent deformation between them
+that nothing measured. SHARCQ uses the same class of transform from the same kind
+of input. `04e_register_elastix.py` remains available for a B-spline refinement
+once a plate assignment exists and is trusted.
+
+**The plate is shown in its ORIGINAL form, not reformatted.** The seeds are
+recorded as fractions of the original plate, so using the original avoids
+carrying them through the reformat's rotate-crop-pad-resize chain - a transform
+that `04e` notes is not invertible from the index alone.
+
+Output: `reformatted/roi_landmarks.csv` - one row per landmark pair, plus the
+plate assignment - and `reformatted/roi_regions.csv`, the warped seed positions in
+the section's reformatted frame.
+
+Run:  python 04l_roi_curator.py
+      python 04l_roi_curator.py --animal LS45
+"""
+
+import argparse
+import csv
+import json
+import os
+
+CONFIG_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config.json")
+with open(CONFIG_PATH, encoding="utf-8") as _fh:
+    CONFIG = json.load(_fh)
+
+OUT_ROOT = CONFIG["out_root"]
+REFORMAT_DIR = os.path.join(OUT_ROOT, "reformatted")
+INDEX_CSV = os.path.join(REFORMAT_DIR, "reformat_index.csv")
+PLATE_DIR = os.path.join(OUT_ROOT, "atlas", "plates")
+CURATOR_HTML = os.path.join(REFORMAT_DIR, "roi_curator.html")
+
+PAGE = """<!doctype html>
+<meta charset="utf-8"><title>ROI curator</title>
+<style>
+:root{--bg:#14161a;--fg:#e8e8ea;--dim:#9aa0a8;--line:#2a2f37;--accent:#4da3ff;
+      --ok:#3fb950;--warn:#d29922;--done:#7c5cff}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 system-ui,sans-serif}
+header{position:sticky;top:0;z-index:9;background:var(--bg);border-bottom:1px solid var(--line);
+       padding:9px 14px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+h1{font-size:15px;margin:0;font-weight:600}.grow{flex:1}
+.row{color:var(--dim)}.row b{color:var(--fg)}
+button,select{background:#1c2027;color:var(--fg);border:1px solid var(--line);border-radius:7px;
+       padding:6px 10px;cursor:pointer;font:inherit}
+button:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#04121f;font-weight:600}
+#panes{display:grid;grid-template-columns:1fr 1fr 250px;gap:12px;padding:12px}
+.pane{position:relative;background:#0e1014;border:1px solid var(--line);border-radius:9px;
+      overflow:hidden}
+.pane h2{position:absolute;top:6px;left:8px;margin:0;font-size:11px;color:var(--dim);
+         z-index:3;pointer-events:none;text-shadow:0 0 6px #000}
+canvas{display:block;width:100%;cursor:crosshair}
+#side{display:flex;flex-direction:column;gap:9px}
+.card{border:1px solid var(--line);border-radius:9px;padding:9px;background:#0e1014}
+.card h3{font-size:11px;margin:0 0 5px;color:var(--dim);font-weight:600;letter-spacing:.04em}
+.kv{font-size:12px;color:var(--dim)}.kv b{color:var(--fg)}
+input[type=range]{width:100%}
+.unlab{color:var(--warn);font-size:11px}
+.lab{color:var(--ok);font-size:11px}
+#lmlist{font:11px ui-monospace,monospace;color:var(--dim);max-height:150px;overflow-y:auto}
+#lmlist div{display:flex;justify-content:space-between}
+#lmlist .bad{color:#ff6b5e}
+#strip{display:flex;gap:4px;overflow-x:auto;padding:8px 14px;border-top:1px solid var(--line);
+       background:#101318}
+.cell{flex:0 0 auto;width:74px;border:2px solid var(--line);border-radius:6px;padding:2px;
+      background:#0e1014;cursor:pointer;user-select:none}
+.cell:hover{border-color:var(--accent)}
+.cell.active{border-color:var(--accent);box-shadow:0 0 0 2px rgba(77,163,255,.3)}
+.cell.done{border-color:var(--done);background:#141026}
+.cell img{width:100%;aspect-ratio:1;object-fit:contain;display:block;border-radius:3px}
+.cap{font-size:9px;color:var(--dim);text-align:center;line-height:1.15;margin-top:1px}
+footer{position:sticky;bottom:0;background:var(--bg);border-top:1px solid var(--line);
+       padding:8px 14px;font-size:12px;color:var(--dim)}
+kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-radius:4px;
+    background:#1c2027;font:600 11px ui-monospace,monospace}
+</style>
+<header>
+  <h1>ROI curator</h1>
+  <select id="animal" onchange="render()"></select>
+  <span class="row"><b id="nsec"></b> shown</span>
+  <span class="row" style="color:#7c5cff"><b id="ndone"></b> registered</span>
+  <span class="row"><b id="npair"></b> pairs on this section</span>
+  <span class="row" id="fit"></span>
+  <span class="grow"></span>
+  <button onclick="undoPt()">Undo point</button>
+  <button onclick="clearPts()">Clear points</button>
+  <button class="primary" onclick="exportCsv()">Export</button>
+</header>
+<div id="panes">
+  <div class="pane"><h2>SECTION - click to place a point</h2>
+    <canvas id="cSec" onclick="clickSec(event)"></canvas></div>
+  <div class="pane"><h2>ATLAS PLATE - click the matching point</h2>
+    <canvas id="cPl" onclick="clickPl(event)"></canvas></div>
+  <div id="side">
+    <div class="card"><h3>SECTION</h3><div class="kv" id="secInfo">-</div></div>
+    <div class="card"><h3>PLATE</h3>
+      <input type="range" id="slider" min="0" max="0" value="0" oninput="onSlide(this.value)">
+      <div class="kv"><b id="plName">-</b></div>
+      <div id="plLab"></div>
+    </div>
+    <div class="card"><h3>LANDMARKS</h3>
+      <div class="kv" id="lmHint">click section, then plate</div>
+      <div id="lmlist"></div>
+    </div>
+    <div class="card"><h3>REGIONS WARPED</h3>
+      <div class="kv" id="regInfo">needs 3 pairs</div></div>
+  </div>
+</div>
+<div id="strip"></div>
+<footer>
+  <kbd>click</kbd> section then plate to add a pair &middot;
+  <kbd>&larr;</kbd><kbd>&rarr;</kbd> plate &middot; <kbd>u</kbd> undo &middot;
+  <kbd>n</kbd>/<kbd>p</kbd> next / previous section &middot;
+  3 pairs minimum for an affine &middot;
+  <span style="color:#7c5cff">purple</span> = registered &middot; autosaves
+</footer>
+<script>
+const DATA = __DATA__;      // [{uid, animal, order, img}]
+const PLATES = __PLATES__;  // [{id, img, w, h, labelled, seeds:[{region,xf,yf,hex}]}]
+const KEY = "ls_roi_curator_v1";
+let S = JSON.parse(localStorage.getItem(KEY) || "{}");   // uid -> {plate, pairs:[[sx,sy,px,py]]}
+let active = null, pending = null;   // pending section point awaiting its plate partner
+const el = id => document.getElementById(id);
+const save = () => localStorage.setItem(KEY, JSON.stringify(S));
+const animals = [...new Set(DATA.map(d=>d.animal))].sort((a,b)=>+a.slice(2)-+b.slice(2));
+el("animal").innerHTML = animals.map(a=>`<option>${a}</option>`).join("");
+el("slider").max = PLATES.length-1;
+const rows = () => DATA.filter(d=>d.animal===el("animal").value).sort((a,b)=>a.order-b.order);
+const st = uid => S[uid] || (S[uid] = {plate: 0, pairs: []});
+
+const secImg = new Image(), plImg = new Image();
+secImg.onload = drawSec; plImg.onload = drawPl;
+
+// ---- affine from >=3 correspondences, least squares ------------------------
+// A thin-plate spline would fit the clicked points exactly and invent
+// deformation between them that nothing measured. With 3-6 landmarks an affine
+// is the honest transform, and it is the class SHARCQ uses from the same input.
+function solve3(A, b){
+  const M = A.map((r,i)=>[...r, b[i]]);
+  for(let c=0;c<3;c++){
+    let p=c; for(let r=c+1;r<3;r++) if(Math.abs(M[r][c])>Math.abs(M[p][c])) p=r;
+    if(Math.abs(M[p][c])<1e-12) return null;
+    [M[c],M[p]]=[M[p],M[c]];
+    for(let r=0;r<3;r++){ if(r===c) continue;
+      const f=M[r][c]/M[c][c]; for(let k=c;k<4;k++) M[r][k]-=f*M[c][k]; }
+  }
+  return [M[0][3]/M[0][0], M[1][3]/M[1][1], M[2][3]/M[2][2]];
+}
+function affine(pairs){          // plate (px,py) -> section (sx,sy)
+  if(pairs.length < 3) return null;
+  const N=[[0,0,0],[0,0,0],[0,0,0]], bx=[0,0,0], by=[0,0,0];
+  for(const [sx,sy,px,py] of pairs){
+    const v=[px,py,1];
+    for(let i=0;i<3;i++){ for(let j=0;j<3;j++) N[i][j]+=v[i]*v[j];
+      bx[i]+=v[i]*sx; by[i]+=v[i]*sy; }
+  }
+  const a=solve3(N.map(r=>[...r]),bx), d=solve3(N.map(r=>[...r]),by);
+  return (a&&d) ? {a,d} : null;
+}
+const apply = (T,px,py) => [T.a[0]*px+T.a[1]*py+T.a[2], T.d[0]*px+T.d[1]*py+T.d[2]];
+
+// ---- drawing ---------------------------------------------------------------
+function fit(c, img){ c.width=img.naturalWidth||600; c.height=img.naturalHeight||600; }
+function drawSec(){
+  const c=el("cSec"), x=c.getContext("2d"); if(!secImg.naturalWidth) return;
+  fit(c,secImg); x.drawImage(secImg,0,0);
+  const s=st(active), T=affine(s.pairs);
+  if(T){                                   // warped atlas seeds - the deliverable
+    const P=PLATES[s.plate];
+    for(const sd of P.seeds){
+      const [X,Y]=apply(T, sd.xf*P.w, sd.yf*P.h);
+      x.beginPath(); x.arc(X,Y,7,0,6.284); x.fillStyle=sd.hex||"#4da3ff"; x.globalAlpha=.85; x.fill();
+      x.globalAlpha=1; x.lineWidth=2; x.strokeStyle="#000"; x.stroke();
+      x.fillStyle="#fff"; x.font="bold 13px system-ui"; x.fillText(sd.region, X+10, Y+4);
+    }
+  }
+  s.pairs.forEach(([sx,sy],i)=>mark(x,sx,sy,i+1,"#4da3ff"));
+  if(pending) mark(x,pending[0],pending[1],s.pairs.length+1,"#d29922");
+}
+function drawPl(){
+  const c=el("cPl"), x=c.getContext("2d"); if(!plImg.naturalWidth) return;
+  fit(c,plImg); x.drawImage(plImg,0,0);
+  const s=st(active), P=PLATES[s.plate];
+  for(const sd of P.seeds){
+    const X=sd.xf*c.width, Y=sd.yf*c.height;
+    x.beginPath(); x.arc(X,Y,6,0,6.284); x.fillStyle=sd.hex||"#4da3ff"; x.globalAlpha=.8; x.fill();
+    x.globalAlpha=1; x.lineWidth=1.5; x.strokeStyle="#000"; x.stroke();
+  }
+  s.pairs.forEach(([,,px,py],i)=>mark(x,px,py,i+1,"#4da3ff"));
+}
+function mark(x,X,Y,n,col){
+  x.beginPath(); x.arc(X,Y,9,0,6.284); x.lineWidth=3; x.strokeStyle=col; x.stroke();
+  x.fillStyle=col; x.font="bold 15px system-ui"; x.fillText(n, X+11, Y-9);
+}
+const canvasXY = (c,e) => { const r=c.getBoundingClientRect();
+  return [(e.clientX-r.left)*c.width/r.width, (e.clientY-r.top)*c.height/r.height]; };
+
+function clickSec(e){
+  if(!active) return;
+  pending = canvasXY(el("cSec"), e); drawSec(); status();
+}
+function clickPl(e){
+  if(!active || !pending) return;
+  const [px,py]=canvasXY(el("cPl"), e);
+  st(active).pairs.push([pending[0],pending[1],px,py]); pending=null;
+  save(); drawSec(); drawPl(); status(); render(true);
+}
+function undoPt(){
+  if(!active) return;
+  if(pending){ pending=null; } else st(active).pairs.pop();
+  save(); drawSec(); drawPl(); status(); render(true);
+}
+function clearPts(){ if(!active) return; st(active).pairs=[]; pending=null; save();
+  drawSec(); drawPl(); status(); render(true); }
+
+function status(){
+  const s=st(active), T=affine(s.pairs);
+  el("npair").textContent = s.pairs.length;
+  el("lmHint").textContent = pending ? "now click the matching point on the plate"
+                                     : "click section, then plate";
+  // Residual per landmark: a mis-clicked pair shows as a large error instead of
+  // quietly dragging the whole fit.
+  let html="";
+  if(T){
+    let tot=0;
+    s.pairs.forEach(([sx,sy,px,py],i)=>{
+      const [X,Y]=apply(T,px,py), r=Math.hypot(X-sx,Y-sy); tot+=r;
+      html += `<div class="${r>25?"bad":""}"><span>#${i+1}</span><span>${r.toFixed(1)} px</span></div>`;
+    });
+    el("fit").innerHTML = `mean residual <b>${(tot/s.pairs.length).toFixed(1)} px</b>`;
+    const P=PLATES[s.plate];
+    el("regInfo").innerHTML = P.seeds.length
+      ? `<b>${P.seeds.length}</b> seeds warped: ${[...new Set(P.seeds.map(x=>x.region))].join(", ")}`
+      : "<span class='unlab'>this plate has no region seeds</span>";
+  } else {
+    el("fit").textContent = "";
+    el("regInfo").textContent = `needs 3 pairs (have ${s.pairs.length})`;
+    s.pairs.forEach((_,i)=>html+=`<div><span>#${i+1}</span><span>-</span></div>`);
+  }
+  el("lmlist").innerHTML = html;
+}
+
+function onSlide(v){
+  const s=st(active); s.plate=+v; save();
+  const P=PLATES[+v];
+  el("plName").textContent = P.id;
+  el("plLab").innerHTML = P.labelled
+    ? `<span class="lab">${P.seeds.length} region seeds: ${[...new Set(P.seeds.map(x=>x.region))].join(", ")}</span>`
+    : `<span class="unlab">no region labels on this plate</span>`;
+  plImg.src = P.img; drawPl(); status(); render(true);
+}
+
+function select(uid, keep){
+  active = uid; pending = null;
+  const list=rows(), i=list.findIndex(d=>d.uid===uid), d=list[i], s=st(uid);
+  el("secInfo").innerHTML = `<b>${d.uid}</b><br>section ${d.order} &middot; ${i+1} of ${list.length}`;
+  el("slider").value = s.plate;
+  secImg.src = d.img;
+  onSlide(s.plate);
+  document.querySelectorAll(".cell").forEach(c=>c.classList.toggle("active", c.dataset.uid===uid));
+  if(!keep) document.querySelector(`[data-uid="${CSS.escape(uid)}"]`)
+    ?.scrollIntoView({inline:"center", block:"nearest"});
+}
+const isDone = uid => (S[uid]?.pairs?.length || 0) >= 3;
+
+function render(keep){
+  const list=rows();
+  el("nsec").textContent = list.length;
+  el("ndone").textContent = list.filter(d=>isDone(d.uid)).length;
+  el("strip").innerHTML = list.map(d=>{
+    const s=S[d.uid], n=s?.pairs?.length||0;
+    return `<div class="cell ${isDone(d.uid)?"done":""} ${active===d.uid?"active":""}"
+      data-uid="${d.uid}" onclick="select('${d.uid}')">
+      <img src="${d.img}" loading="lazy" alt="">
+      <div class="cap">${d.order}<br>${n?n+" pts":""}</div></div>`;
+  }).join("");
+  if(active && !list.some(d=>d.uid===active)) active=null;
+  if(!active && list.length) select(list[0].uid);
+  else if(active) select(active, true);
+}
+
+addEventListener("keydown", e=>{
+  if(!active) return;
+  const list=rows(), i=list.findIndex(d=>d.uid===active);
+  if(e.key==="ArrowRight"){ el("slider").value=Math.min(PLATES.length-1,+el("slider").value+1); onSlide(el("slider").value); e.preventDefault(); }
+  else if(e.key==="ArrowLeft"){ el("slider").value=Math.max(0,+el("slider").value-1); onSlide(el("slider").value); e.preventDefault(); }
+  else if(e.key==="u"){ undoPt(); }
+  else if(e.key==="n" && i<list.length-1){ select(list[i+1].uid); }
+  else if(e.key==="p" && i>0){ select(list[i-1].uid); }
+});
+
+function exportCsv(){
+  const lm=[["scene_uid","animal","section_order","plate_id","pair","sec_x","sec_y","plate_x","plate_y","residual_px"]];
+  const rg=[["scene_uid","animal","plate_id","region","sec_x","sec_y","n_landmarks","mean_residual_px"]];
+  for(const d of DATA){
+    const s=S[d.uid]; if(!s || s.pairs.length<3) continue;
+    const P=PLATES[s.plate], T=affine(s.pairs);
+    let tot=0;
+    s.pairs.forEach(([sx,sy,px,py],i)=>{
+      const [X,Y]=apply(T,px,py), r=Math.hypot(X-sx,Y-sy); tot+=r;
+      lm.push([d.uid,d.animal,d.order,P.id,i+1,sx.toFixed(2),sy.toFixed(2),
+               px.toFixed(2),py.toFixed(2),r.toFixed(2)]);
+    });
+    const mr=(tot/s.pairs.length).toFixed(2);
+    for(const sd of P.seeds){
+      const [X,Y]=apply(T, sd.xf*P.w, sd.yf*P.h);
+      rg.push([d.uid,d.animal,P.id,sd.region,X.toFixed(2),Y.toFixed(2),s.pairs.length,mr]);
+    }
+  }
+  dl(lm,"roi_landmarks.csv"); dl(rg,"roi_regions.csv");
+}
+function dl(rowsArr,name){
+  const b=new Blob([rowsArr.map(r=>r.join(",")).join("\\n")],{type:"text/csv"});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(b); a.download=name; a.click();
+}
+render();
+</script>
+"""
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--animal", default=None)
+    args = ap.parse_args()
+
+    with open(INDEX_CSV, newline="", encoding="utf-8") as fh:
+        rows = [r for r in csv.DictReader(fh) if r["kind"] == "section"]
+    if args.animal:
+        rows = [r for r in rows if r["animal"] == args.animal]
+    rows.sort(key=lambda r: (r["animal"], int(r["section_order"] or 0)))
+
+    with open(os.path.join(PLATE_DIR, "plates.csv"), newline="", encoding="utf-8") as fh:
+        plates = list(csv.DictReader(fh))
+    seeds = {}
+    with open(os.path.join(PLATE_DIR, "seeds.csv"), newline="", encoding="utf-8") as fh:
+        for s in csv.DictReader(fh):
+            seeds.setdefault(s["plate_id"], []).append(
+                {"region": s["region"], "xf": float(s["x_frac"]), "yf": float(s["y_frac"]),
+                 "hex": s.get("colour_hex") or "#4da3ff"})
+
+    pl = []
+    for p in sorted(plates, key=lambda p: p["plate_id"]):
+        img = os.path.join(PLATE_DIR, p["image_file"])
+        if not os.path.exists(img):
+            continue
+        sd = seeds.get(p["plate_id"], [])
+        pl.append({"id": p["plate_id"],
+                   # Original plate, NOT reformatted: the seeds are fractions of
+                   # this image, so no transform chain is needed.
+                   "img": f"../atlas/plates/{p['image_file']}",
+                   "w": int(p["px_w"]), "h": int(p["px_h"]),
+                   "labelled": int(bool(sd)), "seeds": sd})
+
+    data = [{"uid": r["id"], "animal": r["animal"], "order": int(r["section_order"] or 0),
+             "img": f"sections/{r['id']}.png"} for r in rows]
+
+    page = PAGE.replace("__DATA__", json.dumps(data)).replace("__PLATES__", json.dumps(pl))
+    with open(CURATOR_HTML, "w", encoding="utf-8") as fh:
+        fh.write(page)
+
+    lab = [p for p in pl if p["labelled"]]
+    print(f"wrote {CURATOR_HTML}")
+    print(f"  {len(data)} sections, {len(pl)} plates, "
+          f"{sum(len(p['seeds']) for p in pl)} region seeds")
+    print(f"  {len(lab)} plates carry seeds: {lab[0]['id']} .. {lab[-1]['id']}")
+    print()
+    print("Scrub the plate slider until it matches, then click matching points -")
+    print("section first, then plate. From three pairs the atlas regions are warped")
+    print("live onto the section in their atlas colours; that overlay is the check")
+    print("that matters, not the residual number.")
+    print()
+    print("Only the plates listed above have regions to give. A section assigned")
+    print("elsewhere gets no ROIs, so there is no reason to place landmarks on it -")
+    print("the working subset selects itself.")
+    print()
+    print("Export writes roi_landmarks.csv (every pair, with its residual) and")
+    print("roi_regions.csv (warped seed positions in the reformatted section frame).")
+
+
+if __name__ == "__main__":
+    main()

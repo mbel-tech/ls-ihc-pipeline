@@ -9,6 +9,54 @@ where things landed, not which plausible-looking route was tried and abandoned, 
 
 ---
 
+## 2026-08-13 - ROI curator: SHARCQ's workflow rebuilt for the salmon atlas
+
+**Changed:** new `04l_roi_curator.py`, writing `reformatted/roi_curator.html`. 788 sections, 101
+plates, 316 region seeds across the 24 labelled plates.
+
+**Why manual, and why that is not a retreat.** Automatic level assignment has now been measured to
+fail twice - `04c` on silhouette IoU (order-vs-plate correlation -0.05 to 0.17) and giRAff's method
+on registered-intensity cross-correlation (-0.18 to +0.09). SHARCQ, the peer-reviewed tool for this
+exact task, **also picks the plate by hand**: its user scrolls to the AP coordinate by eye, then
+clicks numbered corresponding points. What it automates is the landmark registration, the warping,
+and the per-region counting. That is what this rebuilds.
+
+**Interaction.** Scrub the plate slider, then click matching points - section first, then plate.
+From three pairs the atlas region seeds are **warped live onto the section in their atlas colours**.
+That overlay is the real check: it shows immediately whether Dl, Dm, Vv and POA are landing where
+they belong, which a residual number cannot.
+
+**Three decisions worth recording.**
+
+*Affine, not a spline.* Three or more pairs determine an affine by least squares. A thin-plate
+spline through 3-6 landmarks would fit them exactly and invent deformation between them that
+nothing measured. SHARCQ uses the same class of transform from the same input, and
+`04e_register_elastix.py` remains available for a B-spline refinement once an assignment is trusted.
+
+*The plate is shown in its ORIGINAL form, not reformatted.* Seeds are recorded as fractions of the
+original plate, so using the original avoids carrying them through the reformat's
+rotate-crop-pad-resize chain - which `04e` notes is not invertible from the index alone.
+
+*Per-landmark residuals are displayed and flagged above 25 px*, so a mis-clicked pair shows up as a
+large error rather than quietly dragging the whole fit.
+
+Affine solver verified against a known transform: exact with three clean pairs, and with clicking
+noise the least-squares fit beats the noise (2.0 px click noise gives 1.97 px recovery error over
+6 points; 5.0 px gives 3.13 px over 10).
+
+**The subset selects itself.** Only 24 of 101 plates carry seeds - plate_009 to plate_032,
+telencephalon and POA, 8 regions (Dl 142, Dm 114, Vv 16, POA 16, Vd 10, Vl 10, Vs 4, Vc 4). A
+section assigned anywhere else has no regions to receive, so there is no reason to place landmarks
+on it. That bounds the manual work without anyone having to decide a cutoff.
+
+Output: `roi_landmarks.csv` (every pair with its residual) and `roi_regions.csv` (warped seed
+positions in the reformatted section frame).
+
+**Still outstanding:** the caudal plates carry no region labels at all, so the SBN nodes named in the
+plan - vTn, TPp, PAG - cannot be reached until those are annotated.
+
+---
+
 ## 2026-08-13 - SHARCQ, giRAff and DeepSlice assessed; giRAff's method tested and it fails here
 
 **Changed:** REFERENCES.md gains all three. No code change - this records an assessment and a
