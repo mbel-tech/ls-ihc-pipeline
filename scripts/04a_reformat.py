@@ -74,9 +74,13 @@ def otsu(values):
 def tissue_mask(v, light_background):
     """Binary tissue mask.
 
-    Two polarities, two thresholds. Atlas plates are dark tissue on light paper;
-    sections are faint fluorescence on black. Using one rule for both is what
-    produced rim-only plates and speckle-only sections in the first attempt.
+    Two polarities, two thresholds. Using one rule for both is what produced
+    rim-only plates and speckle-only sections in the first attempt.
+
+    **Atlas plates now arrive here already inverted** (see `reformat(invert=...)`),
+    so they take the dark-background branch exactly like a section. The
+    light-background branch is kept for any source that is genuinely dark tissue
+    on light paper, but nothing in the pipeline uses it any more.
     """
     if light_background:
         mask = v < np.percentile(v, 90) * 0.92
@@ -142,7 +146,7 @@ def load_artifact(uid, shape):
 
 
 def reformat(path, light_background, extra_angle=0.0, flip=False, artifact=None,
-             censor=None):
+             censor=None, invert=False):
     """Return (normalised grayscale, normalised mask, angle applied).
 
     `extra_angle` is the curator's manual correction, in degrees. It is folded
@@ -160,6 +164,14 @@ def reformat(path, light_background, extra_angle=0.0, flip=False, artifact=None,
     except OSError:
         return None
     work = np.asarray(img.resize((WORK_SIZE, WORK_SIZE), Image.BILINEAR)).astype(np.float32)
+    # Invert BEFORE anything else, so an atlas plate ends up in the same polarity
+    # as a DAPI section: cell-dense bright, fibre tracts and ventricles dark,
+    # background black. Doing it afterwards is not equivalent - the intensity
+    # stretch below is asymmetric (median - MAD to median + 4 MAD), so applied to
+    # the wrong polarity it clips away exactly the cell-density detail that makes
+    # the plate comparable to a section.
+    if invert:
+        work = 255.0 - work
 
     mask = tissue_mask(work, light_background)
     if mask is None:
@@ -366,7 +378,11 @@ def main():
         plates = list(csv.DictReader(fh))
     ok = 0
     for p in plates:
-        out = reformat(os.path.join(PLATE_DIR, p["image_file"]), light_background=True)
+        # Plates are Nissl - cell bodies DARK on white paper - so they are
+        # inverted into DAPI polarity and then treated by the dark-background
+        # branch, exactly like a section.
+        out = reformat(os.path.join(PLATE_DIR, p["image_file"]),
+                       light_background=False, invert=True)
         if out is None:
             continue
         img, mask, angle, _, _ = out

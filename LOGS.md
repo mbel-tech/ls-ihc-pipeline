@@ -9,6 +9,53 @@ where things landed, not which plausible-looking route was tried and abandoned, 
 
 ---
 
+## 2026-08-13 - Atlas plates were being matched in the WRONG POLARITY. Operator's catch.
+
+**Changed:** `04a_reformat.py` inverts atlas plates before anything else, so a plate ends up in the
+same polarity as a DAPI section - cell-dense bright, tracts and ventricles dark, background black.
+All 101 plates regenerated.
+
+**The operator asked whether the atlas images could be turned negative and then matched. They were
+right, and my earlier test of that idea was invalid.** Nissl stains cell bodies **dark** on white
+paper; DAPI is **bright** where cells are. For the two to correlate, cell-dense must be bright in
+both. `04a` never inverted: it used the light-background branch to find the *mask* but stretched the
+*raw* image, so every plate carried inverted contrast relative to every section. In-tissue mean of
+the reformatted plates was 58 out of 255 - the cell-dense tissue was the dark part.
+
+**Why "I already tested inversion" was wrong.** The giRAff test earlier today scored an `inverted`
+polarity and found nothing, but it inverted the *already-reformatted* plate. The stretch is
+asymmetric - median − MAD to median + 4 MAD - so applied in the wrong polarity it clips away the
+cell-dense end before there is anything left to invert. Inverting first is not the same operation,
+and the measurements differ.
+
+**Re-measured, rank correlation between serial order and best-matching plate:**
+
+| | LS45 | LS120 | LS22 | LS37 |
+|---|---|---|---|---|
+| silhouette IoU (04c) | -0.05 | 0.00 | 0.17 | -0.04 |
+| intensity, wrong polarity | -0.18 | 0.00 | -0.02 | - |
+| intensity, correct polarity | -0.04 | 0.02 | 0.18 | 0.15 |
+| **shape + intensity, correct polarity** | **0.09** | **0.25** | **0.33** | **0.06** |
+| SIFT features, correct polarity | 0.15 | 0.03 | -0.07 | - |
+
+The combined score is **positive in all four animals** where the signs were previously random. That
+is a real improvement and it is the operator's, not mine.
+
+**It is still not enough to assign levels automatically.** A correlation of 0.33 explains about a
+tenth of the variance in serial order. SIFT adds nothing - about 9 good matches per pair out of 400
+keypoints each, which is noise. So `04l`'s manual plate selection stands.
+
+**But the fix matters independently of matching, which is the more important point.**
+`04e_register_elastix.py` registers each section *to* a plate, and correlation- and
+mutual-information-based registration both degrade when the two images have opposite contrast. Every
+registration run so far has been fighting the polarity. Anything downstream of `04e` should be
+re-run.
+
+`04l_roi_curator.py` is unaffected - it deliberately shows the **original** plate, not the
+reformatted one, because the region seeds are fractions of the original.
+
+---
+
 ## 2026-08-13 - ROI curator: SHARCQ's workflow rebuilt for the salmon atlas
 
 **Changed:** new `04l_roi_curator.py`, writing `reformatted/roi_curator.html`. 788 sections, 101
