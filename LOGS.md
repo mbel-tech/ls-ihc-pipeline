@@ -9,6 +9,53 @@ where things landed, not which plausible-looking route was tried and abandoned, 
 
 ---
 
+## 2026-08-13 - The two stages linked: 04l's landmarks now seed 04e's registration
+
+**Changed:** `04e_register_elastix.py --from-landmarks`. Reads `roi_landmarks.csv` from the ROI
+curator, uses the operator's clicked pairs to initialise **and** constrain an elastix registration,
+and carries the atlas region seeds onto the section through the composed transform. Output:
+`registered/roi_regions_refined.csv`.
+
+**What it adds over the curator alone.** `04l` interpolates through the clicked points - an affine,
+or a thin-plate spline from six up. That is exact *at* the landmarks and guesswork *between* them.
+This seeds elastix with the same pairs and then lets mutual information use the **image content
+between** the landmarks, which is the part no interpolation through a handful of points can know.
+Each stage optimises MI and the Euclidean distance between the pairs, weighted by
+`--landmark-weight` (default 1.0, equal - the honest starting point, not a tuned one).
+
+**Three things had to be got right, and two of them failed first.**
+
+*The direction.* Plate **fixed**, section **moving**, so elastix's transform maps plate coordinates
+into section coordinates and transformix carries the seeds the right way. Verified on a synthetic
+case with a known affine: seeds landed within **0.01 px** of ground truth.
+
+*Multi-metric needs per-metric components.* The first run died with an opaque
+`Internal elastix error`. The log showed the landmarks loading correctly, so the failure looked
+unrelated to them; the real cause was `the fixed pyramid schedule is not fully specified` -
+`MultiMetricMultiResolutionRegistration` needs one pyramid, interpolator and sampler entry **per
+metric**, not one in total.
+
+*Scale.* With that fixed it failed again: `Too many samples map outside moving image buffer:
+289 / 4234`. A 1095 px plate against a 256 px section is a 4x scale difference no rigid stage
+absorbs. The landmarks already contain that scale, so they are now used as the coarse
+initialisation - the plate is resampled into the section frame by the landmark affine first, and
+elastix is left with only the residual. Composition is then simply affine-then-elastix, and the
+seeds go through both.
+
+**Also fixed: `load_seeds` was dead code with a false docstring.** It claimed to carry seeds through
+the reformat geometry and only rescaled by the original plate size, and nothing called it. Now it
+is called, and correct, because `--from-landmarks` registers against the **original** plate - so
+original-plate pixels are the right frame and no geometry has to be re-run. Same reasoning `04l`
+uses for displaying the original plate.
+
+**Tested end to end on real images with synthetic landmarks** (tissue-extreme correspondences -
+enough to exercise the path, not the anatomy): 3 sections, 66 seed positions, 0 failures, **100% of
+seeds landing inside the section frame**, moved a median of 18.7 px from the landmark-affine
+position. Those test artifacts were **deleted** afterwards so they cannot be mistaken for real
+curation; `--from-landmarks` correctly refuses to run and points at `04l` when the file is absent.
+
+---
+
 ## 2026-08-13 - Registration handout: three things acted on, one already right, one still to do
 
 **Changed:** `04e_register_elastix.py` gains a rigid pre-stage and sets its metric explicitly;
