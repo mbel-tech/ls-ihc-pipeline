@@ -44,15 +44,23 @@ receive, so the tool marks those plates and there is no reason to place landmark
 on such a section. The working subset is therefore self-selecting: it is whatever
 lands in that 24-plate window.
 
-Why an affine, and not something richer
----------------------------------------
+Affine below six points, thin-plate spline above
+------------------------------------------------
 
-Three or more clicked pairs determine an affine by least squares. A thin-plate
-spline through the same points would fit them exactly and look better, which is
-the problem: with 3-6 landmarks it would also invent deformation between them
-that nothing measured. SHARCQ uses the same class of transform from the same kind
-of input. `04e_register_elastix.py` remains available for a B-spline refinement
-once a plate assignment exists and is trusted.
+Three or more pairs determine an **affine** by least squares. From **six** pairs
+the tool switches to a **thin-plate spline**, and the header says which is live.
+
+The gate is the whole argument. A TPS interpolates its landmarks *exactly*, so
+its residual is zero by construction and tells you nothing; with 3-4 points it
+would fit them perfectly and invent deformation everywhere else from almost no
+evidence. From six well-spread points the interpolation is constrained by enough
+real correspondences to be worth having - and an affine genuinely cannot follow
+the local distortion that sectioning and mounting put into a slice, which is why
+BigWarp and VisuAlign both use a TPS for exactly this task.
+
+So: read the residual while it is an affine, and read the **overlay** once it is a
+spline. `04e_register_elastix.py` remains available for an automatic B-spline
+refinement once a plate assignment is trusted.
 
 **The plate is shown in its ORIGINAL form, not reformatted.** The seeds are
 recorded as fractions of the original plate, so using the original avoids
@@ -208,16 +216,70 @@ function affine(pairs){          // plate (px,py) -> section (sx,sy)
       bx[i]+=v[i]*sx; by[i]+=v[i]*sy; }
   }
   const a=solve3(N.map(r=>[...r]),bx), d=solve3(N.map(r=>[...r]),by);
-  return (a&&d) ? {a,d} : null;
+  return (a&&d) ? {kind:"affine", a, d} : null;
 }
-const apply = (T,px,py) => [T.a[0]*px+T.a[1]*py+T.a[2], T.d[0]*px+T.d[1]*py+T.d[2]];
+
+// ---- thin-plate spline, used from TPS_MIN pairs upward ----------------------
+// An affine cannot follow the local distortion that sectioning and mounting put
+// into a slice; a TPS can, and it is what BigWarp and VisuAlign use for exactly
+// this job. The reason it is gated rather than always on: a TPS interpolates the
+// landmarks EXACTLY, so with 3-4 points it fits them perfectly and invents
+// deformation everywhere else from almost no evidence. From six well-spread
+// points the interpolation is constrained by enough real correspondences to be
+// worth having.
+const TPS_MIN = 6;
+function solveN(A, b){                       // Gaussian elimination with pivoting
+  const n=A.length, M=A.map((r,i)=>[...r,b[i]]);
+  for(let c=0;c<n;c++){
+    let p=c; for(let r=c+1;r<n;r++) if(Math.abs(M[r][c])>Math.abs(M[p][c])) p=r;
+    if(Math.abs(M[p][c])<1e-10) return null;
+    [M[c],M[p]]=[M[p],M[c]];
+    for(let r=0;r<n;r++){ if(r===c) continue;
+      const f=M[r][c]/M[c][c]; for(let k=c;k<=n;k++) M[r][k]-=f*M[c][k]; }
+  }
+  return M.map((r,i)=>r[n]/r[i]);
+}
+const U = r2 => r2 < 1e-12 ? 0 : r2 * Math.log(r2);   // r^2 log r^2, the 2-D TPS kernel
+function tps(pairs){
+  const n=pairs.length; if(n < TPS_MIN) return null;
+  const P=pairs.map(p=>[p[2],p[3]]), S=pairs.map(p=>[p[0],p[1]]);
+  const m=n+3, A=Array.from({length:m},()=>new Array(m).fill(0));
+  for(let i=0;i<n;i++){
+    for(let j=0;j<n;j++){
+      const dx=P[i][0]-P[j][0], dy=P[i][1]-P[j][1];
+      A[i][j]=U(dx*dx+dy*dy);
+    }
+    A[i][n]=1; A[i][n+1]=P[i][0]; A[i][n+2]=P[i][1];
+    A[n][i]=1; A[n+1][i]=P[i][0]; A[n+2][i]=P[i][1];
+  }
+  const bx=new Array(m).fill(0), by=new Array(m).fill(0);
+  for(let i=0;i<n;i++){ bx[i]=S[i][0]; by[i]=S[i][1]; }
+  const wx=solveN(A.map(r=>[...r]),bx), wy=solveN(A.map(r=>[...r]),by);
+  return (wx&&wy) ? {kind:"tps", P, wx, wy, n} : null;
+}
+function tpsApply(T,px,py){
+  let X=T.wx[T.n]+T.wx[T.n+1]*px+T.wx[T.n+2]*py;
+  let Y=T.wy[T.n]+T.wy[T.n+1]*px+T.wy[T.n+2]*py;
+  for(let i=0;i<T.n;i++){
+    const dx=px-T.P[i][0], dy=py-T.P[i][1], u=U(dx*dx+dy*dy);
+    X+=T.wx[i]*u; Y+=T.wy[i]*u;
+  }
+  return [X,Y];
+}
+
+// The transform actually used: TPS once there are enough points, affine below.
+function transform(pairs){ return tps(pairs) || affine(pairs); }
+function apply(T,px,py){
+  return T.kind==="tps" ? tpsApply(T,px,py)
+                        : [T.a[0]*px+T.a[1]*py+T.a[2], T.d[0]*px+T.d[1]*py+T.d[2]];
+}
 
 // ---- drawing ---------------------------------------------------------------
 function fit(c, img){ c.width=img.naturalWidth||600; c.height=img.naturalHeight||600; }
 function drawSec(){
   const c=el("cSec"), x=c.getContext("2d"); if(!secImg.naturalWidth) return;
   fit(c,secImg); x.drawImage(secImg,0,0);
-  const s=st(active), T=affine(s.pairs);
+  const s=st(active), T=transform(s.pairs);
   if(T){                                   // warped atlas seeds - the deliverable
     const P=PLATES[s.plate];
     for(const sd of P.seeds){
@@ -267,7 +329,7 @@ function clearPts(){ if(!active) return; st(active).pairs=[]; pending=null; save
   drawSec(); drawPl(); status(); render(true); }
 
 function status(){
-  const s=st(active), T=affine(s.pairs);
+  const s=st(active), T=transform(s.pairs);
   el("npair").textContent = s.pairs.length;
   el("lmHint").textContent = pending ? "now click the matching point on the plate"
                                      : "click section, then plate";
@@ -280,14 +342,19 @@ function status(){
       const [X,Y]=apply(T,px,py), r=Math.hypot(X-sx,Y-sy); tot+=r;
       html += `<div class="${r>25?"bad":""}"><span>#${i+1}</span><span>${r.toFixed(1)} px</span></div>`;
     });
-    el("fit").innerHTML = `mean residual <b>${(tot/s.pairs.length).toFixed(1)} px</b>`;
+    el("fit").innerHTML = T.kind==="tps"
+      ? `<b style="color:#7c5cff">thin-plate spline</b> on ${s.pairs.length} points `
+        + `&middot; residual is 0 by construction`
+      : `<b>affine</b> &middot; mean residual <b>${(tot/s.pairs.length).toFixed(1)} px</b>`
+        + ` &middot; ${TPS_MIN - s.pairs.length} more point${TPS_MIN-s.pairs.length===1?"":"s"} for a spline`;
     const P=PLATES[s.plate];
     el("regInfo").innerHTML = P.seeds.length
       ? `<b>${P.seeds.length}</b> seeds warped: ${[...new Set(P.seeds.map(x=>x.region))].join(", ")}`
       : "<span class='unlab'>this plate has no region seeds</span>";
   } else {
     el("fit").textContent = "";
-    el("regInfo").textContent = `needs 3 pairs (have ${s.pairs.length})`;
+    el("regInfo").textContent = `needs 3 pairs for an affine, ${TPS_MIN} for a spline `
+      + `(have ${s.pairs.length})`;
     s.pairs.forEach((_,i)=>html+=`<div><span>#${i+1}</span><span>-</span></div>`);
   }
   el("lmlist").innerHTML = html;
@@ -344,10 +411,10 @@ addEventListener("keydown", e=>{
 
 function exportCsv(){
   const lm=[["scene_uid","animal","section_order","plate_id","pair","sec_x","sec_y","plate_x","plate_y","residual_px"]];
-  const rg=[["scene_uid","animal","plate_id","region","sec_x","sec_y","n_landmarks","mean_residual_px"]];
+  const rg=[["scene_uid","animal","plate_id","region","sec_x","sec_y","n_landmarks","transform","mean_residual_px"]];
   for(const d of DATA){
     const s=S[d.uid]; if(!s || s.pairs.length<3) continue;
-    const P=PLATES[s.plate], T=affine(s.pairs);
+    const P=PLATES[s.plate], T=transform(s.pairs);
     let tot=0;
     s.pairs.forEach(([sx,sy,px,py],i)=>{
       const [X,Y]=apply(T,px,py), r=Math.hypot(X-sx,Y-sy); tot+=r;
@@ -357,7 +424,7 @@ function exportCsv(){
     const mr=(tot/s.pairs.length).toFixed(2);
     for(const sd of P.seeds){
       const [X,Y]=apply(T, sd.xf*P.w, sd.yf*P.h);
-      rg.push([d.uid,d.animal,P.id,sd.region,X.toFixed(2),Y.toFixed(2),s.pairs.length,mr]);
+      rg.push([d.uid,d.animal,P.id,sd.region,X.toFixed(2),Y.toFixed(2),s.pairs.length,T.kind,mr]);
     }
   }
   dl(lm,"roi_landmarks.csv"); dl(rg,"roi_regions.csv");

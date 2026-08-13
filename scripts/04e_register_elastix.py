@@ -45,13 +45,35 @@ GRID = 256   # reformatted images are GRID x GRID
 
 
 def parameter_maps(itk, bspline_spacing):
-    """Affine, then B-spline. Defaults, with only the essentials overridden."""
+    """Rigid, then affine, then B-spline - the standard cross-modality ladder.
+
+    **The rigid stage was missing** and is added here. Going straight to affine
+    asks the optimiser to solve rotation, translation, scale and shear at once
+    from a poor initialisation; a rigid pass first removes the pose so the affine
+    only has to find scale and shear.
+
+    **The metric is mutual information, and it already was.** This is
+    fluorescent-to-Nissl registration: the two images share structure but have no
+    brightness relationship, so a correlation metric would be the wrong tool.
+    elastix's defaults are `AdvancedMattesMutualInformation` for all three maps -
+    checked, not assumed - but they are set explicitly so the intent survives a
+    change in elastix defaults.
+    """
     po = itk.ParameterObject.New()
+
+    rigid = po.GetDefaultParameterMap("rigid")
+    rigid["Metric"] = ["AdvancedMattesMutualInformation"]
+    rigid["MaximumNumberOfIterations"] = ["512"]
+    po.AddParameterMap(rigid)
+
     affine = po.GetDefaultParameterMap("affine")
+    affine["Metric"] = ["AdvancedMattesMutualInformation"]
     affine["MaximumNumberOfIterations"] = ["512"]
     po.AddParameterMap(affine)
 
     bspline = po.GetDefaultParameterMap("bspline")
+    bspline["Metric"] = ["AdvancedMattesMutualInformation",
+                         "TransformBendingEnergyPenalty"]
     bspline["MaximumNumberOfIterations"] = ["512"]
     # Grid spacing sets how local the deformation may be. Too fine and the
     # transform will happily fold anatomy to match noise; this is deliberately

@@ -9,6 +9,56 @@ where things landed, not which plausible-looking route was tried and abandoned, 
 
 ---
 
+## 2026-08-13 - Registration handout: three things acted on, one already right, one still to do
+
+**Changed:** `04e_register_elastix.py` gains a rigid pre-stage and sets its metric explicitly;
+`04l_roi_curator.py` gains a thin-plate spline above six landmarks.
+
+The handout independently reaches the same conclusions this project reached by measurement - no
+salmon volume so ABBA/QuickNII/DeepSlice/brainreg are out, level assignment is manual, the task is
+2D-to-2D cross-modality registration per plate, QuPath downstream. Agreement from an independent
+source is worth recording; the useful part is the four specifics.
+
+**1. Mutual information - already right, verified rather than assumed.** The handout says a
+cross-modality metric is essential and to set it explicitly. Checked: elastix's default parameter
+maps already use `AdvancedMattesMutualInformation` for rigid, affine and B-spline. Now set
+explicitly anyway, so the intent survives a change in elastix defaults.
+
+**2. Rigid before affine - was missing, added, and the gain is small.** Measured on 8 sections:
+median post-registration IoU **0.639 -> 0.647**, better on 4, marginally worse on 3. Kept because
+it is the right ladder and costs one cheap stage, not because it transformed anything.
+
+**3. Thin-plate spline above six landmarks - added, reversing my own earlier argument.** I had
+rejected a TPS on the grounds that it invents deformation between landmarks. That is true at 3-4
+points and false at 8-12, and the handout is right that an affine cannot follow the local
+distortion sectioning puts into a slice. `04l` now uses an affine from 3 pairs and switches to a
+TPS at 6, showing which is live.
+
+Verified against a synthetic affine-plus-local-bump ground truth: **exact at the control points**
+(max error 1e-13 px) with held-out error of **4.63 px at 6 landmarks, 1.33 at 8, 0.87 at 12**. That
+puts a number on the handout's "6 to 10 points" advice.
+
+The residual display changes meaning with the transform and now says so: a TPS interpolates its
+landmarks exactly, so its residual is **zero by construction and carries no information**. Read the
+residual while it is an affine; read the overlay once it is a spline.
+
+**4. Direction - checked, and 04e is correct for its purpose.** The handout says to warp the atlas
+onto the section so the real data stays undistorted. `04e` registers with the plate as *fixed* and
+the section as *moving*, which is what makes elastix's transform map plate coordinates into section
+coordinates - the direction needed to carry region seeds onto the section. Its resampled image is
+the section in plate space, which would be the wrong thing to measure on; confirmed by grep that
+**nothing outside 04e reads `registered/`** - it is QC only.
+
+**Still to do, and it is the best remaining idea in the handout:** elastix accepts manual
+corresponding points to seed a registration. The landmarks the operator is already clicking in `04l`
+could seed `04e` directly, so hard sections get human help instead of hand-tuned parameters. That
+links the two stages and is the natural next build.
+
+**Not pursued: BigWarp (Path 1).** `04l` is functionally that - landmarks, live warp, TPS - in the
+browser, without a Fiji install or a per-section round trip.
+
+---
+
 ## 2026-08-13 - Atlas plates were being matched in the WRONG POLARITY. Operator's catch.
 
 **Changed:** `04a_reformat.py` inverts atlas plates before anything else, so a plate ends up in the
