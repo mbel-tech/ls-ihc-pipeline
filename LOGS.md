@@ -9,6 +9,34 @@ where things landed, not which plausible-looking route was tried and abandoned, 
 
 ---
 
+## 2026-08-13 - ROI curator records plate assignments independently of landmarks
+
+**Changed:** `04l_roi_curator.py` gains an explicit `assigned` state, a **No ROI here** marker, and
+a third output. Export now writes `roi_plates.csv`, `roi_landmarks.csv` and `roi_regions.csv`.
+
+**The gap it closes.** The export wrote nothing for a section carrying fewer than three landmarks -
+which discarded precisely the case where the operator had looked at a section, decided which plate
+it was, and decided it was not worth landmarking. A plate assignment is a judgement in its own
+right and now survives on its own.
+
+`roi_plates.csv` carries a `status` per section:
+
+  `registered`  3+ landmark pairs, regions warped
+  `plate_only`  a plate was chosen deliberately, no landmarks placed
+  `no_roi`      explicitly marked as having nothing to measure
+
+**The trap avoided.** Selecting a section creates its state object, so a naive "has state" test
+would have recorded a plate_001 assignment for every section merely clicked through in the strip.
+`assigned` is set only by a real slider move - `oninput` fires on user interaction and not when
+`.value` is set from script - or by the explicit **Assign plate** button. Verified across six
+states: never touched, selected-but-not-moved, slider moved with no landmarks, marked no-ROI, two
+landmarks, four landmarks. Only the last four produce rows, and only the last produces landmark and
+region rows.
+
+The strip now shows three states rather than two: purple registered, blue plate-only, faded no-ROI.
+
+---
+
 ## 2026-08-13 - The two stages linked: 04l's landmarks now seed 04e's registration
 
 **Changed:** `04e_register_elastix.py --from-landmarks`. Reads `roi_landmarks.csv` from the ROI

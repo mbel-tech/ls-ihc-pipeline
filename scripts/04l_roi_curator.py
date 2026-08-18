@@ -67,9 +67,22 @@ recorded as fractions of the original plate, so using the original avoids
 carrying them through the reformat's rotate-crop-pad-resize chain - a transform
 that `04e` notes is not invertible from the index alone.
 
-Output: `reformatted/roi_landmarks.csv` - one row per landmark pair, plus the
-plate assignment - and `reformatted/roi_regions.csv`, the warped seed positions in
-the section's reformatted frame.
+Three outputs, because there are three separable decisions
+----------------------------------------------------------
+
+`roi_plates.csv`     one row per section the operator has *touched*, with its
+                     plate and a `status` of `registered` (3+ landmarks),
+                     `plate_only` (plate chosen, not landmarked) or `no_roi`
+                     (deliberately marked as having nothing to measure).
+`roi_landmarks.csv`  every landmark pair, with its residual. Registered only.
+`roi_regions.csv`    warped seed positions in the section's reformatted frame.
+
+**A plate assignment is a judgement in its own right.** An earlier version wrote
+nothing for a section with fewer than three landmarks, which discarded exactly
+the case where the operator had looked at a section and decided it was not worth
+landmarking. `assigned` is set only by a real slider move or an explicit button -
+never by merely selecting a section - so an untouched section still says
+nothing.
 
 Run:  python 04l_roi_curator.py
       python 04l_roi_curator.py --animal LS45
@@ -128,6 +141,8 @@ input[type=range]{width:100%}
 .cell:hover{border-color:var(--accent)}
 .cell.active{border-color:var(--accent);box-shadow:0 0 0 2px rgba(77,163,255,.3)}
 .cell.done{border-color:var(--done);background:#141026}
+.cell.plateonly{border-color:var(--accent);background:#0d1520}
+.cell.noroi{border-color:#3a3f47;opacity:.55}
 .cell img{width:100%;aspect-ratio:1;object-fit:contain;display:block;border-radius:3px}
 .cap{font-size:9px;color:var(--dim);text-align:center;line-height:1.15;margin-top:1px}
 footer{position:sticky;bottom:0;background:var(--bg);border-top:1px solid var(--line);
@@ -140,9 +155,13 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
   <select id="animal" onchange="render()"></select>
   <span class="row"><b id="nsec"></b> shown</span>
   <span class="row" style="color:#7c5cff"><b id="ndone"></b> registered</span>
+  <span class="row" style="color:#4da3ff"><b id="nassign"></b> plate only</span>
+  <span class="row" style="color:#9aa0a8"><b id="nnoroi"></b> no ROI</span>
   <span class="row"><b id="npair"></b> pairs on this section</span>
   <span class="row" id="fit"></span>
   <span class="grow"></span>
+  <button onclick="markAssigned()">Assign plate</button>
+  <button id="noroiBtn" onclick="toggleNoRoi()">No ROI here</button>
   <button onclick="undoPt()">Undo point</button>
   <button onclick="clearPts()">Clear points</button>
   <button class="primary" onclick="exportCsv()">Export</button>
@@ -155,7 +174,7 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
   <div id="side">
     <div class="card"><h3>SECTION</h3><div class="kv" id="secInfo">-</div></div>
     <div class="card"><h3>PLATE</h3>
-      <input type="range" id="slider" min="0" max="0" value="0" oninput="onSlide(this.value)">
+      <input type="range" id="slider" min="0" max="0" value="0" oninput="onSlideUser(this.value)">
       <div class="kv"><b id="plName">-</b></div>
       <div id="plLab"></div>
     </div>
@@ -172,8 +191,10 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
   <kbd>click</kbd> section then plate to add a pair &middot;
   <kbd>&larr;</kbd><kbd>&rarr;</kbd> plate &middot; <kbd>u</kbd> undo &middot;
   <kbd>n</kbd>/<kbd>p</kbd> next / previous section &middot;
-  3 pairs minimum for an affine &middot;
-  <span style="color:#7c5cff">purple</span> = registered &middot; autosaves
+  3 pairs for an affine, 6 for a spline &middot;
+  <span style="color:#7c5cff">purple</span> = registered &middot;
+  <span style="color:#4da3ff">blue</span> = plate assigned only &middot;
+  faded = marked no-ROI &middot; autosaves
 </footer>
 <script>
 const DATA = __DATA__;      // [{uid, animal, order, img}]
@@ -187,7 +208,10 @@ const animals = [...new Set(DATA.map(d=>d.animal))].sort((a,b)=>+a.slice(2)-+b.s
 el("animal").innerHTML = animals.map(a=>`<option>${a}</option>`).join("");
 el("slider").max = PLATES.length-1;
 const rows = () => DATA.filter(d=>d.animal===el("animal").value).sort((a,b)=>a.order-b.order);
-const st = uid => S[uid] || (S[uid] = {plate: 0, pairs: []});
+// `assigned` is set only by a real slider move or an explicit button, never by
+// merely selecting a section - otherwise clicking through the strip would record
+// a plate_001 assignment for everything it touched.
+const st = uid => S[uid] || (S[uid] = {plate: 0, pairs: [], assigned: false, noroi: false});
 
 const secImg = new Image(), plImg = new Image();
 secImg.onload = drawSec; plImg.onload = drawPl;
@@ -358,6 +382,23 @@ function status(){
     s.pairs.forEach((_,i)=>html+=`<div><span>#${i+1}</span><span>-</span></div>`);
   }
   el("lmlist").innerHTML = html;
+  const sa = st(active);
+  el("noroiBtn").textContent = sa.noroi ? "No ROI here ✓" : "No ROI here";
+  el("noroiBtn").style.borderColor = sa.noroi ? "#3fb950" : "";
+}
+
+// Called by the slider's oninput, which fires ONLY on user interaction -
+// setting .value from script does not dispatch it. That is what makes the
+// distinction between "the operator chose this plate" and "this section has
+// never been looked at" reliable.
+function onSlideUser(v){
+  const s=st(active); s.assigned=true; save(); onSlide(v); render(true); status();
+}
+function markAssigned(){ if(active){ st(active).assigned=true; save(); render(true); status(); } }
+function toggleNoRoi(){
+  if(!active) return;
+  const s=st(active); s.noroi=!s.noroi; if(s.noroi) s.assigned=true;
+  save(); render(true); status();
 }
 
 function onSlide(v){
@@ -381,18 +422,29 @@ function select(uid, keep){
   if(!keep) document.querySelector(`[data-uid="${CSS.escape(uid)}"]`)
     ?.scrollIntoView({inline:"center", block:"nearest"});
 }
-const isDone = uid => (S[uid]?.pairs?.length || 0) >= 3;
+const isDone   = uid => (S[uid]?.pairs?.length || 0) >= 3;
+const isNoRoi  = uid => !!S[uid]?.noroi;
+// Plate chosen deliberately but not landmarked - a real decision, and one the
+// export used to discard.
+const isPlateOnly = uid => !!S[uid]?.assigned && !isDone(uid) && !isNoRoi(uid);
 
 function render(keep){
   const list=rows();
   el("nsec").textContent = list.length;
-  el("ndone").textContent = list.filter(d=>isDone(d.uid)).length;
+  el("ndone").textContent   = list.filter(d=>isDone(d.uid)).length;
+  el("nassign").textContent = list.filter(d=>isPlateOnly(d.uid)).length;
+  el("nnoroi").textContent  = list.filter(d=>isNoRoi(d.uid)).length;
   el("strip").innerHTML = list.map(d=>{
     const s=S[d.uid], n=s?.pairs?.length||0;
-    return `<div class="cell ${isDone(d.uid)?"done":""} ${active===d.uid?"active":""}"
+    const cls = isDone(d.uid) ? "done" : isNoRoi(d.uid) ? "noroi"
+              : isPlateOnly(d.uid) ? "plateonly" : "";
+    const tag = isNoRoi(d.uid) ? "no ROI"
+              : n ? n+" pts"
+              : isPlateOnly(d.uid) ? PLATES[s.plate].id.replace("plate_","pl ") : "";
+    return `<div class="cell ${cls} ${active===d.uid?"active":""}"
       data-uid="${d.uid}" onclick="select('${d.uid}')">
       <img src="${d.img}" loading="lazy" alt="">
-      <div class="cap">${d.order}<br>${n?n+" pts":""}</div></div>`;
+      <div class="cap">${d.order}<br>${tag}</div></div>`;
   }).join("");
   if(active && !list.some(d=>d.uid===active)) active=null;
   if(!active && list.length) select(list[0].uid);
@@ -410,24 +462,43 @@ addEventListener("keydown", e=>{
 });
 
 function exportCsv(){
-  const lm=[["scene_uid","animal","section_order","plate_id","pair","sec_x","sec_y","plate_x","plate_y","residual_px"]];
-  const rg=[["scene_uid","animal","plate_id","region","sec_x","sec_y","n_landmarks","transform","mean_residual_px"]];
+  // THREE files, because there are three different decisions and collapsing them
+  // loses one. A plate assignment is a judgement in its own right - "this section
+  // is plate_020" - and it used to be discarded whenever it carried fewer than
+  // three landmarks, which is exactly the case where the operator has decided the
+  // section is not worth landmarking.
+  const pl=[["scene_uid","animal","section_order","plate_id","plate_index",
+             "plate_has_seeds","n_landmarks","transform","status"]];
+  const lm=[["scene_uid","animal","section_order","plate_id","pair",
+             "sec_x","sec_y","plate_x","plate_y","residual_px"]];
+  const rg=[["scene_uid","animal","plate_id","region","sec_x","sec_y",
+             "n_landmarks","transform","mean_residual_px"]];
+
   for(const d of DATA){
-    const s=S[d.uid]; if(!s || s.pairs.length<3) continue;
-    const P=PLATES[s.plate], T=transform(s.pairs);
+    const s=S[d.uid];
+    if(!s || !s.assigned) continue;                 // never looked at - say nothing
+    const P=PLATES[s.plate], n=s.pairs.length;
+    const T=transform(s.pairs);
+    const status = s.noroi ? "no_roi" : (n>=3 ? "registered" : "plate_only");
+    pl.push([d.uid,d.animal,d.order,P.id,s.plate,P.labelled?1:0,n,
+             T?T.kind:"", status]);
+    if(status!=="registered") continue;
+
     let tot=0;
     s.pairs.forEach(([sx,sy,px,py],i)=>{
       const [X,Y]=apply(T,px,py), r=Math.hypot(X-sx,Y-sy); tot+=r;
       lm.push([d.uid,d.animal,d.order,P.id,i+1,sx.toFixed(2),sy.toFixed(2),
                px.toFixed(2),py.toFixed(2),r.toFixed(2)]);
     });
-    const mr=(tot/s.pairs.length).toFixed(2);
+    const mr=(tot/n).toFixed(2);
     for(const sd of P.seeds){
       const [X,Y]=apply(T, sd.xf*P.w, sd.yf*P.h);
-      rg.push([d.uid,d.animal,P.id,sd.region,X.toFixed(2),Y.toFixed(2),s.pairs.length,T.kind,mr]);
+      rg.push([d.uid,d.animal,P.id,sd.region,X.toFixed(2),Y.toFixed(2),n,T.kind,mr]);
     }
   }
-  dl(lm,"roi_landmarks.csv"); dl(rg,"roi_regions.csv");
+  dl(pl,"roi_plates.csv");
+  dl(lm,"roi_landmarks.csv");
+  dl(rg,"roi_regions.csv");
 }
 function dl(rowsArr,name){
   const b=new Blob([rowsArr.map(r=>r.join(",")).join("\\n")],{type:"text/csv"});
