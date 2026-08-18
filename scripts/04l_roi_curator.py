@@ -213,8 +213,15 @@ const rows = () => DATA.filter(d=>d.animal===el("animal").value).sort((a,b)=>a.o
 // a plate_001 assignment for everything it touched.
 const st = uid => S[uid] || (S[uid] = {plate: 0, pairs: [], assigned: false, noroi: false});
 
-const secImg = new Image(), plImg = new Image();
-secImg.onload = drawSec; plImg.onload = drawPl;
+const secImg = new Image();
+secImg.onload = drawSec;
+
+// All 101 plates preloaded - 7.4 MB total, median 71 KB. Setting plImg.src on
+// every slider step made each step wait on a disk read and a JPEG decode, which
+// is what made scrubbing feel heavy. Held as decoded Image objects instead, so
+// changing plate is just a canvas draw.
+const PLIMG = PLATES.map(p => { const im = new Image(); im.src = p.img; return im; });
+const plateImg = () => PLIMG[st(active).plate];
 
 // ---- affine from >=3 correspondences, least squares ------------------------
 // A thin-plate spline would fit the clicked points exactly and invent
@@ -317,8 +324,11 @@ function drawSec(){
   if(pending) mark(x,pending[0],pending[1],s.pairs.length+1,"#d29922");
 }
 function drawPl(){
-  const c=el("cPl"), x=c.getContext("2d"); if(!plImg.naturalWidth) return;
-  fit(c,plImg); x.drawImage(plImg,0,0);
+  const c=el("cPl"), x=c.getContext("2d");
+  if(!active) return;
+  const img=plateImg();
+  if(!img.naturalWidth){ img.addEventListener("load", drawPl, {once:true}); return; }
+  fit(c,img); x.drawImage(img,0,0);
   const s=st(active), P=PLATES[s.plate];
   for(const sd of P.seeds){
     const X=sd.xf*c.width, Y=sd.yf*c.height;
@@ -342,15 +352,15 @@ function clickPl(e){
   if(!active || !pending) return;
   const [px,py]=canvasXY(el("cPl"), e);
   st(active).pairs.push([pending[0],pending[1],px,py]); pending=null;
-  save(); drawSec(); drawPl(); status(); render(true);
+  save(); drawSec(); drawPl(); status(); paintCell(active);
 }
 function undoPt(){
   if(!active) return;
   if(pending){ pending=null; } else st(active).pairs.pop();
-  save(); drawSec(); drawPl(); status(); render(true);
+  save(); drawSec(); drawPl(); status(); paintCell(active);
 }
 function clearPts(){ if(!active) return; st(active).pairs=[]; pending=null; save();
-  drawSec(); drawPl(); status(); render(true); }
+  drawSec(); drawPl(); status(); paintCell(active); }
 
 function status(){
   const s=st(active), T=transform(s.pairs);
@@ -392,13 +402,13 @@ function status(){
 // distinction between "the operator chose this plate" and "this section has
 // never been looked at" reliable.
 function onSlideUser(v){
-  const s=st(active); s.assigned=true; save(); onSlide(v); render(true); status();
+  const s=st(active); s.assigned=true; save(); onSlide(v); paintCell(active);
 }
-function markAssigned(){ if(active){ st(active).assigned=true; save(); render(true); status(); } }
+function markAssigned(){ if(active){ st(active).assigned=true; save(); paintCell(active); status(); } }
 function toggleNoRoi(){
   if(!active) return;
   const s=st(active); s.noroi=!s.noroi; if(s.noroi) s.assigned=true;
-  save(); render(true); status();
+  save(); paintCell(active); status();
 }
 
 function onSlide(v){
@@ -408,7 +418,10 @@ function onSlide(v){
   el("plLab").innerHTML = P.labelled
     ? `<span class="lab">${P.seeds.length} region seeds: ${[...new Set(P.seeds.map(x=>x.region))].join(", ")}</span>`
     : `<span class="unlab">no region labels on this plate</span>`;
-  plImg.src = P.img; drawPl(); status(); render(true);
+  drawPl(); status();
+  // NO render() here. render -> select -> onSlide -> render was a cycle: on load
+  // it recursed until the stack blew, leaving the page half-built with dead
+  // handlers - which looks exactly like "the buttons do nothing".
 }
 
 function select(uid, keep){
@@ -428,27 +441,45 @@ const isNoRoi  = uid => !!S[uid]?.noroi;
 // export used to discard.
 const isPlateOnly = uid => !!S[uid]?.assigned && !isDone(uid) && !isNoRoi(uid);
 
-function render(keep){
+// One source of truth for a cell's appearance, so the full build and the
+// single-cell update cannot drift apart.
+function cellClass(uid){
+  return isDone(uid) ? "done" : isNoRoi(uid) ? "noroi"
+       : isPlateOnly(uid) ? "plateonly" : "";
+}
+function cellTag(uid){
+  const s=S[uid], n=s?.pairs?.length||0;
+  return isNoRoi(uid) ? "no ROI" : n ? n+" pts"
+       : isPlateOnly(uid) ? PLATES[s.plate].id.replace("plate_","pl ") : "";
+}
+function counts(){
   const list=rows();
-  el("nsec").textContent = list.length;
+  el("nsec").textContent    = list.length;
   el("ndone").textContent   = list.filter(d=>isDone(d.uid)).length;
   el("nassign").textContent = list.filter(d=>isPlateOnly(d.uid)).length;
   el("nnoroi").textContent  = list.filter(d=>isNoRoi(d.uid)).length;
-  el("strip").innerHTML = list.map(d=>{
-    const s=S[d.uid], n=s?.pairs?.length||0;
-    const cls = isDone(d.uid) ? "done" : isNoRoi(d.uid) ? "noroi"
-              : isPlateOnly(d.uid) ? "plateonly" : "";
-    const tag = isNoRoi(d.uid) ? "no ROI"
-              : n ? n+" pts"
-              : isPlateOnly(d.uid) ? PLATES[s.plate].id.replace("plate_","pl ") : "";
-    return `<div class="cell ${cls} ${active===d.uid?"active":""}"
+}
+// Update ONE strip cell. Every interaction used to rebuild all 87 cells and
+// reload their images, which is why it felt slow even when it was not recursing.
+function paintCell(uid){
+  const c=document.querySelector(`[data-uid="${CSS.escape(uid)}"]`);
+  if(!c) return;
+  c.className = "cell " + cellClass(uid) + (active===uid ? " active" : "");
+  const cap=c.querySelector(".cap");
+  if(cap) cap.innerHTML = `${DATA.find(d=>d.uid===uid).order}<br>${cellTag(uid)}`;
+  counts();
+}
+// Full rebuild. Only on load and on animal change - not on interaction.
+function render(){
+  const list=rows();
+  counts();
+  el("strip").innerHTML = list.map(d=>
+    `<div class="cell ${cellClass(d.uid)} ${active===d.uid?"active":""}"
       data-uid="${d.uid}" onclick="select('${d.uid}')">
       <img src="${d.img}" loading="lazy" alt="">
-      <div class="cap">${d.order}<br>${tag}</div></div>`;
-  }).join("");
+      <div class="cap">${d.order}<br>${cellTag(d.uid)}</div></div>`).join("");
   if(active && !list.some(d=>d.uid===active)) active=null;
-  if(!active && list.length) select(list[0].uid);
-  else if(active) select(active, true);
+  if(list.length) select(active && list.some(d=>d.uid===active) ? active : list[0].uid, true);
 }
 
 addEventListener("keydown", e=>{

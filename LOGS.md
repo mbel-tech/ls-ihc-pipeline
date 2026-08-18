@@ -9,6 +9,39 @@ where things landed, not which plausible-looking route was tried and abandoned, 
 
 ---
 
+## 2026-08-13 - ROI curator was unusable: render/select/onSlide was an infinite cycle
+
+**Changed:** `04l_roi_curator.py`. The render cycle is broken, interactions update one strip cell
+instead of rebuilding the whole strip, and all 101 plate images are preloaded.
+
+**The bug, and it was mine.** `render()` called `select()`, `select()` called `onSlide()`, and
+`onSlide()` ended with `render(true)`. On load that recursed until the stack blew, leaving the page
+half-built with dead handlers - which is exactly what the operator described: it looks like it
+rendered, but no button does anything. It was there from the first version of the file; nobody had
+tried to use it until now.
+
+**Why I did not catch it.** Every check I ran on this file was static - Python-side syntax, embedded
+JSON, asset paths, and ported copies of the affine and TPS maths tested in isolation. All of those
+passed, because none of them ran the page's own control flow. The transform maths was verified
+against ground truth and is fine; the thing that was never exercised was the part only a browser
+runs.
+
+Fixed and verified by extracting the call graph from the generated HTML, stripping comments, and
+searching it for cycles: **NONE**.
+
+**Two performance faults found alongside it, both real.**
+
+*Every interaction rebuilt the entire strip* - up to 87 cells with their images - via
+`el("strip").innerHTML = ...`. Placing one landmark did a full DOM rebuild. Now `paintCell(uid)`
+updates the single affected cell and `counts()` updates the header; the full rebuild happens only
+on load and on animal change. Landmark click now triggers **0** strip rebuilds.
+
+*Every slider step reloaded a plate JPEG from disk.* Scrubbing across the 101 plates meant 101 file
+reads and decodes. All plates total **7.4 MB**, median 71 KB, so they are now preloaded as decoded
+`Image` objects at startup and changing plate is just a canvas draw.
+
+---
+
 ## 2026-08-13 - ROI curator records plate assignments independently of landmarks
 
 **Changed:** `04l_roi_curator.py` gains an explicit `assigned` state, a **No ROI here** marker, and
