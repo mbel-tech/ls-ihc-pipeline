@@ -1866,3 +1866,20 @@ ignores events from a focused `SELECT`/`INPUT`/`TEXTAREA`, because the plate
 slider is a range input that already steps itself on the arrows - without the
 guard it moved two plates per press - and the animal select does type-ahead on
 letters and would have swallowed `x`. Both controls blur themselves once used.
+
+### ROI curator - the plate slider no longer follows the section
+
+`select()` reloaded the target section's stored plate on every step, so `z`/`x`
+snapped the slider back and the level had to be hunted again each time. The two
+axes are now independent: stepping sections leaves the plate where it is, which
+is right for serial sections - consecutive slices sit at neighbouring levels, so
+the plate rarely needs to move more than a notch.
+
+**One deliberate exception.** A section that carries a real decision - `assigned`,
+or already landmarked - still shows its own plate on return, because that is a
+recorded judgement rather than a slider position. Making it absolute would have
+hidden the assignment and made review impossible.
+
+Verified: scrub to plate_019, `x` `x` -> section 3, still plate_019; arrows move
+the plate and not the section; assign section 1 to plate_012, wander to section 4
+and scrub to plate_040, `z` back -> plate_012 restored.

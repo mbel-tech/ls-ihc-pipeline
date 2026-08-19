@@ -26,6 +26,12 @@ Interaction
   matching points** - once on the section, once on the plate, alternating. Three
   pairs are the minimum for an affine; more improves it.
 
+  **The plate and the section step independently.** `z`/`x` move through
+  sections and leave the plate where it is - consecutive sections are at
+  neighbouring levels, so the plate rarely needs to move more than a notch.
+  Returning to a section that was already assigned or landmarked does show its
+  own plate again, because that is a recorded decision rather than a position.
+
   From three pairs on, the atlas **region seeds are warped live onto the section**
   in their atlas colours. That is the actual deliverable: it shows immediately
   whether the registration is placing Dl, Dm, Vv and POA where they belong, which
@@ -198,7 +204,7 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
 <footer>
   <kbd>click</kbd> section then plate to add a pair &middot;
   <kbd>&larr;</kbd><kbd>&rarr;</kbd> plate &middot; <kbd>u</kbd> undo &middot;
-  <kbd>z</kbd>/<kbd>x</kbd> previous / next section &middot;
+  <kbd>z</kbd>/<kbd>x</kbd> previous / next section (the plate stays put) &middot;
   3 pairs for an affine, 6 for a spline &middot;
   <span style="color:#7c5cff">purple</span> = registered &middot;
   <span style="color:#4da3ff">blue</span> = plate assigned only &middot;
@@ -447,9 +453,17 @@ function select(uid, keep){
   active = uid; pending = null;
   const list=rows(), i=list.findIndex(d=>d.uid===uid), d=list[i], s=st(uid);
   el("secInfo").innerHTML = `<b>${d.uid}</b><br>section ${d.order} &middot; ${i+1} of ${list.length}`;
-  el("slider").value = s.plate;
+  // The plate slider does NOT follow the section. Serial sections sit at
+  // neighbouring atlas levels, so the plate just scrubbed to is nearly always
+  // still the right one; reloading each section's stored plate meant every z/x
+  // snapped the slider back and the level had to be found again by hand.
+  // The one exception is a section carrying a real decision - assigned, or
+  // landmarked - where the stored plate IS the thing worth seeing.
+  const decided = s.assigned || s.pairs.length > 0;
+  const p = decided ? s.plate : Math.min(PLATES.length - 1, +el("slider").value || 0);
+  el("slider").value = p;
   secImg.src = d.img;
-  onSlide(s.plate);
+  onSlide(p);
   document.querySelectorAll(".cell").forEach(c=>c.classList.toggle("active", c.dataset.uid===uid));
   if(!keep) document.querySelector(`[data-uid="${CSS.escape(uid)}"]`)
     ?.scrollIntoView({inline:"center", block:"nearest"});
