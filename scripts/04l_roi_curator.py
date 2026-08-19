@@ -100,7 +100,10 @@ with open(CONFIG_PATH, encoding="utf-8") as _fh:
 OUT_ROOT = CONFIG["out_root"]
 REFORMAT_DIR = os.path.join(OUT_ROOT, "reformatted")
 INDEX_CSV = os.path.join(REFORMAT_DIR, "reformat_index.csv")
-PLATE_DIR = os.path.join(OUT_ROOT, "atlas", "plates")
+# Which plate set to use, from config. The two sets reuse the same plate_NNN
+# names for different images, so this must not be hard-coded in two places.
+PLATE_SET = CONFIG.get("atlas_plate_set", {}).get("dir", "plates")
+PLATE_DIR = os.path.join(OUT_ROOT, "atlas", PLATE_SET)
 CURATOR_HTML = os.path.join(REFORMAT_DIR, "roi_curator.html")
 
 PAGE = """<!doctype html>
@@ -199,6 +202,10 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
 <script>
 const DATA = __DATA__;      // [{uid, animal, order, img}]
 const PLATES = __PLATES__;  // [{id, img, w, h, labelled, seeds:[{region,xf,yf,hex}]}]
+// Which plate set these ids belong to. plate_012 exists in every set and is a
+// DIFFERENT image in each, so every export carries this and a landmark file can
+// never be silently matched against the wrong plates.
+const PLATE_SET = __PLATESET__;
 const KEY = "ls_roi_curator_v1";
 let S = JSON.parse(localStorage.getItem(KEY) || "{}");   // uid -> {plate, pairs:[[sx,sy,px,py]]}
 let active = null, pending = null;   // pending section point awaiting its plate partner
@@ -498,11 +505,11 @@ function exportCsv(){
   // is plate_020" - and it used to be discarded whenever it carried fewer than
   // three landmarks, which is exactly the case where the operator has decided the
   // section is not worth landmarking.
-  const pl=[["scene_uid","animal","section_order","plate_id","plate_index",
+  const pl=[["scene_uid","animal","section_order","plate_set","plate_id","plate_index",
              "plate_has_seeds","n_landmarks","transform","status"]];
-  const lm=[["scene_uid","animal","section_order","plate_id","pair",
+  const lm=[["scene_uid","animal","section_order","plate_set","plate_id","pair",
              "sec_x","sec_y","plate_x","plate_y","residual_px"]];
-  const rg=[["scene_uid","animal","plate_id","region","sec_x","sec_y",
+  const rg=[["scene_uid","animal","plate_set","plate_id","region","sec_x","sec_y",
              "n_landmarks","transform","mean_residual_px"]];
 
   for(const d of DATA){
@@ -511,20 +518,20 @@ function exportCsv(){
     const P=PLATES[s.plate], n=s.pairs.length;
     const T=transform(s.pairs);
     const status = s.noroi ? "no_roi" : (n>=3 ? "registered" : "plate_only");
-    pl.push([d.uid,d.animal,d.order,P.id,s.plate,P.labelled?1:0,n,
+    pl.push([d.uid,d.animal,d.order,PLATE_SET,P.id,s.plate,P.labelled?1:0,n,
              T?T.kind:"", status]);
     if(status!=="registered") continue;
 
     let tot=0;
     s.pairs.forEach(([sx,sy,px,py],i)=>{
       const [X,Y]=apply(T,px,py), r=Math.hypot(X-sx,Y-sy); tot+=r;
-      lm.push([d.uid,d.animal,d.order,P.id,i+1,sx.toFixed(2),sy.toFixed(2),
+      lm.push([d.uid,d.animal,d.order,PLATE_SET,P.id,i+1,sx.toFixed(2),sy.toFixed(2),
                px.toFixed(2),py.toFixed(2),r.toFixed(2)]);
     });
     const mr=(tot/n).toFixed(2);
     for(const sd of P.seeds){
       const [X,Y]=apply(T, sd.xf*P.w, sd.yf*P.h);
-      rg.push([d.uid,d.animal,P.id,sd.region,X.toFixed(2),Y.toFixed(2),n,T.kind,mr]);
+      rg.push([d.uid,d.animal,PLATE_SET,P.id,sd.region,X.toFixed(2),Y.toFixed(2),n,T.kind,mr]);
     }
   }
   dl(pl,"roi_plates.csv");
@@ -569,14 +576,16 @@ def main():
         pl.append({"id": p["plate_id"],
                    # Original plate, NOT reformatted: the seeds are fractions of
                    # this image, so no transform chain is needed.
-                   "img": f"../atlas/plates/{p['image_file']}",
+                   "img": f"../atlas/{PLATE_SET}/{p['image_file']}",
                    "w": int(p["px_w"]), "h": int(p["px_h"]),
                    "labelled": int(bool(sd)), "seeds": sd})
 
     data = [{"uid": r["id"], "animal": r["animal"], "order": int(r["section_order"] or 0),
              "img": f"sections/{r['id']}.png"} for r in rows]
 
-    page = PAGE.replace("__DATA__", json.dumps(data)).replace("__PLATES__", json.dumps(pl))
+    page = (PAGE.replace("__DATA__", json.dumps(data))
+                .replace("__PLATES__", json.dumps(pl))
+                .replace("__PLATESET__", json.dumps(PLATE_SET)))
     with open(CURATOR_HTML, "w", encoding="utf-8") as fh:
         fh.write(page)
 

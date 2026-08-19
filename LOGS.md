@@ -1803,3 +1803,44 @@ byte-identical copies of zip entries.
 **Consequence:** scene indices do **not** correspond between passes — scan regions were redrawn
 each time, so `LS45_8a` has 10 scenes and `LS45_8b` has 12. Pairing must go through stage
 coordinates, which is why Stage 2 exists at all.
+
+## 2026-08-19 - atlas plate set switched to `plates_final`, section counts enforced
+
+**The two plate sets collide.** `plates/` (101), `plates_merged/` (47) and
+`plates_final/` all name their plates `plate_NNN`, and 68 ids existed in two sets
+pointing at different images. A landmark file could therefore be matched against
+the wrong plates with nothing to show it had happened. Fixed by making the choice
+a single declared value, `atlas_plate_set.dir` in `config.json`, read by both
+`04l_roi_curator.py` and `04e_register_elastix.py`, and by stamping `plate_set`
+into all three curator exports.
+
+**Operator knowledge: merged figures 31-47 carry two sections each.** Recorded in
+`config.json` as `atlas_figure_sections`. Geometry disagreed on five figures, in
+two different ways, and geometry was wrong both times:
+
+  * **34, 35 under-split.** The two sections *touch* - the upper section's
+    pituitary sits in the notch between the lower section's dorsal humps, so they
+    are one connected component - and the legend text runs across the contact
+    zone, so no row is empty either. Confirmed by measurement: a single component
+    of area 0.40 spanning y 0.001-0.999, and no empty row anywhere in the middle
+    40% for x in 0.40-0.70.
+  * **45, 46, 47 over-split.** A section crossed by an internal white band -
+    stained brainstem above, pale cerebellum below - counted as two. Figure 46
+    had it on both sections, giving four boxes for two.
+
+`04a3b_enforce_sections.py` takes the declared count as the authority and decides
+only *where* to cut. Merging unions the closest pair repeatedly. Splitting
+produces **overlapping** boxes, matching the 0.005-0.015 overlap figures 31-44
+already had, because a single cut through touching sections would take the
+pituitary off one plate or the humps off the other. 34 and 35 are flagged
+`review=1`; the cut there is an estimate.
+
+**Separately, figures 20 and 21 were not two sections.** The second box was a
+detached "Optic Chiasm" callout - figure 22 shows the same structure attached and
+labelled OC inside the section. An inset is not a plate. Both dropped; neither
+held a seed.
+
+68 boxes -> 64 (30 single-section figures + 17 x 2), 40 figures untouched.
+`plate_boxes.prev.csv` keeps the previous export. Rebuild carried **all 316 seeds
+onto 17 plates with 0 orphans** - no seed lies on figures 31-47, so none of this
+could put an ROI at risk.

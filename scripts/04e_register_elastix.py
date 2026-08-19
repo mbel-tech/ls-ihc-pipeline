@@ -37,7 +37,10 @@ with open(CONFIG_PATH, encoding="utf-8") as _fh:
 
 OUT_ROOT = CONFIG["out_root"]
 REFORMAT_DIR = os.path.join(OUT_ROOT, "reformatted")
-PLATE_DIR = os.path.join(OUT_ROOT, "atlas", "plates")
+# Which plate set to use, from config. The two sets reuse the same plate_NNN
+# names for different images, so this must not be hard-coded in two places.
+PLATE_SET = CONFIG.get("atlas_plate_set", {}).get("dir", "plates")
+PLATE_DIR = os.path.join(OUT_ROOT, "atlas", PLATE_SET)
 MATCH_CSV = os.path.join(OUT_ROOT, "qc", "atlasmatch", "atlas_proposals_v2.csv")
 REG_DIR = os.path.join(OUT_ROOT, "registered")
 
