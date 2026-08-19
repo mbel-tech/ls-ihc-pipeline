@@ -9,6 +9,54 @@ where things landed, not which plausible-looking route was tried and abandoned, 
 
 ---
 
+## 2026-08-13 - The atlas was 101 fragments, not 101 plates. Rebuilt to 68 real plates.
+
+**Changed:** three new scripts - `04a2_atlas_remerge.py`, `04a3_plate_reframe.py`,
+`04a4_plate_rebuild.py`. Nothing overwritten: output goes to `atlas/plates_merged/` and
+`atlas/plates_final/`, alongside the originals.
+
+**The operator reported that some atlas plates are cut through. The cause is worse than that.**
+`04a_atlas_extract.py` treated every image XObject in the PDF as a plate, and PDFs routinely store
+one large bitmap as several horizontal **strips**, each its own XObject. Measured on the source:
+**101 XObjects, 47 actual figures.** More than half the reference set was a fragment.
+
+Detected exactly, not by heuristic - strips of one image share their x-range to within 2 pt and
+abut in y with a gap of **0.00 pt**:
+
+    page 8:  x 106.0-507.4  y 424.1-587.2  px 1226x498
+             x 106.0-507.4  y 587.2-750.1  px 1226x498     <- same image
+
+Tissue running off an edge: **83 of 101 before, 3 of 47 after merging.**
+
+**This is very likely a large part of why atlas matching never worked.** `04c` scored every section
+against a reference set in which over half the entries were partial sections - a top-of-brain strip
+and a bottom-of-brain strip presented as two independent plates. Together with the polarity bug
+found yesterday, the reference set was wrong in two independent ways at once.
+
+**One thing the merge cannot decide.** A figure often holds more than one section: of the 47, 30
+hold one, 14 hold two, 2 hold three, 1 holds four - about **68 real plates**. Where one section ends
+and the next begins is an anatomical judgement, not a geometric fact about the PDF, so `04a3` puts
+it in front of the operator. Boxes are **proposed** from the tissue bands, so the 30 single-section
+figures need no interaction and only the 17 multi-section ones do.
+
+**Seeds are carried exactly at every step**, never re-detected: a fraction of the old strip becomes
+a point in PDF page coordinates, then a fraction of the merged figure, then a fraction of the final
+crop. **316 seeds, 0 unmapped, 0 orphaned** through the whole chain. Crops are **rendered from the
+PDF**, not resampled from the extracted JPEGs, so the final plates are sharper than the originals
+and in colour.
+
+**Also checked for the bug that broke the ROI curator.** The reframe tool's call graph was extracted
+from the generated HTML and searched for cycles before shipping: none.
+
+Provisional `atlas/plate_boxes.csv` was written from the auto-proposals so the chain could be tested
+end to end; exporting from `04a3` overwrites it.
+
+**Not yet switched over.** `04l_roi_curator.py` still points at the original `atlas/plates/`.
+Pointing it at `plates_final/` is a one-line change, to be made after the reframing is reviewed -
+and `04c`/`04e` are worth revisiting against a reference set that is finally whole.
+
+---
+
 ## 2026-08-13 - ROI curator was unusable: render/select/onSlide was an infinite cycle
 
 **Changed:** `04l_roi_curator.py`. The render cycle is broken, interactions update one strip cell
