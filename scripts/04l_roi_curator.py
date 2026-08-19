@@ -26,6 +26,19 @@ Interaction
   matching points** - once on the section, once on the plate, alternating. Three
   pairs are the minimum for an affine; more improves it.
 
+  **Drag left or right on the section to rotate it.** A left-press only becomes a
+  rotation once it has moved a few pixels, so the same button still places
+  landmarks; hold shift for fine control, `r` to reset. The rotation is a
+  **viewing aid and nothing else** - every stored coordinate stays in the
+  unrotated reformatted frame, so the transform, the residuals and all three
+  exports are identical whether the section was turned or not. The angle is
+  carried in `roi_plates.csv` as `view_rotation_deg` for provenance only.
+
+  **`f` marks a section favourite** - the subset worth carrying into actual
+  quantification. It is orthogonal to the plate assignment, because a section can
+  be worth quantifying before anyone has landmarked it, so it sets no other flag
+  and is reported on its own. "favourites only" narrows the strip to that subset.
+
   **The plate and the section step independently.** `z`/`x` move through
   sections and leave the plate where it is - consecutive sections are at
   neighbouring levels, so the plate rarely needs to move more than a notch.
@@ -137,7 +150,9 @@ button.primary{background:var(--accent);border-color:var(--accent);color:#04121f
       overflow:hidden;min-width:0;min-height:0}
 .pane h2{position:absolute;top:6px;left:8px;margin:0;font-size:11px;color:var(--dim);
          z-index:3;pointer-events:none;text-shadow:0 0 6px #000}
-canvas{display:block;width:100%;height:100%;object-fit:contain;cursor:crosshair}
+canvas{display:block;width:100%;height:100%;object-fit:contain;cursor:crosshair;
+       user-select:none;-webkit-user-drag:none}
+#cSec.rotating{cursor:ew-resize}
 #side{display:flex;flex-direction:column;gap:9px;min-height:0;overflow-y:auto}
 .card{border:1px solid var(--line);border-radius:9px;padding:9px;background:#0e1014}
 .card h3{font-size:11px;margin:0 0 5px;color:var(--dim);font-weight:600;letter-spacing:.04em}
@@ -157,6 +172,9 @@ input[type=range]{width:100%}
 .cell.done{border-color:var(--done);background:#141026}
 .cell.plateonly{border-color:var(--accent);background:#0d1520}
 .cell.noroi{border-color:#3a3f47;opacity:.55}
+.cell.fav{box-shadow:inset 0 0 0 2px #e3b341}
+.fav-on{border-color:#e3b341 !important;color:#e3b341}
+label.chk{color:var(--dim);font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer}
 .cell img{width:100%;aspect-ratio:1;object-fit:contain;display:block;border-radius:3px}
 .cap{font-size:9px;color:var(--dim);text-align:center;line-height:1.15;margin-top:1px}
 footer{flex:0 0 auto;background:var(--bg);border-top:1px solid var(--line);
@@ -171,10 +189,13 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
   <span class="row" style="color:#7c5cff"><b id="ndone"></b> registered</span>
   <span class="row" style="color:#4da3ff"><b id="nassign"></b> plate only</span>
   <span class="row" style="color:#9aa0a8"><b id="nnoroi"></b> no ROI</span>
+  <span class="row" style="color:#e3b341"><b id="nfav"></b> favourite</span>
+  <label class="chk"><input type="checkbox" id="favOnly" onchange="render(); this.blur()">favourites only</label>
   <span class="row"><b id="npair"></b> pairs on this section</span>
   <span class="row" id="fit"></span>
   <span class="grow"></span>
   <button onclick="markAssigned()">Assign plate</button>
+  <button id="favBtn" onclick="toggleFav()">Favourite</button>
   <button id="noroiBtn" onclick="toggleNoRoi()">No ROI here</button>
   <button onclick="undoPt()">Undo point</button>
   <button onclick="clearPts()">Clear points</button>
@@ -182,11 +203,12 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
 </header>
 <div id="panes">
   <div class="pane"><h2>SECTION - click to place a point</h2>
-    <canvas id="cSec" onclick="clickSec(event)"></canvas></div>
+    <canvas id="cSec" onclick="clickSec(event)" onmousedown="secDown(event)"></canvas></div>
   <div class="pane"><h2>ATLAS PLATE - click the matching point</h2>
     <canvas id="cPl" onclick="clickPl(event)"></canvas></div>
   <div id="side">
-    <div class="card"><h3>SECTION</h3><div class="kv" id="secInfo">-</div></div>
+    <div class="card"><h3>SECTION</h3><div class="kv" id="secInfo">-</div>
+      <div class="kv" id="rotInfo"></div></div>
     <div class="card"><h3>PLATE</h3>
       <input type="range" id="slider" min="0" max="0" value="0" oninput="onSlideUser(this.value)" onchange="this.blur()">
       <div class="kv"><b id="plName">-</b></div>
@@ -205,9 +227,12 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
   <kbd>click</kbd> section then plate to add a pair &middot;
   <kbd>&larr;</kbd><kbd>&rarr;</kbd> plate &middot; <kbd>u</kbd> undo &middot;
   <kbd>z</kbd>/<kbd>x</kbd> previous / next section (the plate stays put) &middot;
+  <kbd>drag</kbd> the section left/right to rotate (<kbd>shift</kbd> fine, <kbd>r</kbd> reset) &middot;
+  <kbd>f</kbd> favourite &middot;
   3 pairs for an affine, 6 for a spline &middot;
   <span style="color:#7c5cff">purple</span> = registered &middot;
   <span style="color:#4da3ff">blue</span> = plate assigned only &middot;
+  <span style="color:#e3b341">gold edge</span> = favourite &middot;
   faded = marked no-ROI &middot; autosaves
 </footer>
 <script>
@@ -225,11 +250,17 @@ const save = () => localStorage.setItem(KEY, JSON.stringify(S));
 const animals = [...new Set(DATA.map(d=>d.animal))].sort((a,b)=>+a.slice(2)-+b.slice(2));
 el("animal").innerHTML = animals.map(a=>`<option>${a}</option>`).join("");
 el("slider").max = PLATES.length-1;
-const rows = () => DATA.filter(d=>d.animal===el("animal").value).sort((a,b)=>a.order-b.order);
+const inAnimal = () => DATA.filter(d=>d.animal===el("animal").value);
+// The favourites filter narrows the strip to the subset chosen for
+// quantification, so `rows` - which also drives z/x and the counts - honours it.
+const rows = () => inAnimal()
+  .filter(d => !el("favOnly").checked || S[d.uid]?.fav)
+  .sort((a,b)=>a.order-b.order);
 // `assigned` is set only by a real slider move or an explicit button, never by
 // merely selecting a section - otherwise clicking through the strip would record
 // a plate_001 assignment for everything it touched.
-const st = uid => S[uid] || (S[uid] = {plate: 0, pairs: [], assigned: false, noroi: false});
+const st = uid => S[uid] || (S[uid] = {plate: 0, pairs: [], assigned: false,
+                                       noroi: false, fav: false, rot: 0});
 
 const secImg = new Image();
 secImg.onload = drawSec;
@@ -325,21 +356,47 @@ function apply(T,px,py){
 
 // ---- drawing ---------------------------------------------------------------
 function fit(c, img){ c.width=img.naturalWidth||600; c.height=img.naturalHeight||600; }
+// ---- rotation, as a VIEWING aid only ---------------------------------------
+// Every stored coordinate - landmarks, pending points, warped seeds - stays in
+// the UNROTATED reformatted frame. Only the drawing and the click mapping know
+// the angle. That is the whole point: the transform, the residuals and all
+// three exports are byte-identical whether the operator rotated or not, so
+// turning the section to see it better can never move a landmark.
+//
+// The canvas is the DIAGONAL of the image, not the image, so a rotated section
+// never has its corners clipped.
+function secGeom(){
+  const w=secImg.naturalWidth||256, h=secImg.naturalHeight||256;
+  const a=(st(active).rot||0)*Math.PI/180;
+  return {w, h, D:Math.ceil(Math.hypot(w,h)), a, cos:Math.cos(a), sin:Math.sin(a)};
+}
+const img2can = (x,y,g) => { const dx=x-g.w/2, dy=y-g.h/2;
+  return [g.D/2 + dx*g.cos - dy*g.sin, g.D/2 + dx*g.sin + dy*g.cos]; };
+const can2img = (X,Y,g) => { const dx=X-g.D/2, dy=Y-g.D/2;
+  return [g.w/2 + dx*g.cos + dy*g.sin, g.h/2 - dx*g.sin + dy*g.cos]; };
+
 function drawSec(){
   const c=el("cSec"), x=c.getContext("2d"); if(!secImg.naturalWidth) return;
-  fit(c,secImg); x.drawImage(secImg,0,0);
+  const g=secGeom();
+  c.width=g.D; c.height=g.D;
+  x.clearRect(0,0,g.D,g.D);
+  x.save(); x.translate(g.D/2,g.D/2); x.rotate(g.a);
+  x.drawImage(secImg, -g.w/2, -g.h/2);
+  x.restore();
   const s=st(active), T=transform(s.pairs);
   if(T){                                   // warped atlas seeds - the deliverable
     const P=PLATES[s.plate];
     for(const sd of P.seeds){
-      const [X,Y]=apply(T, sd.xf*P.w, sd.yf*P.h);
+      const [ix,iy]=apply(T, sd.xf*P.w, sd.yf*P.h);
+      const [X,Y]=img2can(ix,iy,g);
       x.beginPath(); x.arc(X,Y,7,0,6.284); x.fillStyle=sd.hex||"#4da3ff"; x.globalAlpha=.85; x.fill();
       x.globalAlpha=1; x.lineWidth=2; x.strokeStyle="#000"; x.stroke();
       x.fillStyle="#fff"; x.font="bold 13px system-ui"; x.fillText(sd.region, X+10, Y+4);
     }
   }
-  s.pairs.forEach(([sx,sy],i)=>mark(x,sx,sy,i+1,"#4da3ff"));
-  if(pending) mark(x,pending[0],pending[1],s.pairs.length+1,"#d29922");
+  s.pairs.forEach(([sx,sy],i)=>{ const [X,Y]=img2can(sx,sy,g); mark(x,X,Y,i+1,"#4da3ff"); });
+  if(pending){ const [X,Y]=img2can(pending[0],pending[1],g);
+               mark(x,X,Y,s.pairs.length+1,"#d29922"); }
 }
 function drawPl(){
   const c=el("cPl"), x=c.getContext("2d");
@@ -369,9 +426,40 @@ const canvasXY = (c,e) => {
   return [(e.clientX-ox)/k, (e.clientY-oy)/k];
 };
 
+// Left-drag rotates, left-click places a point, and the two share a button. A
+// press only becomes a rotation once it has moved past a few pixels; the click
+// that follows such a drag is swallowed, so a rotation never drops a landmark.
+// `dragged` is cleared on the next mousedown rather than on mouseup, so a drag
+// released outside the canvas - which fires no click - cannot swallow the next
+// real click either.
+let rotDrag=null, dragged=false;
+const DEG_PER_PX = 0.4, DEG_PER_PX_FINE = 0.05;
+function secDown(e){
+  if(!active || e.button!==0) return;
+  rotDrag={x:e.clientX, rot:st(active).rot||0}; dragged=false; e.preventDefault();
+}
+addEventListener("mousemove", e=>{
+  if(!rotDrag) return;
+  const dx=e.clientX-rotDrag.x;
+  if(Math.abs(dx)>3) dragged=true;
+  if(!dragged) return;
+  el("cSec").classList.add("rotating");
+  const per = e.shiftKey ? DEG_PER_PX_FINE : DEG_PER_PX;   // shift = fine
+  st(active).rot = ((rotDrag.rot + dx*per) % 360 + 360) % 360;
+  drawSec(); status();
+});
+addEventListener("mouseup", ()=>{
+  if(rotDrag && dragged){ save(); paintCell(active); }
+  rotDrag=null; el("cSec").classList.remove("rotating");
+});
+function resetRot(){ if(!active) return;
+  st(active).rot=0; save(); drawSec(); status(); paintCell(active); }
+
 function clickSec(e){
   if(!active) return;
-  pending = canvasXY(el("cSec"), e); drawSec(); status();
+  if(dragged){ dragged=false; return; }        // that press was a rotation
+  pending = can2img(...canvasXY(el("cSec"), e), secGeom());
+  drawSec(); status();
 }
 function clickPl(e){
   if(!active || !pending) return;
@@ -420,6 +508,12 @@ function status(){
   const sa = st(active);
   el("noroiBtn").textContent = sa.noroi ? "No ROI here ✓" : "No ROI here";
   el("noroiBtn").style.borderColor = sa.noroi ? "#3fb950" : "";
+  el("favBtn").textContent = sa.fav ? "Favourite ★" : "Favourite";
+  el("favBtn").classList.toggle("fav-on", !!sa.fav);
+  const rot = sa.rot||0;
+  el("rotInfo").innerHTML = rot
+    ? `rotated <b>${rot.toFixed(1)}&deg;</b> <span style="color:#9aa0a8">- view only, landmarks unaffected &middot; <kbd>r</kbd> reset</span>`
+    : `<span style="color:#9aa0a8">drag left/right on the section to rotate</span>`;
 }
 
 // Called by the slider's oninput, which fires ONLY on user interaction -
@@ -430,6 +524,13 @@ function onSlideUser(v){
   const s=st(active); s.assigned=true; save(); onSlide(v); paintCell(active);
 }
 function markAssigned(){ if(active){ st(active).assigned=true; save(); paintCell(active); status(); } }
+// Favourite marks the subset chosen for actual quantification. It is ORTHOGONAL
+// to the plate assignment - a section can be worth quantifying before anyone has
+// landmarked it - so it sets no other flag and the export carries it on its own.
+function toggleFav(){
+  if(!active) return;
+  const s=st(active); s.fav=!s.fav; save(); paintCell(active); status();
+}
 function toggleNoRoi(){
   if(!active) return;
   const s=st(active); s.noroi=!s.noroi; if(s.noroi) s.assigned=true;
@@ -477,8 +578,9 @@ const isPlateOnly = uid => !!S[uid]?.assigned && !isDone(uid) && !isNoRoi(uid);
 // One source of truth for a cell's appearance, so the full build and the
 // single-cell update cannot drift apart.
 function cellClass(uid){
-  return isDone(uid) ? "done" : isNoRoi(uid) ? "noroi"
-       : isPlateOnly(uid) ? "plateonly" : "";
+  const base = isDone(uid) ? "done" : isNoRoi(uid) ? "noroi"
+             : isPlateOnly(uid) ? "plateonly" : "";
+  return S[uid]?.fav ? base + " fav" : base;
 }
 function cellTag(uid){
   const s=S[uid], n=s?.pairs?.length||0;
@@ -491,6 +593,9 @@ function counts(){
   el("ndone").textContent   = list.filter(d=>isDone(d.uid)).length;
   el("nassign").textContent = list.filter(d=>isPlateOnly(d.uid)).length;
   el("nnoroi").textContent  = list.filter(d=>isNoRoi(d.uid)).length;
+  // counted over the animal, not the filtered view, so it does not collapse to
+  // the list length the moment "favourites only" is ticked
+  el("nfav").textContent    = inAnimal().filter(d=>S[d.uid]?.fav).length;
 }
 // Update ONE strip cell. Every interaction used to rebuild all 87 cells and
 // reload their images, which is why it felt slow even when it was not recursing.
@@ -528,6 +633,8 @@ addEventListener("keydown", e=>{
   else if(e.key==="u"){ undoPt(); }
   else if(e.key==="x" && i<list.length-1){ select(list[i+1].uid); }
   else if(e.key==="z" && i>0){ select(list[i-1].uid); }
+  else if(e.key==="f"){ toggleFav(); }
+  else if(e.key==="r"){ resetRot(); }
 });
 
 function exportCsv(){
@@ -537,7 +644,8 @@ function exportCsv(){
   // three landmarks, which is exactly the case where the operator has decided the
   // section is not worth landmarking.
   const pl=[["scene_uid","animal","section_order","plate_set","plate_id","plate_index",
-             "plate_has_seeds","n_landmarks","transform","status"]];
+             "plate_has_seeds","n_landmarks","transform","status",
+             "favorite","view_rotation_deg"]];
   const lm=[["scene_uid","animal","section_order","plate_set","plate_id","pair",
              "sec_x","sec_y","plate_x","plate_y","residual_px"]];
   const rg=[["scene_uid","animal","plate_set","plate_id","region","sec_x","sec_y",
@@ -545,12 +653,18 @@ function exportCsv(){
 
   for(const d of DATA){
     const s=S[d.uid];
-    if(!s || !s.assigned) continue;                 // never looked at - say nothing
+    // A favourite is a decision too, so it is reported even with no plate yet.
+    if(!s || !(s.assigned || s.fav)) continue;      // never looked at - say nothing
     const P=PLATES[s.plate], n=s.pairs.length;
     const T=transform(s.pairs);
-    const status = s.noroi ? "no_roi" : (n>=3 ? "registered" : "plate_only");
-    pl.push([d.uid,d.animal,d.order,PLATE_SET,P.id,s.plate,P.labelled?1:0,n,
-             T?T.kind:"", status]);
+    const chosen = s.assigned || n>0;   // is the plate a decision, or still the default?
+    const status = s.noroi ? "no_roi" : n>=3 ? "registered"
+                 : chosen ? "plate_only" : "favourite_only";
+    // Blank rather than plate_001 when no plate was ever chosen - otherwise a
+    // favourite with no assignment reads as a deliberate call on plate_001.
+    pl.push([d.uid,d.animal,d.order,PLATE_SET, chosen?P.id:"", chosen?s.plate:"",
+             chosen?(P.labelled?1:0):"", n, T?T.kind:"", status,
+             s.fav?1:0, (s.rot||0).toFixed(1)]);
     if(status!=="registered") continue;
 
     let tot=0;

@@ -1883,3 +1883,42 @@ hidden the assignment and made review impossible.
 Verified: scrub to plate_019, `x` `x` -> section 3, still plate_019; arrows move
 the plate and not the section; assign section 1 to plate_012, wander to section 4
 and scrub to plate_040, `z` back -> plate_012 restored.
+
+### ROI curator - drag to rotate the section, and a favourite subset
+
+**Rotation is a viewing aid and nothing else.** Left-drag on the section turns it
+(0.4 deg/px, shift for 0.05, `r` resets). Every stored coordinate - landmarks,
+the pending point, the warped seeds - stays in the **unrotated** reformatted
+frame; only the drawing and the click mapping know the angle. So the transform,
+the residuals and all three exports are identical whether the section was turned
+or not, and turning it to see it better can never move a landmark. The angle is
+carried in `roi_plates.csv` as `view_rotation_deg`, for provenance only.
+
+The canvas is sized to the **diagonal** of the section (363 px for a 256 px
+image), so a rotated section never has its corners clipped.
+
+**Left-drag and left-click share a button**, so a press only becomes a rotation
+once it has moved past 3 px, and the click that ends such a drag is swallowed.
+`dragged` is cleared on the next mousedown rather than on mouseup, so a drag
+released outside the canvas - which fires no click at all - cannot swallow the
+next real click either.
+
+Verified in a browser: a 60 px drag gives 24.0 deg and places **0** landmarks;
+the image->canvas->image round trip is exact to **0.0 px** at 24 deg over six
+test points, with the only error being mouse quantisation (1 CSS px = 2.44 canvas
+px at that pane size).
+
+**Favourite (`f`, or the button) marks the subset for actual quantification.** It
+is orthogonal to the plate assignment, because a section can be worth quantifying
+before anyone has landmarked it, so it sets no other flag. "favourites only"
+narrows the strip, and `z`/`x` then step within that subset. Gold edge in the
+strip; the counter is over the animal rather than the filtered view, so it does
+not collapse to the list length the moment the filter goes on.
+
+`roi_plates.csv` gains `favorite` and `view_rotation_deg`, and now reports a
+favourited section that has no plate yet - with **blank** plate columns and
+status `favourite_only`, rather than letting the plate_001 default read as a
+deliberate call. Measured:
+
+    LS22_s01b_sc00,LS22,1,plates_final,,,,0,,favourite_only,1,16.0
+    LS22_s01b_sc02,LS22,3,plates_final,plate_012,11,1,0,,plate_only,0,0.0
