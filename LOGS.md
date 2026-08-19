@@ -1922,3 +1922,31 @@ deliberate call. Measured:
 
     LS22_s01b_sc00,LS22,1,plates_final,,,,0,,favourite_only,1,16.0
     LS22_s01b_sc02,LS22,3,plates_final,plate_012,11,1,0,,plate_only,0,0.0
+
+### ROI curator - rotation becomes a tool: enable, adjust, save, restore
+
+Three buttons: **Rotate** opens the tool, **Save tilt** commits, **Restore
+original tilt** puts it back. The tilt is a **draft** until saved - closing the
+tool discards it - so a section is never left with an angle nobody chose.
+"Original" means the orientation `04a_reformat` produced, which is exactly
+rot = 0, since that is the frame every stored coordinate already lives in.
+
+Rotation is now a **mode** rather than a gesture. While it is open, clicks on the
+section are inert, so dragging can never be mistaken for placing a landmark.
+
+**A bug that this introduced and that the test caught.** The previous version
+guessed rotate-vs-click from how far the mouse had moved and suppressed the click
+that followed a drag. Once `secDown` also had to return early when the tool was
+closed, it returned *before* clearing that flag - so a flag left set by the last
+rotation silently swallowed the next genuine click, with the tool closed and
+nothing on screen to explain it. Measured as a landmark that simply did not
+appear. The mode makes the flag unnecessary, so it is gone rather than patched;
+the drag-local `live` flag that replaces it is never consulted by the click
+handler.
+
+Verified through all eight states - tool off, drag ignored; tool on; dragged to a
+draft with Save enabled and "unsaved" shown; click inert; tool off discarding the
+draft; saved; restored - and then the property that matters: with a 60 deg tilt
+**saved** and the tool closed, a click aimed at image point (70, 190) lands at
+(67.4, 192.1), 3.3 canvas px away where one mouse pixel is 3.5. The tilt does not
+leak to the next section and is still there on return.

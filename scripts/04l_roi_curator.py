@@ -26,9 +26,12 @@ Interaction
   matching points** - once on the section, once on the plate, alternating. Three
   pairs are the minimum for an affine; more improves it.
 
-  **Drag left or right on the section to rotate it.** A left-press only becomes a
-  rotation once it has moved a few pixels, so the same button still places
-  landmarks; hold shift for fine control, `r` to reset. The rotation is a
+  **Press `Rotate`, then drag left or right on the section to tilt it.** Rotation
+  is a mode rather than a gesture, so dragging can never be mistaken for placing
+  a landmark - while it is on, clicks on the section are inert. Hold shift for
+  fine control. The tilt stays a **draft** until `Save tilt`; leaving the tool
+  discards it, and `Restore original tilt` (or `r`) puts the section back the way
+  `04a_reformat` produced it, which is exactly rot = 0. The rotation is a
   **viewing aid and nothing else** - every stored coordinate stays in the
   unrotated reformatted frame, so the transform, the residuals and all three
   exports are identical whether the section was turned or not. The angle is
@@ -152,7 +155,10 @@ button.primary{background:var(--accent);border-color:var(--accent);color:#04121f
          z-index:3;pointer-events:none;text-shadow:0 0 6px #000}
 canvas{display:block;width:100%;height:100%;object-fit:contain;cursor:crosshair;
        user-select:none;-webkit-user-drag:none}
+#cSec.rotmode{cursor:ew-resize}
 #cSec.rotating{cursor:ew-resize}
+button[disabled]{opacity:.4;cursor:default}
+button[disabled]:hover{border-color:var(--line)}
 #side{display:flex;flex-direction:column;gap:9px;min-height:0;overflow-y:auto}
 .card{border:1px solid var(--line);border-radius:9px;padding:9px;background:#0e1014}
 .card h3{font-size:11px;margin:0 0 5px;color:var(--dim);font-weight:600;letter-spacing:.04em}
@@ -174,6 +180,7 @@ input[type=range]{width:100%}
 .cell.noroi{border-color:#3a3f47;opacity:.55}
 .cell.fav{box-shadow:inset 0 0 0 2px #e3b341}
 .fav-on{border-color:#e3b341 !important;color:#e3b341}
+.mode-on{border-color:var(--accent) !important;color:var(--accent)}
 label.chk{color:var(--dim);font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer}
 .cell img{width:100%;aspect-ratio:1;object-fit:contain;display:block;border-radius:3px}
 .cap{font-size:9px;color:var(--dim);text-align:center;line-height:1.15;margin-top:1px}
@@ -195,6 +202,9 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
   <span class="row" id="fit"></span>
   <span class="grow"></span>
   <button onclick="markAssigned()">Assign plate</button>
+  <button id="rotBtn" onclick="toggleRotMode()">Rotate</button>
+  <button id="rotSave" onclick="saveRot()">Save tilt</button>
+  <button id="rotReset" onclick="restoreTilt()">Restore original tilt</button>
   <button id="favBtn" onclick="toggleFav()">Favourite</button>
   <button id="noroiBtn" onclick="toggleNoRoi()">No ROI here</button>
   <button onclick="undoPt()">Undo point</button>
@@ -227,7 +237,8 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
   <kbd>click</kbd> section then plate to add a pair &middot;
   <kbd>&larr;</kbd><kbd>&rarr;</kbd> plate &middot; <kbd>u</kbd> undo &middot;
   <kbd>z</kbd>/<kbd>x</kbd> previous / next section (the plate stays put) &middot;
-  <kbd>drag</kbd> the section left/right to rotate (<kbd>shift</kbd> fine, <kbd>r</kbd> reset) &middot;
+  <kbd>Rotate</kbd> then drag the section left/right (<kbd>shift</kbd> fine), <kbd>Save tilt</kbd> to keep it,
+  <kbd>r</kbd> restores the original &middot;
   <kbd>f</kbd> favourite &middot;
   3 pairs for an affine, 6 for a spline &middot;
   <span style="color:#7c5cff">purple</span> = registered &middot;
@@ -367,7 +378,7 @@ function fit(c, img){ c.width=img.naturalWidth||600; c.height=img.naturalHeight|
 // never has its corners clipped.
 function secGeom(){
   const w=secImg.naturalWidth||256, h=secImg.naturalHeight||256;
-  const a=(st(active).rot||0)*Math.PI/180;
+  const a=effRot()*Math.PI/180;
   return {w, h, D:Math.ceil(Math.hypot(w,h)), a, cos:Math.cos(a), sin:Math.sin(a)};
 }
 const img2can = (x,y,g) => { const dx=x-g.w/2, dy=y-g.h/2;
@@ -426,38 +437,59 @@ const canvasXY = (c,e) => {
   return [(e.clientX-ox)/k, (e.clientY-oy)/k];
 };
 
-// Left-drag rotates, left-click places a point, and the two share a button. A
-// press only becomes a rotation once it has moved past a few pixels; the click
-// that follows such a drag is swallowed, so a rotation never drops a landmark.
-// `dragged` is cleared on the next mousedown rather than on mouseup, so a drag
-// released outside the canvas - which fires no click - cannot swallow the next
-// real click either.
-let rotDrag=null, dragged=false;
+// Rotating and placing a landmark are separated by the MODE, not by watching how
+// far the mouse moved. An earlier version guessed from the drag distance and
+// suppressed the click that followed; once `secDown` also had to return early
+// when the tool was closed, that flag could be left set from the last rotation
+// and would silently swallow the next genuine click. The mode makes it
+// unnecessary, so it is gone: `live` below is local to one drag and never
+// consulted by the click handler.
+let rotDrag=null, rotMode=false, draftRot=null;
 const DEG_PER_PX = 0.4, DEG_PER_PX_FINE = 0.05;
+// The angle actually drawn: the uncommitted draft while the tool is open,
+// otherwise whatever was saved for this section.
+const effRot = () => (rotMode && draftRot!==null) ? draftRot : (st(active).rot||0);
+
+// Rotate is a MODE, so dragging cannot be mistaken for placing a landmark and
+// vice versa. While it is on, clicks on the section do not place points.
+function toggleRotMode(){
+  if(!active) return;
+  rotMode = !rotMode;
+  draftRot = null;            // leaving the tool discards an uncommitted tilt
+  el("cSec").classList.toggle("rotmode", rotMode);
+  drawSec(); status();
+}
+function saveRot(){
+  if(!active || draftRot===null) return;
+  st(active).rot = draftRot; draftRot = null; save(); drawSec(); status(); paintCell(active);
+}
+// "Original" is the orientation 04a_reformat produced - the frame every stored
+// coordinate already lives in - so restoring it is exactly rot = 0. It commits
+// immediately, and discards any draft, because there is nothing to preview.
+function restoreTilt(){
+  if(!active) return;
+  draftRot = null; st(active).rot = 0; save(); drawSec(); status(); paintCell(active);
+}
 function secDown(e){
-  if(!active || e.button!==0) return;
-  rotDrag={x:e.clientX, rot:st(active).rot||0}; dragged=false; e.preventDefault();
+  if(!active || !rotMode || e.button!==0) return;
+  rotDrag={x:e.clientX, rot:effRot(), live:false}; e.preventDefault();
 }
 addEventListener("mousemove", e=>{
   if(!rotDrag) return;
   const dx=e.clientX-rotDrag.x;
-  if(Math.abs(dx)>3) dragged=true;
-  if(!dragged) return;
+  if(!rotDrag.live && Math.abs(dx)<=3) return;   // ignore the jitter of a plain press
+  rotDrag.live = true;
   el("cSec").classList.add("rotating");
   const per = e.shiftKey ? DEG_PER_PX_FINE : DEG_PER_PX;   // shift = fine
-  st(active).rot = ((rotDrag.rot + dx*per) % 360 + 360) % 360;
+  draftRot = ((rotDrag.rot + dx*per) % 360 + 360) % 360;
   drawSec(); status();
 });
-addEventListener("mouseup", ()=>{
-  if(rotDrag && dragged){ save(); paintCell(active); }
-  rotDrag=null; el("cSec").classList.remove("rotating");
-});
-function resetRot(){ if(!active) return;
-  st(active).rot=0; save(); drawSec(); status(); paintCell(active); }
+// No save here - the tilt stays a draft until Save tilt is pressed.
+addEventListener("mouseup", ()=>{ rotDrag=null; el("cSec").classList.remove("rotating"); });
 
 function clickSec(e){
   if(!active) return;
-  if(dragged){ dragged=false; return; }        // that press was a rotation
+  if(rotMode) return;                          // the rotate tool owns the mouse
   pending = can2img(...canvasXY(el("cSec"), e), secGeom());
   drawSec(); status();
 }
@@ -510,10 +542,19 @@ function status(){
   el("noroiBtn").style.borderColor = sa.noroi ? "#3fb950" : "";
   el("favBtn").textContent = sa.fav ? "Favourite ★" : "Favourite";
   el("favBtn").classList.toggle("fav-on", !!sa.fav);
-  const rot = sa.rot||0;
-  el("rotInfo").innerHTML = rot
-    ? `rotated <b>${rot.toFixed(1)}&deg;</b> <span style="color:#9aa0a8">- view only, landmarks unaffected &middot; <kbd>r</kbd> reset</span>`
-    : `<span style="color:#9aa0a8">drag left/right on the section to rotate</span>`;
+  // Three separate facts: is the tool open, is there an uncommitted tilt, and
+  // what is actually being drawn. The buttons only offer what is available.
+  const saved = sa.rot||0, dirty = draftRot!==null && Math.abs(draftRot-saved) > 1e-9;
+  el("rotBtn").textContent = rotMode ? "Rotate ✓" : "Rotate";
+  el("rotBtn").classList.toggle("mode-on", rotMode);
+  el("rotSave").disabled  = !dirty;
+  el("rotReset").disabled = !(saved || dirty);
+  const dim = t => `<span style="color:#9aa0a8">${t}</span>`;
+  el("rotInfo").innerHTML =
+      dirty   ? `tilt <b>${effRot().toFixed(1)}&deg;</b> <span class="unlab">unsaved - press Save tilt</span>`
+    : rotMode ? `tilt <b>${saved.toFixed(1)}&deg;</b> ` + dim("drag left/right &middot; shift = fine")
+    : saved   ? `tilted <b>${saved.toFixed(1)}&deg;</b> ` + dim("view only, landmarks unaffected")
+    : dim("press Rotate to tilt the view");
 }
 
 // Called by the slider's oninput, which fires ONLY on user interaction -
@@ -560,6 +601,7 @@ function select(uid, keep){
   // snapped the slider back and the level had to be found again by hand.
   // The one exception is a section carrying a real decision - assigned, or
   // landmarked - where the stored plate IS the thing worth seeing.
+  draftRot = null;            // a tilt drafted on one section is not another's
   const decided = s.assigned || s.pairs.length > 0;
   const p = decided ? s.plate : Math.min(PLATES.length - 1, +el("slider").value || 0);
   el("slider").value = p;
@@ -634,7 +676,7 @@ addEventListener("keydown", e=>{
   else if(e.key==="x" && i<list.length-1){ select(list[i+1].uid); }
   else if(e.key==="z" && i>0){ select(list[i-1].uid); }
   else if(e.key==="f"){ toggleFav(); }
-  else if(e.key==="r"){ resetRot(); }
+  else if(e.key==="r"){ restoreTilt(); }
 });
 
 function exportCsv(){
