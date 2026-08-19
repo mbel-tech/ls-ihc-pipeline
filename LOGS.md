@@ -1844,3 +1844,25 @@ held a seed.
 `plate_boxes.prev.csv` keeps the previous export. Rebuild carried **all 316 seeds
 onto 17 plates with 0 orphans** - no seed lies on figures 31-47, so none of this
 could put an ROI at risk.
+
+### ROI curator - one screen, and z/x to step sections
+
+Layout is now a flex column pinned to the viewport: header and footer fixed,
+the panes take what is left, and only the side card and the thumbnail strip
+scroll - inside themselves. Verified at 1280x720: `scrollHeight` 720 against a
+720 viewport, no vertical page scroll.
+
+**The canvases now use `object-fit: contain`, and that silently breaks clicks
+unless the mapping is fixed.** `contain` fits the bitmap inside the element and
+centres it, so the element box is not the drawn area - a 1098x643 plate in a
+493x501 box gets a 106 px letterbox top and bottom. The old `canvasXY` scaled by
+width alone, which would have put every landmark off by that band. It now undoes
+the fit explicitly. Measured end to end by dispatching clicks at known canvas
+coordinates and reading back the recorded pair: worst error 1.95 canvas px on the
+1098 px plate, under one CSS pixel.
+
+Section stepping moved from `n`/`p` to **`z` previous / `x` next**. Keydown now
+ignores events from a focused `SELECT`/`INPUT`/`TEXTAREA`, because the plate
+slider is a range input that already steps itself on the arrows - without the
+guard it moved two plates per press - and the animal select does type-ahead on
+letters and would have swallowed `x`. Both controls blur themselves once used.

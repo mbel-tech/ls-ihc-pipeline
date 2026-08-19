@@ -112,33 +112,38 @@ PAGE = """<!doctype html>
 :root{--bg:#14161a;--fg:#e8e8ea;--dim:#9aa0a8;--line:#2a2f37;--accent:#4da3ff;
       --ok:#3fb950;--warn:#d29922;--done:#7c5cff}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 system-ui,sans-serif}
-header{position:sticky;top:0;z-index:9;background:var(--bg);border-bottom:1px solid var(--line);
-       padding:9px 14px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+/* The whole tool is one screen. body is a flex column, the panes take what is
+   left, and only the side card and the strip scroll - inside themselves. */
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 system-ui,sans-serif;
+     display:flex;flex-direction:column;overflow:hidden}
+header{flex:0 0 auto;background:var(--bg);border-bottom:1px solid var(--line);
+       padding:7px 14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 h1{font-size:15px;margin:0;font-weight:600}.grow{flex:1}
 .row{color:var(--dim)}.row b{color:var(--fg)}
 button,select{background:#1c2027;color:var(--fg);border:1px solid var(--line);border-radius:7px;
        padding:6px 10px;cursor:pointer;font:inherit}
 button:hover{border-color:var(--accent)}
 button.primary{background:var(--accent);border-color:var(--accent);color:#04121f;font-weight:600}
-#panes{display:grid;grid-template-columns:1fr 1fr 250px;gap:12px;padding:12px}
+#panes{flex:1 1 auto;min-height:0;display:grid;grid-template-columns:1fr 1fr 250px;
+       grid-template-rows:minmax(0,1fr);gap:10px;padding:10px}
 .pane{position:relative;background:#0e1014;border:1px solid var(--line);border-radius:9px;
-      overflow:hidden}
+      overflow:hidden;min-width:0;min-height:0}
 .pane h2{position:absolute;top:6px;left:8px;margin:0;font-size:11px;color:var(--dim);
          z-index:3;pointer-events:none;text-shadow:0 0 6px #000}
-canvas{display:block;width:100%;cursor:crosshair}
-#side{display:flex;flex-direction:column;gap:9px}
+canvas{display:block;width:100%;height:100%;object-fit:contain;cursor:crosshair}
+#side{display:flex;flex-direction:column;gap:9px;min-height:0;overflow-y:auto}
 .card{border:1px solid var(--line);border-radius:9px;padding:9px;background:#0e1014}
 .card h3{font-size:11px;margin:0 0 5px;color:var(--dim);font-weight:600;letter-spacing:.04em}
 .kv{font-size:12px;color:var(--dim)}.kv b{color:var(--fg)}
 input[type=range]{width:100%}
 .unlab{color:var(--warn);font-size:11px}
 .lab{color:var(--ok);font-size:11px}
-#lmlist{font:11px ui-monospace,monospace;color:var(--dim);max-height:150px;overflow-y:auto}
+#lmlist{font:11px ui-monospace,monospace;color:var(--dim);max-height:130px;overflow-y:auto}
 #lmlist div{display:flex;justify-content:space-between}
 #lmlist .bad{color:#ff6b5e}
-#strip{display:flex;gap:4px;overflow-x:auto;padding:8px 14px;border-top:1px solid var(--line);
-       background:#101318}
+#strip{flex:0 0 auto;display:flex;gap:4px;overflow-x:auto;overflow-y:hidden;
+       padding:7px 14px;border-top:1px solid var(--line);background:#101318}
 .cell{flex:0 0 auto;width:74px;border:2px solid var(--line);border-radius:6px;padding:2px;
       background:#0e1014;cursor:pointer;user-select:none}
 .cell:hover{border-color:var(--accent)}
@@ -148,14 +153,14 @@ input[type=range]{width:100%}
 .cell.noroi{border-color:#3a3f47;opacity:.55}
 .cell img{width:100%;aspect-ratio:1;object-fit:contain;display:block;border-radius:3px}
 .cap{font-size:9px;color:var(--dim);text-align:center;line-height:1.15;margin-top:1px}
-footer{position:sticky;bottom:0;background:var(--bg);border-top:1px solid var(--line);
-       padding:8px 14px;font-size:12px;color:var(--dim)}
+footer{flex:0 0 auto;background:var(--bg);border-top:1px solid var(--line);
+       padding:6px 14px;font-size:12px;color:var(--dim)}
 kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-radius:4px;
     background:#1c2027;font:600 11px ui-monospace,monospace}
 </style>
 <header>
   <h1>ROI curator</h1>
-  <select id="animal" onchange="render()"></select>
+  <select id="animal" onchange="render(); this.blur()"></select>
   <span class="row"><b id="nsec"></b> shown</span>
   <span class="row" style="color:#7c5cff"><b id="ndone"></b> registered</span>
   <span class="row" style="color:#4da3ff"><b id="nassign"></b> plate only</span>
@@ -177,7 +182,7 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
   <div id="side">
     <div class="card"><h3>SECTION</h3><div class="kv" id="secInfo">-</div></div>
     <div class="card"><h3>PLATE</h3>
-      <input type="range" id="slider" min="0" max="0" value="0" oninput="onSlideUser(this.value)">
+      <input type="range" id="slider" min="0" max="0" value="0" oninput="onSlideUser(this.value)" onchange="this.blur()">
       <div class="kv"><b id="plName">-</b></div>
       <div id="plLab"></div>
     </div>
@@ -193,7 +198,7 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
 <footer>
   <kbd>click</kbd> section then plate to add a pair &middot;
   <kbd>&larr;</kbd><kbd>&rarr;</kbd> plate &middot; <kbd>u</kbd> undo &middot;
-  <kbd>n</kbd>/<kbd>p</kbd> next / previous section &middot;
+  <kbd>z</kbd>/<kbd>x</kbd> previous / next section &middot;
   3 pairs for an affine, 6 for a spline &middot;
   <span style="color:#7c5cff">purple</span> = registered &middot;
   <span style="color:#4da3ff">blue</span> = plate assigned only &middot;
@@ -348,8 +353,15 @@ function mark(x,X,Y,n,col){
   x.beginPath(); x.arc(X,Y,9,0,6.284); x.lineWidth=3; x.strokeStyle=col; x.stroke();
   x.fillStyle=col; x.font="bold 15px system-ui"; x.fillText(n, X+11, Y-9);
 }
-const canvasXY = (c,e) => { const r=c.getBoundingClientRect();
-  return [(e.clientX-r.left)*c.width/r.width, (e.clientY-r.top)*c.height/r.height]; };
+// `object-fit:contain` fits the bitmap inside the element and centres it, so the
+// element box is NOT the drawn area - there is a letterbox on two sides whose
+// size depends on the aspect ratios. Scaling by width alone, as this used to,
+// would put every landmark off-target by the size of that band. Undo the fit.
+const canvasXY = (c,e) => {
+  const r=c.getBoundingClientRect(), k=Math.min(r.width/c.width, r.height/c.height);
+  const ox=r.left+(r.width-c.width*k)/2, oy=r.top+(r.height-c.height*k)/2;
+  return [(e.clientX-ox)/k, (e.clientY-oy)/k];
+};
 
 function clickSec(e){
   if(!active) return;
@@ -490,13 +502,18 @@ function render(){
 }
 
 addEventListener("keydown", e=>{
+  // A focused control eats its own keys. The plate slider is an input[type=range]
+  // that already steps on the arrows, so without this it would step twice per
+  // press, and the animal select does type-ahead on letters and would swallow x.
+  const tag = e.target && e.target.tagName;
+  if(tag==="SELECT" || tag==="INPUT" || tag==="TEXTAREA") return;
   if(!active) return;
   const list=rows(), i=list.findIndex(d=>d.uid===active);
   if(e.key==="ArrowRight"){ el("slider").value=Math.min(PLATES.length-1,+el("slider").value+1); onSlide(el("slider").value); e.preventDefault(); }
   else if(e.key==="ArrowLeft"){ el("slider").value=Math.max(0,+el("slider").value-1); onSlide(el("slider").value); e.preventDefault(); }
   else if(e.key==="u"){ undoPt(); }
-  else if(e.key==="n" && i<list.length-1){ select(list[i+1].uid); }
-  else if(e.key==="p" && i>0){ select(list[i-1].uid); }
+  else if(e.key==="x" && i<list.length-1){ select(list[i+1].uid); }
+  else if(e.key==="z" && i>0){ select(list[i-1].uid); }
 });
 
 function exportCsv(){
