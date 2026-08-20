@@ -121,7 +121,35 @@ with open(CONFIG_PATH, encoding="utf-8") as _fh:
 
 OUT_ROOT = CONFIG["out_root"]
 REFORMAT_DIR = os.path.join(OUT_ROOT, "reformatted")
-INDEX_CSV = os.path.join(REFORMAT_DIR, "reformat_index.csv")
+ANALYSIS_CSV = os.path.join(REFORMAT_DIR, "perk_analysis_set.csv")
+PERK_MAP_CSV = os.path.join(REFORMAT_DIR, "perk_overrides.csv")
+
+
+def marker_paths(marker):
+    """Index and image directory for a marker, mirroring `04a_reformat`."""
+    if marker == "AF568":
+        return (os.path.join(REFORMAT_DIR, "reformat_index_AF568.csv"), "sections_AF568")
+    return (os.path.join(REFORMAT_DIR, "reformat_index.csv"), "sections")
+
+
+def analysis_uids(marker):
+    """The pERK sections that survived clipped-pixel censoring - the 454.
+
+    For AF568 those uids are the subset directly. For AF488 they have to be
+    carried across the pairing, and **30 of the 454 have no PCNA partner on
+    record**, so the PCNA view of the same subset is 424 rather than 454. That
+    shortfall is returned and printed instead of being quietly rounded away -
+    a subset that silently loses 30 sections is the kind of thing that turns up
+    later as an unexplained n.
+    """
+    with open(ANALYSIS_CSV, newline="", encoding="utf-8") as fh:
+        perk = {r["scene_uid"] for r in csv.DictReader(fh) if r["in_analysis_set"] == "1"}
+    if marker == "AF568":
+        return perk, len(perk), 0
+    with open(PERK_MAP_CSV, newline="", encoding="utf-8") as fh:
+        pmap = {r["perk_scene_uid"]: r["pcna_scene_uid"] for r in csv.DictReader(fh)}
+    pcna = {pmap[u] for u in perk if pmap.get(u)}
+    return pcna, len(perk), sum(1 for u in perk if not pmap.get(u))
 # Which plate set to use, from config. The two sets reuse the same plate_NNN
 # names for different images, so this must not be hard-coded in two places.
 PLATE_SET = CONFIG.get("atlas_plate_set", {}).get("dir", "plates")
@@ -191,6 +219,7 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
 </style>
 <header>
   <h1>ROI curator</h1>
+  <span class="row" id="scope" style="color:#7c5cff"></span>
   <select id="animal" onchange="render(); this.blur()"></select>
   <span class="row"><b id="nsec"></b> shown</span>
   <span class="row" style="color:#7c5cff"><b id="ndone"></b> registered</span>
@@ -253,6 +282,10 @@ const PLATES = __PLATES__;  // [{id, img, w, h, labelled, seeds:[{region,xf,yf,h
 // DIFFERENT image in each, so every export carries this and a landmark file can
 // never be silently matched against the wrong plates.
 const PLATE_SET = __PLATESET__;
+// Which channel these sections are, and which subset of it. A landmark on a
+// pERK section is not the same datum as one on its PCNA partner, so both go
+// into every export rather than being inferred later from the file name.
+const MARKER = __MARKER__, SUBSET = __SUBSET__;
 const KEY = "ls_roi_curator_v1";
 let S = JSON.parse(localStorage.getItem(KEY) || "{}");   // uid -> {plate, pairs:[[sx,sy,px,py]]}
 let active = null, pending = null;   // pending section point awaiting its plate partner
@@ -261,6 +294,8 @@ const save = () => localStorage.setItem(KEY, JSON.stringify(S));
 const animals = [...new Set(DATA.map(d=>d.animal))].sort((a,b)=>+a.slice(2)-+b.slice(2));
 el("animal").innerHTML = animals.map(a=>`<option>${a}</option>`).join("");
 el("slider").max = PLATES.length-1;
+el("scope").innerHTML = `<b>${MARKER==="AF568"?"pERK":"PCNA"}</b>`
+  + (SUBSET==="all" ? "" : ` &middot; <b>${SUBSET.replace(/_/g," ")}</b>`);
 const inAnimal = () => DATA.filter(d=>d.animal===el("animal").value);
 // The favourites filter narrows the strip to the subset chosen for
 // quantification, so `rows` - which also drives z/x and the counts - honours it.
@@ -685,12 +720,12 @@ function exportCsv(){
   // is plate_020" - and it used to be discarded whenever it carried fewer than
   // three landmarks, which is exactly the case where the operator has decided the
   // section is not worth landmarking.
-  const pl=[["scene_uid","animal","section_order","plate_set","plate_id","plate_index",
+  const pl=[["scene_uid","animal","marker","subset","section_order","plate_set","plate_id","plate_index",
              "plate_has_seeds","n_landmarks","transform","status",
              "favorite","view_rotation_deg"]];
-  const lm=[["scene_uid","animal","section_order","plate_set","plate_id","pair",
+  const lm=[["scene_uid","animal","marker","section_order","plate_set","plate_id","pair",
              "sec_x","sec_y","plate_x","plate_y","residual_px"]];
-  const rg=[["scene_uid","animal","plate_set","plate_id","region","sec_x","sec_y",
+  const rg=[["scene_uid","animal","marker","plate_set","plate_id","region","sec_x","sec_y",
              "n_landmarks","transform","mean_residual_px"]];
 
   for(const d of DATA){
@@ -704,7 +739,7 @@ function exportCsv(){
                  : chosen ? "plate_only" : "favourite_only";
     // Blank rather than plate_001 when no plate was ever chosen - otherwise a
     // favourite with no assignment reads as a deliberate call on plate_001.
-    pl.push([d.uid,d.animal,d.order,PLATE_SET, chosen?P.id:"", chosen?s.plate:"",
+    pl.push([d.uid,d.animal,MARKER,SUBSET,d.order,PLATE_SET, chosen?P.id:"", chosen?s.plate:"",
              chosen?(P.labelled?1:0):"", n, T?T.kind:"", status,
              s.fav?1:0, (s.rot||0).toFixed(1)]);
     if(status!=="registered") continue;
@@ -712,13 +747,13 @@ function exportCsv(){
     let tot=0;
     s.pairs.forEach(([sx,sy,px,py],i)=>{
       const [X,Y]=apply(T,px,py), r=Math.hypot(X-sx,Y-sy); tot+=r;
-      lm.push([d.uid,d.animal,d.order,PLATE_SET,P.id,i+1,sx.toFixed(2),sy.toFixed(2),
+      lm.push([d.uid,d.animal,MARKER,d.order,PLATE_SET,P.id,i+1,sx.toFixed(2),sy.toFixed(2),
                px.toFixed(2),py.toFixed(2),r.toFixed(2)]);
     });
     const mr=(tot/n).toFixed(2);
     for(const sd of P.seeds){
       const [X,Y]=apply(T, sd.xf*P.w, sd.yf*P.h);
-      rg.push([d.uid,d.animal,PLATE_SET,P.id,sd.region,X.toFixed(2),Y.toFixed(2),n,T.kind,mr]);
+      rg.push([d.uid,d.animal,MARKER,PLATE_SET,P.id,sd.region,X.toFixed(2),Y.toFixed(2),n,T.kind,mr]);
     }
   }
   dl(pl,"roi_plates.csv");
@@ -737,10 +772,21 @@ render();
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--animal", default=None)
+    ap.add_argument("--marker", choices=("AF488", "AF568"), default="AF488",
+                    help="AF568 = pERK (the channel that gets quantified), AF488 = PCNA")
+    ap.add_argument("--analysis-set", action="store_true",
+                    help="only sections in perk_analysis_set.csv")
     args = ap.parse_args()
 
-    with open(INDEX_CSV, newline="", encoding="utf-8") as fh:
+    index_csv, img_dir = marker_paths(args.marker)
+    with open(index_csv, newline="", encoding="utf-8") as fh:
         rows = [r for r in csv.DictReader(fh) if r["kind"] == "section"]
+    before = len(rows)
+    subset, unpaired = "all", 0
+    if args.analysis_set:
+        keep, n_perk, unpaired = analysis_uids(args.marker)
+        rows = [r for r in rows if r["id"] in keep]
+        subset = "perk_analysis_set"
     if args.animal:
         rows = [r for r in rows if r["animal"] == args.animal]
     rows.sort(key=lambda r: (r["animal"], int(r["section_order"] or 0)))
@@ -768,16 +814,27 @@ def main():
                    "labelled": int(bool(sd)), "seeds": sd})
 
     data = [{"uid": r["id"], "animal": r["animal"], "order": int(r["section_order"] or 0),
-             "img": f"sections/{r['id']}.png"} for r in rows]
+             "img": f"{img_dir}/{r['id']}.png"} for r in rows]
 
     page = (PAGE.replace("__DATA__", json.dumps(data))
                 .replace("__PLATES__", json.dumps(pl))
-                .replace("__PLATESET__", json.dumps(PLATE_SET)))
+                .replace("__PLATESET__", json.dumps(PLATE_SET))
+                .replace("__MARKER__", json.dumps(args.marker))
+                .replace("__SUBSET__", json.dumps(subset)))
     with open(CURATOR_HTML, "w", encoding="utf-8") as fh:
         fh.write(page)
 
     lab = [p for p in pl if p["labelled"]]
     print(f"wrote {CURATOR_HTML}")
+    if args.analysis_set:
+        print(f"  subset: perk_analysis_set - {before} {args.marker} sections "
+              f"filtered to {len(rows)}")
+        if unpaired:
+            print(f"  NOTE: {unpaired} of the {n_perk} pERK analysis-set sections")
+            print( "        have no PCNA partner on record, so the "
+                  f"{args.marker} view of this")
+            print(f"        subset is {len(rows)}, not {n_perk}. "
+                   "Run --marker AF568 for all of them.")
     print(f"  {len(data)} sections, {len(pl)} plates, "
           f"{sum(len(p['seeds']) for p in pl)} region seeds")
     print(f"  {len(lab)} plates carry seeds: {lab[0]['id']} .. {lab[-1]['id']}")

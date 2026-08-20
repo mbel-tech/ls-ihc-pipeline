@@ -1950,3 +1950,41 @@ draft; saved; restored - and then the property that matters: with a 60 deg tilt
 **saved** and the tool closed, a click aimed at image point (70, 190) lands at
 (67.4, 192.1), 3.3 canvas px away where one mouse pixel is 3.5. The tilt does not
 leak to the next section and is still there on return.
+
+### ROI curator - `--marker` / `--analysis-set`, and a manual-tilt CSV
+
+The curator was hard-wired to PCNA and to the full 788. Two flags:
+
+  `--marker {AF488,AF568}`  which channel's reformatted sections and index to
+                             load - mirrors 04a_reformat's own marker_paths.
+  `--analysis-set`          filter to `perk_analysis_set.csv`'s in_analysis_set=1
+                             rows, the 454 that survived clipped-pixel censoring.
+
+**The 454 are pERK uids. Filtering the PCNA view of them is not the same
+number.** 30 of the 454 have no PCNA partner in `perk_overrides.csv`, so
+`--marker AF488 --analysis-set` gives 424, not 454 - measured, not assumed. The
+shortfall prints rather than being silently rounded away. Quantification runs on
+pERK, so the default that matches "the 454" is `--marker AF568 --analysis-set`;
+`--marker AF488` stays available for eyeballing the PCNA channel.
+
+`MARKER` and `SUBSET` are now in every export (`roi_plates.csv`,
+`roi_landmarks.csv`, `roi_regions.csv`) alongside the existing `plate_set` - a
+landmark placed on a pERK section is not the same datum as one on its PCNA
+partner and should not be silently mergeable with it. The header shows which
+channel and subset are loaded.
+
+Regenerated as the default going forward:
+`python 04l_roi_curator.py --marker AF568 --analysis-set` -> 454 sections
+embedded, confirmed by reading the page's own DATA array back out.
+
+**`reformatted/analysis_set_manual_tilt.csv`** - the 454 pERK analysis-set
+sections and their manual tilt, for reference outside the curator:
+
+    scene_uid, animal, section_order, pcna_scene_uid, manual_rotation_deg,
+    manual_flip, final_angle_deg
+
+`manual_rotation_deg` is `manual_rotation` from `reformat_index_AF568.csv` -
+the operator-entered correction from `04d_rotation_curator.py`, folded in before
+the crop. `final_angle_deg` is the total angle actually applied (`angle`), for
+context; it is not itself an operator decision. `pcna_scene_uid` is blank for the
+30 with no recorded partner. 424 of 454 (93.4%) carry a nonzero manual tilt.
