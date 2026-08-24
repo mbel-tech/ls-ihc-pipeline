@@ -123,6 +123,7 @@ OUT_ROOT = CONFIG["out_root"]
 REFORMAT_DIR = os.path.join(OUT_ROOT, "reformatted")
 ANALYSIS_CSV = os.path.join(REFORMAT_DIR, "perk_analysis_set.csv")
 PERK_MAP_CSV = os.path.join(REFORMAT_DIR, "perk_overrides.csv")
+WORKLIST_CSV = os.path.join(REFORMAT_DIR, "roi_worklist.csv")
 
 
 def marker_paths(marker):
@@ -776,6 +777,12 @@ def main():
                     help="AF568 = pERK (the channel that gets quantified), AF488 = PCNA")
     ap.add_argument("--analysis-set", action="store_true",
                     help="only sections in perk_analysis_set.csv")
+    ap.add_argument("--worklist", nargs="?", const=WORKLIST_CSV, default=None,
+                    metavar="CSV",
+                    help="curate in the order from 04n_roi_worklist.py, so stopping "
+                         "part way still leaves every animal and every level covered")
+    ap.add_argument("--tier", default=None,
+                    help="with --worklist: only this tier (e.g. core)")
     args = ap.parse_args()
 
     index_csv, img_dir = marker_paths(args.marker)
@@ -787,9 +794,32 @@ def main():
         keep, n_perk, unpaired = analysis_uids(args.marker)
         rows = [r for r in rows if r["id"] in keep]
         subset = "perk_analysis_set"
+
+    # The worklist is keyed on pERK uids, because that is the channel being
+    # quantified and the one 04m is built around. Viewing it as PCNA means
+    # carrying each uid across the pairing, which the 30 unpaired sections
+    # cannot survive - the same shortfall --analysis-set already reports.
+    rank = None
+    if args.worklist:
+        with open(args.worklist, newline="", encoding="utf-8") as fh:
+            wl = [r for r in csv.DictReader(fh)
+                  if not args.tier or r["tier"] == args.tier]
+        if args.marker == "AF488":
+            with open(PERK_MAP_CSV, newline="", encoding="utf-8") as fh:
+                pmap = {r["perk_scene_uid"]: r["pcna_scene_uid"] for r in csv.DictReader(fh)}
+            rank = {pmap[r["scene_uid"]]: int(r["rank"])
+                    for r in wl if pmap.get(r["scene_uid"])}
+        else:
+            rank = {r["scene_uid"]: int(r["rank"]) for r in wl}
+        rows = [r for r in rows if r["id"] in rank]
+        subset = f"roi_worklist{':' + args.tier if args.tier else ''}"
+
     if args.animal:
         rows = [r for r in rows if r["animal"] == args.animal]
-    rows.sort(key=lambda r: (r["animal"], int(r["section_order"] or 0)))
+    if rank:
+        rows.sort(key=lambda r: rank[r["id"]])
+    else:
+        rows.sort(key=lambda r: (r["animal"], int(r["section_order"] or 0)))
 
     with open(os.path.join(PLATE_DIR, "plates.csv"), newline="", encoding="utf-8") as fh:
         plates = list(csv.DictReader(fh))
