@@ -121,7 +121,14 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--tier", default=None,
                     help="only write this tier (core / unpaired_unchecked / animal_underpowered)")
+    ap.add_argument("--min-sections", type=int, default=MIN_SECTIONS_PER_ANIMAL,
+                    metavar="N",
+                    help="animals with fewer than N measurable sections are held out "
+                         f"of core (default {MIN_SECTIONS_PER_ANIMAL}). Pass 0 to keep "
+                         "every animal, which puts its sections in the main queue "
+                         "interleaved rather than appended at the end")
     args = ap.parse_args()
+    min_sections = args.min_sections
 
     with open(DATASET_CSV, newline="", encoding="utf-8") as fh:
         rows = [r for r in csv.DictReader(fh) if r["status"] == "analysis_set"]
@@ -138,7 +145,7 @@ def main():
         per_animal_total[r["animal"]] += 1
 
     def tier_of(r):
-        if per_animal_total[r["animal"]] < MIN_SECTIONS_PER_ANIMAL:
+        if per_animal_total[r["animal"]] < min_sections:
             return "animal_underpowered"
         if r["paired"] == "0":
             return "unpaired_unchecked"
@@ -147,7 +154,7 @@ def main():
     reason = {
         "core": "",
         "unpaired_unchecked": "no PCNA partner; rotation never checked against anything",
-        "animal_underpowered": f"animal has <{MIN_SECTIONS_PER_ANIMAL} measurable sections",
+        "animal_underpowered": f"animal has <{min_sections} measurable sections",
     }
 
     # order within each tier independently, so a tier is self-contained
