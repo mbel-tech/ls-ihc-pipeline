@@ -42,9 +42,10 @@ Interaction
   be worth quantifying before anyone has landmarked it, so it sets no other flag
   and is reported on its own. "favourites only" narrows the strip to that subset.
 
-  **The plate and the section step independently.** `z`/`x` move through
-  sections and leave the plate where it is - consecutive sections are at
-  neighbouring levels, so the plate rarely needs to move more than a notch.
+  **The plate and the section step independently.** `z`/`x` (or the up/down
+  arrows) move through sections and leave the plate where it is; left/right
+  moves the plate. Consecutive sections are at neighbouring levels, so the
+  plate rarely needs to move more than a notch.
   Returning to a section that was already assigned or landmarked does show its
   own plate again, because that is a recorded decision rather than a position.
 
@@ -216,6 +217,22 @@ input[type=range]{width:100%}
 .cell.fav{box-shadow:inset 0 0 0 2px #e3b341}
 .fav-on{border-color:#e3b341 !important;color:#e3b341}
 .mode-on{border-color:var(--accent) !important;color:var(--accent)}
+/* Resting colour by function, so the toolbar reads at a glance without text:
+   plate assignment, the rotation-tool group, the two per-section decisions
+   (each already escalates to a brighter/filled state on toggle - fav-on and
+   the inline no-roi green above - so this is deliberately the dimmer resting
+   shade of the same hue, not a competing colour), and point editing. Export
+   stays .primary: solid fill is its own category, the single confirming action. */
+.btn-plate{border-color:#3d6d99;color:#7fb8f0}
+.btn-plate:hover{border-color:var(--accent);color:var(--accent)}
+.btn-rot{border-color:#6e4d99;color:#bc8cff}
+.btn-rot:hover{border-color:#bc8cff;color:#bc8cff}
+.btn-fav{border-color:#8a7326;color:#e3b341}
+.btn-fav:hover{border-color:#e3b341;color:#e3b341}
+.btn-excl{border-color:#8a5a2e;color:#f0883e}
+.btn-excl:hover{border-color:#f0883e;color:#f0883e}
+.btn-edit{border-color:#2c7a82;color:#39c5cf}
+.btn-edit:hover{border-color:#39c5cf;color:#39c5cf}
 label.chk{color:var(--dim);font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer}
 .cell img{width:100%;aspect-ratio:1;object-fit:contain;display:block;border-radius:3px}
 .cap{font-size:9px;color:var(--dim);text-align:center;line-height:1.15;margin-top:1px}
@@ -237,14 +254,14 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
   <span class="row"><b id="npair"></b> pairs on this section</span>
   <span class="row" id="fit"></span>
   <span class="grow"></span>
-  <button onclick="markAssigned()">Assign plate</button>
-  <button id="rotBtn" onclick="toggleRotMode()">Rotate</button>
-  <button id="rotSave" onclick="saveRot()">Save tilt</button>
-  <button id="rotReset" onclick="restoreTilt()">Restore original tilt</button>
-  <button id="favBtn" onclick="toggleFav()">Favourite</button>
-  <button id="noroiBtn" onclick="toggleNoRoi()">No ROI here</button>
-  <button onclick="undoPt()">Undo point</button>
-  <button onclick="clearPts()">Clear points</button>
+  <button class="btn-plate" onclick="markAssigned()">Assign plate</button>
+  <button id="rotBtn" class="btn-rot" onclick="toggleRotMode()">Rotate</button>
+  <button id="rotSave" class="btn-rot" onclick="saveRot()">Save tilt</button>
+  <button id="rotReset" class="btn-rot" onclick="restoreTilt()">Restore original tilt</button>
+  <button id="favBtn" class="btn-fav" onclick="toggleFav()">Favourite</button>
+  <button id="noroiBtn" class="btn-excl" onclick="toggleNoRoi()">No ROI here</button>
+  <button class="btn-edit" onclick="undoPt()">Undo point</button>
+  <button class="btn-edit" onclick="clearPts()">Clear points</button>
   <button class="primary" onclick="exportCsv()">Export</button>
 </header>
 <div id="panes" class="__WITHPARTNER__">
@@ -274,7 +291,7 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
 <footer>
   <kbd>click</kbd> section then plate to add a pair &middot;
   <kbd>&larr;</kbd><kbd>&rarr;</kbd> plate &middot; <kbd>u</kbd> undo &middot;
-  <kbd>z</kbd>/<kbd>x</kbd> previous / next section (the plate stays put) &middot;
+  <kbd>z</kbd>/<kbd>x</kbd> or <kbd>&uarr;</kbd>/<kbd>&darr;</kbd> previous / next section (the plate stays put) &middot;
   <kbd>Rotate</kbd> then drag the section left/right (<kbd>shift</kbd> fine), <kbd>Save tilt</kbd> to keep it,
   <kbd>r</kbd> restores the original &middot;
   <kbd>f</kbd> favourite &middot;
@@ -737,8 +754,8 @@ addEventListener("keydown", e=>{
   if(e.key==="ArrowRight"){ el("slider").value=Math.min(PLATES.length-1,+el("slider").value+1); onSlide(el("slider").value); e.preventDefault(); }
   else if(e.key==="ArrowLeft"){ el("slider").value=Math.max(0,+el("slider").value-1); onSlide(el("slider").value); e.preventDefault(); }
   else if(e.key==="u"){ undoPt(); }
-  else if(e.key==="x" && i<list.length-1){ select(list[i+1].uid); }
-  else if(e.key==="z" && i>0){ select(list[i-1].uid); }
+  else if((e.key==="x"||e.key==="ArrowDown") && i<list.length-1){ select(list[i+1].uid); e.preventDefault(); }
+  else if((e.key==="z"||e.key==="ArrowUp") && i>0){ select(list[i-1].uid); e.preventDefault(); }
   else if(e.key==="f"){ toggleFav(); }
   else if(e.key==="r"){ restoreTilt(); }
 });
