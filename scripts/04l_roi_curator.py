@@ -68,12 +68,12 @@ Interaction
 Scope, deliberately bounded
 ---------------------------
 
-**Only 24 of the 101 plates carry region seeds** - plate_009 to plate_032,
-telencephalon and POA, 316 seeds over 8 regions (Dl 142, Dm 114, Vv 16, POA 16,
-Vd 10, Vl 10, Vs 4, Vc 4). A section assigned to any other plate has no regions to
-receive, so the tool marks those plates and there is no reason to place landmarks
-on such a section. The working subset is therefore self-selecting: it is whatever
-lands in that 24-plate window.
+**30 of the 64 plates carry region seeds** - 356 seeds over 11 regions:
+telencephalon and POA on plate_009 to plate_025 (Dl 142, Dm 114, Vv 16, POA 16,
+Vd 10, Vl 10, Vs 4, Vc 4), then the caudal set on plate_037 to plate_057
+(Anterior tuberal nucleus 14, Rm 14, Posterior tuberculum 12). A section assigned
+to any other plate has no regions to receive, so the tool marks those plates and
+there is no reason to place landmarks on such a section.
 
 Affine below six points, thin-plate spline above
 ------------------------------------------------

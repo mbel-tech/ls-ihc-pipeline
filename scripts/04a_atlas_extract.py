@@ -4,12 +4,22 @@ The atlas is a working document, not a scan: every region marker is a vector
 dot with a distinct fill colour, and each page carries its own legend mapping
 those colours to region names. That makes the whole thing machine-readable.
 
-Page geometry (verified against pages 5, 9, 10):
+Page geometry (verified against pages 5, 9, 10, 18, 20, 25):
   - legend swatches sit in the left margin at centre x < ~105
-  - legend labels sit at x ~ 89, on the same line as their swatch
+  - legend labels start beside their swatch and are read rightward to the first
+    wide gap. They are NOT confined to x ~ 89: that holds for the single-word
+    telencephalic names, but the caudal ones are phrases running past x = 240
   - plate bitmaps are separate image XObjects with non-overlapping bboxes
-  - in-figure dots fall inside a plate bbox; markers are a uniform 22.7 pt
+  - in-figure dots fall inside a plate bbox; markers are a uniform 22.7 pt,
+    drawn as a fill plus a slightly larger outline
   - in-figure text (e.g. "Optic Chiasm") is annotation, not legend
+
+Markers are found by SIZE, not by colour. Two of the atlas's own region colours
+defeat a colour filter: **black** is Posterior tuberculum on pages 18-20, and the
+**hatched** Anterior tuberal nucleus is a pattern fill that reports as black too.
+Both were being discarded, which is why every plate caudal to plate_025 came out
+with no regions at all. The visible colour is read from a render of the page,
+since for a pattern fill the declared fill and what you see are different.
 
 Outputs to atlas/plates/:
   plate_###_p<page>_<n>.<ext>   the plate bitmap, losslessly re-extracted
@@ -25,8 +35,9 @@ Run:  python 04a_atlas_extract.py
 import csv
 import io
 import os
-from collections import defaultdict
+from collections import Counter, defaultdict
 
+import numpy as np
 import pymupdf
 from PIL import Image, ImageDraw, ImageFont
 
@@ -36,24 +47,52 @@ ATLAS_PDF = r"D:\SLIDES HE DEC 2025 LS\General atlases & reviews\Salmon Atlas.pd
 OUT_DIR = r"D:\LS-analysis\atlas\plates"
 QC_DIR = os.path.join(OUT_DIR, "qc")
 
-# Everything left of this page x is margin, i.e. legend rather than figure.
+# Everything left of this page x is margin, i.e. a legend swatch rather than a
+# figure marker. Swatches sit at x 30-48 depending on the page; markers never do.
 LEGEND_MAX_X = 105.0
-# Legend labels cluster tightly around x = 89.
-LEGEND_LABEL_X = (70.0, LEGEND_MAX_X)
 # A swatch and its label are on the same line if their centres are this close.
 LEGEND_LINE_TOL = 16.0
 # Words this close vertically belong to the same label.
 WORD_LINE_TOL = 6.0
+# Reading a label rightward from its swatch, a horizontal gap wider than this
+# ends it. That is what keeps an in-figure annotation sharing the line - the
+# "Dm OC" case - from being swallowed into the region name.
+LABEL_GAP_MAX = 30.0
 
-# Pure black and white are outlines and page background, never region markers.
-IGNORED_FILLS = {(0.0, 0.0, 0.0), (1.0, 1.0, 1.0)}
+# Region markers are a uniform ~22.7 pt, drawn as a fill plus a slightly larger
+# outline. Selecting on size is what separates them from the page-sized
+# background rectangle; selecting on colour is not, because **black is a real
+# region colour** on the caudal pages (Posterior tuberculum), and the earlier
+# rule that "pure black and white are outlines and page background, never region
+# markers" silently dropped every marker on pages 18-20 and 25-28.
+MARKER_SIZE = (15.0, 40.0)
+# A fill and its outline sit at the same spot; this collapses the pair.
+MARKER_DEDUP_TOL = 3.0
+# Page render zoom used to read a marker's true colour. Needed because a hatched
+# marker (Anterior tuberal nucleus) has a *pattern* fill, which the drawing
+# reports as plain black - the declared fill and the visible colour differ.
+COLOUR_ZOOM = 4.0
 
 # Labels that mark an explicit unknown rather than a region.
 UNKNOWN_LABELS = {"??", "?"}
 
+# The atlas writes one nucleus three different ways across consecutive pages -
+# "Rm (Raphe) ??", "Rm (Raphe)", "Raphe (Rm)" - which downstream would count as
+# three separate regions. Canonicalised here, with the verbatim label kept in
+# `region_raw` so nothing about the source is lost. "nucelus" is the atlas's own
+# typo. Only exact matches are rewritten; an unlisted label passes through
+# untouched, so a new region cannot be silently absorbed into an existing one.
+REGION_CANONICAL = {
+    "Rm (Raphe) ??": "Rm",
+    "Rm (Raphe)": "Rm",
+    "Raphe (Rm)": "Rm",
+    "Anterior tuberal nucelus": "Anterior tuberal nucleus",
+}
+
 
 def hexify(rgb):
-    return "#%02x%02x%02x" % tuple(int(round(c * 255)) for c in rgb)
+    """0-255 RGB tuple to hex."""
+    return "#%02x%02x%02x" % tuple(int(round(c)) for c in rgb)
 
 
 # ---------------------------------------------------------------- page parsing
@@ -74,37 +113,91 @@ def group_words(words, tol=WORD_LINE_TOL):
     ]
 
 
-def page_dots(page):
-    """Every filled vector marker on the page as (colour, cx, cy, size)."""
-    out = []
+def render_page(page, zoom=COLOUR_ZOOM):
+    """The page as an RGB array, for reading what a marker actually looks like."""
+    pix = page.get_pixmap(matrix=pymupdf.Matrix(zoom, zoom))
+    return np.asarray(Image.open(io.BytesIO(pix.tobytes("png"))).convert("RGB")).astype(int)
+
+
+def sample_colour(render, cx, cy, size, zoom=COLOUR_ZOOM):
+    """The visible colour at a marker centre, as a 0-255 RGB tuple.
+
+    Read from the render rather than from the drawing's declared fill, because a
+    hatched marker is a pattern fill that reports as black. White is skipped so a
+    hatch reads as its ink colour rather than as the gaps between the strokes; a
+    marker that really is white falls through to white.
+    """
+    rad = max(2, int(size * zoom * 0.30))
+    y, x = int(cy * zoom), int(cx * zoom)
+    patch = render[max(y - rad, 0):y + rad, max(x - rad, 0):x + rad].reshape(-1, 3)
+    if not len(patch):
+        return None
+    for colour, _ in Counter(map(tuple, patch)).most_common():
+        if colour != (255, 255, 255):
+            return colour
+    return (255, 255, 255)
+
+
+def page_dots(page, render):
+    """Every region marker on the page, deduplicated, with its rendered colour.
+
+    Selected by size, not by colour - see MARKER_SIZE. Each marker is drawn twice,
+    as a fill and a slightly larger outline, so coincident pairs are collapsed.
+    """
+    found = []
     for item in page.get_drawings():
-        fill = item.get("fill")
-        if not fill:
-            continue
-        key = tuple(round(c, 2) for c in fill)
-        if key in IGNORED_FILLS:
+        if not item.get("fill"):
             continue
         rect = item["rect"]
-        out.append(
+        size = max(rect.width, rect.height)
+        if not (MARKER_SIZE[0] <= size <= MARKER_SIZE[1]):
+            continue
+        found.append(
             {
-                "colour": key,
                 "cx": (rect.x0 + rect.x1) / 2.0,
                 "cy": (rect.y0 + rect.y1) / 2.0,
-                "size": max(rect.width, rect.height),
+                "size": size,
+                "x1": rect.x1,
             }
         )
+
+    out = []
+    for dot in sorted(found, key=lambda d: d["size"]):     # the fill, before its outline
+        if any(abs(dot["cx"] - o["cx"]) <= MARKER_DEDUP_TOL
+               and abs(dot["cy"] - o["cy"]) <= MARKER_DEDUP_TOL for o in out):
+            continue
+        colour = sample_colour(render, dot["cx"], dot["cy"], dot["size"])
+        if colour is None:
+            continue
+        dot["colour"] = colour
+        out.append(dot)
     return out
 
 
-def legend_lines(page):
-    """Left-margin words only, grouped into lines.
+def label_right_of(page, swatch, tol=LEGEND_LINE_TOL, gap=LABEL_GAP_MAX):
+    """The region name written beside a legend swatch.
 
-    Filtering by x has to happen before grouping: a legend entry and an
-    in-figure annotation can share a line, and grouping first would fuse them
-    into labels like "Dm OC".
+    Read rightward from the swatch and stopped by the first wide horizontal gap,
+    rather than taken from a fixed x window. The window was `x <= 105`, which
+    holds only while the names are short: the telencephalic labels are single
+    words at x = 89, but the caudal ones are phrases - "Anterior tuberal nucelus"
+    runs from x = 64 to past x = 240. That window began *after* the first word and
+    ended mid-phrase, so those legends came out empty or truncated to "Posterior".
+
+    The gap test is what the old x bound was really buying: it keeps an in-figure
+    annotation that happens to share the line - the "Dm OC" case - out of the name.
     """
-    words = [w for w in page.get_text("words") if LEGEND_LABEL_X[0] <= w[0] <= LEGEND_LABEL_X[1]]
-    return group_words(words)
+    yc = (swatch["cy"] + swatch["cy"]) / 2.0
+    words = [w for w in page.get_text("words")
+             if abs((w[1] + w[3]) / 2.0 - yc) <= tol and w[0] >= swatch["x1"] - 2]
+    words.sort(key=lambda w: w[0])
+    parts, prev_x1 = [], None
+    for x0, _y0, x1, _y1, text, *_ in words:
+        if prev_x1 is not None and x0 - prev_x1 > gap:
+            break
+        parts.append(text)
+        prev_x1 = x1
+    return " ".join(parts).strip()
 
 
 def figure_lines(page):
@@ -115,18 +208,13 @@ def figure_lines(page):
 
 def build_legend(page, dots):
     """colour -> region name, from the left-margin swatch/label pairs."""
-    labels = legend_lines(page)
     legend = {}
     for dot in dots:
         if dot["cx"] >= LEGEND_MAX_X:
             continue
-        nearest = min(
-            (lab for lab in labels if abs(lab[2] - dot["cy"]) <= LEGEND_LINE_TOL),
-            key=lambda lab: abs(lab[2] - dot["cy"]),
-            default=None,
-        )
-        if nearest:
-            legend[dot["colour"]] = nearest[0]
+        name = label_right_of(page, dot)
+        if name:
+            legend[dot["colour"]] = name
     return legend
 
 
@@ -209,7 +297,8 @@ def main():
 
     for page_no in range(doc.page_count):
         page = doc[page_no]
-        dots = page_dots(page)
+        render = render_page(page)
+        dots = page_dots(page, render)
         legend = build_legend(page, dots)
         plates = plate_boxes(page)
 
@@ -238,8 +327,13 @@ def main():
                         "plate_id": plate_id,
                         "page": page_no + 1,
                         "plate_seq": plate_seq,
-                        "region": region or "UNMAPPED",
-                        "is_unknown": int(region in UNKNOWN_LABELS or region is None),
+                        "region": REGION_CANONICAL.get(region, region) or "UNMAPPED",
+                        "region_raw": region or "",
+                        # "Rm (Raphe) ??" is a named region the author was unsure
+                        # of, not an unnamed one - flagged, but kept with its name.
+                        "is_unknown": int(region is None
+                                          or region in UNKNOWN_LABELS
+                                          or region.rstrip().endswith("??")),
                         "colour_hex": hexify(dot["colour"]),
                         "x_px": round(x_px, 1),
                         "y_px": round(y_px, 1),
