@@ -37,6 +37,14 @@ Interaction
   exports are identical whether the section was turned or not. The angle is
   carried in `roi_plates.csv` as `view_rotation_deg` for provenance only.
 
+  **`Exclude` rejects the section**, and is a different statement from `No ROI
+  here`: no-ROI says the section is fine and has nothing to measure at this
+  level, exclude says the section should not be used. Because the pERK section
+  and its PCNA partner were cut at different times, one can be damaged while the
+  other is good - so when a partner is on record the button opens a tick box and
+  either side can be excluded independently. Landmarks already placed are kept
+  in the exports; the exclusion is a flag to filter on, not a deletion.
+
   **`f` marks a section favourite** - the subset worth carrying into actual
   quantification. It is orthogonal to the plate assignment, because a section can
   be worth quantifying before anyone has landmarked it, so it sets no other flag
@@ -95,8 +103,12 @@ Three outputs, because there are three separable decisions
 
 `roi_plates.csv`     one row per section the operator has *touched*, with its
                      plate and a `status` of `registered` (3+ landmarks),
-                     `plate_only` (plate chosen, not landmarked) or `no_roi`
-                     (deliberately marked as having nothing to measure).
+                     `plate_only` (plate chosen, not landmarked), `no_roi`
+                     (deliberately marked as having nothing to measure) or
+                     `excluded`. Carries `excluded`, `pcna_scene_uid` and
+                     `excluded_pcna`, because the pERK section and its PCNA
+                     partner are different physical sections and either can be
+                     rejected on its own.
 `roi_landmarks.csv`  every landmark pair, with its residual. Registered only.
 `roi_regions.csv`    warped seed positions in the section's reformatted frame.
 
@@ -231,6 +243,24 @@ input[type=range]{width:100%}
 .btn-fav:hover{border-color:#e3b341;color:#e3b341}
 .btn-excl{border-color:#8a5a2e;color:#f0883e}
 .btn-excl:hover{border-color:#f0883e;color:#f0883e}
+.btn-kill{border-color:#8a2f36;color:#f85149}
+.btn-kill:hover{border-color:#f85149;color:#f85149}
+.kill-on{border-color:#f85149 !important;background:#3d1417;color:#ff9d96 !important}
+/* Anchored to the window rather than the pane: it is a decision about the pair,
+   not about the picture underneath it, and it must stay put when the section
+   pane resizes between a 3-column and a 4-column layout. */
+#exclBox{position:fixed;top:96px;right:14px;z-index:20;display:none;
+         background:#1a1013;border:1px solid #8a2f36;border-radius:9px;
+         padding:10px 12px;box-shadow:0 6px 24px rgba(0,0,0,.55);min-width:210px}
+#exclBox.on{display:block}
+#exclBox h3{margin:0 0 7px;font-size:11px;letter-spacing:.06em;color:#f85149}
+#exclBox label{display:flex;align-items:center;gap:7px;padding:4px 0;
+               font-size:12px;color:var(--fg);cursor:pointer}
+#exclBox .uid{color:var(--dim);font-size:11px;display:block;margin-left:21px}
+#exclBox .foot{margin-top:8px;display:flex;gap:6px;align-items:center}
+#exclBox .note{color:var(--dim);font-size:11px;margin-top:6px;line-height:1.35}
+.cell.excl{border-color:#f85149;opacity:.5}
+.cell.excl img{filter:grayscale(1)}
 .btn-edit{border-color:#2c7a82;color:#39c5cf}
 .btn-edit:hover{border-color:#39c5cf;color:#39c5cf}
 label.chk{color:var(--dim);font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer}
@@ -250,6 +280,7 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
   <span class="row" style="color:#4da3ff"><b id="nassign"></b> plate only</span>
   <span class="row" style="color:#9aa0a8"><b id="nnoroi"></b> no ROI</span>
   <span class="row" style="color:#e3b341"><b id="nfav"></b> favourite</span>
+  <span class="row" style="color:#f85149"><b id="nexcl"></b> excluded</span>
   <label class="chk"><input type="checkbox" id="favOnly" onchange="render(); this.blur()">favourites only</label>
   <span class="row"><b id="npair"></b> pairs on this section</span>
   <span class="row" id="fit"></span>
@@ -260,10 +291,22 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
   <button id="rotReset" class="btn-rot" onclick="restoreTilt()">Restore original tilt</button>
   <button id="favBtn" class="btn-fav" onclick="toggleFav()">Favourite</button>
   <button id="noroiBtn" class="btn-excl" onclick="toggleNoRoi()">No ROI here</button>
+  <button id="exclBtn" class="btn-kill" onclick="toggleExcl()">Exclude</button>
   <button class="btn-edit" onclick="undoPt()">Undo point</button>
   <button class="btn-edit" onclick="clearPts()">Clear points</button>
   <button class="primary" onclick="exportCsv()">Export</button>
 </header>
+<div id="exclBox">
+  <h3>EXCLUDE</h3>
+  <label><input type="checkbox" id="exclSelf" onchange="setExcl()">
+    <span>this section <b style="color:#f85149">pERK</b></span></label>
+  <span class="uid" id="exclSelfUid"></span>
+  <label id="exclParRow"><input type="checkbox" id="exclPar" onchange="setExcl()">
+    <span>partner <b style="color:#3fb950">PCNA</b></span></label>
+  <span class="uid" id="exclParUid"></span>
+  <div class="note" id="exclNote"></div>
+  <div class="foot"><button onclick="closeExcl()">Done</button></div>
+</div>
 <div id="panes" class="__WITHPARTNER__">
   <div class="pane"><h2>SECTION - click to place a point</h2>
     <canvas id="cSec" onclick="clickSec(event)" onmousedown="secDown(event)"></canvas></div>
@@ -294,7 +337,7 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
   <kbd>z</kbd>/<kbd>x</kbd> or <kbd>&uarr;</kbd>/<kbd>&darr;</kbd> previous / next section (the plate stays put) &middot;
   <kbd>Rotate</kbd> then drag the section left/right (<kbd>shift</kbd> fine), <kbd>Save tilt</kbd> to keep it,
   <kbd>r</kbd> restores the original &middot;
-  <kbd>f</kbd> favourite &middot;
+  <kbd>f</kbd> favourite &middot; <kbd>Exclude</kbd> rejects this section (and optionally its PCNA partner) &middot;
   3 pairs for an affine, 6 for a spline &middot;
   <span style="color:#7c5cff">purple</span> = registered &middot;
   <span style="color:#4da3ff">blue</span> = plate assigned only &middot;
@@ -334,7 +377,8 @@ const rows = () => inAnimal()
 // merely selecting a section - otherwise clicking through the strip would record
 // a plate_001 assignment for everything it touched.
 const st = uid => S[uid] || (S[uid] = {plate: 0, pairs: [], assigned: false,
-                                       noroi: false, fav: false, rot: 0});
+                                       noroi: false, fav: false, rot: 0,
+                                       excl: false, exclPar: false});
 
 const secImg = new Image();
 secImg.onload = drawSec;
@@ -620,6 +664,12 @@ function status(){
   el("noroiBtn").style.borderColor = sa.noroi ? "#3fb950" : "";
   el("favBtn").textContent = sa.fav ? "Favourite ★" : "Favourite";
   el("favBtn").classList.toggle("fav-on", !!sa.fav);
+  const anyExcl = !!(sa.excl || sa.exclPar);
+  el("exclBtn").textContent = sa.excl && sa.exclPar ? "Excluded (both) ✕"
+                            : sa.exclPar ? "Excluded (PCNA) ✕"
+                            : sa.excl ? "Excluded ✕" : "Exclude";
+  el("exclBtn").classList.toggle("kill-on", anyExcl);
+  syncExclBox();
   // Three separate facts: is the tool open, is there an uncommitted tilt, and
   // what is actually being drawn. The buttons only offer what is available.
   const saved = sa.rot||0, dirty = draftRot!==null && Math.abs(draftRot-saved) > 1e-9;
@@ -656,6 +706,50 @@ function toggleNoRoi(){
   save(); paintCell(active); status();
 }
 
+// EXCLUDE is not "no ROI here". No-ROI says the section is fine and simply has
+// nothing to measure at this level; exclude says the section itself should not
+// be used. They are recorded separately because they mean different things to
+// whoever reads the export.
+//
+// The pERK section and its PCNA partner are two different physical sections cut
+// at different times, so one can be damaged while the other is perfectly good.
+// Excluding therefore has to be answerable per side rather than for the pair as
+// a unit, which is what the tick box is for. With no partner on record there is
+// nothing to ask about, so the button just toggles this section directly.
+const partnerOf = uid => (DATA.find(d=>d.uid===uid) || {}).pcna || "";
+function toggleExcl(){
+  if(!active) return;
+  const s=st(active);
+  if(s.excl || s.exclPar){ s.excl=false; s.exclPar=false; closeExcl(); }
+  else {
+    s.excl=true;
+    if(partnerOf(active)) openExcl(); else closeExcl();
+  }
+  save(); paintCell(active); status();
+}
+function setExcl(){
+  if(!active) return;
+  const s=st(active);
+  s.excl    = el("exclSelf").checked;
+  s.exclPar = el("exclPar").checked && !!partnerOf(active);
+  save(); paintCell(active); status();
+}
+function openExcl(){ el("exclBox").classList.add("on"); syncExclBox(); }
+function closeExcl(){ el("exclBox").classList.remove("on"); }
+function syncExclBox(){
+  if(!active) return;
+  const s=st(active), pu=partnerOf(active);
+  el("exclSelf").checked = !!s.excl;
+  el("exclPar").checked  = !!s.exclPar;
+  el("exclSelfUid").textContent = active;
+  el("exclParRow").style.display = pu ? "flex" : "none";
+  el("exclParUid").textContent = pu;
+  el("exclParUid").style.display = pu ? "block" : "none";
+  el("exclNote").innerHTML = pu
+    ? "Each side is recorded on its own, so excluding one leaves the other usable."
+    : "No PCNA partner on record for this section.";
+}
+
 function onSlide(v){
   const s=st(active); s.plate=+v; save();
   const P=PLATES[+v];
@@ -680,6 +774,7 @@ function select(uid, keep){
   // The one exception is a section carrying a real decision - assigned, or
   // landmarked - where the stored plate IS the thing worth seeing.
   draftRot = null;            // a tilt drafted on one section is not another's
+  closeExcl();                // the tick box belongs to the section it was opened on
   const decided = s.assigned || s.pairs.length > 0;
   const p = decided ? s.plate : Math.min(PLATES.length - 1, +el("slider").value || 0);
   el("slider").value = p;
@@ -694,6 +789,9 @@ function select(uid, keep){
 }
 const isDone   = uid => (S[uid]?.pairs?.length || 0) >= 3;
 const isNoRoi  = uid => !!S[uid]?.noroi;
+// Either side excluded marks the cell: the pair is the unit being carried
+// forward, so a section whose partner is gone is not simply "fine".
+const isExcl   = uid => !!(S[uid]?.excl || S[uid]?.exclPar);
 // Plate chosen deliberately but not landmarked - a real decision, and one the
 // export used to discard.
 const isPlateOnly = uid => !!S[uid]?.assigned && !isDone(uid) && !isNoRoi(uid);
@@ -701,12 +799,18 @@ const isPlateOnly = uid => !!S[uid]?.assigned && !isDone(uid) && !isNoRoi(uid);
 // One source of truth for a cell's appearance, so the full build and the
 // single-cell update cannot drift apart.
 function cellClass(uid){
-  const base = isDone(uid) ? "done" : isNoRoi(uid) ? "noroi"
+  // Exclusion wins the cell's appearance - it is the fact that decides whether
+  // anything else about the section matters.
+  const base = isExcl(uid) ? "excl"
+             : isDone(uid) ? "done" : isNoRoi(uid) ? "noroi"
              : isPlateOnly(uid) ? "plateonly" : "";
   return S[uid]?.fav ? base + " fav" : base;
 }
 function cellTag(uid){
   const s=S[uid], n=s?.pairs?.length||0;
+  const sx=S[uid];
+  if(isExcl(uid)) return sx.excl && sx.exclPar ? "excl both"
+                       : sx.excl ? "excl pERK" : "excl PCNA";
   return isNoRoi(uid) ? "no ROI" : n ? n+" pts"
        : isPlateOnly(uid) ? PLATES[s.plate].id.replace("plate_","pl ") : "";
 }
@@ -719,6 +823,7 @@ function counts(){
   // counted over the animal, not the filtered view, so it does not collapse to
   // the list length the moment "favourites only" is ticked
   el("nfav").textContent    = inAnimal().filter(d=>S[d.uid]?.fav).length;
+  el("nexcl").textContent   = inAnimal().filter(d=>isExcl(d.uid)).length;
 }
 // Update ONE strip cell. Every interaction used to rebuild all 87 cells and
 // reload their images, which is why it felt slow even when it was not recursing.
@@ -768,7 +873,8 @@ function exportCsv(){
   // section is not worth landmarking.
   const pl=[["scene_uid","animal","marker","subset","section_order","plate_set","plate_id","plate_index",
              "plate_has_seeds","n_landmarks","transform","status",
-             "favorite","view_rotation_deg"]];
+             "favorite","view_rotation_deg",
+             "excluded","pcna_scene_uid","excluded_pcna"]];
   const lm=[["scene_uid","animal","marker","section_order","plate_set","plate_id","pair",
              "sec_x","sec_y","plate_x","plate_y","residual_px"]];
   const rg=[["scene_uid","animal","marker","plate_set","plate_id","region","sec_x","sec_y",
@@ -777,18 +883,33 @@ function exportCsv(){
   for(const d of DATA){
     const s=S[d.uid];
     // A favourite is a decision too, so it is reported even with no plate yet.
-    if(!s || !(s.assigned || s.fav)) continue;      // never looked at - say nothing
+    // An exclusion is a judgement in its own right, exactly like a favourite or
+    // a bare plate assignment, so it is reported even when nothing else was done
+    // to the section.
+    if(!s || !(s.assigned || s.fav || s.excl || s.exclPar)) continue;
     const P=PLATES[s.plate], n=s.pairs.length;
     const T=transform(s.pairs);
     const chosen = s.assigned || n>0;   // is the plate a decision, or still the default?
-    const status = s.noroi ? "no_roi" : n>=3 ? "registered"
-                 : chosen ? "plate_only" : "favourite_only";
+    // `excluded` describes THIS section only. A section whose partner was
+    // excluded is not itself excluded, so that is carried in its own column
+    // rather than folded into the status - collapsing them would lose which
+    // side of the pair the operator actually rejected.
+    const status = s.excl ? "excluded"
+                 : s.noroi ? "no_roi" : n>=3 ? "registered"
+                 : chosen ? "plate_only"
+                 : s.fav ? "favourite_only" : "partner_excluded_only";
     // Blank rather than plate_001 when no plate was ever chosen - otherwise a
     // favourite with no assignment reads as a deliberate call on plate_001.
     pl.push([d.uid,d.animal,MARKER,SUBSET,d.order,PLATE_SET, chosen?P.id:"", chosen?s.plate:"",
              chosen?(P.labelled?1:0):"", n, T?T.kind:"", status,
-             s.fav?1:0, (s.rot||0).toFixed(1)]);
-    if(status!=="registered") continue;
+             s.fav?1:0, (s.rot||0).toFixed(1),
+             s.excl?1:0, d.pcna||"", s.exclPar?1:0]);
+    // Gate on the landmarks themselves, NOT on status - a section that was
+    // landmarked and then excluded still has that work, and keying this on
+    // status would silently drop it from both files the moment the exclude
+    // button was pressed. The exclusion is recorded in roi_plates.csv; dropping
+    // a section is a filter on that, not a hole in this one.
+    if(n < 3 || !T) continue;
 
     // Coordinates are captured in the pixels of whatever image is on screen, and
     // 04o can render that at a multiple of the canonical grid. Divide by the
@@ -923,9 +1044,13 @@ def main():
         d = {"uid": r["id"], "animal": r["animal"], "order": int(r["section_order"] or 0),
              "img": f"{img_dir}/{r['id']}.png"}
         pu = partner_uid.get(r["id"])
-        if pu and partner_dir and os.path.exists(
-                os.path.join(REFORMAT_DIR, partner_dir, pu + ".png")):
-            d["partner"] = f"{partner_dir}/{pu}.png"
+        if pu:
+            # Carried even when the partner has no composite to show: the pairing
+            # is what an exclusion decision is about, not the picture.
+            d["pcna"] = pu
+            if partner_dir and os.path.exists(
+                    os.path.join(REFORMAT_DIR, partner_dir, pu + ".png")):
+                d["partner"] = f"{partner_dir}/{pu}.png"
         data.append(d)
     n_partner = sum(1 for d in data if d.get("partner"))
 
