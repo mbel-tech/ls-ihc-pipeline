@@ -783,9 +783,18 @@ def main():
                          "part way still leaves every animal and every level covered")
     ap.add_argument("--tier", default=None,
                     help="with --worklist: only this tier (e.g. core)")
+    ap.add_argument("--rgb", action="store_true",
+                    help="show the two-colour composites from 04o_section_rgb.py "
+                         "(DAPI blue + marker) instead of the greyscale DAPI the "
+                         "geometry was computed on. Same frame either way.")
     args = ap.parse_args()
 
     index_csv, img_dir = marker_paths(args.marker)
+    if args.rgb:
+        rgb_dir = img_dir + "_rgb"
+        if not os.path.isdir(os.path.join(REFORMAT_DIR, rgb_dir)):
+            raise SystemExit(f"{rgb_dir} not found - run 04o_section_rgb.py first")
+        img_dir = rgb_dir
     with open(index_csv, newline="", encoding="utf-8") as fh:
         rows = [r for r in csv.DictReader(fh) if r["kind"] == "section"]
     before = len(rows)

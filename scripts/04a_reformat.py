@@ -145,94 +145,13 @@ def load_artifact(uid, shape):
     return np.asarray(a) > 0
 
 
-def reformat(path, light_background, extra_angle=0.0, flip=False, artifact=None,
-             censor=None, invert=False):
-    """Return (normalised grayscale, normalised mask, angle applied).
+def _stretch_to_grid(pi, pm, pa):
+    """Robust in-tissue stretch, then resize to GRID. See the note below.
 
-    `extra_angle` is the curator's manual correction, in degrees. It is folded
-    into the automatic angle and applied in the SAME rotation, for two reasons.
-
-    Interpolating twice would blur the image for no gain; more importantly, the
-    curator allows any angle, and rotating an already-cropped square frame by,
-    say, 40 degrees pushes the corners of the tissue outside it. Rotating before
-    the crop means the bounding box is recomputed afterwards and nothing is ever
-    clipped. The manual angle is added *after* the 180 degree resolution below,
-    so a manual 180 is not silently cancelled by the automatic one.
+    Pulled out of `reformat` so a companion channel is stretched by exactly the
+    same rule as the geometry channel rather than a second copy of it that can
+    drift.
     """
-    try:
-        img = Image.open(path).convert("L")
-    except OSError:
-        return None
-    work = np.asarray(img.resize((WORK_SIZE, WORK_SIZE), Image.BILINEAR)).astype(np.float32)
-    # Invert BEFORE anything else, so an atlas plate ends up in the same polarity
-    # as a DAPI section: cell-dense bright, fibre tracts and ventricles dark,
-    # background black. Doing it afterwards is not equivalent - the intensity
-    # stretch below is asymmetric (median - MAD to median + 4 MAD), so applied to
-    # the wrong polarity it clips away exactly the cell-density detail that makes
-    # the plate comparable to a section.
-    if invert:
-        work = 255.0 - work
-
-    mask = tissue_mask(work, light_background)
-    if mask is None:
-        return None
-
-    angle = principal_angle(mask)
-    # The 180 decision needs the rotated mask, so rotate the mask alone first -
-    # order=0 on a binary array is cheap. The image is rotated once, afterwards,
-    # by the final combined angle.
-    probe = ndimage.rotate(mask.astype(np.uint8), angle, order=0, reshape=True) > 0
-    if probe.sum() < 100:
-        return None
-    if resolve_180(probe):
-        angle += 180.0
-    angle += extra_angle
-
-    rot_mask = ndimage.rotate(mask.astype(np.uint8), angle, order=0, reshape=True) > 0
-    rot_img = ndimage.rotate(work, angle, order=1, reshape=True)
-    if rot_mask.sum() < 100:
-        return None
-    # The artifact mask rides the SAME geometry, so it stays registered to the
-    # image through rotation, crop and resize.
-    rot_art = (ndimage.rotate(artifact.astype(np.uint8), angle, order=0, reshape=True) > 0
-               if artifact is not None else None)
-    # Censored pixels ride the same geometry but are NEVER blanked: a clipped
-    # pixel is real signal whose value is lost, not an artifact to remove. See
-    # 04j_censor_clipped.py.
-    rot_cen = (ndimage.rotate(censor.astype(np.uint8), angle, order=0, reshape=True) > 0
-               if censor is not None else None)
-    if flip:
-        rot_mask, rot_img = rot_mask[:, ::-1], rot_img[:, ::-1]
-        if rot_art is not None:
-            rot_art = rot_art[:, ::-1]
-        if rot_cen is not None:
-            rot_cen = rot_cen[:, ::-1]
-
-    ys, xs = np.nonzero(rot_mask)
-    y0, y1, x0, x1 = ys.min(), ys.max() + 1, xs.min(), xs.max() + 1
-    crop_m = rot_mask[y0:y1, x0:x1]
-    crop_i = np.where(rot_mask, rot_img, 0.0)[y0:y1, x0:x1]
-    crop_a = rot_art[y0:y1, x0:x1] if rot_art is not None else None
-    crop_c = rot_cen[y0:y1, x0:x1] if rot_cen is not None else None
-
-    # Square-pad rather than stretch, so aspect - which is real shape
-    # information - survives the resize.
-    h, w = crop_m.shape
-    side = max(h, w)
-    pm = np.zeros((side, side), bool)
-    pi = np.zeros((side, side), np.float32)
-    pa = np.zeros((side, side), bool)
-    pc = np.zeros((side, side), bool)
-    oy, ox = (side - h) // 2, (side - w) // 2
-    pm[oy:oy + h, ox:ox + w] = crop_m
-    pi[oy:oy + h, ox:ox + w] = crop_i
-    if crop_a is not None:
-        pa[oy:oy + h, ox:ox + w] = crop_a
-    if crop_c is not None:
-        pc[oy:oy + h, ox:ox + w] = crop_c
-
-    out_m = np.asarray(Image.fromarray(pm.astype(np.uint8) * 255).resize((GRID, GRID), Image.BILINEAR)) > 127
-
     # Stretch on a ROBUST range of in-tissue pixels: median +/- multiples of the
     # MAD, not min/max and not percentiles.
     #
@@ -261,7 +180,123 @@ def reformat(path, light_background, extra_angle=0.0, flip=False, artifact=None,
     norm = np.clip((pi - lo) / max(hi - lo, 1e-6), 0, 1) * 255.0
     norm[~pm] = 0
     norm[pa] = 0
-    out_i = np.asarray(Image.fromarray(norm.astype(np.uint8)).resize((GRID, GRID), Image.BILINEAR))
+    return np.asarray(Image.fromarray(norm.astype(np.uint8)).resize((GRID, GRID), Image.BILINEAR))
+
+
+def reformat(path, light_background, extra_angle=0.0, flip=False, artifact=None,
+             censor=None, invert=False, companion=None):
+    """Return (normalised grayscale, normalised mask, angle applied).
+
+    `companion` is a second image - the marker channel - carried through the
+    *same* rotation, flip, crop, pad and resize as `path`. It takes no part in
+    deciding the geometry: the mask and the angle come from `path` alone, which
+    is DAPI for a section, because the marker channel is a sparse signal and a
+    poor silhouette. Passing it appends a sixth element to the return; omitting
+    it leaves the return exactly five long, as every existing caller expects.
+
+    `extra_angle` is the curator's manual correction, in degrees. It is folded
+    into the automatic angle and applied in the SAME rotation, for two reasons.
+
+    Interpolating twice would blur the image for no gain; more importantly, the
+    curator allows any angle, and rotating an already-cropped square frame by,
+    say, 40 degrees pushes the corners of the tissue outside it. Rotating before
+    the crop means the bounding box is recomputed afterwards and nothing is ever
+    clipped. The manual angle is added *after* the 180 degree resolution below,
+    so a manual 180 is not silently cancelled by the automatic one.
+    """
+    try:
+        img = Image.open(path).convert("L")
+    except OSError:
+        return None
+    work = np.asarray(img.resize((WORK_SIZE, WORK_SIZE), Image.BILINEAR)).astype(np.float32)
+    comp = None
+    if companion is not None:
+        try:
+            cim = Image.open(companion).convert("L")
+        except OSError:
+            return None
+        comp = np.asarray(cim.resize((WORK_SIZE, WORK_SIZE), Image.BILINEAR)).astype(np.float32)
+    # Invert BEFORE anything else, so an atlas plate ends up in the same polarity
+    # as a DAPI section: cell-dense bright, fibre tracts and ventricles dark,
+    # background black. Doing it afterwards is not equivalent - the intensity
+    # stretch below is asymmetric (median - MAD to median + 4 MAD), so applied to
+    # the wrong polarity it clips away exactly the cell-density detail that makes
+    # the plate comparable to a section.
+    if invert:
+        work = 255.0 - work
+
+    mask = tissue_mask(work, light_background)
+    if mask is None:
+        return None
+
+    angle = principal_angle(mask)
+    # The 180 decision needs the rotated mask, so rotate the mask alone first -
+    # order=0 on a binary array is cheap. The image is rotated once, afterwards,
+    # by the final combined angle.
+    probe = ndimage.rotate(mask.astype(np.uint8), angle, order=0, reshape=True) > 0
+    if probe.sum() < 100:
+        return None
+    if resolve_180(probe):
+        angle += 180.0
+    angle += extra_angle
+
+    rot_mask = ndimage.rotate(mask.astype(np.uint8), angle, order=0, reshape=True) > 0
+    rot_img = ndimage.rotate(work, angle, order=1, reshape=True)
+    rot_comp = (ndimage.rotate(comp, angle, order=1, reshape=True)
+                if comp is not None else None)
+    if rot_mask.sum() < 100:
+        return None
+    # The artifact mask rides the SAME geometry, so it stays registered to the
+    # image through rotation, crop and resize.
+    rot_art = (ndimage.rotate(artifact.astype(np.uint8), angle, order=0, reshape=True) > 0
+               if artifact is not None else None)
+    # Censored pixels ride the same geometry but are NEVER blanked: a clipped
+    # pixel is real signal whose value is lost, not an artifact to remove. See
+    # 04j_censor_clipped.py.
+    rot_cen = (ndimage.rotate(censor.astype(np.uint8), angle, order=0, reshape=True) > 0
+               if censor is not None else None)
+    if flip:
+        rot_mask, rot_img = rot_mask[:, ::-1], rot_img[:, ::-1]
+        if rot_comp is not None:
+            rot_comp = rot_comp[:, ::-1]
+        if rot_art is not None:
+            rot_art = rot_art[:, ::-1]
+        if rot_cen is not None:
+            rot_cen = rot_cen[:, ::-1]
+
+    ys, xs = np.nonzero(rot_mask)
+    y0, y1, x0, x1 = ys.min(), ys.max() + 1, xs.min(), xs.max() + 1
+    crop_m = rot_mask[y0:y1, x0:x1]
+    crop_i = np.where(rot_mask, rot_img, 0.0)[y0:y1, x0:x1]
+    crop_p = (np.where(rot_mask, rot_comp, 0.0)[y0:y1, x0:x1]
+              if rot_comp is not None else None)
+    crop_a = rot_art[y0:y1, x0:x1] if rot_art is not None else None
+    crop_c = rot_cen[y0:y1, x0:x1] if rot_cen is not None else None
+
+    # Square-pad rather than stretch, so aspect - which is real shape
+    # information - survives the resize.
+    h, w = crop_m.shape
+    side = max(h, w)
+    pm = np.zeros((side, side), bool)
+    pi = np.zeros((side, side), np.float32)
+    pa = np.zeros((side, side), bool)
+    pc = np.zeros((side, side), bool)
+    oy, ox = (side - h) // 2, (side - w) // 2
+    pm[oy:oy + h, ox:ox + w] = crop_m
+    pi[oy:oy + h, ox:ox + w] = crop_i
+    pp = None
+    if crop_p is not None:
+        pp = np.zeros((side, side), np.float32)
+        pp[oy:oy + h, ox:ox + w] = crop_p
+    if crop_a is not None:
+        pa[oy:oy + h, ox:ox + w] = crop_a
+    if crop_c is not None:
+        pc[oy:oy + h, ox:ox + w] = crop_c
+
+    out_m = np.asarray(Image.fromarray(pm.astype(np.uint8) * 255).resize((GRID, GRID), Image.BILINEAR)) > 127
+
+    out_i = _stretch_to_grid(pi, pm, pa)
+    out_p = _stretch_to_grid(pp, pm, pa) if pp is not None else None
     # The tissue mask is deliberately NOT reduced by the artifact mask. It is the
     # section's silhouette, used for orientation and matching, and punching holes
     # in it would change the shape those depend on. What is masked is the
@@ -275,7 +310,12 @@ def reformat(path, light_background, extra_angle=0.0, flip=False, artifact=None,
     out_i = np.where(out_a, 0, out_i).astype(np.uint8)
     out_c = np.asarray(Image.fromarray(pc.astype(np.uint8) * 255)
                        .resize((GRID, GRID), Image.NEAREST)) > 127
-    return out_i, out_m, angle % 360.0, out_a, out_c
+    if out_p is None:
+        return out_i, out_m, angle % 360.0, out_a, out_c
+    # Same post-resize blanking as the geometry channel, for the same reason:
+    # the bilinear downsample smears a bright artifact back into the hole.
+    out_p = np.where(out_a, 0, out_p).astype(np.uint8)
+    return out_i, out_m, angle % 360.0, out_a, out_c, out_p
 
 
 def marker_paths(marker):
