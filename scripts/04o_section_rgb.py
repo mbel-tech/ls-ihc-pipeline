@@ -54,6 +54,11 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--marker", choices=("AF488", "AF568"), default="AF568")
     ap.add_argument("--tier", default=None, help="only this worklist tier")
+    ap.add_argument("--scale", type=int, default=3, metavar="N",
+                    help="render at N x the canonical 256 grid (default 3 = 768). "
+                         "Sampling only - the mask, angle and frame are decided at "
+                         "WORK_SIZE and do not change, so a landmark still means the "
+                         "same thing once divided by N")
     ap.add_argument("--verify", action="store_true",
                     help="check the blue plane still equals the existing greyscale section")
     args = ap.parse_args()
@@ -72,11 +77,16 @@ def main():
         want = [r for r in csv.DictReader(fh) if not args.tier or r["tier"] == args.tier]
 
     plane = MARKER_PLANE[args.marker]
+    # The worklist is keyed on pERK. Building the PCNA side means following the
+    # pairing to the partner scene, which the 30 unpaired sections do not have.
+    uid_col = "pcna_scene_uid" if args.marker == "AF488" else "scene_uid"
     made = skipped = mismatched = 0
     missing = []
 
     for w in want:
-        uid = w["scene_uid"]
+        uid = (w.get(uid_col) or "").strip()
+        if not uid:
+            continue                      # unpaired: no partner to build
         r = secs.get(uid)
         if r is None:
             missing.append((uid, "not in focus.csv"))
@@ -91,7 +101,8 @@ def main():
         art = RF.load_artifact(uid, (RF.WORK_SIZE, RF.WORK_SIZE))
         cen = RF.load_censor(uid, (RF.WORK_SIZE, RF.WORK_SIZE))
         out = RF.reformat(dapi, light_background=False, extra_angle=extra, flip=flip,
-                          artifact=art, censor=cen, companion=mark)
+                          artifact=art, censor=cen, companion=mark,
+                          render_scale=1 if args.verify else args.scale)
         if out is None:
             missing.append((uid, "no tissue mask could be formed"))
             continue

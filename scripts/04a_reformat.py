@@ -145,7 +145,7 @@ def load_artifact(uid, shape):
     return np.asarray(a) > 0
 
 
-def _stretch_to_grid(pi, pm, pa):
+def _stretch_to_grid(pi, pm, pa, grid=GRID):
     """Robust in-tissue stretch, then resize to GRID. See the note below.
 
     Pulled out of `reformat` so a companion channel is stretched by exactly the
@@ -180,11 +180,11 @@ def _stretch_to_grid(pi, pm, pa):
     norm = np.clip((pi - lo) / max(hi - lo, 1e-6), 0, 1) * 255.0
     norm[~pm] = 0
     norm[pa] = 0
-    return np.asarray(Image.fromarray(norm.astype(np.uint8)).resize((GRID, GRID), Image.BILINEAR))
+    return np.asarray(Image.fromarray(norm.astype(np.uint8)).resize((grid, grid), Image.BILINEAR))
 
 
 def reformat(path, light_background, extra_angle=0.0, flip=False, artifact=None,
-             censor=None, invert=False, companion=None):
+             censor=None, invert=False, companion=None, render_scale=1):
     """Return (normalised grayscale, normalised mask, angle applied).
 
     `companion` is a second image - the marker channel - carried through the
@@ -240,6 +240,29 @@ def reformat(path, light_background, extra_angle=0.0, flip=False, artifact=None,
         angle += 180.0
     angle += extra_angle
 
+    # `render_scale` changes only how finely this frame is SAMPLED. The mask, the
+    # angle and therefore the crop are all decided above at WORK_SIZE and are not
+    # recomputed, so the output is the same picture at a higher resolution rather
+    # than a slightly different one - which matters because a landmark placed on
+    # it has to mean the same thing. Raising WORK_SIZE instead would change the
+    # mask, and with it the angle and the bounding box.
+    S = int(render_scale)
+    if S > 1:
+        big = WORK_SIZE * S
+        work = np.asarray(img.resize((big, big), Image.BILINEAR)).astype(np.float32)
+        if invert:
+            work = 255.0 - work
+        if comp is not None:
+            comp = np.asarray(cim.resize((big, big), Image.BILINEAR)).astype(np.float32)
+        def _up(a):
+            return np.asarray(Image.fromarray(a.astype(np.uint8) * 255)
+                              .resize((big, big), Image.NEAREST)) > 127
+        mask = _up(mask)
+        if artifact is not None:
+            artifact = _up(artifact)
+        if censor is not None:
+            censor = _up(censor)
+
     rot_mask = ndimage.rotate(mask.astype(np.uint8), angle, order=0, reshape=True) > 0
     rot_img = ndimage.rotate(work, angle, order=1, reshape=True)
     rot_comp = (ndimage.rotate(comp, angle, order=1, reshape=True)
@@ -293,23 +316,24 @@ def reformat(path, light_background, extra_angle=0.0, flip=False, artifact=None,
     if crop_c is not None:
         pc[oy:oy + h, ox:ox + w] = crop_c
 
-    out_m = np.asarray(Image.fromarray(pm.astype(np.uint8) * 255).resize((GRID, GRID), Image.BILINEAR)) > 127
+    grid = GRID * S
+    out_m = np.asarray(Image.fromarray(pm.astype(np.uint8) * 255).resize((grid, grid), Image.BILINEAR)) > 127
 
-    out_i = _stretch_to_grid(pi, pm, pa)
-    out_p = _stretch_to_grid(pp, pm, pa) if pp is not None else None
+    out_i = _stretch_to_grid(pi, pm, pa, grid)
+    out_p = _stretch_to_grid(pp, pm, pa, grid) if pp is not None else None
     # The tissue mask is deliberately NOT reduced by the artifact mask. It is the
     # section's silhouette, used for orientation and matching, and punching holes
     # in it would change the shape those depend on. What is masked is the
     # measurement and the picture, not the outline.
     out_a = np.asarray(Image.fromarray(pa.astype(np.uint8) * 255)
-                       .resize((GRID, GRID), Image.NEAREST)) > 127
+                       .resize((grid, grid), Image.NEAREST)) > 127
     # Blank AFTER the resize as well as before it. The image is downsampled
     # bilinearly, which smears bright neighbours back into the hole - measured at
     # up to full intensity on a 190 px artifact. Zeroing before the resize alone
     # leaves the artifact faintly visible in exactly the place it was removed.
     out_i = np.where(out_a, 0, out_i).astype(np.uint8)
     out_c = np.asarray(Image.fromarray(pc.astype(np.uint8) * 255)
-                       .resize((GRID, GRID), Image.NEAREST)) > 127
+                       .resize((grid, grid), Image.NEAREST)) > 127
     if out_p is None:
         return out_i, out_m, angle % 360.0, out_a, out_c
     # Same post-resize blanking as the geometry channel, for the same reason:

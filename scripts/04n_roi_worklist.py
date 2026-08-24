@@ -176,7 +176,8 @@ def main():
 
     with open(OUT_CSV, "w", newline="", encoding="utf-8") as fh:
         w = csv.writer(fh, lineterminator="\n")
-        w.writerow(["rank", "tier", "tier_reason", "scene_uid", "animal", "section_order",
+        w.writerow(["rank", "tier", "tier_reason", "scene_uid", "pcna_scene_uid",
+                    "animal", "section_order",
                     "rotation_unchecked", "pair_confidence", "pair_align_iou",
                     "pcna_focus_score", "pcna_n_pieces", "pcna_largest_piece_mm2"])
         n = 0
@@ -184,7 +185,8 @@ def main():
             if args.tier and tier != args.tier:
                 continue
             n += 1
-            w.writerow([n, tier, reason[tier], r["scene_uid"], r["animal"], r["section_order"],
+            w.writerow([n, tier, reason[tier], r["scene_uid"], r.get("pcna_scene_uid", ""),
+                        r["animal"], r["section_order"],
                         1 if r["paired"] == "0" else 0,
                         r["pair_confidence"], num(r, "pair_align_iou"),
                         num(r, "pcna_focus_score"), num(r, "pcna_n_pieces"),

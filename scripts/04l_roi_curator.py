@@ -124,6 +124,9 @@ REFORMAT_DIR = os.path.join(OUT_ROOT, "reformatted")
 ANALYSIS_CSV = os.path.join(REFORMAT_DIR, "perk_analysis_set.csv")
 PERK_MAP_CSV = os.path.join(REFORMAT_DIR, "perk_overrides.csv")
 WORKLIST_CSV = os.path.join(REFORMAT_DIR, "roi_worklist.csv")
+# The canonical reformatted frame every stored coordinate is expressed in. 04o may
+# render the picture larger; the curator divides that back out on export.
+SEC_GRID = 256
 
 
 def marker_paths(marker):
@@ -178,6 +181,9 @@ button:hover{border-color:var(--accent)}
 button.primary{background:var(--accent);border-color:var(--accent);color:#04121f;font-weight:600}
 #panes{flex:1 1 auto;min-height:0;display:grid;grid-template-columns:1fr 1fr 250px;
        grid-template-rows:minmax(0,1fr);gap:10px;padding:10px}
+#panes.withpartner{grid-template-columns:1fr 1fr 1fr 250px}
+#panePartner{display:none}
+#panes.withpartner #panePartner{display:block}
 .pane{position:relative;background:#0e1014;border:1px solid var(--line);border-radius:9px;
       overflow:hidden;min-width:0;min-height:0}
 .pane h2{position:absolute;top:6px;left:8px;margin:0;font-size:11px;color:var(--dim);
@@ -241,9 +247,11 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
   <button onclick="clearPts()">Clear points</button>
   <button class="primary" onclick="exportCsv()">Export</button>
 </header>
-<div id="panes">
+<div id="panes" class="__WITHPARTNER__">
   <div class="pane"><h2>SECTION - click to place a point</h2>
     <canvas id="cSec" onclick="clickSec(event)" onmousedown="secDown(event)"></canvas></div>
+  <div class="pane" id="panePartner"><h2>PARTNER (PCNA) - reference only</h2>
+    <canvas id="cPar"></canvas></div>
   <div class="pane"><h2>ATLAS PLATE - click the matching point</h2>
     <canvas id="cPl" onclick="clickPl(event)"></canvas></div>
   <div id="side">
@@ -287,6 +295,8 @@ const PLATE_SET = __PLATESET__;
 // pERK section is not the same datum as one on its PCNA partner, so both go
 // into every export rather than being inferred later from the file name.
 const MARKER = __MARKER__, SUBSET = __SUBSET__;
+// The canonical reformatted grid (04a GRID). Display may be a multiple of it.
+const SEC_GRID = __SECGRID__;
 const KEY = "ls_roi_curator_v1";
 let S = JSON.parse(localStorage.getItem(KEY) || "{}");   // uid -> {plate, pairs:[[sx,sy,px,py]]}
 let active = null, pending = null;   // pending section point awaiting its plate partner
@@ -311,6 +321,21 @@ const st = uid => S[uid] || (S[uid] = {plate: 0, pairs: [], assigned: false,
 
 const secImg = new Image();
 secImg.onload = drawSec;
+
+// The paired PCNA section, shown for reference only - it is a different physical
+// section with its own geometry, so nothing is ever clicked on it and no
+// coordinate is taken from it. It is here because the marker channels differ and
+// the partner often shows an anatomical boundary the pERK scan does not.
+const parImg = new Image();
+parImg.onload = drawPar;
+function drawPar(){
+  const c = el("cPar"); if(!c) return;
+  const x = c.getContext("2d");
+  if(!parImg.naturalWidth){ x.clearRect(0,0,c.width,c.height); return; }
+  c.width = parImg.naturalWidth; c.height = parImg.naturalHeight;
+  x.clearRect(0,0,c.width,c.height);
+  x.drawImage(parImg, 0, 0);
+}
 
 // All 101 plates preloaded - 7.4 MB total, median 71 KB. Setting plImg.src on
 // every slider step made each step wait on a disk read and a JPEG decode, which
@@ -642,6 +667,9 @@ function select(uid, keep){
   const p = decided ? s.plate : Math.min(PLATES.length - 1, +el("slider").value || 0);
   el("slider").value = p;
   secImg.src = d.img;
+  if(d.partner){ parImg.src = d.partner; }
+  else { parImg.removeAttribute("src"); const c=el("cPar");
+         if(c) c.getContext("2d").clearRect(0,0,c.width,c.height); }
   onSlide(p);
   document.querySelectorAll(".cell").forEach(c=>c.classList.toggle("active", c.dataset.uid===uid));
   if(!keep) document.querySelector(`[data-uid="${CSS.escape(uid)}"]`)
@@ -745,16 +773,22 @@ function exportCsv(){
              s.fav?1:0, (s.rot||0).toFixed(1)]);
     if(status!=="registered") continue;
 
+    // Coordinates are captured in the pixels of whatever image is on screen, and
+    // 04o can render that at a multiple of the canonical grid. Divide by the
+    // multiple on the way out so sec_x/sec_y always mean canonical-frame pixels -
+    // the same frame the masks and every other reformatted product live in.
+    // Residuals are a length in the same space, so they scale too.
+    const K = (secImg.naturalWidth || SEC_GRID) / SEC_GRID;
     let tot=0;
     s.pairs.forEach(([sx,sy,px,py],i)=>{
       const [X,Y]=apply(T,px,py), r=Math.hypot(X-sx,Y-sy); tot+=r;
-      lm.push([d.uid,d.animal,MARKER,d.order,PLATE_SET,P.id,i+1,sx.toFixed(2),sy.toFixed(2),
-               px.toFixed(2),py.toFixed(2),r.toFixed(2)]);
+      lm.push([d.uid,d.animal,MARKER,d.order,PLATE_SET,P.id,i+1,(sx/K).toFixed(2),(sy/K).toFixed(2),
+               px.toFixed(2),py.toFixed(2),(r/K).toFixed(2)]);
     });
-    const mr=(tot/n).toFixed(2);
+    const mr=(tot/n/K).toFixed(2);
     for(const sd of P.seeds){
       const [X,Y]=apply(T, sd.xf*P.w, sd.yf*P.h);
-      rg.push([d.uid,d.animal,MARKER,PLATE_SET,P.id,sd.region,X.toFixed(2),Y.toFixed(2),n,T.kind,mr]);
+      rg.push([d.uid,d.animal,MARKER,PLATE_SET,P.id,sd.region,(X/K).toFixed(2),(Y/K).toFixed(2),n,T.kind,mr]);
     }
   }
   dl(pl,"roi_plates.csv");
@@ -852,14 +886,39 @@ def main():
                    "w": int(p["px_w"]), "h": int(p["px_h"]),
                    "labelled": int(bool(sd)), "seeds": sd})
 
-    data = [{"uid": r["id"], "animal": r["animal"], "order": int(r["section_order"] or 0),
-             "img": f"{img_dir}/{r['id']}.png"} for r in rows]
+    # The partner is a reference view only. It is offered when the composites for
+    # the other channel exist; without them the pane simply stays hidden, so the
+    # tool still runs on a machine where 04o has not been given the second pass.
+    partner_uid, partner_dir = {}, None
+    if args.rgb and os.path.exists(WORKLIST_CSV):
+        other = "sections" if args.marker == "AF568" else "sections_AF568"
+        if os.path.isdir(os.path.join(REFORMAT_DIR, other + "_rgb")):
+            partner_dir = other + "_rgb"
+            a_col = "scene_uid" if args.marker == "AF568" else "pcna_scene_uid"
+            b_col = "pcna_scene_uid" if args.marker == "AF568" else "scene_uid"
+            with open(WORKLIST_CSV, newline="", encoding="utf-8") as fh:
+                for w in csv.DictReader(fh):
+                    if w.get(a_col) and w.get(b_col):
+                        partner_uid[w[a_col]] = w[b_col]
+
+    data = []
+    for r in rows:
+        d = {"uid": r["id"], "animal": r["animal"], "order": int(r["section_order"] or 0),
+             "img": f"{img_dir}/{r['id']}.png"}
+        pu = partner_uid.get(r["id"])
+        if pu and partner_dir and os.path.exists(
+                os.path.join(REFORMAT_DIR, partner_dir, pu + ".png")):
+            d["partner"] = f"{partner_dir}/{pu}.png"
+        data.append(d)
+    n_partner = sum(1 for d in data if d.get("partner"))
 
     page = (PAGE.replace("__DATA__", json.dumps(data))
                 .replace("__PLATES__", json.dumps(pl))
                 .replace("__PLATESET__", json.dumps(PLATE_SET))
                 .replace("__MARKER__", json.dumps(args.marker))
-                .replace("__SUBSET__", json.dumps(subset)))
+                .replace("__SUBSET__", json.dumps(subset))
+                .replace("__SECGRID__", json.dumps(SEC_GRID))
+                .replace("__WITHPARTNER__", "withpartner" if n_partner else ""))
     with open(CURATOR_HTML, "w", encoding="utf-8") as fh:
         fh.write(page)
 
