@@ -2025,3 +2025,52 @@ warning first, load and join snippets, a column reference, the unpaired-section
 caveat, provenance, and what the file deliberately does not contain (no group -
 still blinded; no ROIs; no signal). All 21 numeric claims in it were checked back
 against the CSV programmatically.
+
+### `perk_sections_dataset.csv` - the whole universe, not just the survivors
+
+`04m_sections_dataset.py` (was `04m_analysis_set_table.py`) now emits every pERK
+section, 1191 rows over 12 animals, with a `status` saying which of three fates
+it met: `analysis_set` 454, `censored_out` 264, `excluded` 473. Supersedes
+`analysis_set_dataset.csv`, which held only the 454.
+
+Rejected sections belong in the table. The exclusion rate spans 27.4% to 51.9%
+by animal, that variation is a result in itself, and it has to be checked against
+experimental group at unblinding - which is easy to forget if the rejects sit in
+a different file.
+
+**The pERK exclusion reason records nothing.** It is always "PCNA partner
+excluded by the operator"; the real reason is on the PCNA side, so it is followed
+through the pairing and parsed into `exclusion_class`: `tissue_damaged` 350,
+`no_tissue` 82, `out_of_focus` 41. All 593 recorded PCNA reasons parse, checked.
+
+**A column that was measuring the wrong thing.** `paired` was defined as "has a
+PCNA partner in `reformat_index.csv`", which is only true if that partner
+*survived curation* - so every excluded section read as a pairing failure when in
+fact it was paired and its partner was the reason for the exclusion. Split into
+`paired` (a partner was recorded: 1134) and `pcna_kept` (that partner survived:
+661).
+
+**Quality numbers have two provenances and the file says which.**
+`exclusion_candidates.csv` was regenerated against the curated set, so it covers
+only survivors. For a rejected section the number embedded in its reason string -
+"focus 0.061", "larger than 0.30 mm2" - is the only surviving record, so it is
+parsed back out. `qc_source` marks each row `exclusion_candidates` (661),
+`reason_string` (123) or blank (407, mostly the visual `tissue_damaged` calls
+where no number was ever taken). Comparing a below-threshold `reason_string`
+focus against a passing `exclusion_candidates` one would be an error, so the
+handout says so explicitly.
+
+Identity for rejected sections comes from `manifest_scenes.csv` - the only source
+covering them - whose `section_order` agrees with `reformat_index_AF568.csv` on
+all 718 kept rows.
+
+**Censoring is wildly uneven and is now visible per animal.** LS120, LS22 and
+LS61 lose nothing to clipping; LS85 loses 65 of 110 and LS69 41 of 108. That
+splits the animals on an axis unrelated to biology, and an apparent two-group
+pERK effect is the expected artefact of it. LS53 yields 0 measurable sections and
+LS85 yields 3 - neither can support a per-animal estimate. The handout leads with
+this.
+
+`perk_sections_dataset.md` is the companion guide. All 35 numeric and structural
+claims in it were verified back against the CSV programmatically, including the
+full per-animal table.
