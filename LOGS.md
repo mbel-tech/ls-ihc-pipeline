@@ -1988,3 +1988,40 @@ the operator-entered correction from `04d_rotation_curator.py`, folded in before
 the crop. `final_angle_deg` is the total angle actually applied (`angle`), for
 context; it is not itself an operator decision. `pcna_scene_uid` is blank for the
 30 with no recorded partner. 424 of 454 (93.4%) carry a nonzero manual tilt.
+
+### `analysis_set_dataset.csv` - both channels in one table, with a reading guide
+
+`04m_analysis_set_table.py` joins the four upstream files into one row per pERK
+analysis-set section: 454 rows, 424 paired with PCNA, 11 animals. Supersedes
+`analysis_set_manual_tilt.csv`, which held only the pERK side and is removed.
+
+**The single most important thing in it, and it corrects what I said earlier.**
+The pipeline calls a column `manual_rotation` on both channels and they are not
+the same kind of value. Only the **PCNA** angles were entered by hand, in
+`04d_rotation_curator.py`. `04i` states outright that "rotations must be
+re-derived, not copied" - the pERK scan is a separate acquisition with its own
+scan box, so its figure is the difference between the rotation its silhouette
+alignment measured and `04a`'s automatic angle. It is a machine estimate.
+
+Measured: the two disagree on **420 of the 424** paired sections. So the earlier
+statement that "424 of 454 carry a nonzero manual tilt" was wrong in kind - those
+were derived values. The operator tilt count is **413 of 424 paired sections**.
+The columns are now named `pcna_manual_rotation_deg` and
+`perk_derived_rotation_deg` so the distinction cannot be lost again.
+
+**A second finding, from checking the 30 unpaired sections.** Their
+`perk_derived_rotation_deg` is exactly 0 - and the zero set and the unpaired set
+are *identical*, no other row is zero. So those 30 carry no rotation correction
+at all: their final angle is purely `04a`'s automatic one, never checked against
+anything. They are kept in the file with `paired=0` rather than filtered, so
+dropping them stays the reader's decision.
+
+Pairing quality travels with the data: `pair_align_iou` spans 0.158-0.979,
+median 0.805, and the confidence classes separate cleanly - median 0.833 for the
+369 `high` against 0.470 for the 55 `low`.
+
+`analysis_set_dataset.md` is the companion reading guide: the rotation-column
+warning first, load and join snippets, a column reference, the unpaired-section
+caveat, provenance, and what the file deliberately does not contain (no group -
+still blinded; no ROIs; no signal). All 21 numeric claims in it were checked back
+against the CSV programmatically.
