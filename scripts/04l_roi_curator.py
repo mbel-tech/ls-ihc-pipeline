@@ -290,6 +290,9 @@ input[type=range]{width:100%}
    pane resizes between a 3-column and a 4-column layout. */
 .cell.excl{border-color:#f85149;opacity:.5}
 .cell.excl img{filter:grayscale(1)}
+.btn-guide{border-color:#2ea043;color:#3fb950}
+.btn-guide:hover{border-color:#3fb950;color:#3fb950}
+.guide-on{border-color:#3fb950 !important;background:#0f2e18;color:#7ee787 !important}
 .btn-edit{border-color:#2c7a82;color:#39c5cf}
 .btn-edit:hover{border-color:#39c5cf;color:#39c5cf}
 label.chk{color:var(--dim);font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer}
@@ -333,6 +336,8 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
   <button id="noroiBtn" class="btn-excl" onclick="toggleNoRoi()">No ROI here</button>
   <button id="exclBtn" class="btn-kill" onclick="toggleExcl()">Exclude</button>
   <button id="dapiBtn" class="btn-plate" onclick="toggleDapi()">DAPI</button>
+  <button id="guideBtn" class="btn-guide" onclick="toggleGuided()">Guided</button>
+  <button id="skipBtn" class="btn-guide" onclick="skipSeed()">Skip seed</button>
   <button class="btn-edit" onclick="undoPt()">Undo point</button>
   <button class="btn-edit" onclick="clearPts()">Clear points</button>
   <button class="primary" onclick="exportCsv()">Export</button>
@@ -368,6 +373,8 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
   <kbd>Rotate</kbd> then drag the section left/right (<kbd>shift</kbd> fine) - kept on release,
   <kbd>r</kbd> restores the original &middot;
   <kbd>f</kbd> favourite &middot; <kbd>x</kbd> exclude this section &middot;
+  <kbd>g</kbd> guided (walk the plate's numbered seeds, one click each) &middot;
+  <kbd>s</kbd> skip a seed that is not on this section &middot;
   3 pairs for an affine, 6 for a spline &middot;
   <span style="color:#7c5cff">purple</span> = registered &middot;
   <span style="color:#4da3ff">blue</span> = plate assigned only &middot;
@@ -688,12 +695,28 @@ function drawPl(){
   const img=plateImg();
   if(!img.naturalWidth){ img.addEventListener("load", drawPl, {once:true}); return; }
   fit(c,img); x.drawImage(img,0,0);
-  const s=st(active), P=PLATES[s.plate], u=uiScale(c);
-  for(const sd of P.seeds){
-    const X=sd.xf*c.width, Y=sd.yf*c.height;
-    x.beginPath(); x.arc(X,Y,5*u,0,6.284); x.fillStyle=sd.hex||"#4da3ff"; x.globalAlpha=.8; x.fill();
-    x.globalAlpha=1; x.lineWidth=1.2*u; x.strokeStyle="#000"; x.stroke();
-  }
+  const s=st(active), P=PLATES[s.plate], u=uiScale(c), done=usedSeeds(s);
+  // Every seed carries its number, because the number IS the click-through
+  // order - without it the list exists only in the code. Done seeds go hollow
+  // and the current one gets a bright ring, so progress down the plate is
+  // visible without reading anything.
+  P.seeds.forEach((sd,i)=>{
+    const N=i+1, X=sd.xf*c.width, Y=sd.yf*c.height;
+    const isDone=done.has(N), isTgt=guided && N===gTarget;
+    x.beginPath(); x.arc(X,Y,(isTgt?8:5)*u,0,6.284);
+    x.fillStyle=sd.hex||"#4da3ff"; x.globalAlpha=isDone?.25:.85; x.fill();
+    x.globalAlpha=1; x.lineWidth=(isTgt?3:1.2)*u;
+    x.strokeStyle=isTgt?"#3fb950":"#000"; x.stroke();
+    x.save();
+    x.font="bold "+((isTgt?13:10)*u)+"px system-ui";
+    x.textAlign="center"; x.textBaseline="middle";
+    x.lineWidth=3*u; x.strokeStyle="#04121f"; x.lineJoin="round";
+    const lx=X+(isTgt?13:10)*u, ly=Y-(isTgt?13:10)*u;
+    x.strokeText(N, lx, ly);
+    x.fillStyle = isTgt ? "#7ee787" : isDone ? "#6e7681" : "#fff";
+    x.fillText(N, lx, ly);
+    x.restore();
+  });
   s.pairs.forEach(([,,px,py],i)=>mark(x,px,py,i+1,"#4da3ff",u));
 }
 // Both canvases are drawn at their bitmap's own resolution and then fitted into
@@ -790,25 +813,93 @@ addEventListener("mouseup", ()=>{
   drawSec(); status();
 });
 
+// ---- guided mode: the plate's own seeds as a numbered click-through list ----
+//
+// Free correspondence takes two clicks and the operator has to find the SAME
+// anatomical point twice, once on each picture. Guided mode replaces the plate
+// half with the seed itself: the list is walked in its fixed order, and one
+// click on the section says "seed N is here". Half the clicks, and the plate
+// point is exact rather than eyeballed.
+//
+// What it changes about the RESULT, and this is worth being plain about: a
+// landmark placed this way is the operator asserting where a region is, so the
+// warp reproduces that assertion at that point exactly - a thin-plate spline
+// interpolates its landmarks with zero residual by construction. Seeds that were
+// NOT clicked are still atlas-derived, interpolated from the ones that were, and
+// those are the rows the atlas is actually doing work for. The residual stops
+// being an independent check on a guided pair, so every landmark records the
+// seed it came from (or blank for a free click) and the exports carry it. Which
+// method produced a number stays recoverable instead of being lost in the mean.
+let guided=false, gTarget=0;
+const seedsOf   = s => PLATES[s.plate].seeds;
+const usedSeeds = s => new Set(s.pairs.map(p=>p[4]).filter(n=>n));
+// Resume where the section was left: the pairs record which seeds are done, so
+// the cursor is derived from them rather than kept as a separate fact that could
+// disagree with them.
+function firstUnusedSeed(s){
+  const u=usedSeeds(s), n=seedsOf(s).length;
+  for(let i=1;i<=n;i++) if(!u.has(i)) return i;
+  return 0;                                  // 0 = nothing left on this plate
+}
+function gSync(){ gTarget = active ? firstUnusedSeed(st(active)) : 0; }
+function gAdvance(){
+  const s=st(active), n=seedsOf(s).length, u=usedSeeds(s);
+  let t=gTarget+1; while(t<=n && u.has(t)) t++;
+  gTarget = t<=n ? t : 0;
+}
+function toggleGuided(){
+  guided=!guided;
+  pending=null;            // a half-made free pair is not a guided one
+  if(guided) gSync();
+  drawSec(); drawPl(); status();
+}
+// A seed that is not on this section is skipped, not clicked somewhere vague.
+function skipSeed(){ if(!guided || !active || !gTarget) return;
+  gAdvance(); drawPl(); status(); }
+
 function clickSec(e){
   if(!active) return;
   if(rotMode) return;                          // the rotate tool owns the mouse
-  pending = can2img(...canvasXY(el("cSec"), e), secGeom());
+  const [ix,iy] = can2img(...canvasXY(el("cSec"), e), secGeom());
+  if(guided){
+    const s=st(active), sd=seedsOf(s)[gTarget-1];
+    if(!sd) return;                            // list finished - nothing to pair
+    const P=PLATES[s.plate];
+    s.pairs.push([ix, iy, sd.xf*P.w, sd.yf*P.h, gTarget]);
+    gAdvance(); save(); drawSec(); drawPl(); status(); paintCell(active);
+    return;
+  }
+  pending = [ix,iy];
   drawSec(); status();
 }
 function clickPl(e){
-  if(!active || !pending) return;
+  if(!active) return;
   const [px,py]=canvasXY(el("cPl"), e);
+  if(guided){
+    // The plate point comes from the seed here, so a click RE-AIMS the list at
+    // the nearest one instead of placing anything - that is how you go back to a
+    // seed you skipped, or jump ahead to one you can clearly see.
+    const s=st(active), P=PLATES[s.plate], c=el("cPl");
+    let best=0, bd=Infinity;
+    P.seeds.forEach((sd,i)=>{
+      const d=Math.hypot(sd.xf*c.width-px, sd.yf*c.height-py);
+      if(d<bd){ bd=d; best=i+1; }
+    });
+    if(best){ gTarget=best; drawPl(); status(); }
+    return;
+  }
+  if(!pending) return;
   st(active).pairs.push([pending[0],pending[1],px,py]); pending=null;
   save(); drawSec(); drawPl(); status(); paintCell(active);
 }
 function undoPt(){
   if(!active) return;
   if(pending){ pending=null; } else st(active).pairs.pop();
+  gSync();                       // the cursor follows the pairs, both ways
   save(); drawSec(); drawPl(); status(); paintCell(active);
 }
 function clearPts(){ if(!active) return; st(active).pairs=[]; pending=null; save();
-  drawSec(); drawPl(); status(); paintCell(active); }
+  gSync(); drawSec(); drawPl(); status(); paintCell(active); }
 
 function status(){
   const s=st(active), T=transform(s.pairs);
@@ -818,15 +909,38 @@ function status(){
   // half of it is outstanding - counting rings to work out "am I on 4 or 5?" is
   // exactly the bookkeeping the numbers are there to remove.
   const nextN = s.pairs.length + 1;
-  el("secTitle").textContent = pending
-    ? "SECTION - landmark " + nextN + " placed"
-    : "SECTION - click to place landmark " + nextN;
-  el("plTitle").textContent = pending
-    ? "ATLAS PLATE - click the matching point for landmark " + nextN
-    : "ATLAS PLATE - place the section point first";
-  el("lmHint").innerHTML = pending
-    ? `now click the matching point on the plate for <b>landmark ${nextN}</b>`
-    : `click section, then plate - next is <b>landmark ${nextN}</b>`;
+  const seeds = seedsOf(s), tgt = gTarget ? seeds[gTarget-1] : null;
+  el("guideBtn").textContent = guided ? "Guided ✓" : "Guided";
+  el("guideBtn").classList.toggle("guide-on", guided);
+  el("guideBtn").disabled = !seeds.length;
+  el("guideBtn").title = seeds.length ? ""
+    : "this plate carries no region seeds, so there is no list to walk";
+  el("skipBtn").disabled = !(guided && gTarget);
+  if(guided){
+    const nameOf = sd => sd ? (sd.amb || sd.region) : "";
+    el("secTitle").textContent = tgt
+      ? "SECTION - click where seed " + gTarget + " (" + nameOf(tgt) + ") is"
+      : "SECTION - every seed on this plate is placed";
+    el("plTitle").textContent = tgt
+      ? "ATLAS PLATE - seed " + gTarget + " of " + seeds.length + " is the target"
+      : "ATLAS PLATE - list finished; click a seed to go back to it";
+    el("lmHint").innerHTML = tgt
+      ? `seed <b>${gTarget}</b> of ${seeds.length} &middot; <b>${nameOf(tgt)}</b>`
+        + ` &middot; ${usedSeeds(s).size} placed`
+        + `<br><span style="color:#9aa0a8">click the section to place it &middot; `
+        + `Skip if it is not on this section &middot; click a plate seed to re-aim</span>`
+      : `all ${seeds.length} seeds placed - click one on the plate to redo it`;
+  } else {
+    el("secTitle").textContent = pending
+      ? "SECTION - landmark " + nextN + " placed"
+      : "SECTION - click to place landmark " + nextN;
+    el("plTitle").textContent = pending
+      ? "ATLAS PLATE - click the matching point for landmark " + nextN
+      : "ATLAS PLATE - place the section point first";
+    el("lmHint").innerHTML = pending
+      ? `now click the matching point on the plate for <b>landmark ${nextN}</b>`
+      : `click section, then plate - next is <b>landmark ${nextN}</b>`;
+  }
   // Residual per landmark: a mis-clicked pair shows as a large error instead of
   // quietly dragging the whole fit.
   let html="";
@@ -914,6 +1028,7 @@ function toggleExcl(){
 
 function onSlide(v){
   const s=st(active); s.plate=+v; save();
+  gSync();                     // a different plate is a different seed list
   const P=PLATES[+v];
   el("plName").textContent = P.id;
   el("plLab").innerHTML = P.labelled
@@ -926,7 +1041,7 @@ function onSlide(v){
 }
 
 function select(uid, keep){
-  active = uid; pending = null;
+  active = uid; pending = null; gSync();
   const list=rows(), i=list.findIndex(d=>d.uid===uid), d=list[i], s=st(uid);
   el("secInfo").innerHTML = `<b>${d.uid}</b><br>section ${d.order} &middot; ${i+1} of ${list.length}`;
   // The plate slider does NOT follow the section. Serial sections sit at
@@ -1023,6 +1138,8 @@ addEventListener("keydown", e=>{
   else if(e.key==="x" || e.key==="X"){ toggleExcl(); }
   else if(e.key==="z" || e.key==="Z"){ undoPt(); }
   else if(e.key==="r" || e.key==="R"){ restoreTilt(); }
+  else if(e.key==="g" || e.key==="G"){ toggleGuided(); }
+  else if(e.key==="s" || e.key==="S"){ skipSeed(); }
 });
 
 function exportCsv(){
@@ -1035,8 +1152,13 @@ function exportCsv(){
              "plate_has_seeds","n_landmarks","transform","status",
              "favorite","view_rotation_deg",
              "excluded"]];
+  // seed_n / seed_region say whether a landmark was placed against a numbered
+  // atlas seed (guided) or free-clicked, and which one. A guided pair is the
+  // operator asserting a region position, so the spline reproduces it exactly
+  // and its residual is not an independent check - the analysis has to be able
+  // to tell the two apart, and blank means free.
   const lm=[["scene_uid","animal","marker","section_order","plate_set","plate_id","pair",
-             "sec_x","sec_y","plate_x","plate_y","residual_px"]];
+             "sec_x","sec_y","plate_x","plate_y","residual_px","seed_n","seed_region"]];
   const rg=[["scene_uid","animal","marker","plate_set","plate_id","region",
              "region_ambiguous","ambiguity_group","sec_x","sec_y",
              "n_landmarks","transform","mean_residual_px"]];
@@ -1074,10 +1196,12 @@ function exportCsv(){
     // Residuals are a length in the same space, so they scale too.
     const K = (secImg.naturalWidth || SEC_GRID) / SEC_GRID;
     let tot=0;
-    s.pairs.forEach(([sx,sy,px,py],i)=>{
+    s.pairs.forEach(([sx,sy,px,py,sn],i)=>{
       const [X,Y]=apply(T,px,py), r=Math.hypot(X-sx,Y-sy); tot+=r;
+      const sd = sn ? P.seeds[sn-1] : null;
       lm.push([d.uid,d.animal,d.m,d.order,PLATE_SET,P.id,i+1,(sx/K).toFixed(2),(sy/K).toFixed(2),
-               px.toFixed(2),py.toFixed(2),(r/K).toFixed(2)]);
+               px.toFixed(2),py.toFixed(2),(r/K).toFixed(2),
+               sn||"", sd ? (sd.amb || sd.region) : ""]);
     });
     const mr=(tot/n/K).toFixed(2);
     for(const sd of P.seeds){
@@ -1189,6 +1313,37 @@ def main():
                 {"region": s["region"], "amb": REGION_GROUP.get(s["region"], ""),
                  "xf": float(s["x_frac"]), "yf": float(s["y_frac"]),
                  "hex": s.get("colour_hex") or "#4da3ff"})
+
+    # A FIXED click-through order, decided here rather than in the page, so that
+    # "seed 4" is the same seed in the tool, in every export and in a re-run.
+    # seeds.csv is in extraction order, which is arbitrary and puts bilateral
+    # partners far apart. Reading order - down the plate, left to right within a
+    # row - can be followed by eye.
+    #
+    # The rows have to be FOUND, not rounded to a grid. Seeds on one visual row
+    # sit at y values ~0.001 apart (0.2329, 0.2338, 0.2347 on plate_013) while
+    # real rows are ~0.02 apart, so any fixed rounding either splits a row or
+    # merges two. Splitting a row is the damaging one: the x tiebreak never
+    # fires, and the order zigzags across the midline - 0.39, 0.05, 0.60, 0.94 -
+    # which is exactly the thing a fixed order is supposed to stop. So rows are
+    # grown greedily by gap, at a threshold between the two scales.
+    #
+    # Left to right every row, not serpentine. Serpentine is 14% less travel and
+    # costs more than it saves: these regions are bilateral, and alternating the
+    # direction flips which hemisphere the next seed is in on every row.
+    ROW_BAND = 0.015
+    for _lst in seeds.values():
+        _lst.sort(key=lambda s: (s["yf"], s["xf"]))
+        _rows, _cur = [], [_lst[0]]
+        for _s in _lst[1:]:
+            if _s["yf"] - _cur[-1]["yf"] > ROW_BAND:
+                _rows.append(_cur); _cur = [_s]
+            else:
+                _cur.append(_s)
+        _rows.append(_cur)
+        _lst[:] = [_s for _row in _rows for _s in sorted(_row, key=lambda s: s["xf"])]
+        for _i, _s in enumerate(_lst, 1):
+            _s["n"] = _i
 
     pl = []
     for p in sorted(plates, key=lambda p: p["plate_id"]):
