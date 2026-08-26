@@ -29,8 +29,9 @@ Interaction
   **Press `Rotate`, then drag left or right on the section to tilt it.** Rotation
   is a mode rather than a gesture, so dragging can never be mistaken for placing
   a landmark - while it is on, clicks on the section are inert. Hold shift for
-  fine control. The tilt stays a **draft** until `Save tilt`; leaving the tool
-  discards it, and `Restore original tilt` (or `r`) puts the section back the way
+  fine control. **The tilt saves itself the moment the mouse is released** and is
+  kept with that section, so leaving it and coming back shows it exactly as it was
+  left. `Restore original tilt` (or `r`) puts the section back the way
   `04a_reformat` produced it, which is exactly rot = 0. The rotation is a
   **viewing aid and nothing else** - every stored coordinate stays in the
   unrotated reformatted frame, so the transform, the residuals and all three
@@ -304,7 +305,6 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
   <span class="grow"></span>
   <button class="btn-plate" onclick="markAssigned()">Assign plate</button>
   <button id="rotBtn" class="btn-rot" onclick="toggleRotMode()">Rotate</button>
-  <button id="rotSave" class="btn-rot" onclick="saveRot()">Save tilt</button>
   <button id="rotReset" class="btn-rot" onclick="restoreTilt()">Restore original tilt</button>
   <button id="favBtn" class="btn-fav" onclick="toggleFav()">Favourite</button>
   <button id="noroiBtn" class="btn-excl" onclick="toggleNoRoi()">No ROI here</button>
@@ -341,7 +341,7 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
   <kbd>&larr;</kbd><kbd>&rarr;</kbd> plate &middot; <kbd>z</kbd> undo point &middot;
   <kbd>&uarr;</kbd>/<kbd>&darr;</kbd> previous / next section (the plate stays put) &middot;
   <kbd>a</kbd> assign plate &middot;
-  <kbd>Rotate</kbd> then drag the section left/right (<kbd>shift</kbd> fine), <kbd>Save tilt</kbd> to keep it,
+  <kbd>Rotate</kbd> then drag the section left/right (<kbd>shift</kbd> fine) - kept on release,
   <kbd>r</kbd> restores the original &middot;
   <kbd>f</kbd> favourite &middot; <kbd>x</kbd> exclude this section &middot;
   3 pairs for an affine, 6 for a spline &middot;
@@ -655,8 +655,9 @@ const canvasXY = (c,e) => {
 // consulted by the click handler.
 let rotDrag=null, rotMode=false, draftRot=null;
 const DEG_PER_PX = 0.4, DEG_PER_PX_FINE = 0.05;
-// The angle actually drawn: the uncommitted draft while the tool is open,
-// otherwise whatever was saved for this section.
+// The angle actually drawn: the live draft mid-drag, otherwise what is saved for
+// this section - and since the drag commits on release those are the same value
+// a moment later. The draft exists only so the section can follow the mouse.
 const effRot = () => (rotMode && draftRot!==null) ? draftRot : (st(active).rot||0);
 
 // Rotate is a MODE, so dragging cannot be mistaken for placing a landmark and
@@ -664,13 +665,9 @@ const effRot = () => (rotMode && draftRot!==null) ? draftRot : (st(active).rot||
 function toggleRotMode(){
   if(!active) return;
   rotMode = !rotMode;
-  draftRot = null;            // leaving the tool discards an uncommitted tilt
+  draftRot = null;            // nothing is ever left uncommitted; this is belt and braces
   el("cSec").classList.toggle("rotmode", rotMode);
   drawSec(); status();
-}
-function saveRot(){
-  if(!active || draftRot===null) return;
-  st(active).rot = draftRot; draftRot = null; save(); drawSec(); status(); paintCell(active);
 }
 // "Original" is the orientation 04a_reformat produced - the frame every stored
 // coordinate already lives in - so restoring it is exactly rot = 0. It commits
@@ -693,8 +690,19 @@ addEventListener("mousemove", e=>{
   draftRot = ((rotDrag.rot + dx*per) % 360 + 360) % 360;
   drawSec(); status();
 });
-// No save here - the tilt stays a draft until Save tilt is pressed.
-addEventListener("mouseup", ()=>{ rotDrag=null; el("cSec").classList.remove("rotating"); });
+// The tilt commits itself on release. An angle the operator has to remember to
+// press a button for is an angle that gets lost - and losing it was silent,
+// because the section simply sprang back and looked like it had never been
+// turned. It is stored per section like every other decision, so returning to a
+// section shows it at the angle it was left at.
+addEventListener("mouseup", ()=>{
+  if(!rotDrag) return;
+  const committed = rotDrag.live && active && draftRot!==null;
+  rotDrag = null;
+  el("cSec").classList.remove("rotating");
+  if(committed){ st(active).rot = draftRot; draftRot = null; save(); paintCell(active); }
+  drawSec(); status();
+});
 
 function clickSec(e){
   if(!active) return;
@@ -759,17 +767,16 @@ function status(){
   el("favBtn").classList.toggle("fav-on", !!sa.fav);
   el("exclBtn").textContent = sa.excl ? "Excluded ✕" : "Exclude";
   el("exclBtn").classList.toggle("kill-on", !!sa.excl);
-  // Three separate facts: is the tool open, is there an uncommitted tilt, and
-  // what is actually being drawn. The buttons only offer what is available.
-  const saved = sa.rot||0, dirty = draftRot!==null && Math.abs(draftRot-saved) > 1e-9;
+  // Two facts now, not three: is the tool open, and what is drawn. There is no
+  // uncommitted state left to report, because the drag commits itself.
+  const saved = sa.rot||0;
   el("rotBtn").textContent = rotMode ? "Rotate ✓" : "Rotate";
   el("rotBtn").classList.toggle("mode-on", rotMode);
-  el("rotSave").disabled  = !dirty;
-  el("rotReset").disabled = !(saved || dirty);
+  el("rotReset").disabled = !(saved || draftRot);
   const dim = t => `<span style="color:#9aa0a8">${t}</span>`;
   el("rotInfo").innerHTML =
-      dirty   ? `tilt <b>${effRot().toFixed(1)}&deg;</b> <span class="unlab">unsaved - press Save tilt</span>`
-    : rotMode ? `tilt <b>${saved.toFixed(1)}&deg;</b> ` + dim("drag left/right &middot; shift = fine")
+      rotDrag ? `tilt <b>${effRot().toFixed(1)}&deg;</b> ` + dim("release to keep")
+    : rotMode ? `tilt <b>${saved.toFixed(1)}&deg;</b> ` + dim("drag left/right &middot; shift = fine &middot; kept on release")
     : saved   ? `tilted <b>${saved.toFixed(1)}&deg;</b> ` + dim("view only, landmarks unaffected")
     : dim("press Rotate to tilt the view");
 }
