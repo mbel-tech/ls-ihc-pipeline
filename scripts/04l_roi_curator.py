@@ -39,11 +39,8 @@ Interaction
 
   **`Exclude` rejects the section**, and is a different statement from `No ROI
   here`: no-ROI says the section is fine and has nothing to measure at this
-  level, exclude says the section should not be used. Because the pERK section
-  and its PCNA partner were cut at different times, one can be damaged while the
-  other is good - so when a partner is on record the button opens a tick box and
-  either side can be excluded independently. Landmarks already placed are kept
-  in the exports; the exclusion is a flag to filter on, not a deletion.
+  level, exclude says the section should not be used. Landmarks already placed
+  are kept in the exports; the exclusion is a flag to filter on, not a deletion.
 
   **`f` marks a section favourite** - the subset worth carrying into actual
   quantification. It is orthogonal to the plate assignment, because a section can
@@ -67,6 +64,16 @@ Interaction
 
 Scope, deliberately bounded
 ---------------------------
+
+**Vd, Vv and POA are not separable here.** A telencephalic section is
+recognisable as telencephalon, but how far rostral or caudal it sits is not
+readable from the section itself, and those three ventral regions occupy
+overlapping positions across that range (Vd/Vv on plate_011-015, POA on
+plate_020-025). A seed landing on one of them is evidence of "one of these
+three", not of that region specifically, so the overlay and the summary show the
+group and `roi_regions.csv` carries `region_ambiguous` and `ambiguity_group`
+beside the atlas's own label. The label itself is never overwritten - pooling
+them stays the reader's decision.
 
 **30 of the 64 plates carry region seeds** - 356 seeds over 11 regions:
 telencephalon and POA on plate_009 to plate_025 (Dl 142, Dm 114, Vv 16, POA 16,
@@ -105,10 +112,7 @@ Three outputs, because there are three separable decisions
                      plate and a `status` of `registered` (3+ landmarks),
                      `plate_only` (plate chosen, not landmarked), `no_roi`
                      (deliberately marked as having nothing to measure) or
-                     `excluded`. Carries `excluded`, `pcna_scene_uid` and
-                     `excluded_pcna`, because the pERK section and its PCNA
-                     partner are different physical sections and either can be
-                     rejected on its own.
+                     `excluded`.
 `roi_landmarks.csv`  every landmark pair, with its residual. Registered only.
 `roi_regions.csv`    warped seed positions in the section's reformatted frame.
 
@@ -137,6 +141,19 @@ REFORMAT_DIR = os.path.join(OUT_ROOT, "reformatted")
 ANALYSIS_CSV = os.path.join(REFORMAT_DIR, "perk_analysis_set.csv")
 PERK_MAP_CSV = os.path.join(REFORMAT_DIR, "perk_overrides.csv")
 WORKLIST_CSV = os.path.join(REFORMAT_DIR, "roi_worklist.csv")
+
+# Regions that cannot be told apart without knowing the rostrocaudal level.
+# A telencephalic section is recognisable as telencephalon, but how far front or
+# back it sits is not readable from the section itself - and these three ventral
+# regions occupy overlapping positions across that range (Vd/Vv on plate_011 to
+# plate_015, POA on plate_020 to plate_025). A seed landing on one of them is
+# therefore evidence of "one of these three", not of that specific region.
+#
+# The atlas's own label is kept unchanged; the group is carried alongside it, so
+# nothing is lost and pooling stays the reader's decision rather than being baked
+# in here.
+AMBIGUOUS_GROUPS = [("Vd", "Vv", "POA")]
+REGION_GROUP = {r: "/".join(g) for g in AMBIGUOUS_GROUPS for r in g}
 # The canonical reformatted frame every stored coordinate is expressed in. 04o may
 # render the picture larger; the curator divides that back out on export.
 SEC_GRID = 256
@@ -152,21 +169,20 @@ def marker_paths(marker):
 def analysis_uids(marker):
     """The pERK sections that survived clipped-pixel censoring - the 454.
 
-    For AF568 those uids are the subset directly. For AF488 they have to be
-    carried across the pairing, and **30 of the 454 have no PCNA partner on
-    record**, so the PCNA view of the same subset is 424 rather than 454. That
-    shortfall is returned and printed instead of being quietly rounded away -
-    a subset that silently loses 30 sections is the kind of thing that turns up
-    later as an unexplained n.
+    pERK only, and deliberately. The analysis set is defined by clipped-pixel
+    censoring measured on the pERK scans, so it says nothing about a PCNA
+    section; deriving a PCNA subset by following the pairing would make one
+    channel's curation depend on the other's, and they are separate physical
+    sections cut at different times. PCNA is curated on its own full set.
     """
+    if marker != "AF568":
+        raise SystemExit(
+            "--analysis-set is a pERK subset (clipped-pixel censoring is measured on "
+            "the pERK scans) and does not define a PCNA one.\n"
+            "Run PCNA without it: python 04l_roi_curator.py --marker AF488")
     with open(ANALYSIS_CSV, newline="", encoding="utf-8") as fh:
         perk = {r["scene_uid"] for r in csv.DictReader(fh) if r["in_analysis_set"] == "1"}
-    if marker == "AF568":
-        return perk, len(perk), 0
-    with open(PERK_MAP_CSV, newline="", encoding="utf-8") as fh:
-        pmap = {r["perk_scene_uid"]: r["pcna_scene_uid"] for r in csv.DictReader(fh)}
-    pcna = {pmap[u] for u in perk if pmap.get(u)}
-    return pcna, len(perk), sum(1 for u in perk if not pmap.get(u))
+    return perk, len(perk), 0
 # Which plate set to use, from config. The two sets reuse the same plate_NNN
 # names for different images, so this must not be hard-coded in two places.
 PLATE_SET = CONFIG.get("atlas_plate_set", {}).get("dir", "plates")
@@ -194,9 +210,6 @@ button:hover{border-color:var(--accent)}
 button.primary{background:var(--accent);border-color:var(--accent);color:#04121f;font-weight:600}
 #panes{flex:1 1 auto;min-height:0;display:grid;grid-template-columns:1fr 1fr 250px;
        grid-template-rows:minmax(0,1fr);gap:10px;padding:10px}
-#panes.withpartner{grid-template-columns:1fr 1fr 1fr 250px}
-#panePartner{display:none}
-#panes.withpartner #panePartner{display:block}
 .pane{position:relative;background:#0e1014;border:1px solid var(--line);border-radius:9px;
       overflow:hidden;min-width:0;min-height:0}
 .pane h2{position:absolute;top:6px;left:8px;margin:0;font-size:11px;color:var(--dim);
@@ -298,20 +311,13 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
 </header>
 <div id="exclBox">
   <h3>EXCLUDE</h3>
-  <label><input type="checkbox" id="exclSelf" onchange="setExcl()">
-    <span>this section <b style="color:#f85149">pERK</b></span></label>
   <span class="uid" id="exclSelfUid"></span>
-  <label id="exclParRow"><input type="checkbox" id="exclPar" onchange="setExcl()">
-    <span>partner <b style="color:#3fb950">PCNA</b></span></label>
-  <span class="uid" id="exclParUid"></span>
   <div class="note" id="exclNote"></div>
   <div class="foot"><button onclick="closeExcl()">Done</button></div>
 </div>
-<div id="panes" class="__WITHPARTNER__">
+<div id="panes">
   <div class="pane"><h2>SECTION - click to place a point</h2>
     <canvas id="cSec" onclick="clickSec(event)" onmousedown="secDown(event)"></canvas></div>
-  <div class="pane" id="panePartner"><h2>PARTNER (PCNA) - reference only</h2>
-    <canvas id="cPar"></canvas></div>
   <div class="pane"><h2>ATLAS PLATE - click the matching point</h2>
     <canvas id="cPl" onclick="clickPl(event)"></canvas></div>
   <div id="side">
@@ -337,7 +343,7 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
   <kbd>z</kbd>/<kbd>x</kbd> or <kbd>&uarr;</kbd>/<kbd>&darr;</kbd> previous / next section (the plate stays put) &middot;
   <kbd>Rotate</kbd> then drag the section left/right (<kbd>shift</kbd> fine), <kbd>Save tilt</kbd> to keep it,
   <kbd>r</kbd> restores the original &middot;
-  <kbd>f</kbd> favourite &middot; <kbd>Exclude</kbd> rejects this section (and optionally its PCNA partner) &middot;
+  <kbd>f</kbd> favourite &middot; <kbd>Exclude</kbd> rejects this section &middot;
   3 pairs for an affine, 6 for a spline &middot;
   <span style="color:#7c5cff">purple</span> = registered &middot;
   <span style="color:#4da3ff">blue</span> = plate assigned only &middot;
@@ -351,9 +357,9 @@ const PLATES = __PLATES__;  // [{id, img, w, h, labelled, seeds:[{region,xf,yf,h
 // DIFFERENT image in each, so every export carries this and a landmark file can
 // never be silently matched against the wrong plates.
 const PLATE_SET = __PLATESET__;
-// Which channel these sections are, and which subset of it. A landmark on a
-// pERK section is not the same datum as one on its PCNA partner, so both go
-// into every export rather than being inferred later from the file name.
+// Which channel these sections are, and which subset of it. The two markers are
+// separate physical sections curated independently, so the channel is recorded
+// in every export rather than inferred later from the file name.
 const MARKER = __MARKER__, SUBSET = __SUBSET__;
 // The canonical reformatted grid (04a GRID). Display may be a multiple of it.
 const SEC_GRID = __SECGRID__;
@@ -378,25 +384,10 @@ const rows = () => inAnimal()
 // a plate_001 assignment for everything it touched.
 const st = uid => S[uid] || (S[uid] = {plate: 0, pairs: [], assigned: false,
                                        noroi: false, fav: false, rot: 0,
-                                       excl: false, exclPar: false});
+                                       excl: false});
 
 const secImg = new Image();
 secImg.onload = drawSec;
-
-// The paired PCNA section, shown for reference only - it is a different physical
-// section with its own geometry, so nothing is ever clicked on it and no
-// coordinate is taken from it. It is here because the marker channels differ and
-// the partner often shows an anatomical boundary the pERK scan does not.
-const parImg = new Image();
-parImg.onload = drawPar;
-function drawPar(){
-  const c = el("cPar"); if(!c) return;
-  const x = c.getContext("2d");
-  if(!parImg.naturalWidth){ x.clearRect(0,0,c.width,c.height); return; }
-  c.width = parImg.naturalWidth; c.height = parImg.naturalHeight;
-  x.clearRect(0,0,c.width,c.height);
-  x.drawImage(parImg, 0, 0);
-}
 
 // All 101 plates preloaded - 7.4 MB total, median 71 KB. Setting plImg.src on
 // every slider step made each step wait on a disk read and a JPEG decode, which
@@ -524,7 +515,11 @@ function drawSec(){
       const [X,Y]=img2can(ix,iy,g);
       x.beginPath(); x.arc(X,Y,7,0,6.284); x.fillStyle=sd.hex||"#4da3ff"; x.globalAlpha=.85; x.fill();
       x.globalAlpha=1; x.lineWidth=2; x.strokeStyle="#000"; x.stroke();
-      x.fillStyle="#fff"; x.font="bold 13px system-ui"; x.fillText(sd.region, X+10, Y+4);
+      // An ambiguous region is drawn as its group. Writing "Vd" on a section
+      // whose level is unknown asserts something the data cannot support.
+      x.fillStyle = sd.amb ? "#e3b341" : "#fff";
+      x.font="bold 13px system-ui";
+      x.fillText(sd.amb || sd.region, X+10, Y+4);
     }
   }
   s.pairs.forEach(([sx,sy],i)=>{ const [X,Y]=img2can(sx,sy,g); mark(x,X,Y,i+1,"#4da3ff"); });
@@ -649,8 +644,14 @@ function status(){
       : `<b>affine</b> &middot; mean residual <b>${(tot/s.pairs.length).toFixed(1)} px</b>`
         + ` &middot; ${TPS_MIN - s.pairs.length} more point${TPS_MIN-s.pairs.length===1?"":"s"} for a spline`;
     const P=PLATES[s.plate];
+    // Ambiguous regions are listed as their group and flagged, so the summary
+    // never reads as a firmer claim than the section supports.
+    const names = [...new Set(P.seeds.map(x => x.amb || x.region))];
+    const anyAmb = P.seeds.some(x => x.amb);
     el("regInfo").innerHTML = P.seeds.length
-      ? `<b>${P.seeds.length}</b> seeds warped: ${[...new Set(P.seeds.map(x=>x.region))].join(", ")}`
+      ? `<b>${P.seeds.length}</b> seeds warped: ${names.join(", ")}`
+        + (anyAmb ? `<div style="color:#e3b341;margin-top:4px">`
+                  + `gold = not separable without the rostrocaudal level</div>` : "")
       : "<span class='unlab'>this plate has no region seeds</span>";
   } else {
     el("fit").textContent = "";
@@ -664,11 +665,8 @@ function status(){
   el("noroiBtn").style.borderColor = sa.noroi ? "#3fb950" : "";
   el("favBtn").textContent = sa.fav ? "Favourite ★" : "Favourite";
   el("favBtn").classList.toggle("fav-on", !!sa.fav);
-  const anyExcl = !!(sa.excl || sa.exclPar);
-  el("exclBtn").textContent = sa.excl && sa.exclPar ? "Excluded (both) ✕"
-                            : sa.exclPar ? "Excluded (PCNA) ✕"
-                            : sa.excl ? "Excluded ✕" : "Exclude";
-  el("exclBtn").classList.toggle("kill-on", anyExcl);
+  el("exclBtn").textContent = sa.excl ? "Excluded ✕" : "Exclude";
+  el("exclBtn").classList.toggle("kill-on", !!sa.excl);
   syncExclBox();
   // Three separate facts: is the tool open, is there an uncommitted tilt, and
   // what is actually being drawn. The buttons only offer what is available.
@@ -710,44 +708,20 @@ function toggleNoRoi(){
 // nothing to measure at this level; exclude says the section itself should not
 // be used. They are recorded separately because they mean different things to
 // whoever reads the export.
-//
-// The pERK section and its PCNA partner are two different physical sections cut
-// at different times, so one can be damaged while the other is perfectly good.
-// Excluding therefore has to be answerable per side rather than for the pair as
-// a unit, which is what the tick box is for. With no partner on record there is
-// nothing to ask about, so the button just toggles this section directly.
-const partnerOf = uid => (DATA.find(d=>d.uid===uid) || {}).pcna || "";
 function toggleExcl(){
   if(!active) return;
   const s=st(active);
-  if(s.excl || s.exclPar){ s.excl=false; s.exclPar=false; closeExcl(); }
-  else {
-    s.excl=true;
-    if(partnerOf(active)) openExcl(); else closeExcl();
-  }
-  save(); paintCell(active); status();
-}
-function setExcl(){
-  if(!active) return;
-  const s=st(active);
-  s.excl    = el("exclSelf").checked;
-  s.exclPar = el("exclPar").checked && !!partnerOf(active);
+  s.excl = !s.excl;
+  if(s.excl) openExcl(); else closeExcl();
   save(); paintCell(active); status();
 }
 function openExcl(){ el("exclBox").classList.add("on"); syncExclBox(); }
 function closeExcl(){ el("exclBox").classList.remove("on"); }
 function syncExclBox(){
   if(!active) return;
-  const s=st(active), pu=partnerOf(active);
-  el("exclSelf").checked = !!s.excl;
-  el("exclPar").checked  = !!s.exclPar;
   el("exclSelfUid").textContent = active;
-  el("exclParRow").style.display = pu ? "flex" : "none";
-  el("exclParUid").textContent = pu;
-  el("exclParUid").style.display = pu ? "block" : "none";
-  el("exclNote").innerHTML = pu
-    ? "Each side is recorded on its own, so excluding one leaves the other usable."
-    : "No PCNA partner on record for this section.";
+  el("exclNote").innerHTML =
+    "Landmarks already placed are kept in the exports; this is a flag to filter on.";
 }
 
 function onSlide(v){
@@ -779,9 +753,6 @@ function select(uid, keep){
   const p = decided ? s.plate : Math.min(PLATES.length - 1, +el("slider").value || 0);
   el("slider").value = p;
   secImg.src = d.img;
-  if(d.partner){ parImg.src = d.partner; }
-  else { parImg.removeAttribute("src"); const c=el("cPar");
-         if(c) c.getContext("2d").clearRect(0,0,c.width,c.height); }
   onSlide(p);
   document.querySelectorAll(".cell").forEach(c=>c.classList.toggle("active", c.dataset.uid===uid));
   if(!keep) document.querySelector(`[data-uid="${CSS.escape(uid)}"]`)
@@ -789,9 +760,7 @@ function select(uid, keep){
 }
 const isDone   = uid => (S[uid]?.pairs?.length || 0) >= 3;
 const isNoRoi  = uid => !!S[uid]?.noroi;
-// Either side excluded marks the cell: the pair is the unit being carried
-// forward, so a section whose partner is gone is not simply "fine".
-const isExcl   = uid => !!(S[uid]?.excl || S[uid]?.exclPar);
+const isExcl   = uid => !!S[uid]?.excl;
 // Plate chosen deliberately but not landmarked - a real decision, and one the
 // export used to discard.
 const isPlateOnly = uid => !!S[uid]?.assigned && !isDone(uid) && !isNoRoi(uid);
@@ -808,9 +777,7 @@ function cellClass(uid){
 }
 function cellTag(uid){
   const s=S[uid], n=s?.pairs?.length||0;
-  const sx=S[uid];
-  if(isExcl(uid)) return sx.excl && sx.exclPar ? "excl both"
-                       : sx.excl ? "excl pERK" : "excl PCNA";
+  if(isExcl(uid)) return "excluded";
   return isNoRoi(uid) ? "no ROI" : n ? n+" pts"
        : isPlateOnly(uid) ? PLATES[s.plate].id.replace("plate_","pl ") : "";
 }
@@ -874,10 +841,11 @@ function exportCsv(){
   const pl=[["scene_uid","animal","marker","subset","section_order","plate_set","plate_id","plate_index",
              "plate_has_seeds","n_landmarks","transform","status",
              "favorite","view_rotation_deg",
-             "excluded","pcna_scene_uid","excluded_pcna"]];
+             "excluded"]];
   const lm=[["scene_uid","animal","marker","section_order","plate_set","plate_id","pair",
              "sec_x","sec_y","plate_x","plate_y","residual_px"]];
-  const rg=[["scene_uid","animal","marker","plate_set","plate_id","region","sec_x","sec_y",
+  const rg=[["scene_uid","animal","marker","plate_set","plate_id","region",
+             "region_ambiguous","ambiguity_group","sec_x","sec_y",
              "n_landmarks","transform","mean_residual_px"]];
 
   for(const d of DATA){
@@ -886,24 +854,19 @@ function exportCsv(){
     // An exclusion is a judgement in its own right, exactly like a favourite or
     // a bare plate assignment, so it is reported even when nothing else was done
     // to the section.
-    if(!s || !(s.assigned || s.fav || s.excl || s.exclPar)) continue;
+    if(!s || !(s.assigned || s.fav || s.excl)) continue;
     const P=PLATES[s.plate], n=s.pairs.length;
     const T=transform(s.pairs);
     const chosen = s.assigned || n>0;   // is the plate a decision, or still the default?
-    // `excluded` describes THIS section only. A section whose partner was
-    // excluded is not itself excluded, so that is carried in its own column
-    // rather than folded into the status - collapsing them would lose which
-    // side of the pair the operator actually rejected.
     const status = s.excl ? "excluded"
                  : s.noroi ? "no_roi" : n>=3 ? "registered"
-                 : chosen ? "plate_only"
-                 : s.fav ? "favourite_only" : "partner_excluded_only";
+                 : chosen ? "plate_only" : "favourite_only";
     // Blank rather than plate_001 when no plate was ever chosen - otherwise a
     // favourite with no assignment reads as a deliberate call on plate_001.
     pl.push([d.uid,d.animal,MARKER,SUBSET,d.order,PLATE_SET, chosen?P.id:"", chosen?s.plate:"",
              chosen?(P.labelled?1:0):"", n, T?T.kind:"", status,
              s.fav?1:0, (s.rot||0).toFixed(1),
-             s.excl?1:0, d.pcna||"", s.exclPar?1:0]);
+             s.excl?1:0]);
     // Gate on the landmarks themselves, NOT on status - a section that was
     // landmarked and then excluded still has that work, and keying this on
     // status would silently drop it from both files the moment the exclude
@@ -926,7 +889,8 @@ function exportCsv(){
     const mr=(tot/n/K).toFixed(2);
     for(const sd of P.seeds){
       const [X,Y]=apply(T, sd.xf*P.w, sd.yf*P.h);
-      rg.push([d.uid,d.animal,MARKER,PLATE_SET,P.id,sd.region,(X/K).toFixed(2),(Y/K).toFixed(2),n,T.kind,mr]);
+      rg.push([d.uid,d.animal,MARKER,PLATE_SET,P.id,sd.region,
+               sd.amb?1:0, sd.amb||"", (X/K).toFixed(2),(Y/K).toFixed(2),n,T.kind,mr]);
     }
   }
   dl(pl,"roi_plates.csv");
@@ -982,16 +946,17 @@ def main():
     # cannot survive - the same shortfall --analysis-set already reports.
     rank = None
     if args.worklist:
+        # The worklist is keyed on pERK, and following the pairing to reach the
+        # PCNA side would make one channel's job depend on the other's. The two
+        # are separate sections; PCNA is curated on its own full set instead.
+        if args.marker == "AF488":
+            raise SystemExit(
+                "--worklist is keyed on pERK sections and does not define a PCNA job.\n"
+                "Run PCNA without it: python 04l_roi_curator.py --marker AF488")
         with open(args.worklist, newline="", encoding="utf-8") as fh:
             wl = [r for r in csv.DictReader(fh)
                   if not args.tier or r["tier"] == args.tier]
-        if args.marker == "AF488":
-            with open(PERK_MAP_CSV, newline="", encoding="utf-8") as fh:
-                pmap = {r["perk_scene_uid"]: r["pcna_scene_uid"] for r in csv.DictReader(fh)}
-            rank = {pmap[r["scene_uid"]]: int(r["rank"])
-                    for r in wl if pmap.get(r["scene_uid"])}
-        else:
-            rank = {r["scene_uid"]: int(r["rank"]) for r in wl}
+        rank = {r["scene_uid"]: int(r["rank"]) for r in wl}
         rows = [r for r in rows if r["id"] in rank]
         subset = f"roi_worklist{':' + args.tier if args.tier else ''}"
 
@@ -1008,7 +973,8 @@ def main():
     with open(os.path.join(PLATE_DIR, "seeds.csv"), newline="", encoding="utf-8") as fh:
         for s in csv.DictReader(fh):
             seeds.setdefault(s["plate_id"], []).append(
-                {"region": s["region"], "xf": float(s["x_frac"]), "yf": float(s["y_frac"]),
+                {"region": s["region"], "amb": REGION_GROUP.get(s["region"], ""),
+                 "xf": float(s["x_frac"]), "yf": float(s["y_frac"]),
                  "hex": s.get("colour_hex") or "#4da3ff"})
 
     pl = []
@@ -1024,43 +990,15 @@ def main():
                    "w": int(p["px_w"]), "h": int(p["px_h"]),
                    "labelled": int(bool(sd)), "seeds": sd})
 
-    # The partner is a reference view only. It is offered when the composites for
-    # the other channel exist; without them the pane simply stays hidden, so the
-    # tool still runs on a machine where 04o has not been given the second pass.
-    partner_uid, partner_dir = {}, None
-    if args.rgb and os.path.exists(WORKLIST_CSV):
-        other = "sections" if args.marker == "AF568" else "sections_AF568"
-        if os.path.isdir(os.path.join(REFORMAT_DIR, other + "_rgb")):
-            partner_dir = other + "_rgb"
-            a_col = "scene_uid" if args.marker == "AF568" else "pcna_scene_uid"
-            b_col = "pcna_scene_uid" if args.marker == "AF568" else "scene_uid"
-            with open(WORKLIST_CSV, newline="", encoding="utf-8") as fh:
-                for w in csv.DictReader(fh):
-                    if w.get(a_col) and w.get(b_col):
-                        partner_uid[w[a_col]] = w[b_col]
-
-    data = []
-    for r in rows:
-        d = {"uid": r["id"], "animal": r["animal"], "order": int(r["section_order"] or 0),
-             "img": f"{img_dir}/{r['id']}.png"}
-        pu = partner_uid.get(r["id"])
-        if pu:
-            # Carried even when the partner has no composite to show: the pairing
-            # is what an exclusion decision is about, not the picture.
-            d["pcna"] = pu
-            if partner_dir and os.path.exists(
-                    os.path.join(REFORMAT_DIR, partner_dir, pu + ".png")):
-                d["partner"] = f"{partner_dir}/{pu}.png"
-        data.append(d)
-    n_partner = sum(1 for d in data if d.get("partner"))
+    data = [{"uid": r["id"], "animal": r["animal"], "order": int(r["section_order"] or 0),
+             "img": f"{img_dir}/{r['id']}.png"} for r in rows]
 
     page = (PAGE.replace("__DATA__", json.dumps(data))
                 .replace("__PLATES__", json.dumps(pl))
                 .replace("__PLATESET__", json.dumps(PLATE_SET))
                 .replace("__MARKER__", json.dumps(args.marker))
                 .replace("__SUBSET__", json.dumps(subset))
-                .replace("__SECGRID__", json.dumps(SEC_GRID))
-                .replace("__WITHPARTNER__", "withpartner" if n_partner else ""))
+                .replace("__SECGRID__", json.dumps(SEC_GRID)))
     with open(CURATOR_HTML, "w", encoding="utf-8") as fh:
         fh.write(page)
 
@@ -1069,7 +1007,7 @@ def main():
     if args.analysis_set:
         print(f"  subset: perk_analysis_set - {before} {args.marker} sections "
               f"filtered to {len(rows)}")
-        if unpaired:
+        if unpaired:   # pERK-only path; kept for shape, always 0 now
             print(f"  NOTE: {unpaired} of the {n_perk} pERK analysis-set sections")
             print( "        have no PCNA partner on record, so the "
                   f"{args.marker} view of this")
