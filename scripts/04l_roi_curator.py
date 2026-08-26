@@ -42,6 +42,16 @@ Interaction
   level, exclude says the section should not be used. Landmarks already placed
   are kept in the exports; the exclusion is a flag to filter on, not a deletion.
 
+  **Work is saved as you go**, to the browser's local storage, on every single
+  change - not on a timer. On top of that a rolling snapshot is written once a
+  minute under a second key, and `saved HH:MM:SS` in the header reports it. The
+  snapshot exists for the one failure the per-change save cannot cover: it
+  overwrites the single record every time, so a state that goes wrong has no
+  earlier version to go back to. `roiRestoreBackup()` in the console rolls back
+  to it - console rather than a button, because it replaces the live state
+  wholesale. None of this is a substitute for `Export`, which is what produces
+  the actual files.
+
   **`f` marks a section favourite** - the subset worth carrying into actual
   quantification. It is orthogonal to the plate assignment, because a section can
   be worth quantifying before anyone has landmarked it, so it sets no other flag
@@ -287,6 +297,7 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
   <span class="row" style="color:#9aa0a8"><b id="nnoroi"></b> no ROI</span>
   <span class="row" style="color:#e3b341"><b id="nfav"></b> favourite</span>
   <span class="row" style="color:#f85149"><b id="nexcl"></b> excluded</span>
+  <span class="row" id="savedAt" style="color:#3fb950"></span>
   <label class="chk"><input type="checkbox" id="favOnly" onchange="render(); this.blur()">favourites only</label>
   <span class="row"><b id="npair"></b> pairs on this section</span>
   <span class="row" id="fit"></span>
@@ -357,6 +368,53 @@ let S = JSON.parse(localStorage.getItem(KEY) || "{}");   // uid -> {plate, pairs
 let active = null, pending = null;   // pending section point awaiting its plate partner
 const el = id => document.getElementById(id);
 const save = () => localStorage.setItem(KEY, JSON.stringify(S));
+// AUTOSAVE.
+//
+// save() already runs on every change - all twelve mutation sites call it - so
+// this is not what keeps the work; localStorage is written the moment a decision
+// is made. What the timer adds is a **recovery point**: a rolling snapshot under
+// a second key, so a state that gets corrupted or overwritten can be rolled back
+// instead of being the only copy. That is the failure the per-change save cannot
+// protect against, because it overwrites the one record every time.
+//
+// It also gives a visible "saved HH:MM:SS", so the tool says so rather than
+// leaving it to be assumed.
+const BACKUP_KEY = KEY + "_backup";
+const AUTOSAVE_MS = 60000;
+function autosave(){
+  save();
+  try {
+    localStorage.setItem(BACKUP_KEY, JSON.stringify(
+      {at: new Date().toISOString(), marker: MARKER, subset: SUBSET, S}));
+  } catch(e) {
+    // Quota is the only realistic failure and it must not take the session with
+    // it: the live save above has already happened, which is the copy that matters.
+    console.warn("autosave backup skipped:", e && e.message);
+  }
+  const t = new Date().toTimeString().slice(0,8);
+  const el2 = el("savedAt"); if(el2) el2.textContent = "saved " + t;
+}
+setInterval(autosave, AUTOSAVE_MS);
+// Restoring is deliberately not a button: it overwrites the live state wholesale
+// and should not sit one stray click away from a day's curation. Run
+// `roiRestoreBackup()` in the console.
+function roiRestoreBackup(){
+  const raw = localStorage.getItem(BACKUP_KEY);
+  if(!raw){ console.warn("no backup yet - one is written every minute"); return; }
+  const b = JSON.parse(raw);
+  const n = Object.keys(b.S || {}).length;
+  if(!confirm(`Restore the snapshot from ${b.at} (${n} sections)?
+
+`
+            + `This REPLACES everything currently in the tool.`)) return;
+  S = b.S; save(); render(); status();
+  console.log("restored", n, "sections from", b.at);
+}
+// Leaving the page is exactly when an unsaved change would be lost, and hiding
+// the tab is the usual prelude to it.
+addEventListener("beforeunload", save);
+document.addEventListener("visibilitychange", ()=>{ if(document.hidden) autosave(); });
+
 const animals = [...new Set(DATA.map(d=>d.animal))].sort((a,b)=>+a.slice(2)-+b.slice(2));
 el("animal").innerHTML = animals.map(a=>`<option>${a}</option>`).join("");
 el("slider").max = PLATES.length-1;
