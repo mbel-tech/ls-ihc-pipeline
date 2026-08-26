@@ -47,10 +47,12 @@ Interaction
   be worth quantifying before anyone has landmarked it, so it sets no other flag
   and is reported on its own. "favourites only" narrows the strip to that subset.
 
-  **The plate and the section step independently.** `z`/`x` (or the up/down
-  arrows) move through sections and leave the plate where it is; left/right
-  moves the plate. Consecutive sections are at neighbouring levels, so the
-  plate rarely needs to move more than a notch.
+  **The plate and the section step independently.** The up/down arrows move
+  through sections and leave the plate where it is; left/right moves the plate.
+  Consecutive sections are at neighbouring levels, so the plate rarely needs to
+  move more than a notch. Arrows move, letters act: `a` assign, `f` favourite,
+  `x` exclude, `u` undo a point, `r` restore the original tilt. `x` was
+  previously "next section", paired with `z`; the arrows do that now.
   Returning to a section that was already assigned or landmarked does show its
   own plate again, because that is a recorded decision rather than a position.
 
@@ -262,16 +264,6 @@ input[type=range]{width:100%}
 /* Anchored to the window rather than the pane: it is a decision about the pair,
    not about the picture underneath it, and it must stay put when the section
    pane resizes between a 3-column and a 4-column layout. */
-#exclBox{position:fixed;top:96px;right:14px;z-index:20;display:none;
-         background:#1a1013;border:1px solid #8a2f36;border-radius:9px;
-         padding:10px 12px;box-shadow:0 6px 24px rgba(0,0,0,.55);min-width:210px}
-#exclBox.on{display:block}
-#exclBox h3{margin:0 0 7px;font-size:11px;letter-spacing:.06em;color:#f85149}
-#exclBox label{display:flex;align-items:center;gap:7px;padding:4px 0;
-               font-size:12px;color:var(--fg);cursor:pointer}
-#exclBox .uid{color:var(--dim);font-size:11px;display:block;margin-left:21px}
-#exclBox .foot{margin-top:8px;display:flex;gap:6px;align-items:center}
-#exclBox .note{color:var(--dim);font-size:11px;margin-top:6px;line-height:1.35}
 .cell.excl{border-color:#f85149;opacity:.5}
 .cell.excl img{filter:grayscale(1)}
 .btn-edit{border-color:#2c7a82;color:#39c5cf}
@@ -309,12 +301,6 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
   <button class="btn-edit" onclick="clearPts()">Clear points</button>
   <button class="primary" onclick="exportCsv()">Export</button>
 </header>
-<div id="exclBox">
-  <h3>EXCLUDE</h3>
-  <span class="uid" id="exclSelfUid"></span>
-  <div class="note" id="exclNote"></div>
-  <div class="foot"><button onclick="closeExcl()">Done</button></div>
-</div>
 <div id="panes">
   <div class="pane"><h2>SECTION - click to place a point</h2>
     <canvas id="cSec" onclick="clickSec(event)" onmousedown="secDown(event)"></canvas></div>
@@ -340,10 +326,11 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
 <footer>
   <kbd>click</kbd> section then plate to add a pair &middot;
   <kbd>&larr;</kbd><kbd>&rarr;</kbd> plate &middot; <kbd>u</kbd> undo &middot;
-  <kbd>z</kbd>/<kbd>x</kbd> or <kbd>&uarr;</kbd>/<kbd>&darr;</kbd> previous / next section (the plate stays put) &middot;
+  <kbd>&uarr;</kbd>/<kbd>&darr;</kbd> previous / next section (the plate stays put) &middot;
+  <kbd>a</kbd> assign plate &middot;
   <kbd>Rotate</kbd> then drag the section left/right (<kbd>shift</kbd> fine), <kbd>Save tilt</kbd> to keep it,
   <kbd>r</kbd> restores the original &middot;
-  <kbd>f</kbd> favourite &middot; <kbd>Exclude</kbd> rejects this section &middot;
+  <kbd>f</kbd> favourite &middot; <kbd>x</kbd> exclude this section &middot;
   3 pairs for an affine, 6 for a spline &middot;
   <span style="color:#7c5cff">purple</span> = registered &middot;
   <span style="color:#4da3ff">blue</span> = plate assigned only &middot;
@@ -667,7 +654,6 @@ function status(){
   el("favBtn").classList.toggle("fav-on", !!sa.fav);
   el("exclBtn").textContent = sa.excl ? "Excluded ✕" : "Exclude";
   el("exclBtn").classList.toggle("kill-on", !!sa.excl);
-  syncExclBox();
   // Three separate facts: is the tool open, is there an uncommitted tilt, and
   // what is actually being drawn. The buttons only offer what is available.
   const saved = sa.rot||0, dirty = draftRot!==null && Math.abs(draftRot-saved) > 1e-9;
@@ -712,16 +698,7 @@ function toggleExcl(){
   if(!active) return;
   const s=st(active);
   s.excl = !s.excl;
-  if(s.excl) openExcl(); else closeExcl();
   save(); paintCell(active); status();
-}
-function openExcl(){ el("exclBox").classList.add("on"); syncExclBox(); }
-function closeExcl(){ el("exclBox").classList.remove("on"); }
-function syncExclBox(){
-  if(!active) return;
-  el("exclSelfUid").textContent = active;
-  el("exclNote").innerHTML =
-    "Landmarks already placed are kept in the exports; this is a flag to filter on.";
 }
 
 function onSlide(v){
@@ -748,7 +725,6 @@ function select(uid, keep){
   // The one exception is a section carrying a real decision - assigned, or
   // landmarked - where the stored plate IS the thing worth seeing.
   draftRot = null;            // a tilt drafted on one section is not another's
-  closeExcl();                // the tick box belongs to the section it was opened on
   const decided = s.assigned || s.pairs.length > 0;
   const p = decided ? s.plate : Math.min(PLATES.length - 1, +el("slider").value || 0);
   el("slider").value = p;
@@ -825,11 +801,17 @@ addEventListener("keydown", e=>{
   const list=rows(), i=list.findIndex(d=>d.uid===active);
   if(e.key==="ArrowRight"){ el("slider").value=Math.min(PLATES.length-1,+el("slider").value+1); onSlide(el("slider").value); e.preventDefault(); }
   else if(e.key==="ArrowLeft"){ el("slider").value=Math.max(0,+el("slider").value-1); onSlide(el("slider").value); e.preventDefault(); }
-  else if(e.key==="u"){ undoPt(); }
-  else if((e.key==="x"||e.key==="ArrowDown") && i<list.length-1){ select(list[i+1].uid); e.preventDefault(); }
-  else if((e.key==="z"||e.key==="ArrowUp") && i>0){ select(list[i-1].uid); e.preventDefault(); }
-  else if(e.key==="f"){ toggleFav(); }
-  else if(e.key==="r"){ restoreTilt(); }
+  // Arrows move, letters act. x used to be "next section", paired with z; the
+  // up/down arrows do that now, so the pair is retired rather than left half
+  // bound - leaving z on prev while x excluded would make the muscle memory of
+  // one a trap for the other.
+  else if(e.key==="ArrowDown" && i<list.length-1){ select(list[i+1].uid); e.preventDefault(); }
+  else if(e.key==="ArrowUp"   && i>0){ select(list[i-1].uid); e.preventDefault(); }
+  else if(e.key==="a" || e.key==="A"){ markAssigned(); }
+  else if(e.key==="f" || e.key==="F"){ toggleFav(); }
+  else if(e.key==="x" || e.key==="X"){ toggleExcl(); }
+  else if(e.key==="u" || e.key==="U"){ undoPt(); }
+  else if(e.key==="r" || e.key==="R"){ restoreTilt(); }
 });
 
 function exportCsv(){
