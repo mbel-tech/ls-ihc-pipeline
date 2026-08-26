@@ -85,6 +85,7 @@ overlapping positions across that range (Vd/Vv on plate_011-015, POA on
 plate_020-025). A seed landing on one of them is evidence of "one of these
 three", not of that region specifically, so the overlay and the summary show the
 group and `roi_regions.csv` carries `region_ambiguous` and `ambiguity_group`
+(and `region_uncertain_in_atlas`, for the eight seeds the atlas itself marks "??")
 beside the atlas's own label. The label itself is never overwritten - pooling
 them stays the reader's decision.
 
@@ -687,7 +688,7 @@ function drawSec(){
       //
       // An ambiguous region is drawn as its group. Writing "Vd" on a section
       // whose level is unknown asserts something the data cannot support.
-      const nm = sd.amb || sd.region;
+      const nm = (sd.amb || sd.region) + (sd.unk ? "?" : "");
       x.save();
       x.textBaseline="middle";
       x.font="bold "+(NP*u)+"px system-ui";
@@ -1263,7 +1264,8 @@ function exportCsv(){
              "sec_x","sec_y","sec_r","plate_x","plate_y","residual_px",
              "seed_n","seed_region"]];
   const rg=[["scene_uid","animal","marker","plate_set","plate_id","region",
-             "region_ambiguous","ambiguity_group","sec_x","sec_y",
+             "region_ambiguous","ambiguity_group","region_uncertain_in_atlas",
+             "sec_x","sec_y",
              "n_landmarks","transform","mean_residual_px"]];
 
   for(const d of DATA){
@@ -1306,13 +1308,14 @@ function exportCsv(){
       lm.push([d.uid,d.animal,d.m,d.order,PLATE_SET,P.id,i+1,
                (sx/K).toFixed(2),(sy/K).toFixed(2),(pairR(pr)/K).toFixed(2),
                px.toFixed(2),py.toFixed(2),(r/K).toFixed(2),
-               sn||"", sd ? (sd.amb || sd.region) : ""]);
+               sn||"", sd ? ((sd.amb || sd.region) + (sd.unk ? "?" : "")) : ""]);
     });
     const mr=(tot/n/K).toFixed(2);
     for(const sd of P.seeds){
       const [X,Y]=apply(T, sd.xf*P.w, sd.yf*P.h);
       rg.push([d.uid,d.animal,d.m,PLATE_SET,P.id,sd.region,
-               sd.amb?1:0, sd.amb||"", (X/K).toFixed(2),(Y/K).toFixed(2),n,T.kind,mr]);
+               sd.amb?1:0, sd.amb||"", sd.unk?1:0,
+               (X/K).toFixed(2),(Y/K).toFixed(2),n,T.kind,mr]);
     }
   }
   dl(pl,"roi_plates.csv");
@@ -1415,7 +1418,14 @@ def main():
     with open(os.path.join(PLATE_DIR, "seeds.csv"), newline="", encoding="utf-8") as fh:
         for s in csv.DictReader(fh):
             seeds.setdefault(s["plate_id"], []).append(
+                # TWO different uncertainties, and they are not the same thing.
+                # `amb` is ours: Vd/Vv/POA cannot be told apart without knowing
+                # the section's rostrocaudal level, so the group is shown instead
+                # of a name the data cannot support. `unk` is the ATLAS's own -
+                # eight seeds are labelled "Rm (Raphe) ??" in the source, and
+                # dropping that flag here made the tool report them as settled.
                 {"region": s["region"], "amb": REGION_GROUP.get(s["region"], ""),
+                 "unk": 1 if s.get("is_unknown") == "1" else 0,
                  "xf": float(s["x_frac"]), "yf": float(s["y_frac"]),
                  "hex": s.get("colour_hex") or "#4da3ff"})
 
