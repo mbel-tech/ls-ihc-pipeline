@@ -1061,12 +1061,21 @@ function status(){
     const P=PLATES[s.plate];
     // Ambiguous regions are listed as their group and flagged, so the summary
     // never reads as a firmer claim than the section supports.
+    // The names were printed in one flat colour under a legend reading
+    // "gold = not separable", so the legend pointed at nothing and the caveat
+    // read as covering the whole list. It covers exactly one entry. Dl, Dm and
+    // the rest are distinct locations and are not qualified by anything -
+    // colouring the ambiguous entry is what makes that visible.
     const names = [...new Set(P.seeds.map(x => x.amb || x.region))];
-    const anyAmb = P.seeds.some(x => x.amb);
+    const gold = new Set(P.seeds.filter(x => x.amb).map(x => x.amb));
+    const shown = names.map(n => gold.has(n)
+      ? `<span style="color:#e3b341">${n}</span>` : n).join(", ");
     el("regInfo").innerHTML = P.seeds.length
-      ? `<b>${P.seeds.length}</b> seeds warped: ${names.join(", ")}`
-        + (anyAmb ? `<div style="color:#e3b341;margin-top:4px">`
-                  + `gold = not separable without the rostrocaudal level</div>` : "")
+      ? `<b>${P.seeds.length}</b> seeds warped: ${shown}`
+        + (gold.size ? `<div style="color:#9aa0a8;margin-top:4px">`
+                  + `<span style="color:#e3b341">gold</span> is ONE group whose members`
+                  + ` cannot be told apart without the rostrocaudal level.`
+                  + ` Every other region listed is a distinct place.</div>` : "")
       : "<span class='unlab'>this plate has no region seeds</span>";
   } else {
     el("fit").textContent = "";
