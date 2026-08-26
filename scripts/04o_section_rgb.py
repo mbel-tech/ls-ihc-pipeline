@@ -59,6 +59,14 @@ def main():
                          "Sampling only - the mask, angle and frame are decided at "
                          "WORK_SIZE and do not change, so a landmark still means the "
                          "same thing once divided by N")
+    ap.add_argument("--all", action="store_true",
+                    help="build every section in this marker's own reformat index "
+                         "instead of the pERK worklist. The worklist is keyed on "
+                         "pERK and reaches PCNA only through the pairing, so it "
+                         "cannot define the PCNA job - this can")
+    ap.add_argument("--force", action="store_true",
+                    help="rebuild composites that already exist (default is to skip "
+                         "them, so topping a set up costs only the missing ones)")
     ap.add_argument("--verify", action="store_true",
                     help="check the blue plane still equals the existing greyscale section")
     args = ap.parse_args()
@@ -73,20 +81,27 @@ def main():
         secs = {r["scene_uid"]: r for r in csv.DictReader(fh)
                 if r["marker_channel"] == args.marker}
 
-    with open(WORKLIST_CSV, newline="", encoding="utf-8") as fh:
-        want = [r for r in csv.DictReader(fh) if not args.tier or r["tier"] == args.tier]
+    if args.all:
+        with open(paths["index"], newline="", encoding="utf-8") as fh:
+            uids = [r["id"] for r in csv.DictReader(fh) if r["kind"] == "section"]
+    else:
+        with open(WORKLIST_CSV, newline="", encoding="utf-8") as fh:
+            want = [r for r in csv.DictReader(fh) if not args.tier or r["tier"] == args.tier]
+        # The worklist is keyed on pERK. Building the PCNA side from it means
+        # following the pairing to the partner scene, which the 30 unpaired
+        # sections do not have - hence --all, which reads the marker's own index.
+        uid_col = "pcna_scene_uid" if args.marker == "AF488" else "scene_uid"
+        uids = [u for u in ((w.get(uid_col) or "").strip() for w in want) if u]
 
     plane = MARKER_PLANE[args.marker]
-    # The worklist is keyed on pERK. Building the PCNA side means following the
-    # pairing to the partner scene, which the 30 unpaired sections do not have.
-    uid_col = "pcna_scene_uid" if args.marker == "AF488" else "scene_uid"
-    made = skipped = mismatched = 0
+    made = skipped = mismatched = existing = 0
     missing = []
 
-    for w in want:
-        uid = (w.get(uid_col) or "").strip()
-        if not uid:
-            continue                      # unpaired: no partner to build
+    for uid in uids:
+        out_path = os.path.join(out_dir, uid + ".png")
+        if not args.verify and not args.force and os.path.exists(out_path):
+            existing += 1
+            continue
         r = secs.get(uid)
         if r is None:
             missing.append((uid, "not in focus.csv"))
@@ -123,13 +138,15 @@ def main():
         rgb = np.zeros(img.shape + (3,), np.uint8)
         rgb[..., plane] = comp
         rgb[..., 2] = img
-        Image.fromarray(rgb).save(os.path.join(out_dir, uid + ".png"))
+        Image.fromarray(rgb).save(out_path)
         made += 1
 
     if args.verify:
         print(f"verified {skipped} sections, {mismatched} mismatched")
     else:
         print(f"wrote {made} composites to {out_dir}")
+        if existing:
+            print(f"  {existing} already there, left alone (--force rebuilds them)")
     if missing:
         print(f"  {len(missing)} not built:")
         for uid, why in missing[:10]:

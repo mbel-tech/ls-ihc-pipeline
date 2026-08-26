@@ -136,7 +136,19 @@ landmarking. `assigned` is set only by a real slider move or an explicit button 
 never by merely selecting a section - so an untouched section still says
 nothing.
 
+Both channels live in ONE page. pERK and PCNA are separate physical sections cut
+at different times and are curated independently - the channel selector next to
+the sample selector switches between them, and every decision, count and export
+row carries the channel it was made on. What they share is the tool and the atlas
+plates, never a judgement: nothing about a pERK section reaches its PCNA partner.
+
+The subset flags below are pERK subsets and say nothing about a PCNA section
+(`--analysis-set` is defined by clipped-pixel censoring measured on the pERK
+scans; `--worklist` is keyed on pERK uids). They therefore narrow the pERK side
+only, and PCNA is offered on its own full set in the same page.
+
 Run:  python 04l_roi_curator.py
+      python 04l_roi_curator.py --rgb --worklist
       python 04l_roi_curator.py --animal LS45
 """
 
@@ -281,6 +293,13 @@ input[type=range]{width:100%}
 .btn-edit{border-color:#2c7a82;color:#39c5cf}
 .btn-edit:hover{border-color:#39c5cf;color:#39c5cf}
 label.chk{color:var(--dim);font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer}
+/* The header wraps, and with a dozen counters between them the buttons used to
+   break across lines in whatever order the width happened to allow. Filters and
+   actions are each one flex box now, so they wrap as a UNIT: what narrows the
+   view sits by the sample selector, what acts on a section sits by Export. */
+.filters{display:flex;gap:8px;align-items:center;flex-wrap:wrap;
+         padding:3px 8px;border:1px solid var(--line);border-radius:8px;background:#12151a}
+.actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-left:auto}
 .cell img{width:100%;aspect-ratio:1;object-fit:contain;display:block;border-radius:3px}
 .cap{font-size:9px;color:var(--dim);text-align:center;line-height:1.15;margin-top:1px}
 footer{flex:0 0 auto;background:var(--bg);border-top:1px solid var(--line);
@@ -291,7 +310,12 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
 <header>
   <h1>ROI curator</h1>
   <span class="row" id="scope" style="color:#7c5cff"></span>
-  <select id="animal" onchange="render(); this.blur()"></select>
+  <span class="filters">
+    <select id="animal" onchange="render(); this.blur()"></select>
+    <select id="marker" onchange="onMarker(); this.blur()"></select>
+    <label class="chk"><input type="checkbox" id="favOnly" onchange="render(); this.blur()">favourites only</label>
+    <label class="chk"><input type="checkbox" id="hideExcl" onchange="render(); this.blur()">hide excluded</label>
+  </span>
   <span class="row"><b id="nsec"></b> shown</span>
   <span class="row" style="color:#7c5cff"><b id="ndone"></b> registered</span>
   <span class="row" style="color:#4da3ff"><b id="nassign"></b> plate only</span>
@@ -299,10 +323,9 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
   <span class="row" style="color:#e3b341"><b id="nfav"></b> favourite</span>
   <span class="row" style="color:#f85149"><b id="nexcl"></b> excluded</span>
   <span class="row" id="savedAt" style="color:#3fb950"></span>
-  <label class="chk"><input type="checkbox" id="favOnly" onchange="render(); this.blur()">favourites only</label>
   <span class="row"><b id="npair"></b> pairs on this section</span>
   <span class="row" id="fit"></span>
-  <span class="grow"></span>
+  <span class="actions">
   <button class="btn-plate" onclick="markAssigned()">Assign plate</button>
   <button id="rotBtn" class="btn-rot" onclick="toggleRotMode()">Rotate</button>
   <button id="rotReset" class="btn-rot" onclick="restoreTilt()">Restore original tilt</button>
@@ -313,6 +336,7 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
   <button class="btn-edit" onclick="undoPt()">Undo point</button>
   <button class="btn-edit" onclick="clearPts()">Clear points</button>
   <button class="primary" onclick="exportCsv()">Export</button>
+  </span>
 </header>
 <div id="panes">
   <div class="pane"><h2 id="secTitle">SECTION - click to place a point</h2>
@@ -348,7 +372,8 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
   <span style="color:#7c5cff">purple</span> = registered &middot;
   <span style="color:#4da3ff">blue</span> = plate assigned only &middot;
   <span style="color:#e3b341">gold edge</span> = favourite &middot;
-  faded = marked no-ROI &middot; autosaves
+  faded = marked no-ROI &middot; autosaves &middot;
+  filters (sample, channel, favourites, excluded) are top left, actions top right
 </footer>
 <script>
 const DATA = __DATA__;      // [{uid, animal, order, img}]
@@ -360,7 +385,14 @@ const PLATE_SET = __PLATESET__;
 // Which channel these sections are, and which subset of it. The two markers are
 // separate physical sections curated independently, so the channel is recorded
 // in every export rather than inferred later from the file name.
-const MARKER = __MARKER__, SUBSET = __SUBSET__, RGBMODE = __RGBMODE__;
+// Both channels are in one page. They are separate physical sections curated
+// independently, so nothing is shared between them except the tool itself: each
+// DATA row carries its own marker, its own subset and whether a composite exists
+// for it, and every export writes the row's own marker rather than a page-wide
+// one. Scene uids never collide (`_s01a_` is pERK, `_s01b_` is PCNA), which is
+// what lets a single store hold both without keying on the channel.
+const MARKERS = __MARKERS__;          // [{id, label, n, sub}]
+const DEFAULT_MARKER = __MARKER__;
 // The canonical reformatted grid (04a GRID). Display may be a multiple of it.
 const SEC_GRID = __SECGRID__;
 const KEY = "ls_roi_curator_v1";
@@ -385,7 +417,7 @@ function autosave(){
   save();
   try {
     localStorage.setItem(BACKUP_KEY, JSON.stringify(
-      {at: new Date().toISOString(), marker: MARKER, subset: SUBSET, S}));
+      {at: new Date().toISOString(), marker: el("marker").value, S}));
   } catch(e) {
     // Quota is the only realistic failure and it must not take the session with
     // it: the live save above has already happened, which is the copy that matters.
@@ -418,13 +450,30 @@ document.addEventListener("visibilitychange", ()=>{ if(document.hidden) autosave
 const animals = [...new Set(DATA.map(d=>d.animal))].sort((a,b)=>+a.slice(2)-+b.slice(2));
 el("animal").innerHTML = animals.map(a=>`<option>${a}</option>`).join("");
 el("slider").max = PLATES.length-1;
-el("scope").innerHTML = `<b>${MARKER==="AF568"?"pERK":"PCNA"}</b>`
-  + (SUBSET==="all" ? "" : ` &middot; <b>${SUBSET.replace(/_/g," ")}</b>`);
-const inAnimal = () => DATA.filter(d=>d.animal===el("animal").value);
-// The favourites filter narrows the strip to the subset chosen for
-// quantification, so `rows` - which also drives z/x and the counts - honours it.
-const rows = () => inAnimal()
+el("marker").innerHTML =
+  MARKERS.map(m=>`<option value="${m.id}">${m.label} - ${m.n}</option>`).join("")
+  + (MARKERS.length>1 ? `<option value="both">both channels - ${DATA.length}</option>` : "");
+el("marker").value = DEFAULT_MARKER;
+const D_BY = Object.fromEntries(DATA.map(d=>[d.uid,d]));
+// Which channel is on screen. `both` is a real option - useful for reading
+// progress across the pair - but the two are still independent sections; nothing
+// about one section's decision reaches the other.
+function scopeLabel(){
+  const v=el("marker").value, m=MARKERS.find(x=>x.id===v);
+  el("scope").innerHTML = m
+    ? `<b>${m.label}</b>` + (m.sub==="all" ? "" : ` &middot; <b>${m.sub.replace(/_/g," ")}</b>`)
+    : `<b>both channels</b>`;
+}
+function onMarker(){ pending=null; scopeLabel(); render(); }
+const inScope = () => DATA.filter(d=>d.animal===el("animal").value
+  && (el("marker").value==="both" || d.m===el("marker").value));
+// The filters narrow the strip, so `rows` - which also drives the arrow keys and
+// the counts - honours them. Hiding the excluded is a VIEW, not a deletion: the
+// sections keep their flag, still appear in the excluded count, and are still
+// written to roi_plates.csv with excluded=1.
+const rows = () => inScope()
   .filter(d => !el("favOnly").checked || S[d.uid]?.fav)
+  .filter(d => !el("hideExcl").checked || !isExcl(d.uid))
   .sort((a,b)=>a.order-b.order);
 // `assigned` is set only by a real slider move or an explicit button, never by
 // merely selecting a section - otherwise clicking through the strip would record
@@ -556,12 +605,23 @@ const can2img = (X,Y,g) => { const dx=X-g.D/2, dy=Y-g.D/2;
 // the whole onload handler, so the section never drew at all. Nothing here reads
 // the bitmap back.
 let dapiOn = true;
+const hasRgb = uid => !!D_BY[uid]?.rgb;
 function toggleDapi(){
-  if(!RGBMODE) return;
+  if(!hasRgb(active)) return;
   dapiOn = !dapiOn;
-  el("dapiBtn").classList.toggle("mode-on", dapiOn);
-  el("dapiBtn").textContent = dapiOn ? "DAPI ✓" : "DAPI";
+  dapiBtnState();
   drawSec();
+}
+// Whether a section HAS a DAPI channel to hide is a fact about that section -
+// only sections 04o has built a composite for do - so the button reports the
+// section on screen rather than a decision made once for the whole page.
+function dapiBtnState(){
+  const rgb = hasRgb(active), on = rgb && dapiOn;
+  el("dapiBtn").disabled = !rgb;
+  el("dapiBtn").classList.toggle("mode-on", on);
+  el("dapiBtn").textContent = on ? "DAPI ✓" : "DAPI";
+  el("dapiBtn").title = rgb ? ""
+    : "no colour composite for this section - run 04o_section_rgb.py --all";
 }
 
 // The blue-stripped copy, built on a canvas exactly the size of the image.
@@ -597,7 +657,7 @@ function drawSec(){
   x.clearRect(0,0,g.D,g.D);
   x.save(); x.translate(g.D/2,g.D/2); x.rotate(g.a);
   // Hiding DAPI means drawing the blue-stripped copy instead - see markerOnly().
-  x.drawImage((RGBMODE && !dapiOn) ? markerOnly() : secImg, -g.w/2, -g.h/2);
+  x.drawImage((hasRgb(active) && !dapiOn) ? markerOnly() : secImg, -g.w/2, -g.h/2);
   x.restore();
   const s=st(active), T=transform(s.pairs);
   if(T){                                   // warped atlas seeds - the deliverable
@@ -770,6 +830,7 @@ function status(){
   // Two facts now, not three: is the tool open, and what is drawn. There is no
   // uncommitted state left to report, because the drag commits itself.
   const saved = sa.rot||0;
+  dapiBtnState();
   el("rotBtn").textContent = rotMode ? "Rotate ✓" : "Rotate";
   el("rotBtn").classList.toggle("mode-on", rotMode);
   el("rotReset").disabled = !(saved || draftRot);
@@ -877,8 +938,8 @@ function counts(){
   el("nnoroi").textContent  = list.filter(d=>isNoRoi(d.uid)).length;
   // counted over the animal, not the filtered view, so it does not collapse to
   // the list length the moment "favourites only" is ticked
-  el("nfav").textContent    = inAnimal().filter(d=>S[d.uid]?.fav).length;
-  el("nexcl").textContent   = inAnimal().filter(d=>isExcl(d.uid)).length;
+  el("nfav").textContent    = inScope().filter(d=>S[d.uid]?.fav).length;
+  el("nexcl").textContent   = inScope().filter(d=>isExcl(d.uid)).length;
 }
 // Update ONE strip cell. Every interaction used to rebuild all 87 cells and
 // reload their images, which is why it felt slow even when it was not recursing.
@@ -957,7 +1018,7 @@ function exportCsv(){
                  : chosen ? "plate_only" : "favourite_only";
     // Blank rather than plate_001 when no plate was ever chosen - otherwise a
     // favourite with no assignment reads as a deliberate call on plate_001.
-    pl.push([d.uid,d.animal,MARKER,SUBSET,d.order,PLATE_SET, chosen?P.id:"", chosen?s.plate:"",
+    pl.push([d.uid,d.animal,d.m,d.sub,d.order,PLATE_SET, chosen?P.id:"", chosen?s.plate:"",
              chosen?(P.labelled?1:0):"", n, T?T.kind:"", status,
              s.fav?1:0, (s.rot||0).toFixed(1),
              s.excl?1:0]);
@@ -977,13 +1038,13 @@ function exportCsv(){
     let tot=0;
     s.pairs.forEach(([sx,sy,px,py],i)=>{
       const [X,Y]=apply(T,px,py), r=Math.hypot(X-sx,Y-sy); tot+=r;
-      lm.push([d.uid,d.animal,MARKER,d.order,PLATE_SET,P.id,i+1,(sx/K).toFixed(2),(sy/K).toFixed(2),
+      lm.push([d.uid,d.animal,d.m,d.order,PLATE_SET,P.id,i+1,(sx/K).toFixed(2),(sy/K).toFixed(2),
                px.toFixed(2),py.toFixed(2),(r/K).toFixed(2)]);
     });
     const mr=(tot/n/K).toFixed(2);
     for(const sd of P.seeds){
       const [X,Y]=apply(T, sd.xf*P.w, sd.yf*P.h);
-      rg.push([d.uid,d.animal,MARKER,PLATE_SET,P.id,sd.region,
+      rg.push([d.uid,d.animal,d.m,PLATE_SET,P.id,sd.region,
                sd.amb?1:0, sd.amb||"", (X/K).toFixed(2),(Y/K).toFixed(2),n,T.kind,mr]);
     }
   }
@@ -995,10 +1056,7 @@ function dl(rowsArr,name){
   const b=new Blob([rowsArr.map(r=>r.join(",")).join("\\n")],{type:"text/csv"});
   const a=document.createElement("a"); a.href=URL.createObjectURL(b); a.download=name; a.click();
 }
-// DAPI starts visible, which is just the composite as 04o wrote it.
-if(RGBMODE){ el("dapiBtn").classList.add("mode-on"); el("dapiBtn").textContent = "DAPI ✓"; }
-else { el("dapiBtn").disabled = true;
-       el("dapiBtn").title = "run with --rgb for a composite with a DAPI channel"; }
+scopeLabel();
 render();
 </script>
 """
@@ -1007,14 +1065,19 @@ render();
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--animal", default=None)
-    ap.add_argument("--marker", choices=("AF488", "AF568"), default="AF488",
-                    help="AF568 = pERK (the channel that gets quantified), AF488 = PCNA")
+    ap.add_argument("--marker", choices=("AF488", "AF568"), default="AF568",
+                    help="which channel the page OPENS on. Both are always loaded - "
+                         "the selector next to the sample selector switches - so this "
+                         "chooses the starting view, not what is in the page. "
+                         "AF568 = pERK (the channel that gets quantified), AF488 = PCNA")
     ap.add_argument("--analysis-set", action="store_true",
-                    help="only sections in perk_analysis_set.csv")
+                    help="narrow the pERK side to perk_analysis_set.csv. A pERK "
+                         "subset only; PCNA keeps its full set")
     ap.add_argument("--worklist", nargs="?", const=WORKLIST_CSV, default=None,
                     metavar="CSV",
-                    help="curate in the order from 04n_roi_worklist.py, so stopping "
-                         "part way still leaves every animal and every level covered")
+                    help="order the pERK side by 04n_roi_worklist.py, so stopping "
+                         "part way still leaves every animal and every level covered. "
+                         "Keyed on pERK uids, so PCNA keeps its full set")
     ap.add_argument("--tier", default=None,
                     help="with --worklist: only this tier (e.g. core)")
     ap.add_argument("--rgb", action="store_true",
@@ -1023,47 +1086,61 @@ def main():
                          "geometry was computed on. Same frame either way.")
     args = ap.parse_args()
 
-    index_csv, img_dir = marker_paths(args.marker)
-    if args.rgb:
+    # Both channels go into one page. They are separate physical sections and
+    # stay independently curated - this shares the TOOL, not the decisions - so
+    # each channel is assembled on its own terms and tagged with its own subset.
+    def build(marker):
+        index_csv, img_dir = marker_paths(marker)
         rgb_dir = img_dir + "_rgb"
-        if not os.path.isdir(os.path.join(REFORMAT_DIR, rgb_dir)):
-            raise SystemExit(f"{rgb_dir} not found - run 04o_section_rgb.py first")
-        img_dir = rgb_dir
-    with open(index_csv, newline="", encoding="utf-8") as fh:
-        rows = [r for r in csv.DictReader(fh) if r["kind"] == "section"]
-    before = len(rows)
-    subset, unpaired = "all", 0
-    if args.analysis_set:
-        keep, n_perk, unpaired = analysis_uids(args.marker)
-        rows = [r for r in rows if r["id"] in keep]
-        subset = "perk_analysis_set"
+        with open(index_csv, newline="", encoding="utf-8") as fh:
+            rows = [r for r in csv.DictReader(fh) if r["kind"] == "section"]
+        before, subset = len(rows), "all"
 
-    # The worklist is keyed on pERK uids, because that is the channel being
-    # quantified and the one 04m is built around. Viewing it as PCNA means
-    # carrying each uid across the pairing, which the 30 unpaired sections
-    # cannot survive - the same shortfall --analysis-set already reports.
-    rank = None
-    if args.worklist:
-        # The worklist is keyed on pERK, and following the pairing to reach the
-        # PCNA side would make one channel's job depend on the other's. The two
-        # are separate sections; PCNA is curated on its own full set instead.
-        if args.marker == "AF488":
-            raise SystemExit(
-                "--worklist is keyed on pERK sections and does not define a PCNA job.\n"
-                "Run PCNA without it: python 04l_roi_curator.py --marker AF488")
-        with open(args.worklist, newline="", encoding="utf-8") as fh:
-            wl = [r for r in csv.DictReader(fh)
-                  if not args.tier or r["tier"] == args.tier]
-        rank = {r["scene_uid"]: int(r["rank"]) for r in wl}
-        rows = [r for r in rows if r["id"] in rank]
-        subset = f"roi_worklist{':' + args.tier if args.tier else ''}"
+        if args.analysis_set and marker == "AF568":
+            keep, _n_perk, _unpaired = analysis_uids(marker)
+            rows = [r for r in rows if r["id"] in keep]
+            subset = "perk_analysis_set"
 
-    if args.animal:
-        rows = [r for r in rows if r["animal"] == args.animal]
-    if rank:
-        rows.sort(key=lambda r: rank[r["id"]])
-    else:
-        rows.sort(key=lambda r: (r["animal"], int(r["section_order"] or 0)))
+        # The worklist is keyed on pERK uids, because that is the channel being
+        # quantified. Reaching the PCNA side means following the pairing, which
+        # the 30 unpaired sections do not survive and which would make one
+        # channel's job depend on the other's. So it narrows pERK only; PCNA is
+        # curated on its own full set, by the same logic in the same tool.
+        rank = None
+        if args.worklist and marker == "AF568":
+            with open(args.worklist, newline="", encoding="utf-8") as fh:
+                wl = [r for r in csv.DictReader(fh)
+                      if not args.tier or r["tier"] == args.tier]
+            rank = {r["scene_uid"]: int(r["rank"]) for r in wl}
+            rows = [r for r in rows if r["id"] in rank]
+            subset = "roi_worklist" + (":" + args.tier if args.tier else "")
+
+        if args.animal:
+            rows = [r for r in rows if r["animal"] == args.animal]
+        rows.sort(key=lambda r: (rank[r["id"]],) if rank
+                  else (r["animal"], int(r["section_order"] or 0)))
+
+        # Per section, not per run: a channel can be part-built, and a page that
+        # claimed a composite it does not have would show a broken image and
+        # offer a DAPI toggle that does nothing. Whatever is missing falls back
+        # to the greyscale the geometry was computed on.
+        out = []
+        for r in rows:
+            has = args.rgb and os.path.exists(
+                os.path.join(REFORMAT_DIR, rgb_dir, r["id"] + ".png"))
+            out.append({"uid": r["id"], "animal": r["animal"], "m": marker,
+                        "sub": subset, "rgb": bool(has),
+                        "order": int(r["section_order"] or 0),
+                        "img": (rgb_dir if has else img_dir) + "/" + r["id"] + ".png"})
+        return out, subset, before
+
+    per_marker, markers = {}, []
+    for mk in ("AF568", "AF488"):
+        got, subset, before = build(mk)
+        per_marker[mk] = (got, subset, before)
+        markers.append({"id": mk, "label": "pERK" if mk == "AF568" else "PCNA",
+                        "n": len(got), "sub": subset})
+    data = per_marker["AF568"][0] + per_marker["AF488"][0]
 
     with open(os.path.join(PLATE_DIR, "plates.csv"), newline="", encoding="utf-8") as fh:
         plates = list(csv.DictReader(fh))
@@ -1088,31 +1165,24 @@ def main():
                    "w": int(p["px_w"]), "h": int(p["px_h"]),
                    "labelled": int(bool(sd)), "seeds": sd})
 
-    data = [{"uid": r["id"], "animal": r["animal"], "order": int(r["section_order"] or 0),
-             "img": f"{img_dir}/{r['id']}.png"} for r in rows]
-
     page = (PAGE.replace("__DATA__", json.dumps(data))
                 .replace("__PLATES__", json.dumps(pl))
                 .replace("__PLATESET__", json.dumps(PLATE_SET))
+                .replace("__MARKERS__", json.dumps(markers))
                 .replace("__MARKER__", json.dumps(args.marker))
-                .replace("__RGBMODE__", "true" if args.rgb else "false")
-                .replace("__SUBSET__", json.dumps(subset))
                 .replace("__SECGRID__", json.dumps(SEC_GRID)))
     with open(CURATOR_HTML, "w", encoding="utf-8") as fh:
         fh.write(page)
 
     lab = [p for p in pl if p["labelled"]]
     print(f"wrote {CURATOR_HTML}")
-    if args.analysis_set:
-        print(f"  subset: perk_analysis_set - {before} {args.marker} sections "
-              f"filtered to {len(rows)}")
-        if unpaired:   # pERK-only path; kept for shape, always 0 now
-            print(f"  NOTE: {unpaired} of the {n_perk} pERK analysis-set sections")
-            print( "        have no PCNA partner on record, so the "
-                  f"{args.marker} view of this")
-            print(f"        subset is {len(rows)}, not {n_perk}. "
-                   "Run --marker AF568 for all of them.")
-    print(f"  {len(data)} sections, {len(pl)} plates, "
+    for m in markers:
+        got, _sub, before = per_marker[m["id"]]
+        nrgb = sum(1 for d in got if d["rgb"])
+        note = "" if m["sub"] == "all" else f"  [{m['sub']}]"
+        print(f"  {m['label']:5} {m['n']:4} of {before} sections{note}"
+              f"   {nrgb} with a colour composite")
+    print(f"  {len(data)} sections in the page, {len(pl)} plates, "
           f"{sum(len(p['seeds']) for p in pl)} region seeds")
     print(f"  {len(lab)} plates carry seeds: {lab[0]['id']} .. {lab[-1]['id']}")
     print()
