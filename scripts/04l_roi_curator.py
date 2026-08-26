@@ -51,7 +51,7 @@ Interaction
   through sections and leave the plate where it is; left/right moves the plate.
   Consecutive sections are at neighbouring levels, so the plate rarely needs to
   move more than a notch. Arrows move, letters act: `a` assign, `f` favourite,
-  `x` exclude, `u` undo a point, `r` restore the original tilt. `x` was
+  `x` exclude, `z` undo a point, `r` restore the original tilt. `x` was
   previously "next section", paired with `z`; the arrows do that now.
   Returning to a section that was already assigned or landmarked does show its
   own plate again, because that is a recorded decision rather than a position.
@@ -214,6 +214,14 @@ button.primary{background:var(--accent);border-color:var(--accent);color:#04121f
        grid-template-rows:minmax(0,1fr);gap:10px;padding:10px}
 .pane{position:relative;background:#0e1014;border:1px solid var(--line);border-radius:9px;
       overflow:hidden;min-width:0;min-height:0}
+/* The section column is a stack: the marker on top, DAPI underneath it. They
+   share a column so both stay the same width and the landmark pane keeps the
+   space when DAPI is hidden. */
+#secCol{display:grid;grid-template-rows:1fr;gap:10px;min-width:0;min-height:0}
+#secCol.withdapi{grid-template-rows:1fr 1fr}
+#paneDapi{display:none}
+#secCol.withdapi #paneDapi{display:block}
+#cDapi{cursor:default}
 .pane h2{position:absolute;top:6px;left:8px;margin:0;font-size:11px;color:var(--dim);
          z-index:3;pointer-events:none;text-shadow:0 0 6px #000}
 canvas{display:block;width:100%;height:100%;object-fit:contain;cursor:crosshair;
@@ -297,13 +305,18 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
   <button id="favBtn" class="btn-fav" onclick="toggleFav()">Favourite</button>
   <button id="noroiBtn" class="btn-excl" onclick="toggleNoRoi()">No ROI here</button>
   <button id="exclBtn" class="btn-kill" onclick="toggleExcl()">Exclude</button>
+  <button id="dapiBtn" class="btn-plate" onclick="toggleDapi()">DAPI</button>
   <button class="btn-edit" onclick="undoPt()">Undo point</button>
   <button class="btn-edit" onclick="clearPts()">Clear points</button>
   <button class="primary" onclick="exportCsv()">Export</button>
 </header>
 <div id="panes">
-  <div class="pane"><h2>SECTION - click to place a point</h2>
-    <canvas id="cSec" onclick="clickSec(event)" onmousedown="secDown(event)"></canvas></div>
+  <div id="secCol">
+    <div class="pane"><h2 id="secTitle">SECTION - click to place a point</h2>
+      <canvas id="cSec" onclick="clickSec(event)" onmousedown="secDown(event)"></canvas></div>
+    <div class="pane" id="paneDapi"><h2>DAPI - reference only</h2>
+      <canvas id="cDapi"></canvas></div>
+  </div>
   <div class="pane"><h2>ATLAS PLATE - click the matching point</h2>
     <canvas id="cPl" onclick="clickPl(event)"></canvas></div>
   <div id="side">
@@ -325,7 +338,7 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
 <div id="strip"></div>
 <footer>
   <kbd>click</kbd> section then plate to add a pair &middot;
-  <kbd>&larr;</kbd><kbd>&rarr;</kbd> plate &middot; <kbd>u</kbd> undo &middot;
+  <kbd>&larr;</kbd><kbd>&rarr;</kbd> plate &middot; <kbd>z</kbd> undo point &middot;
   <kbd>&uarr;</kbd>/<kbd>&darr;</kbd> previous / next section (the plate stays put) &middot;
   <kbd>a</kbd> assign plate &middot;
   <kbd>Rotate</kbd> then drag the section left/right (<kbd>shift</kbd> fine), <kbd>Save tilt</kbd> to keep it,
@@ -347,7 +360,7 @@ const PLATE_SET = __PLATESET__;
 // Which channel these sections are, and which subset of it. The two markers are
 // separate physical sections curated independently, so the channel is recorded
 // in every export rather than inferred later from the file name.
-const MARKER = __MARKER__, SUBSET = __SUBSET__;
+const MARKER = __MARKER__, SUBSET = __SUBSET__, RGBMODE = __RGBMODE__;
 // The canonical reformatted grid (04a GRID). Display may be a multiple of it.
 const SEC_GRID = __SECGRID__;
 const KEY = "ls_roi_curator_v1";
@@ -374,7 +387,7 @@ const st = uid => S[uid] || (S[uid] = {plate: 0, pairs: [], assigned: false,
                                        excl: false});
 
 const secImg = new Image();
-secImg.onload = drawSec;
+secImg.onload = ()=>{ splitChannels(); drawSec(); };
 
 // All 101 plates preloaded - 7.4 MB total, median 71 KB. Setting plImg.src on
 // every slider step made each step wait on a disk read and a JPEG decode, which
@@ -476,6 +489,35 @@ function fit(c, img){ c.width=img.naturalWidth||600; c.height=img.naturalHeight|
 //
 // The canvas is the DIAGONAL of the image, not the image, so a rotated section
 // never has its corners clipped.
+// The section arrives as ONE composite - marker in red (AF568) or green (AF488),
+// DAPI in blue - so the two panes are cut out of it here rather than loaded as
+// separate files. Done once when the image loads: splitting per redraw would run
+// on every slider step and every landmark click.
+//
+// Only meaningful with --rgb. Without it the section IS the greyscale DAPI that
+// 04a_reformat produced, there is no marker channel to separate, and the DAPI
+// pane is disabled rather than left showing an empty canvas.
+let secMarker=null, secDapi=null;
+function splitChannels(){
+  secMarker = secDapi = null;
+  if(!RGBMODE || !secImg.naturalWidth) return;
+  const w=secImg.naturalWidth, h=secImg.naturalHeight;
+  const src=document.createElement("canvas"); src.width=w; src.height=h;
+  const sx=src.getContext("2d"); sx.drawImage(secImg,0,0);
+  const dat=sx.getImageData(0,0,w,h), px=dat.data;
+  const mk=document.createElement("canvas"); mk.width=w; mk.height=h;
+  const dp=document.createElement("canvas"); dp.width=w; dp.height=h;
+  const mdat=new ImageData(new Uint8ClampedArray(px), w, h);
+  const ddat=new ImageData(new Uint8ClampedArray(px), w, h);
+  for(let i=0;i<px.length;i+=4){
+    mdat.data[i+2]=0;                                   // marker: drop blue
+    ddat.data[i]=0; ddat.data[i+1]=0;                   // DAPI: keep blue only
+  }
+  mk.getContext("2d").putImageData(mdat,0,0);
+  dp.getContext("2d").putImageData(ddat,0,0);
+  secMarker=mk; secDapi=dp;
+}
+
 function secGeom(){
   const w=secImg.naturalWidth||256, h=secImg.naturalHeight||256;
   const a=effRot()*Math.PI/180;
@@ -486,13 +528,37 @@ const img2can = (x,y,g) => { const dx=x-g.w/2, dy=y-g.h/2;
 const can2img = (X,Y,g) => { const dx=X-g.D/2, dy=Y-g.D/2;
   return [g.w/2 + dx*g.cos + dy*g.sin, g.h/2 - dx*g.sin + dy*g.cos]; };
 
+// Mirrors drawSec's geometry exactly - same square canvas, same rotation - so the
+// two panes stay registered to each other and a feature sits at the same place in
+// both. Reference only: nothing is clicked here and no coordinate is taken from it.
+function drawDapi(){
+  const c=el("cDapi"); if(!c) return;
+  const x=c.getContext("2d");
+  if(!secDapi || !secImg.naturalWidth){ c.width=c.height=1; return; }
+  const g=secGeom();
+  c.width=g.D; c.height=g.D;
+  x.clearRect(0,0,g.D,g.D);
+  x.save(); x.translate(g.D/2,g.D/2); x.rotate(g.a);
+  x.drawImage(secDapi, -g.w/2, -g.h/2);
+  x.restore();
+}
+
+function toggleDapi(){
+  if(!RGBMODE) return;
+  const on = !el("secCol").classList.contains("withdapi");
+  el("secCol").classList.toggle("withdapi", on);
+  el("dapiBtn").classList.toggle("mode-on", on);
+  el("dapiBtn").textContent = on ? "DAPI ✓" : "DAPI";
+  drawDapi();
+}
+
 function drawSec(){
   const c=el("cSec"), x=c.getContext("2d"); if(!secImg.naturalWidth) return;
   const g=secGeom();
   c.width=g.D; c.height=g.D;
   x.clearRect(0,0,g.D,g.D);
   x.save(); x.translate(g.D/2,g.D/2); x.rotate(g.a);
-  x.drawImage(secImg, -g.w/2, -g.h/2);
+  x.drawImage(secMarker || secImg, -g.w/2, -g.h/2);
   x.restore();
   const s=st(active), T=transform(s.pairs);
   if(T){                                   // warped atlas seeds - the deliverable
@@ -512,6 +578,10 @@ function drawSec(){
   s.pairs.forEach(([sx,sy],i)=>{ const [X,Y]=img2can(sx,sy,g); mark(x,X,Y,i+1,"#4da3ff"); });
   if(pending){ const [X,Y]=img2can(pending[0],pending[1],g);
                mark(x,X,Y,s.pairs.length+1,"#d29922"); }
+  // Driven from here rather than from each caller: the tilt is applied at draw
+  // time and four separate places change it, so anything that redraws the
+  // section has to redraw DAPI or the two panes stop matching.
+  drawDapi();
 }
 function drawPl(){
   const c=el("cPl"), x=c.getContext("2d");
@@ -810,7 +880,7 @@ addEventListener("keydown", e=>{
   else if(e.key==="a" || e.key==="A"){ markAssigned(); }
   else if(e.key==="f" || e.key==="F"){ toggleFav(); }
   else if(e.key==="x" || e.key==="X"){ toggleExcl(); }
-  else if(e.key==="u" || e.key==="U"){ undoPt(); }
+  else if(e.key==="z" || e.key==="Z"){ undoPt(); }
   else if(e.key==="r" || e.key==="R"){ restoreTilt(); }
 });
 
@@ -883,6 +953,9 @@ function dl(rowsArr,name){
   const b=new Blob([rowsArr.map(r=>r.join(",")).join("\\n")],{type:"text/csv"});
   const a=document.createElement("a"); a.href=URL.createObjectURL(b); a.download=name; a.click();
 }
+if(RGBMODE){ toggleDapi(); }
+else { el("dapiBtn").disabled = true;
+       el("dapiBtn").title = "run with --rgb to separate the channels"; }
 render();
 </script>
 """
@@ -979,6 +1052,7 @@ def main():
                 .replace("__PLATES__", json.dumps(pl))
                 .replace("__PLATESET__", json.dumps(PLATE_SET))
                 .replace("__MARKER__", json.dumps(args.marker))
+                .replace("__RGBMODE__", "true" if args.rgb else "false")
                 .replace("__SUBSET__", json.dumps(subset))
                 .replace("__SECGRID__", json.dumps(SEC_GRID)))
     with open(CURATOR_HTML, "w", encoding="utf-8") as fh:
