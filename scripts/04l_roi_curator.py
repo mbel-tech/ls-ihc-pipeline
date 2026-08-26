@@ -345,7 +345,7 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
 </header>
 <div id="panes">
   <div class="pane"><h2 id="secTitle">SECTION - click to place a point</h2>
-    <canvas id="cSec" onclick="clickSec(event)" onmousedown="secDown(event)"></canvas></div>
+    <canvas id="cSec" onmousedown="secDown(event)"></canvas></div>
   <div class="pane"><h2 id="plTitle">ATLAS PLATE - click the matching point</h2>
     <canvas id="cPl" onclick="clickPl(event)"></canvas></div>
   <div id="side">
@@ -674,20 +674,46 @@ function drawSec(){
       const [X,Y]=img2can(ix,iy,g);
       x.beginPath(); x.arc(X,Y,6*u,0,6.284); x.fillStyle=sd.hex||"#4da3ff"; x.globalAlpha=.85; x.fill();
       x.globalAlpha=1; x.lineWidth=1.5*u; x.strokeStyle="#000"; x.stroke();
+      // The seed's NUMBER as well as its name, and the same number the plate
+      // shows - that is what ties the overlay back to the click-through list, so
+      // "seed 7 landed in the wrong place" is a statement you can make.
+      //
+      // The number is the part that was asked to be large; the region name rides
+      // along at 60% of it. At full size both together overlapped their
+      // neighbours on a 10-seed plate and were unreadable on a 30-seed one, and
+      // the number is what carries the order.
+      //
       // An ambiguous region is drawn as its group. Writing "Vd" on a section
       // whose level is unknown asserts something the data cannot support.
+      const nm = sd.amb || sd.region;
       x.save();
-      x.font="bold "+(12*u)+"px system-ui";
-      x.lineWidth=3*u; x.strokeStyle="#000"; x.lineJoin="round";
-      x.strokeText(sd.amb || sd.region, X+9*u, Y+4*u);
+      x.textBaseline="middle";
+      x.font="bold "+(NUM_PX*u)+"px system-ui";
+      const wn = x.measureText(sd.n).width;
+      x.font="bold "+(NUM_PX*0.6*u)+"px system-ui";
+      const wr = x.measureText(" "+nm).width;
+      // flip the label to the other side rather than let it run off the canvas
+      const flip = (X + 9*u + wn + wr) > g.D;
+      const lx = flip ? X - 9*u - wn - wr : X + 9*u;
+      x.lineWidth=4*u; x.strokeStyle="#000"; x.lineJoin="round";
+      x.font="bold "+(NUM_PX*u)+"px system-ui";
+      x.strokeText(sd.n, lx, Y);
       x.fillStyle = sd.amb ? "#e3b341" : "#fff";
-      x.fillText(sd.amb || sd.region, X+9*u, Y+4*u);
+      x.fillText(sd.n, lx, Y);
+      x.font="bold "+(NUM_PX*0.6*u)+"px system-ui";
+      x.lineWidth=3*u; x.strokeStyle="#000";
+      x.strokeText(" "+nm, lx+wn, Y);
+      x.fillStyle = sd.amb ? "#e3b341" : "#fff";
+      x.fillText(" "+nm, lx+wn, Y);
       x.restore();
     }
   }
-  s.pairs.forEach(([sx,sy],i)=>{ const [X,Y]=img2can(sx,sy,g); mark(x,X,Y,i+1,"#4da3ff",u); });
+  s.pairs.forEach((p,i)=>{ const [X,Y]=img2can(p[0],p[1],g);
+                           mark(x,X,Y,p[4]||i+1,"#4da3ff",u,pairR(p)); });
   if(pending){ const [X,Y]=img2can(pending[0],pending[1],g);
-               mark(x,X,Y,s.pairs.length+1,"#d29922",u); }
+               mark(x,X,Y,guided?gTarget:s.pairs.length+1,"#d29922",u,pending[2]||defaultR()); }
+  if(ptDrag){ const [X,Y]=img2can(ptDrag.ix,ptDrag.iy,g);
+              mark(x,X,Y,guided?gTarget:s.pairs.length+1,"#d29922",u,ptDrag.r); }
 }
 function drawPl(){
   const c=el("cPl"), x=c.getContext("2d");
@@ -708,10 +734,11 @@ function drawPl(){
     x.globalAlpha=1; x.lineWidth=(isTgt?3:1.2)*u;
     x.strokeStyle=isTgt?"#3fb950":"#000"; x.stroke();
     x.save();
-    x.font="bold "+((isTgt?13:10)*u)+"px system-ui";
+    x.font="bold "+((isTgt?NUM_PX:NUM_PX_SEED)*u)+"px system-ui";
     x.textAlign="center"; x.textBaseline="middle";
-    x.lineWidth=3*u; x.strokeStyle="#04121f"; x.lineJoin="round";
-    const lx=X+(isTgt?13:10)*u, ly=Y-(isTgt?13:10)*u;
+    x.lineWidth=4*u; x.strokeStyle="#04121f"; x.lineJoin="round";
+    const off=(isTgt?NUM_PX:NUM_PX_SEED)*0.55*u;
+    const lx=X+off, ly=Y-off;
     x.strokeText(N, lx, ly);
     x.fillStyle = isTgt ? "#7ee787" : isDone ? "#6e7681" : "#fff";
     x.fillText(N, lx, ly);
@@ -733,14 +760,26 @@ function uiScale(c){
 // which point on the plate answers which point on the section. It gets a filled
 // badge because it sits over whatever the atlas or the tissue happens to be
 // there, and plain text was unreadable against the pale plates.
-function mark(x,X,Y,n,col,u){
+// One knob for how large every annotation number is drawn, in SCREEN pixels
+// before uiScale divides it back through. The numbers carry the click-through
+// order, so they are the part that has to be readable at a glance rather than
+// squinted at; the dots they label stay small so the tissue underneath is not
+// covered up.
+const NUM_PX = 36;                      // landmark badge and seed number
+const NUM_PX_SEED = 30;                 // plate seeds, of which there can be 30
+// A landmark now has a RADIUS as well as a position - see secDown(). It is drawn
+// as the circle, and the ring is what the number is anchored to.
+function mark(x,X,Y,n,col,u,rad){
   u = u || 1;
-  x.beginPath(); x.arc(X,Y,8*u,0,6.284); x.lineWidth=2.5*u; x.strokeStyle=col; x.stroke();
-  const bx=X+13*u, by=Y-13*u, r=9*u;
-  x.beginPath(); x.arc(bx,by,r,0,6.284);
+  const R = rad || 8*u;
+  x.beginPath(); x.arc(X,Y,R,0,6.284); x.lineWidth=2.5*u; x.strokeStyle=col; x.stroke();
+  x.beginPath(); x.arc(X,Y,1.5*u,0,6.284); x.fillStyle=col; x.fill();   // the point itself
+  const br=NUM_PX*0.62*u, off=(R+br*0.85)*0.72;
+  const bx=X+off, by=Y-off;
+  x.beginPath(); x.arc(bx,by,br,0,6.284);
   x.fillStyle=col; x.fill(); x.lineWidth=1.5*u; x.strokeStyle="#04121f"; x.stroke();
   x.save();
-  x.fillStyle="#04121f"; x.font="bold "+(12*u)+"px system-ui";
+  x.fillStyle="#04121f"; x.font="bold "+(NUM_PX*u)+"px system-ui";
   x.textAlign="center"; x.textBaseline="middle";
   x.fillText(n, bx, by);
   x.restore();
@@ -786,10 +825,25 @@ function restoreTilt(){
   draftRot = null; st(active).rot = 0; save(); drawSec(); status(); paintCell(active);
 }
 function secDown(e){
-  if(!active || !rotMode || e.button!==0) return;
-  rotDrag={x:e.clientX, rot:effRot(), live:false}; e.preventDefault();
+  if(!active || e.button!==0) return;
+  if(rotMode){                               // the rotate tool owns the mouse
+    rotDrag={x:e.clientX, rot:effRot(), live:false}; e.preventDefault();
+    return;
+  }
+  const [ix,iy] = can2img(...canvasXY(el("cSec"), e), secGeom());
+  ptDrag = {ix, iy, r: defaultR()};
+  e.preventDefault(); drawSec(); status();
 }
 addEventListener("mousemove", e=>{
+  if(ptDrag){
+    // radius = how far the mouse has travelled from the point, in image pixels,
+    // so the circle follows the cursor and what you see is what is stored
+    const [mx,my] = can2img(...canvasXY(el("cSec"), e), secGeom());
+    const d = Math.hypot(mx-ptDrag.ix, my-ptDrag.iy);
+    ptDrag.r = Math.max(2*imgK(), d);
+    drawSec(); status();
+    return;
+  }
   if(!rotDrag) return;
   const dx=e.clientX-rotDrag.x;
   if(!rotDrag.live && Math.abs(dx)<=3) return;   // ignore the jitter of a plain press
@@ -805,6 +859,12 @@ addEventListener("mousemove", e=>{
 // turned. It is stored per section like every other decision, so returning to a
 // section shows it at the angle it was left at.
 addEventListener("mouseup", ()=>{
+  if(ptDrag){
+    const {ix, iy, r} = ptDrag;
+    ptDrag = null;
+    commitPoint(ix, iy, r);
+    return;
+  }
   if(!rotDrag) return;
   const committed = rotDrag.live && active && draftRot!==null;
   rotDrag = null;
@@ -857,19 +917,34 @@ function toggleGuided(){
 function skipSeed(){ if(!guided || !active || !gTarget) return;
   gAdvance(); drawPl(); status(); }
 
-function clickSec(e){
-  if(!active) return;
-  if(rotMode) return;                          // the rotate tool owns the mouse
-  const [ix,iy] = can2img(...canvasXY(el("cSec"), e), secGeom());
+// ---- placing a landmark: press, size it, release --------------------------
+//
+// A landmark is a position AND a radius. The radius is set in the same gesture
+// that places it: press where the point is, drag out to the size you want, let
+// go. A plain click without moving keeps the default, so nothing is slower than
+// it was. Sizing afterwards would mean selecting the landmark again and
+// remembering which one it was - the size is known at the moment of placing, so
+// that is when it is asked for.
+//
+// This is why the canvas has no onclick any more: a click handler would fire
+// after mouseup and place the point a second time.
+const PT_R_CANON = 8;                       // default radius, canonical grid px
+const imgK = () => (secImg.naturalWidth || SEC_GRID) / SEC_GRID;
+const defaultR = () => PT_R_CANON * imgK();
+const pairR = p => p[5] || defaultR();      // 4- and 5-element pairs predate this
+let ptDrag = null;                          // {ix, iy, r} while the button is down
+
+function commitPoint(ix, iy, r){
+  const s=st(active);
   if(guided){
-    const s=st(active), sd=seedsOf(s)[gTarget-1];
-    if(!sd) return;                            // list finished - nothing to pair
+    const sd=seedsOf(s)[gTarget-1];
+    if(!sd) return;                          // list finished - nothing to pair
     const P=PLATES[s.plate];
-    s.pairs.push([ix, iy, sd.xf*P.w, sd.yf*P.h, gTarget]);
+    s.pairs.push([ix, iy, sd.xf*P.w, sd.yf*P.h, gTarget, r]);
     gAdvance(); save(); drawSec(); drawPl(); status(); paintCell(active);
     return;
   }
-  pending = [ix,iy];
+  pending = [ix, iy, r];                     // free mode still waits for the plate
   drawSec(); status();
 }
 function clickPl(e){
@@ -889,7 +964,8 @@ function clickPl(e){
     return;
   }
   if(!pending) return;
-  st(active).pairs.push([pending[0],pending[1],px,py]); pending=null;
+  st(active).pairs.push([pending[0],pending[1],px,py,0,pending[2]||defaultR()]);
+  pending=null;
   save(); drawSec(); drawPl(); status(); paintCell(active);
 }
 function undoPt(){
@@ -910,6 +986,7 @@ function status(){
   // exactly the bookkeeping the numbers are there to remove.
   const nextN = s.pairs.length + 1;
   const seeds = seedsOf(s), tgt = gTarget ? seeds[gTarget-1] : null;
+
   el("guideBtn").textContent = guided ? "Guided ✓" : "Guided";
   el("guideBtn").classList.toggle("guide-on", guided);
   el("guideBtn").disabled = !seeds.length;
@@ -940,6 +1017,13 @@ function status(){
     el("lmHint").innerHTML = pending
       ? `now click the matching point on the plate for <b>landmark ${nextN}</b>`
       : `click section, then plate - next is <b>landmark ${nextN}</b>`;
+  }
+  // Sizing owns the hint line while the button is down, but only the hint - the
+  // rest of the panel keeps updating underneath.
+  if(ptDrag){
+    el("lmHint").innerHTML =
+      `radius <b>${(ptDrag.r/imgK()).toFixed(1)} px</b> `
+      + `<span style="color:#9aa0a8">drag out to size &middot; release to place</span>`;
   }
   // Residual per landmark: a mis-clicked pair shows as a large error instead of
   // quietly dragging the whole fit.
@@ -1158,7 +1242,8 @@ function exportCsv(){
   // and its residual is not an independent check - the analysis has to be able
   // to tell the two apart, and blank means free.
   const lm=[["scene_uid","animal","marker","section_order","plate_set","plate_id","pair",
-             "sec_x","sec_y","plate_x","plate_y","residual_px","seed_n","seed_region"]];
+             "sec_x","sec_y","sec_r","plate_x","plate_y","residual_px",
+             "seed_n","seed_region"]];
   const rg=[["scene_uid","animal","marker","plate_set","plate_id","region",
              "region_ambiguous","ambiguity_group","sec_x","sec_y",
              "n_landmarks","transform","mean_residual_px"]];
@@ -1196,10 +1281,12 @@ function exportCsv(){
     // Residuals are a length in the same space, so they scale too.
     const K = (secImg.naturalWidth || SEC_GRID) / SEC_GRID;
     let tot=0;
-    s.pairs.forEach(([sx,sy,px,py,sn],i)=>{
+    s.pairs.forEach((pr,i)=>{
+      const [sx,sy,px,py,sn]=pr;
       const [X,Y]=apply(T,px,py), r=Math.hypot(X-sx,Y-sy); tot+=r;
       const sd = sn ? P.seeds[sn-1] : null;
-      lm.push([d.uid,d.animal,d.m,d.order,PLATE_SET,P.id,i+1,(sx/K).toFixed(2),(sy/K).toFixed(2),
+      lm.push([d.uid,d.animal,d.m,d.order,PLATE_SET,P.id,i+1,
+               (sx/K).toFixed(2),(sy/K).toFixed(2),(pairR(pr)/K).toFixed(2),
                px.toFixed(2),py.toFixed(2),(r/K).toFixed(2),
                sn||"", sd ? (sd.amb || sd.region) : ""]);
     });
@@ -1331,12 +1418,24 @@ def main():
     # Left to right every row, not serpentine. Serpentine is 14% less travel and
     # costs more than it saves: these regions are bilateral, and alternating the
     # direction flips which hemisphere the next seed is in on every row.
-    ROW_BAND = 0.015
+    # ROW_BAND was 0.015 and that was too tight: on plate_009 seeds at y = 0.36
+    # and 0.38 read as one horizontal band but were split into two rows, so the
+    # order ran x = 0.90, 0.05, 0.86, 0.57 - jumping right then back left, which
+    # is the failure the row grouping exists to prevent. 34% of "rows" held a
+    # single seed. At 0.03 the same plate reads 0.90 | 0.05, 0.57, 0.86 | 0.08,
+    # 0.42, 0.58, 0.82 and single-seed rows drop to 18%.
+    #
+    # ROW_SPAN caps the total height of a row as well as the step between
+    # neighbours. Without it a column of seeds each 0.029 below the last would
+    # chain into one "row" spanning half the plate, and the order would stop
+    # being top-to-bottom at all.
+    ROW_BAND, ROW_SPAN = 0.03, 0.05
     for _lst in seeds.values():
         _lst.sort(key=lambda s: (s["yf"], s["xf"]))
         _rows, _cur = [], [_lst[0]]
         for _s in _lst[1:]:
-            if _s["yf"] - _cur[-1]["yf"] > ROW_BAND:
+            if (_s["yf"] - _cur[-1]["yf"] > ROW_BAND
+                    or _s["yf"] - _cur[0]["yf"] > ROW_SPAN):
                 _rows.append(_cur); _cur = [_s]
             else:
                 _cur.append(_s)
