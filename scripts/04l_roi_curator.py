@@ -155,6 +155,7 @@ Run:  python 04l_roi_curator.py
 import argparse
 import csv
 import json
+import math
 import os
 
 CONFIG_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config.json")
@@ -667,6 +668,7 @@ function drawSec(){
   x.drawImage((hasRgb(active) && !dapiOn) ? markerOnly() : secImg, -g.w/2, -g.h/2);
   x.restore();
   const s=st(active), T=transform(s.pairs), u=uiScale(c);
+  const ns=numScale(PLATES[s.plate], c, u), NP=NUM_PX*ns;
   if(T){                                   // warped atlas seeds - the deliverable
     const P=PLATES[s.plate];
     for(const sd of P.seeds){
@@ -688,19 +690,19 @@ function drawSec(){
       const nm = sd.amb || sd.region;
       x.save();
       x.textBaseline="middle";
-      x.font="bold "+(NUM_PX*u)+"px system-ui";
+      x.font="bold "+(NP*u)+"px system-ui";
       const wn = x.measureText(sd.n).width;
-      x.font="bold "+(NUM_PX*0.6*u)+"px system-ui";
+      x.font="bold "+(NP*0.6*u)+"px system-ui";
       const wr = x.measureText(" "+nm).width;
       // flip the label to the other side rather than let it run off the canvas
       const flip = (X + 9*u + wn + wr) > g.D;
       const lx = flip ? X - 9*u - wn - wr : X + 9*u;
       x.lineWidth=4*u; x.strokeStyle="#000"; x.lineJoin="round";
-      x.font="bold "+(NUM_PX*u)+"px system-ui";
+      x.font="bold "+(NP*u)+"px system-ui";
       x.strokeText(sd.n, lx, Y);
       x.fillStyle = sd.amb ? "#e3b341" : "#fff";
       x.fillText(sd.n, lx, Y);
-      x.font="bold "+(NUM_PX*0.6*u)+"px system-ui";
+      x.font="bold "+(NP*0.6*u)+"px system-ui";
       x.lineWidth=3*u; x.strokeStyle="#000";
       x.strokeText(" "+nm, lx+wn, Y);
       x.fillStyle = sd.amb ? "#e3b341" : "#fff";
@@ -709,11 +711,11 @@ function drawSec(){
     }
   }
   s.pairs.forEach((p,i)=>{ const [X,Y]=img2can(p[0],p[1],g);
-                           mark(x,X,Y,p[4]||i+1,"#4da3ff",u,pairR(p)); });
+                           mark(x,X,Y,p[4]||i+1,"#4da3ff",u,pairR(p),ns); });
   if(pending){ const [X,Y]=img2can(pending[0],pending[1],g);
-               mark(x,X,Y,guided?gTarget:s.pairs.length+1,"#d29922",u,pending[2]||defaultR()); }
+               mark(x,X,Y,guided?gTarget:s.pairs.length+1,"#d29922",u,pending[2]||defaultR(),ns); }
   if(ptDrag){ const [X,Y]=img2can(ptDrag.ix,ptDrag.iy,g);
-              mark(x,X,Y,guided?gTarget:s.pairs.length+1,"#d29922",u,ptDrag.r); }
+              mark(x,X,Y,guided?gTarget:s.pairs.length+1,"#d29922",u,ptDrag.r,ns); }
 }
 function drawPl(){
   const c=el("cPl"), x=c.getContext("2d");
@@ -722,6 +724,7 @@ function drawPl(){
   if(!img.naturalWidth){ img.addEventListener("load", drawPl, {once:true}); return; }
   fit(c,img); x.drawImage(img,0,0);
   const s=st(active), P=PLATES[s.plate], u=uiScale(c), done=usedSeeds(s);
+  const ns=numScale(P, c, u);
   // Every seed carries its number, because the number IS the click-through
   // order - without it the list exists only in the code. Done seeds go hollow
   // and the current one gets a bright ring, so progress down the plate is
@@ -734,17 +737,18 @@ function drawPl(){
     x.globalAlpha=1; x.lineWidth=(isTgt?3:1.2)*u;
     x.strokeStyle=isTgt?"#3fb950":"#000"; x.stroke();
     x.save();
-    x.font="bold "+((isTgt?NUM_PX:NUM_PX_SEED)*u)+"px system-ui";
+    const fs=(isTgt?NUM_PX:NUM_PX_SEED)*ns;
+    x.font="bold "+(fs*u)+"px system-ui";
     x.textAlign="center"; x.textBaseline="middle";
     x.lineWidth=4*u; x.strokeStyle="#04121f"; x.lineJoin="round";
-    const off=(isTgt?NUM_PX:NUM_PX_SEED)*0.55*u;
+    const off=fs*0.55*u;
     const lx=X+off, ly=Y-off;
     x.strokeText(N, lx, ly);
     x.fillStyle = isTgt ? "#7ee787" : isDone ? "#6e7681" : "#fff";
     x.fillText(N, lx, ly);
     x.restore();
   });
-  s.pairs.forEach(([,,px,py],i)=>mark(x,px,py,i+1,"#4da3ff",u));
+  s.pairs.forEach((p,i)=>mark(x,p[2],p[3],p[4]||i+1,"#4da3ff",u,null,ns));
 }
 // Both canvases are drawn at their bitmap's own resolution and then fitted into
 // the pane by CSS, so a size in CANVAS pixels is not a size on SCREEN: a 1427 px
@@ -767,19 +771,33 @@ function uiScale(c){
 // covered up.
 const NUM_PX = 36;                      // landmark badge and seed number
 const NUM_PX_SEED = 30;                 // plate seeds, of which there can be 30
+// ...but only where they fit. A plate carrying 30 seeds gives each one about
+// 35 screen pixels of clear space and a full "10 Dm" label wants around 55, so
+// on the dense plates the labels ran into each other. P.nn is that plate's
+// median nearest-neighbour distance as a fraction of its diagonal, measured in
+// 04l's plate build; converting it against the CURRENT canvas means the numbers
+// re-scale when the window changes instead of being sized once for a pane that
+// no longer exists. Floored at half, so dense plates still read at roughly twice
+// the size they were before any of this.
+const NUM_TARGET = 55;
+function numScale(P, c, u){
+  if(!P || !P.nn) return 1;
+  const nnScreen = P.nn * Math.hypot(c.width, c.height) / u;
+  return Math.max(0.5, Math.min(1, nnScreen / NUM_TARGET));
+}
 // A landmark now has a RADIUS as well as a position - see secDown(). It is drawn
 // as the circle, and the ring is what the number is anchored to.
-function mark(x,X,Y,n,col,u,rad){
-  u = u || 1;
+function mark(x,X,Y,n,col,u,rad,ns){
+  u = u || 1; const NP = NUM_PX * (ns || 1);
   const R = rad || 8*u;
   x.beginPath(); x.arc(X,Y,R,0,6.284); x.lineWidth=2.5*u; x.strokeStyle=col; x.stroke();
   x.beginPath(); x.arc(X,Y,1.5*u,0,6.284); x.fillStyle=col; x.fill();   // the point itself
-  const br=NUM_PX*0.62*u, off=(R+br*0.85)*0.72;
+  const br=NP*0.62*u, off=(R+br*0.85)*0.72;
   const bx=X+off, by=Y-off;
   x.beginPath(); x.arc(bx,by,br,0,6.284);
   x.fillStyle=col; x.fill(); x.lineWidth=1.5*u; x.strokeStyle="#04121f"; x.stroke();
   x.save();
-  x.fillStyle="#04121f"; x.font="bold "+(NUM_PX*u)+"px system-ui";
+  x.fillStyle="#04121f"; x.font="bold "+(NP*u)+"px system-ui";
   x.textAlign="center"; x.textBaseline="middle";
   x.fillText(n, bx, by);
   x.restore();
@@ -1418,29 +1436,33 @@ def main():
     # Left to right every row, not serpentine. Serpentine is 14% less travel and
     # costs more than it saves: these regions are bilateral, and alternating the
     # direction flips which hemisphere the next seed is in on every row.
-    # ROW_BAND was 0.015 and that was too tight: on plate_009 seeds at y = 0.36
-    # and 0.38 read as one horizontal band but were split into two rows, so the
-    # order ran x = 0.90, 0.05, 0.86, 0.57 - jumping right then back left, which
-    # is the failure the row grouping exists to prevent. 34% of "rows" held a
-    # single seed. At 0.03 the same plate reads 0.90 | 0.05, 0.57, 0.86 | 0.08,
-    # 0.42, 0.58, 0.82 and single-seed rows drop to 18%.
+    # COLUMNS, top to bottom, starting from the left. Not rows: these seeds run
+    # in vertical strips - a lateral arc down each side and a medial strip either
+    # side of the midline - and reading across rows cut every strip into
+    # fragments, so consecutive numbers landed on opposite sides of the brain.
+    # Down a column the next number is the next seed in the same structure.
     #
-    # ROW_SPAN caps the total height of a row as well as the step between
-    # neighbours. Without it a column of seeds each 0.029 below the last would
-    # chain into one "row" spanning half the plate, and the order would stop
-    # being top-to-bottom at all.
-    ROW_BAND, ROW_SPAN = 0.03, 0.05
+    # COL_BAND has to be wide enough to hold a strip that drifts sideways as it
+    # descends: the left lateral arc on plate_013 runs x = 0.05, 0.04, 0.07, 0.13
+    # while y goes 0.23 -> 0.50. At 0.02 that arc fragments into four one-seed
+    # "columns" (74% of all columns were single); at 0.08 plate_013 resolves into
+    # the six strips actually present and 22% are single.
+    #
+    # COL_SPAN caps a column's total width as well as the step between
+    # neighbours, so a strip drifting steadily sideways cannot chain across the
+    # midline and swallow its bilateral partner.
+    COL_BAND, COL_SPAN = 0.08, 0.12
     for _lst in seeds.values():
-        _lst.sort(key=lambda s: (s["yf"], s["xf"]))
-        _rows, _cur = [], [_lst[0]]
+        _lst.sort(key=lambda s: (s["xf"], s["yf"]))
+        _cols, _cur = [], [_lst[0]]
         for _s in _lst[1:]:
-            if (_s["yf"] - _cur[-1]["yf"] > ROW_BAND
-                    or _s["yf"] - _cur[0]["yf"] > ROW_SPAN):
-                _rows.append(_cur); _cur = [_s]
+            if (_s["xf"] - _cur[-1]["xf"] > COL_BAND
+                    or _s["xf"] - _cur[0]["xf"] > COL_SPAN):
+                _cols.append(_cur); _cur = [_s]
             else:
                 _cur.append(_s)
-        _rows.append(_cur)
-        _lst[:] = [_s for _row in _rows for _s in sorted(_row, key=lambda s: s["xf"])]
+        _cols.append(_cur)
+        _lst[:] = [_s for _col in _cols for _s in sorted(_col, key=lambda s: s["yf"])]
         for _i, _s in enumerate(_lst, 1):
             _s["n"] = _i
 
@@ -1450,7 +1472,20 @@ def main():
         if not os.path.exists(img):
             continue
         sd = seeds.get(p["plate_id"], [])
-        pl.append({"id": p["plate_id"],
+        # How much room a label actually has on THIS plate: the median distance
+        # from a seed to its nearest neighbour, as a fraction of the plate
+        # diagonal. A fraction rather than pixels because the page has to turn it
+        # into screen pixels against whatever size the pane currently is - bake
+        # in pixels and the scaling goes stale the moment the window changes.
+        nn = 0.0
+        if len(sd) > 1:
+            pw, ph = int(p["px_w"]), int(p["px_h"])
+            pts = [(x["xf"] * pw, x["yf"] * ph) for x in sd]
+            diag = math.hypot(pw, ph)
+            near = sorted(min(math.dist(a, b) for j, b in enumerate(pts) if j != i)
+                          for i, a in enumerate(pts))
+            nn = near[len(near) // 2] / diag
+        pl.append({"id": p["plate_id"], "nn": round(nn, 5),
                    # Original plate, NOT reformatted: the seeds are fractions of
                    # this image, so no transform chain is needed.
                    "img": f"../atlas/{PLATE_SET}/{p['image_file']}",
