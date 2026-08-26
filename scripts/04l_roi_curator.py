@@ -341,7 +341,7 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
 <div id="panes">
   <div class="pane"><h2 id="secTitle">SECTION - click to place a point</h2>
     <canvas id="cSec" onclick="clickSec(event)" onmousedown="secDown(event)"></canvas></div>
-  <div class="pane"><h2>ATLAS PLATE - click the matching point</h2>
+  <div class="pane"><h2 id="plTitle">ATLAS PLATE - click the matching point</h2>
     <canvas id="cPl" onclick="clickPl(event)"></canvas></div>
   <div id="side">
     <div class="card"><h3>SECTION</h3><div class="kv" id="secInfo">-</div>
@@ -659,24 +659,28 @@ function drawSec(){
   // Hiding DAPI means drawing the blue-stripped copy instead - see markerOnly().
   x.drawImage((hasRgb(active) && !dapiOn) ? markerOnly() : secImg, -g.w/2, -g.h/2);
   x.restore();
-  const s=st(active), T=transform(s.pairs);
+  const s=st(active), T=transform(s.pairs), u=uiScale(c);
   if(T){                                   // warped atlas seeds - the deliverable
     const P=PLATES[s.plate];
     for(const sd of P.seeds){
       const [ix,iy]=apply(T, sd.xf*P.w, sd.yf*P.h);
       const [X,Y]=img2can(ix,iy,g);
-      x.beginPath(); x.arc(X,Y,7,0,6.284); x.fillStyle=sd.hex||"#4da3ff"; x.globalAlpha=.85; x.fill();
-      x.globalAlpha=1; x.lineWidth=2; x.strokeStyle="#000"; x.stroke();
+      x.beginPath(); x.arc(X,Y,6*u,0,6.284); x.fillStyle=sd.hex||"#4da3ff"; x.globalAlpha=.85; x.fill();
+      x.globalAlpha=1; x.lineWidth=1.5*u; x.strokeStyle="#000"; x.stroke();
       // An ambiguous region is drawn as its group. Writing "Vd" on a section
       // whose level is unknown asserts something the data cannot support.
+      x.save();
+      x.font="bold "+(12*u)+"px system-ui";
+      x.lineWidth=3*u; x.strokeStyle="#000"; x.lineJoin="round";
+      x.strokeText(sd.amb || sd.region, X+9*u, Y+4*u);
       x.fillStyle = sd.amb ? "#e3b341" : "#fff";
-      x.font="bold 13px system-ui";
-      x.fillText(sd.amb || sd.region, X+10, Y+4);
+      x.fillText(sd.amb || sd.region, X+9*u, Y+4*u);
+      x.restore();
     }
   }
-  s.pairs.forEach(([sx,sy],i)=>{ const [X,Y]=img2can(sx,sy,g); mark(x,X,Y,i+1,"#4da3ff"); });
+  s.pairs.forEach(([sx,sy],i)=>{ const [X,Y]=img2can(sx,sy,g); mark(x,X,Y,i+1,"#4da3ff",u); });
   if(pending){ const [X,Y]=img2can(pending[0],pending[1],g);
-               mark(x,X,Y,s.pairs.length+1,"#d29922"); }
+               mark(x,X,Y,s.pairs.length+1,"#d29922",u); }
 }
 function drawPl(){
   const c=el("cPl"), x=c.getContext("2d");
@@ -684,17 +688,39 @@ function drawPl(){
   const img=plateImg();
   if(!img.naturalWidth){ img.addEventListener("load", drawPl, {once:true}); return; }
   fit(c,img); x.drawImage(img,0,0);
-  const s=st(active), P=PLATES[s.plate];
+  const s=st(active), P=PLATES[s.plate], u=uiScale(c);
   for(const sd of P.seeds){
     const X=sd.xf*c.width, Y=sd.yf*c.height;
-    x.beginPath(); x.arc(X,Y,6,0,6.284); x.fillStyle=sd.hex||"#4da3ff"; x.globalAlpha=.8; x.fill();
-    x.globalAlpha=1; x.lineWidth=1.5; x.strokeStyle="#000"; x.stroke();
+    x.beginPath(); x.arc(X,Y,5*u,0,6.284); x.fillStyle=sd.hex||"#4da3ff"; x.globalAlpha=.8; x.fill();
+    x.globalAlpha=1; x.lineWidth=1.2*u; x.strokeStyle="#000"; x.stroke();
   }
-  s.pairs.forEach(([,,px,py],i)=>mark(x,px,py,i+1,"#4da3ff"));
+  s.pairs.forEach(([,,px,py],i)=>mark(x,px,py,i+1,"#4da3ff",u));
 }
-function mark(x,X,Y,n,col){
-  x.beginPath(); x.arc(X,Y,9,0,6.284); x.lineWidth=3; x.strokeStyle=col; x.stroke();
-  x.fillStyle=col; x.font="bold 15px system-ui"; x.fillText(n, X+11, Y-9);
+// Both canvases are drawn at their bitmap's own resolution and then fitted into
+// the pane by CSS, so a size in CANVAS pixels is not a size on SCREEN: a 1427 px
+// plate in a 493 px pane shrinks everything by 2.9x. That is what made the
+// landmark numbers 5 px tall - drawn all along, and effectively invisible.
+// Every annotation is therefore given in screen pixels and divided back through.
+function uiScale(c){
+  const b=c.getBoundingClientRect();
+  const k=Math.min(b.width/c.width, b.height/c.height);
+  return k>0 ? 1/k : 1;
+}
+// A landmark is its ring plus its NUMBER, and the number is the half that says
+// which point on the plate answers which point on the section. It gets a filled
+// badge because it sits over whatever the atlas or the tissue happens to be
+// there, and plain text was unreadable against the pale plates.
+function mark(x,X,Y,n,col,u){
+  u = u || 1;
+  x.beginPath(); x.arc(X,Y,8*u,0,6.284); x.lineWidth=2.5*u; x.strokeStyle=col; x.stroke();
+  const bx=X+13*u, by=Y-13*u, r=9*u;
+  x.beginPath(); x.arc(bx,by,r,0,6.284);
+  x.fillStyle=col; x.fill(); x.lineWidth=1.5*u; x.strokeStyle="#04121f"; x.stroke();
+  x.save();
+  x.fillStyle="#04121f"; x.font="bold "+(12*u)+"px system-ui";
+  x.textAlign="center"; x.textBaseline="middle";
+  x.fillText(n, bx, by);
+  x.restore();
 }
 // `object-fit:contain` fits the bitmap inside the element and centres it, so the
 // element box is NOT the drawn area - there is a letterbox on two sides whose
@@ -787,8 +813,20 @@ function clearPts(){ if(!active) return; st(active).pairs=[]; pending=null; save
 function status(){
   const s=st(active), T=transform(s.pairs);
   el("npair").textContent = s.pairs.length;
-  el("lmHint").textContent = pending ? "now click the matching point on the plate"
-                                     : "click section, then plate";
+  // Landmarks are numbered in the order they are placed, so the pair being built
+  // right now has a number before it exists. Both panes say which one, and which
+  // half of it is outstanding - counting rings to work out "am I on 4 or 5?" is
+  // exactly the bookkeeping the numbers are there to remove.
+  const nextN = s.pairs.length + 1;
+  el("secTitle").textContent = pending
+    ? "SECTION - landmark " + nextN + " placed"
+    : "SECTION - click to place landmark " + nextN;
+  el("plTitle").textContent = pending
+    ? "ATLAS PLATE - click the matching point for landmark " + nextN
+    : "ATLAS PLATE - place the section point first";
+  el("lmHint").innerHTML = pending
+    ? `now click the matching point on the plate for <b>landmark ${nextN}</b>`
+    : `click section, then plate - next is <b>landmark ${nextN}</b>`;
   // Residual per landmark: a mis-clicked pair shows as a large error instead of
   // quietly dragging the whole fit.
   let html="";
