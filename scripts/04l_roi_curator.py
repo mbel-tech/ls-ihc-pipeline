@@ -376,7 +376,7 @@ const st = uid => S[uid] || (S[uid] = {plate: 0, pairs: [], assigned: false,
                                        excl: false});
 
 const secImg = new Image();
-secImg.onload = drawSec;
+secImg.onload = ()=>{ markerCache=null; drawSec(); };   // cache belongs to one section
 
 // All 101 plates preloaded - 7.4 MB total, median 71 KB. Setting plImg.src on
 // every slider step made each step wait on a disk read and a JPEG decode, which
@@ -506,26 +506,41 @@ function toggleDapi(){
   drawSec();
 }
 
+// The blue-stripped copy, built on a canvas exactly the size of the image.
+//
+// The multiply CANNOT be done on the visible canvas. That one is a square of
+// side hypot(w,h) so the section can rotate inside it without clipping, which
+// leaves transparent margins around the image - and canvas "multiply" over a
+// transparent backdrop has nothing to multiply against, so it paints the source
+// straight on. The margins came out solid yellow. Here every pixel is covered by
+// the opaque image, so the blend does what it says, and the rotated edge keeps
+// its antialiasing instead of picking up a yellow fringe.
+//
+// Rebuilt only when the section changes, not on every redraw.
+let markerCache = null;
+function markerOnly(){
+  if(markerCache) return markerCache;
+  const w=secImg.naturalWidth, h=secImg.naturalHeight;
+  if(!w) return secImg;
+  const c=document.createElement("canvas"); c.width=w; c.height=h;
+  const x=c.getContext("2d");
+  x.drawImage(secImg,0,0);
+  x.globalCompositeOperation="multiply";
+  x.fillStyle="#ffff00";          // keep red and green, zero blue
+  x.fillRect(0,0,w,h);
+  markerCache=c;
+  return c;
+}
+
 function drawSec(){
   const c=el("cSec"), x=c.getContext("2d"); if(!secImg.naturalWidth) return;
   const g=secGeom();
   c.width=g.D; c.height=g.D;
   x.clearRect(0,0,g.D,g.D);
   x.save(); x.translate(g.D/2,g.D/2); x.rotate(g.a);
-  x.drawImage(secImg, -g.w/2, -g.h/2);
+  // Hiding DAPI means drawing the blue-stripped copy instead - see markerOnly().
+  x.drawImage((RGBMODE && !dapiOn) ? markerOnly() : secImg, -g.w/2, -g.h/2);
   x.restore();
-  // Hiding DAPI = removing blue. Multiplying the whole canvas by yellow keeps
-  // red and green - the marker, whichever channel it is in - and zeroes blue.
-  // Black background multiplies to black, so only the section is affected. It
-  // runs here, before the overlays, so the seeds and landmarks keep their own
-  // colours instead of being tinted with the image.
-  if(RGBMODE && !dapiOn){
-    x.save();
-    x.globalCompositeOperation = "multiply";
-    x.fillStyle = "#ffff00";
-    x.fillRect(0,0,g.D,g.D);
-    x.restore();
-  }
   const s=st(active), T=transform(s.pairs);
   if(T){                                   // warped atlas seeds - the deliverable
     const P=PLATES[s.plate];
