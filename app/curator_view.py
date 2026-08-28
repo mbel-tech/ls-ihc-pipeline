@@ -23,9 +23,13 @@ import socketserver
 import threading
 
 from PySide6.QtCore import QUrl, Signal
-from PySide6.QtWebEngineCore import QWebEngineDownloadRequest
+from PySide6.QtWebChannel import QWebChannel
+from PySide6.QtWebEngineCore import (
+    QWebEngineDownloadRequest, QWebEngineScript, QWebEngineProfile)
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QWidget
+
+import state as ST
 
 
 class _QuietHandler(http.server.SimpleHTTPRequestHandler):
@@ -69,6 +73,7 @@ class CuratorView(QWidget):
         self.server = server
         self.out_root = out_root
         self.rel = None
+        self.store = ST.CurationStore(out_root)
 
         self.view = QWebEngineView(self)
         self.title = QLabel("", self)
@@ -91,6 +96,50 @@ class CuratorView(QWidget):
 
         prof = self.view.page().profile()
         prof.downloadRequested.connect(self._on_download)
+        self._install_state_bridge()
+
+    # ---- curation state ---------------------------------------------------
+
+    def _install_state_bridge(self):
+        """Seed the page's storage from disk, and mirror its writes back.
+
+        The seeding script has to run at DocumentCreation - before the page's own
+        script reads localStorage - or the curator starts empty and then
+        overwrites the file with that emptiness on the first save.
+
+        qwebchannel.js is Qt's own, loaded from the resource bundle rather than
+        shipped as a copy, so it cannot drift from the QWebChannel on this side.
+        """
+        page = self.view.page()
+        self.bridge = ST.Bridge(
+            self.store,
+            on_save=lambda k, n: self.logged.emit(f"saved   {k}  ({n/1024:.1f} KB)"))
+        self.channel = QWebChannel(page)
+        self.channel.registerObject("lsbridge", self.bridge)
+        page.setWebChannel(self.channel)
+
+        from PySide6.QtCore import QFile, QIODevice
+        f = QFile(":/qtwebchannel/qwebchannel.js")
+        qwc = ""
+        if f.open(QIODevice.ReadOnly):
+            qwc = bytes(f.readAll()).decode("utf-8")
+            f.close()
+
+        src = qwc + "\n" + ST.seed_script(self.store)
+        sc = QWebEngineScript()
+        sc.setName("ls_state_bridge")
+        sc.setInjectionPoint(QWebEngineScript.DocumentCreation)
+        sc.setWorldId(QWebEngineScript.MainWorld)
+        sc.setRunsOnSubFrames(False)
+        sc.setSourceCode(src)
+        page.scripts().insert(sc)
+
+    def refresh_seed(self):
+        """Rebuild the injected script so a later import is picked up on reload."""
+        page = self.view.page()
+        for sc in page.scripts().find("ls_state_bridge"):
+            page.scripts().remove(sc)
+        self._install_state_bridge()
 
     # ---- downloads --------------------------------------------------------
 

@@ -47,3 +47,7 @@ artifacts/
 colab/out/
 colab/*.csv
 censor/
+
+# Desktop app build output
+build/
+dist/

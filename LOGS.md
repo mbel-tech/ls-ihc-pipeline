@@ -1804,6 +1804,73 @@ byte-identical copies of zip entries.
 each time, so `LS45_8a` has 10 scenes and `LS45_8b` has 12. Pairing must go through stage
 coordinates, which is why Stage 2 exists at all.
 
+## 2026-08-28 — Desktop app: the pipeline in one window
+
+**Changed:** `app/` — a PySide6 shell listing the stages with status read from
+disk, running them on a worker thread with output streaming to a log pane, and
+hosting the three HTML curators embedded. Plus an **Add slides** screen, curation
+state in files, and a PyInstaller spec.
+
+**Why:** running this pipeline meant knowing which of ~40 scripts to invoke, in
+what order, from which of two Python environments, then opening three curators by
+hand. That knowledge lived in `run_all.sh` and in one person's head.
+
+**Stages run in-process, not as subprocesses.** They have numeric-prefixed names
+that cannot be imported normally, so they are loaded by file path — the same
+importlib trick `04o` already uses for `04a_reformat`. That is what allows a
+single bundled interpreter to be the whole application: a frozen build has no
+external python to shell out to. Verified by regenerating `roi_curator.html`
+through the runner and diffing against the CLI output — byte-identical.
+
+**`SystemExit` is an outcome, not a crash.** Several stages exit with a message
+rather than raising, which is a deliberate informative refusal. Caught and
+reported as a failed stage; both branches checked, since argparse exits 0 for
+`--help` and 2 for a bad flag.
+
+**The hardlink plan was wrong, and probing caught it before anything was built on
+it.** The plan had scattered slide files hardlinked into `out_root` at no cost.
+`D:` is exFAT: `os.link` and `os.symlink` both fail there with a bare "Incorrect
+function". Link support is now measured by making a link and seeing, never
+inferred from a drive letter or filesystem name.
+
+Better, the case that motivated it did not need links at all. Choosing files
+rather than a folder means "process these, not the whole folder" — an allowlist.
+Config gained an optional `source_files`, honoured in
+`00_manifest.discover_sources()`; absent or empty behaves exactly as before (444
+entries either way). Nothing is copied or moved. Copying survives only for
+genuinely scattered files, quoted in GB, and is the only path that asks twice.
+The dataset is 229 files and 785.5 GB.
+
+**Curation state moved to files without touching the curators.** An earlier
+design had each of the three generators write through a bridge, which meant
+editing three tools that work. Wrapping `Storage.prototype.setItem` in an
+injected document-creation script does the same job from outside: every existing
+`localStorage.setItem` is mirrored to `<out_root>/curation/<key>.json`, and a
+page opened in a plain browser is untouched by construction. Reads need no bridge
+either — the store is seeded into `localStorage` before the page's own script
+runs, so the pages stay synchronous. Round trip verified both directions.
+
+Writes are queued until the QWebChannel handshake completes. The page saves on
+the user's first decision, which easily beats an asynchronous connect; without
+the queue those early saves would reach `localStorage` and never reach disk.
+
+**Curators are served over http, never `file://`.** Plate images resolve through
+`../atlas/`, and a `file://` page throws `SecurityError` from `getImageData` —
+the bug that once left two panels blank. Downloads are intercepted so Export
+lands in `reformatted/` rather than being silently discarded, which is what an
+unhandled `downloadRequested` does.
+
+**Two bugs the tests found:** a `QMenu` held only in a local variable was
+collected, leaving the menu bar pointing at a deleted C++ object; and a "parity
+failed" result that turned out to be an earlier test overwriting its own
+baseline, not a real difference.
+
+**Not wrapped:** the Fiji tile-field chain, steps 3–8. Already complete for this
+dataset, and `01_overviews` works without the field. Listed greyed out with the
+reason rather than hidden, so a fresh dataset does not silently miss them.
+
+---
+
 ## 2026-08-19 - atlas plate set switched to `plates_final`, section counts enforced
 
 **The two plate sets collide.** `plates/` (101), `plates_merged/` (47) and

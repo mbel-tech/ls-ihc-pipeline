@@ -19,3 +19,10 @@ pymupdf>=1.24
 # Affine + B-spline registration (BrainJ, AnNoBrainer). abi3 wheel: works on 3.14.
 itk-elastix>=0.25
 opencv-python-headless
+
+# Desktop app (app/). QtWebEngine hosts the existing HTML curators unchanged,
+# so the curation tools are not reimplemented.
+PySide6>=6.9
+
+# Only needed to build the bundled .exe, not to run from source.
+pyinstaller>=6.10

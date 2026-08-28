@@ -11,10 +11,13 @@ import os
 from PySide6.QtCore import QObject, Qt, QThread, Signal
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
-    QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QMainWindow, QMessageBox,
-    QPlainTextEdit, QPushButton, QSplitter, QStackedWidget, QVBoxLayout, QWidget)
+    QFileDialog, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QMainWindow,
+    QMessageBox, QPlainTextEdit, QPushButton, QSplitter, QStackedWidget,
+    QVBoxLayout, QWidget)
 
 import stages as S
+import state as ST
+from config_dialog import ConfigDialog
 from curator_view import CuratorView, LocalServer
 from import_slides import ImportScreen
 from runner import Runner
@@ -106,12 +109,88 @@ class MainWindow(QMainWindow):
         split.setStretchFactor(1, 1)
         self.setCentralWidget(split)
 
+        self._build_menu()
         self.statusBar().showMessage(f"out_root  {self.out_root}")
         self._build_list()
         self.refresh()
         self._log(f"repo    {repo_root}")
         self._log(f"out     {self.out_root}")
         self._log(f"serving {self.out_root} on 127.0.0.1:{self.server.port}")
+        # Written every start so it tracks the key list, and so it is sitting
+        # next to the curators when someone needs it rather than being something
+        # they have to be told to generate.
+        try:
+            ST.write_export_page(self.out_root)
+        except OSError as e:
+            self._log(f"could not write the state export page: {e}")
+        held = ST.CurationStore(self.out_root).all_present()
+        self._log(f"curation state on disk: "
+                  + (", ".join(held) if held else "none yet"))
+
+    # ---- menu -------------------------------------------------------------
+
+    def _build_menu(self):
+        """Kept on self deliberately.
+
+        addMenu returns a QMenu that Python owns; without a reference here the
+        wrapper is collected and the underlying C++ menu goes with it, so the
+        menu bar ends up holding a deleted object. Same for the actions.
+        """
+        self._menu = self.menuBar().addMenu("&Pipeline")
+        self._actions = []
+        for label, slot in (("Settings…", self._settings),
+                            (None, None),
+                            ("Import curation state…", self._import_state),
+                            ("Where is my curation state?", self._explain_state)):
+            if label is None:
+                self._menu.addSeparator()
+                continue
+            act = self._menu.addAction(label)
+            act.triggered.connect(slot)
+            self._actions.append(act)
+
+    def _settings(self):
+        if ConfigDialog(self.repo_root, self).exec():
+            self.out_root = self._config()["out_root"]
+            self.refresh()
+            self._log("config updated - stage modules will reload on next run")
+
+    def _import_state(self):
+        """Take over curation done in a browser, once.
+
+        The app cannot read another application's localStorage, so this is the
+        only honest route: the browser exports, the app imports.
+        """
+        path, _ = QFileDialog.getOpenFileName(
+            self, "curation_state.json exported from your browser",
+            self.out_root, "JSON (*.json)")
+        if not path:
+            return
+        try:
+            keys = ST.CurationStore(self.out_root).import_bundle(path)
+        except (OSError, ValueError) as e:
+            QMessageBox.warning(self, "Could not import", str(e))
+            return
+        self.curator.refresh_seed()
+        self._log(f"imported curation state: {', '.join(keys) or 'nothing'}")
+        QMessageBox.information(
+            self, "Curation state imported",
+            f"{len(keys)} key(s) imported into\n"
+            f"{os.path.join(self.out_root, 'curation')}\n\n"
+            "Reopen a curator to see it.")
+
+    def _explain_state(self):
+        page = os.path.join(self.out_root, "reformatted",
+                            "export_curation_state.html")
+        QMessageBox.information(
+            self, "Curation state",
+            "Decisions you make in this app are written to\n"
+            f"{os.path.join(self.out_root, 'curation')}\n\n"
+            "Curation you did earlier in a web browser is still in that "
+            "browser's storage, which no application can read from outside. "
+            "To bring it over, open this page in that browser:\n\n"
+            f"{page}\n\n"
+            "then use Pipeline > Import curation state.")
 
     # ---- helpers ----------------------------------------------------------
 

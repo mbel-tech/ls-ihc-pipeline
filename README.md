@@ -76,6 +76,63 @@ Every stage is resumable — re-running skips completed work.
 
 ---
 
+## Desktop app
+
+```bash
+pip install -r requirements.txt
+run_app.bat                            # or: python -m app
+```
+
+One window: the pipeline down the left with status read from disk, a log pane,
+and the three HTML curators embedded. The curator pages themselves are unchanged
+— the app hosts them, it does not reimplement them, and opening the same file in
+a browser still works exactly as before.
+
+**Add slides** takes a folder, or individual `.czi` files. A folder sets
+`source_dir` and moves nothing. Picking individual files from one folder writes
+an allowlist to `source_files` in config, which `00_manifest.discover_sources()`
+honours — so "process these, not the whole folder" costs no copying. Files
+genuinely scattered across folders are hardlinked where the filesystem allows it;
+the slide drive here is exFAT, which supports neither hardlinks nor symlinks, so
+that case offers a copy and states the size first. The screen flags any filename
+that does not match the manifest's grammar, because such a file is invisible to
+every stage and is otherwise dropped in silence.
+
+**Curation state.** Decisions made in the app are written to
+`<out_root>/curation/<key>.json`, one file per curator, atomically. The app seeds
+the page's `localStorage` from those files before the page's own script runs, and
+mirrors every write back. Curation done earlier in a web browser lives in that
+browser's storage, which no other application can read: open
+`<out_root>/reformatted/export_curation_state.html` in that browser, save the
+JSON, then use **Pipeline → Import curation state**.
+
+### What the app does not run
+
+The Fiji tile-field chain — steps 3–8 of `run_all.sh`. Those are a one-time
+instrument characterisation, they are already complete for this dataset
+(`qc/flatfield/tilefield_c*.npy`), and `01_overviews` applies the field it finds
+and works without one. They stay in `run_all.sh`, and the app lists them greyed
+out with the reason rather than hiding them.
+
+### Python version
+
+The app runs the stages **in-process**, so one interpreter has to satisfy all of
+them. `pylibCZIrw` publishes no cp314 wheel, so the overview stage needs Python
+**3.13 or earlier**. Running from source on 3.14 works for everything except that
+stage; a bundled build must be made on 3.13 to include it.
+
+### Building the .exe
+
+```bash
+pyinstaller app/lsapp.spec --noconfirm
+```
+
+One-folder, roughly 400 MB. Not one-file: QtWebEngine runs a helper process that
+must find its resources on disk, and a one-file build leaves the curator panes
+blank.
+
+---
+
 ## Design notes
 
 Things that are non-obvious, and that took measurement to get right.
