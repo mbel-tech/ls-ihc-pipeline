@@ -91,15 +91,30 @@ def discover_sources():
 
     `source` is either "LOOSE" or the zip filename; `opener` returns a fresh
     binary file object positioned at 0.
+
+    An optional `source_files` list in config narrows this to named files. That
+    is how "process these slides, not the whole folder" is expressed: the files
+    stay where they are and the rest of the folder is ignored. Copying or linking
+    a subset into its own directory would say the same thing at the cost of
+    moving hundreds of gigabytes, and the slide drive here is exFAT, which
+    supports neither hardlinks nor symlinks.
     """
+    only = CONFIG.get("source_files") or None
+    if only:
+        only = {os.path.basename(n) for n in only}
+
     entries = []
 
     for path in sorted(glob.glob(os.path.join(SOURCE_DIR, "*.czi"))):
         name = os.path.basename(path)
+        if only and name not in only:
+            continue
         entries.append(("LOOSE", name, path, (lambda p: (lambda: open(p, "rb")))(path)))
 
     for zpath in sorted(glob.glob(os.path.join(SOURCE_DIR, "*.zip"))):
         zname = os.path.basename(zpath)
+        if only and zname not in only:
+            continue
         try:
             zf = zipfile.ZipFile(zpath)
         except zipfile.BadZipFile:
