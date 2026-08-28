@@ -7,6 +7,7 @@ place and a new setting added there appears here without editing this file.
 import json
 import os
 import shutil
+import sys
 
 from PySide6.QtWidgets import (
     QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QHBoxLayout, QLabel,
@@ -55,7 +56,13 @@ class ConfigDialog(QDialog):
         super().__init__(parent)
         self.repo_root = repo_root
         self.path = os.path.join(repo_root, "config.json")
-        self.example = os.path.join(repo_root, "config.example.json")
+        # Frozen, the template ships inside the bundle; from source it is beside
+        # config.json. Try both so first run works either way.
+        cand = [os.path.join(repo_root, "config.example.json")]
+        if getattr(sys, "frozen", False):
+            cand.insert(0, os.path.join(getattr(sys, "_MEIPASS", ""),
+                                        "config.example.json"))
+        self.example = next((c for c in cand if os.path.exists(c)), cand[-1])
         self.setWindowTitle("Pipeline settings")
         self.resize(720, 260)
 

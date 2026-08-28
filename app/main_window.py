@@ -41,11 +41,13 @@ class _Job(QObject):
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, repo_root):
+    def __init__(self, repo_root, scripts_dir=None):
         super().__init__()
         self.repo_root = repo_root
         self.config_path = os.path.join(repo_root, "config.json")
-        self.scripts_dir = os.path.join(repo_root, "scripts")
+        # Frozen, the stages ship inside the bundle while config.json sits beside
+        # the executable, so the two roots are not the same folder.
+        self.scripts_dir = scripts_dir or os.path.join(repo_root, "scripts")
         self.runner = Runner(self.scripts_dir, self.config_path)
         self.out_root = self._config()["out_root"]
         self.server = LocalServer(self.out_root)
