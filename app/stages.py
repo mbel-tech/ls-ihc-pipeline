@@ -149,12 +149,24 @@ STAGES = [
           blurb="Orders curation so any prefix is a usable dataset: every animal "
                 "advanced to the same fraction, spread across each brain."),
 
-    Stage("rgb", "Build colour composites", "Curation",
+    # One stage per channel. The ROI curator carries both, so building only one
+    # leaves half its sections falling back to greyscale - and the curator says
+    # nothing about why, because a section without a composite is a legitimate
+    # state. Two rows make the gap visible in the status list instead.
+    Stage("rgb_perk", "Colour composites - pERK", "Curation",
           script="04o_section_rgb.py", argv=["--marker", "AF568", "--all"],
           outputs=["reformatted/sections_AF568_rgb"],
           needs=["reformat"],
           blurb="DAPI blue plus the marker, in the reformatted frame, so the "
-                "curator shows the channel being quantified."),
+                "curator shows the channel being quantified. Skips composites "
+                "that already exist."),
+
+    Stage("rgb_pcna", "Colour composites - PCNA", "Curation",
+          script="04o_section_rgb.py", argv=["--marker", "AF488", "--all"],
+          outputs=["reformatted/sections_rgb"],
+          needs=["reformat"],
+          blurb="The same for the PCNA channel, which the curator offers "
+                "alongside pERK."),
 
     Stage("rotation_curator", "Rotation curator", "Curation",
           script="04d_rotation_curator.py",
@@ -176,7 +188,7 @@ STAGES = [
           argv=["--marker", "AF568", "--worklist", "--rgb"],
           outputs=["reformatted/roi_curator.html"],
           curator="reformatted/roi_curator.html",
-          needs=["worklist", "rgb", "atlas_extract"],
+          needs=["worklist", "rgb_perk", "rgb_pcna", "atlas_extract"],
           blurb="Assign a plate, place numbered landmarks, warp the atlas "
                 "regions onto the section, export the three CSVs."),
 ]
