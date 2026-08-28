@@ -24,9 +24,12 @@ datas = [
     (os.path.join(REPO, "config.example.json"), "."),
 ]
 binaries, hiddenimports = [], []
-for pkg in ("PySide6",):
-    d, b, h = collect_all(pkg)
-    datas += d; binaries += b; hiddenimports += h
+
+# NOT collect_all("PySide6"). That drags in every Qt module built into the
+# wheel - Qt3D, Charts, Quick3D, Multimedia, the lot - which made the build
+# crawl through hooks for modules this app never imports. PyInstaller's own
+# PySide6 hooks already collect what the imports below actually need, and
+# QtWebEngine's resources come with them.
 
 # pylibCZIrw carries a compiled extension and data files it will not find on its
 # own. Absent (a 3.14 build) this is simply skipped rather than failing here.
@@ -45,7 +48,20 @@ a = Analysis(
         "PySide6.QtWebEngineWidgets", "PySide6.QtWebEngineCore",
         "PySide6.QtWebChannel", "PySide6.QtNetwork", "PySide6.QtPrintSupport",
     ],
-    excludes=["tkinter", "matplotlib", "pytest"],
+    # Qt modules nothing here imports. Named explicitly because PySide6's own
+    # hooks are happy to pull siblings in, and each one costs tens of MB.
+    excludes=[
+        "tkinter", "matplotlib", "pytest",
+        "PySide6.Qt3DCore", "PySide6.Qt3DRender", "PySide6.Qt3DInput",
+        "PySide6.Qt3DLogic", "PySide6.Qt3DAnimation", "PySide6.Qt3DExtras",
+        "PySide6.QtCharts", "PySide6.QtDataVisualization", "PySide6.QtGraphs",
+        "PySide6.QtQuick", "PySide6.QtQuick3D", "PySide6.QtQml",
+        "PySide6.QtMultimedia", "PySide6.QtMultimediaWidgets",
+        "PySide6.QtBluetooth", "PySide6.QtNfc", "PySide6.QtSerialPort",
+        "PySide6.QtDesigner", "PySide6.QtTest", "PySide6.QtSql",
+        "PySide6.QtPdf", "PySide6.QtPdfWidgets", "PySide6.QtSpatialAudio",
+        "PySide6.QtScxml", "PySide6.QtSensors", "PySide6.QtWebSockets",
+    ],
     noarchive=False,
 )
 pyz = PYZ(a.pure)

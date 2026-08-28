@@ -9,7 +9,7 @@ import json
 import os
 
 from PySide6.QtCore import QObject, Qt, QThread, Signal
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QColor, QFont
 from PySide6.QtWidgets import (
     QFileDialog, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QMainWindow,
     QMessageBox, QPlainTextEdit, QPushButton, QSplitter, QStackedWidget,
@@ -234,10 +234,9 @@ class MainWindow(QMainWindow):
                 continue
             st = S.BY_ID[sid]
             state = self._state_of(st)
-            it.setText(f"  {'●'} {st.title}")
-            it.setForeground(Qt.GlobalColor.white)
-            from PySide6.QtGui import QColor
+            it.setText(f"  ● {st.title}")
             it.setForeground(QColor(DOT[state]))
+            it.setToolTip(st.cli_only or st.blurb)
         self.statusBar().showMessage(f"out_root  {self.out_root}")
 
     # ---- selection --------------------------------------------------------
