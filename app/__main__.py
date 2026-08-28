@@ -44,6 +44,11 @@ def _report(exc_type, exc, tb):
     except OSError:
         pass
     sys.stderr.write(text)
+    # Not under --self-test: a modal dialog with nobody to dismiss it turns a
+    # crash into a hang, which is strictly worse than the silent exit this
+    # reporter exists to replace.
+    if "--self-test" in sys.argv:
+        return
     try:
         from PySide6.QtWidgets import QApplication, QMessageBox
         if QApplication.instance():
@@ -73,10 +78,53 @@ def main():
         from main_window import MainWindow
         w = MainWindow(REPO, scripts_dir=SCRIPTS)
         w.show()
+
+        if "--self-test" in sys.argv:
+            return _self_test(app, w)
+
         return app.exec()
     except BaseException as e:                              # noqa: BLE001
         _report(type(e), e, e.__traceback__)
         return 1
+
+
+def _self_test(app, w):
+    """Load a curator, report whether it rendered, exit.
+
+    A frozen build cannot be clicked through from a script, and the window
+    appearing proves nothing about QtWebEngine - the helper process, its
+    resources and the local server are all still untested at that point. This is
+    how a build is checked on a machine nobody is sitting at, including a
+    colleague's after they download it.
+    """
+    from PySide6.QtCore import QTimer
+    import stages as S
+
+    results = {}
+    target = next((st for st in S.STAGES if st.curator), None)
+
+    def finish():
+        for name, ok in results.items():
+            print(f"  {'PASS' if ok else 'FAIL'}  {name}")
+        app.exit(0 if all(results.values()) else 1)
+
+    results["window"] = w.isVisible()
+    results["local server"] = bool(w.server.port)
+    results["stages listed"] = w.list.count() > 5
+
+    if target is None:
+        results["curator"] = False
+        QTimer.singleShot(0, finish)
+        return app.exec()
+
+    def loaded(ok):
+        results["curator renders (" + target.curator + ")"] = bool(ok)
+        QTimer.singleShot(300, finish)
+
+    w.curator.view.loadFinished.connect(loaded)
+    w.curator.show_page(target.curator, target.title)
+    QTimer.singleShot(45000, finish)          # never hang a CI-style run
+    return app.exec()
 
 
 if __name__ == "__main__":
