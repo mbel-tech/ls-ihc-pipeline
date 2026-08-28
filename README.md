@@ -136,9 +136,21 @@ one that has to be able to read CZIs.
 so it stays visible and editable. On first run, with no config there, the setup
 dialog asks for the three paths and writes it.
 
-One-folder, roughly 400 MB. Not one-file: QtWebEngine runs a helper process that
+One-folder, roughly 500 MB. Not one-file: QtWebEngine runs a helper process that
 must find its resources on disk, and a one-file build leaves the curator panes
 blank.
+
+### Checking a build
+
+```bash
+"LS pipeline.exe" --self-test
+```
+
+Opens the window, starts the local server and loads a curator, then reports
+PASS/FAIL per check and exits. Results go to `lsapp-selftest.log` beside the
+executable as well as to stdout, because a windowed build has no console. This
+is how to confirm a copy works on a machine you are not sitting at — a window
+appearing proves nothing about whether QtWebEngine actually renders.
 
 ---
 
