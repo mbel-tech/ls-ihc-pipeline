@@ -119,13 +119,22 @@ out with the reason rather than hiding them.
 The app runs the stages **in-process**, so one interpreter has to satisfy all of
 them. `pylibCZIrw` publishes no cp314 wheel, so the overview stage needs Python
 **3.13 or earlier**. Running from source on 3.14 works for everything except that
-stage; a bundled build must be made on 3.13 to include it.
+stage.
 
 ### Building the .exe
 
+Build on 3.13 so the CZI reader is inside the bundle. A venv keeps this separate
+from whatever the main environment is:
+
 ```bash
-pyinstaller app/lsapp.spec --noconfirm
+py -3.13 -m venv work/appenv
+work/appenv/Scripts/python -m pip install -r requirements.txt -r requirements-czi.txt
+work/appenv/Scripts/pyinstaller app/lsapp.spec --noconfirm
 ```
+
+`config.json` is read from **beside the executable**, not from inside the bundle,
+so it stays visible and editable. On first run, with no config there, the setup
+dialog asks for the three paths and writes it.
 
 One-folder, roughly 400 MB. Not one-file: QtWebEngine runs a helper process that
 must find its resources on disk, and a one-file build leaves the curator panes
