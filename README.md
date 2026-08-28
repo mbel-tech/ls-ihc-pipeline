@@ -123,14 +123,14 @@ stage.
 
 ### Building the .exe
 
-Build on 3.13 so the CZI reader is inside the bundle. A venv keeps this separate
-from whatever the main environment is:
-
 ```bash
-py -3.13 -m venv work/appenv
-work/appenv/Scripts/python -m pip install -r requirements.txt -r requirements-czi.txt
-work/appenv/Scripts/pyinstaller app/lsapp.spec --noconfirm
+build_app.bat
 ```
+
+It creates a Python 3.13 venv under `work/appenv` on first run and reuses it
+afterwards. **3.13, not 3.14**: `pylibCZIrw` publishes no cp314 wheel, and since
+the app runs its stages in-process, the interpreter that freezes the app is the
+one that has to be able to read CZIs.
 
 `config.json` is read from **beside the executable**, not from inside the bundle,
 so it stays visible and editable. On first run, with no config there, the setup
