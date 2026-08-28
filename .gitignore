@@ -51,3 +51,7 @@ censor/
 # Desktop app build output
 build/
 dist/
+
+# Self-test output, written beside the executable at run time
+lsapp-selftest.log
+lsapp-crash.log
