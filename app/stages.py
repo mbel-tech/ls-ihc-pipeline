@@ -60,7 +60,7 @@ class Stage:
 
 
 # Groups, in the order they appear in the sidebar.
-GROUPS = ["Slides", "Extraction", "Atlas", "Curation"]
+GROUPS = ["Slides", "Extraction", "Atlas", "Curation", "Quantification"]
 
 FIJI_REASON = ("needs Fiji, which the app does not drive. Already complete for "
                "this dataset - qc/flatfield/tilefield_c*.npy are on disk. Run "
@@ -191,6 +191,16 @@ STAGES = [
           needs=["worklist", "rgb_perk", "rgb_pcna", "atlas_extract"],
           blurb="Assign a plate, place numbered landmarks, warp the atlas "
                 "regions onto the section, export the three CSVs."),
+
+    # ---- Quantification ---------------------------------------------------
+    Stage("roi_geometry", "Place the ROIs on the slide", "Quantification",
+          script="05a_roi_geometry.py",
+          outputs=["reformatted/roi_geometry.csv", "reformatted/roi_boxes.csv"],
+          needs=["roi_curator"],
+          blurb="Inverts the reformat transform, so an ROI drawn on the 256 px "
+                "normalised frame becomes a rectangle in CZI pixels. Reads the "
+                "roi_regions.csv the curator exported; --verify checks the map "
+                "against the transform it inverts."),
 ]
 
 BY_ID = {s.sid: s for s in STAGES}

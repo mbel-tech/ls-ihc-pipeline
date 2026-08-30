@@ -107,6 +107,16 @@ step 12 "extract the atlas plates and seeds" \
 step 13 "infer which fluorophore is pERK and which is PCNA" \
   python 00c_channel_identity.py || true
 
+# The 04-series curation chain and the quantification that follows it are not
+# run here: they need the operator between the steps - assigning plates, placing
+# ROIs - so there is nothing to batch. 05a is the exception worth naming, since
+# it is the first step after curation and takes no decisions of its own.
+#
+#   python 05a_roi_geometry.py --verify        check the map, run this first
+#   python 05a_roi_geometry.py <roi_regions.csv>
+step 14 "place the curated ROIs on the slide (needs a curator export)" \
+  python 05a_roi_geometry.py || true
+
 printf '\n========================================================================\n'
 printf 'PIPELINE COMPLETE\n'
 printf '  contact sheets : %s/contactsheets/\n' "$ROOT"

@@ -184,7 +184,8 @@ def _stretch_to_grid(pi, pm, pa, grid=GRID):
 
 
 def reformat(path, light_background, extra_angle=0.0, flip=False, artifact=None,
-             censor=None, invert=False, companion=None, render_scale=1):
+             censor=None, invert=False, companion=None, render_scale=1,
+             report=None):
     """Return (normalised grayscale, normalised mask, angle applied).
 
     `companion` is a second image - the marker channel - carried through the
@@ -193,6 +194,21 @@ def reformat(path, light_background, extra_angle=0.0, flip=False, artifact=None,
     is DAPI for a section, because the marker channel is a sparse signal and a
     poor silhouette. Passing it appends a sixth element to the return; omitting
     it leaves the return exactly five long, as every existing caller expects.
+
+    `report`, if given a dict, is filled with the geometry this call applied:
+    source size, working grid, angle, flip, crop origin, pad offsets and output
+    grid. That is everything needed to map a point in the normalised output back
+    to a pixel of the source overview, which is how an ROI drawn on the 256 grid
+    becomes a rectangle in the CZI (see 05a_roi_geometry.py).
+
+    It is an OUT parameter rather than an extra return value because the return
+    is already 5 or 6 elements depending on `companion`, and every caller unpacks
+    it positionally; making the length depend on two independent flags is how
+    that starts going wrong. Callers that pass nothing see no change.
+
+    The numbers must come from the run that produced the image the operator
+    annotated. The mask decides the angle, the angle decides the crop, so
+    recomputing any of them separately would move every ROI on the section.
 
     `extra_angle` is the curator's manual correction, in degrees. It is folded
     into the automatic angle and applied in the SAME rotation, for two reasons.
@@ -208,6 +224,7 @@ def reformat(path, light_background, extra_angle=0.0, flip=False, artifact=None,
         img = Image.open(path).convert("L")
     except OSError:
         return None
+    src_w, src_h = img.size
     work = np.asarray(img.resize((WORK_SIZE, WORK_SIZE), Image.BILINEAR)).astype(np.float32)
     comp = None
     if companion is not None:
@@ -247,6 +264,7 @@ def reformat(path, light_background, extra_angle=0.0, flip=False, artifact=None,
     # it has to mean the same thing. Raising WORK_SIZE instead would change the
     # mask, and with it the angle and the bounding box.
     S = int(render_scale)
+    work_size = WORK_SIZE * S
     if S > 1:
         big = WORK_SIZE * S
         work = np.asarray(img.resize((big, big), Image.BILINEAR)).astype(np.float32)
@@ -317,6 +335,24 @@ def reformat(path, light_background, extra_angle=0.0, flip=False, artifact=None,
         pc[oy:oy + h, ox:ox + w] = crop_c
 
     grid = GRID * S
+    if report is not None:
+        # The forward chain, in order. Composed and inverted by 05a.
+        #
+        # Note src_w/src_h separately: the resize to a SQUARE working grid is
+        # anisotropic whenever the scan box is not square, which it rarely is.
+        # A circle drawn on the output is therefore an ellipse on the slide, and
+        # anything that carries a single radius forward is wrong.
+        report.update({
+            "src_w": int(src_w), "src_h": int(src_h),
+            "work_size": int(work_size),
+            "angle": float(angle % 360.0),
+            "flip": bool(flip),
+            "rot_h": int(rot_mask.shape[0]), "rot_w": int(rot_mask.shape[1]),
+            "x0": int(x0), "y0": int(y0),
+            "crop_w": int(w), "crop_h": int(h),
+            "side": int(side), "ox": int(ox), "oy": int(oy),
+            "grid": int(grid),
+        })
     out_m = np.asarray(Image.fromarray(pm.astype(np.uint8) * 255).resize((grid, grid), Image.BILINEAR)) > 127
 
     out_i = _stretch_to_grid(pi, pm, pa, grid)
