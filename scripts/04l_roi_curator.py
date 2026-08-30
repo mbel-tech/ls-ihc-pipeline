@@ -127,8 +127,14 @@ Three outputs, because there are three separable decisions
                      `plate_only` (plate chosen, not landmarked), `no_roi`
                      (deliberately marked as having nothing to measure) or
                      `excluded`.
-`roi_landmarks.csv`  every landmark pair, with its residual. Registered only.
-`roi_regions.csv`    warped seed positions in the section's reformatted frame.
+`roi_landmarks.csv`  every landmark pair, with its residual - blank where there
+                     is no fit to measure one against.
+`roi_regions.csv`    one row per ROI actually placed, in the section's
+                     reformatted frame, with the radius it was placed at.
+                     Nothing here is positioned by the transform. `roi_kind`
+                     separates the real ROIs from the background discs, which
+                     carry identical columns because everything downstream
+                     measures them identically.
 
 **A plate assignment is a judgement in its own right.** An earlier version wrote
 nothing for a section with fewer than three landmarks, which discarded exactly
@@ -1954,7 +1960,10 @@ def main():
     print("the working subset selects itself.")
     print()
     print("Export writes roi_landmarks.csv (every pair, with its residual) and")
-    print("roi_regions.csv (warped seed positions in the reformatted section frame).")
+    print("roi_regions.csv (one row per ROI placed, at the radius it was placed")
+    print("at - nothing positioned by the transform). Background discs share that")
+    print("file and are told apart by roi_kind, because they are measured the")
+    print("same way: what the detector finds in them is its false-positive rate.")
 
 
 if __name__ == "__main__":
