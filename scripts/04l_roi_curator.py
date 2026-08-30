@@ -881,6 +881,7 @@ addEventListener("mousemove", e=>{
   const per = e.shiftKey ? DEG_PER_PX_FINE : DEG_PER_PX;   // shift = fine
   draftRot = ((rotDrag.rot + dx*per) % 360 + 360) % 360;
   drawSec(); status();
+  paintCellRot(active, draftRot);       // the strip follows the drag, not the release
 });
 // The tilt commits itself on release. An angle the operator has to remember to
 // press a button for is an angle that gets lost - and losing it was silent,
@@ -1231,12 +1232,40 @@ function counts(){
 }
 // Update ONE strip cell. Every interaction used to rebuild all 87 cells and
 // reload their images, which is why it felt slow even when it was not recursing.
+// The strip preview turns with the section. A tilt set in the big view but not
+// reflected in the strip leaves the two disagreeing about what a section looks
+// like, and the strip is the thing being scanned when hunting for one.
+//
+// Read S directly rather than through st(): this runs for every visible cell on
+// every render, and st() would create a state entry for each one, turning "shown
+// in the strip" into "has a record".
+function rotOf(uid){ return (S[uid] || {}).rot || 0; }
+
+// A square rotated inside a square box overflows it by (|cos|+|sin|), so scale
+// by the inverse to keep the whole section visible. Same reasoning as the main
+// canvas being the diagonal of the image - nothing gets cropped by turning it -
+// applied to the box the strip already has.
+function rotCss(deg){
+  if(!deg) return "";
+  const a = deg * Math.PI / 180;
+  const k = 1 / (Math.abs(Math.cos(a)) + Math.abs(Math.sin(a)));
+  return `rotate(${deg}deg) scale(${k.toFixed(4)})`;
+}
+
+// Just the transform, for the live update during a drag - paintCell() also
+// rewrites classes and recounts, which is far too much to do per mousemove.
+function paintCellRot(uid, deg){
+  const img = document.querySelector(`[data-uid="${CSS.escape(uid)}"] img`);
+  if(img) img.style.transform = rotCss(deg === undefined ? rotOf(uid) : deg);
+}
+
 function paintCell(uid){
   const c=document.querySelector(`[data-uid="${CSS.escape(uid)}"]`);
   if(!c) return;
   c.className = "cell " + cellClass(uid) + (active===uid ? " active" : "");
   const cap=c.querySelector(".cap");
   if(cap) cap.innerHTML = `${DATA.find(d=>d.uid===uid).order}<br>${cellTag(uid)}`;
+  paintCellRot(uid);
   counts();
 }
 // Full rebuild. Only on load and on animal change - not on interaction.
@@ -1246,7 +1275,7 @@ function render(){
   el("strip").innerHTML = list.map(d=>
     `<div class="cell ${cellClass(d.uid)} ${active===d.uid?"active":""}"
       data-uid="${d.uid}" onclick="select('${d.uid}')">
-      <img src="${d.img}" loading="lazy" alt="">
+      <img src="${d.img}" loading="lazy" alt="" style="transform:${rotCss(rotOf(d.uid))}">
       <div class="cap">${d.order}<br>${cellTag(d.uid)}</div></div>`).join("");
   if(active && !list.some(d=>d.uid===active)) active=null;
   if(list.length) select(active && list.some(d=>d.uid===active) ? active : list[0].uid, true);
