@@ -30,6 +30,16 @@ REPO = os.path.dirname(HERE)
 REAL = os.path.join(REPO, "config.json")
 EXAMPLE = os.path.join(REPO, "config.example.json")
 
+# Paths whose CHILDREN are data, not structure. `groups.by_animal` is keyed by
+# animal and `drop_inset_boxes` by figure, so requiring their keys in the
+# template would mean demanding this dataset's animal IDs - and this atlas's
+# figure numbers - from a file whose whole job is to be generic. The container
+# must exist; what is inside it is the operator's to fill in.
+DATA_MAPS = {
+    "groups.by_animal",
+    "atlas_figure_sections.drop_inset_boxes",
+}
+
 
 def load(path):
     """Parse a config, reporting the file and position on a syntax error."""
@@ -45,7 +55,8 @@ def key_paths(node, prefix=""):
     """Dotted paths of every non-underscore key, recursing into dicts only.
 
     Lists are values here, not structure: `atlas_scope.regions_to_add` differing
-    between the two files is the template being generic, not drift.
+    between the two files is the template being generic, not drift. The same goes
+    for anything under DATA_MAPS - see there.
     """
     out = []
     if not isinstance(node, dict):
@@ -55,7 +66,8 @@ def key_paths(node, prefix=""):
             continue
         path = f"{prefix}.{k}" if prefix else k
         out.append(path)
-        out.extend(key_paths(v, path))
+        if path not in DATA_MAPS:
+            out.extend(key_paths(v, path))
     return out
 
 

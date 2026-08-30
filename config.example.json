@@ -92,9 +92,15 @@
     "_two_sections_note": "Inclusive figure-number range, as a string, of the merged figures holding two sections each - e.g. \"31-47\". null means every figure is left at whatever 04a2 detected. Record the date and the reason alongside it when you fill it in.",
     "drop_inset_boxes": {
       "_note": "Boxes that are labelled INSETS, not sections - a detached callout of a structure that is also shown attached and labelled inside a section elsewhere in the atlas. An inset is not a plate, and holds no region seed. Key = merged figure id, value = the 1-based index of the box to drop, counted top to bottom.",
-      "_placeholder_note": "The two entries below are the shape of the thing, not values for your atlas. 0 means drop nothing, so the template is inert as it stands. NOTE that a figure listed here is exempt from the two_sections count enforcement, so DELETE the entries that do not apply to your atlas rather than leaving them at 0.",
-      "mplate_020": 0,
-      "mplate_021": 0
+      "_shape_note": "Empty here on purpose: an entry is a claim about a figure in YOUR atlas, and a copied one would drop a real section box. Add them as \"mplate_020\": 2 once you have looked. Note that listing a figure here also exempts it from the two_sections count above, so list only the figures that really carry an inset."
+    }
+  },
+  "groups": {
+    "_note": "UNBLINDING KEY. Read by 04l_roi_curator.py, and by nothing else, to lay out the Shotgun deck - one atlas plate per slide, split left/right by treatment. This is a DELIBERATE EXCEPTION to blinding._note above ('no stage before 06b may read a group label'): a figure that compares groups cannot be built without knowing them. Nothing here reaches a count, a threshold or a curation decision - the curator's own state is written before this file is read and does not depend on it - but a deck laid out by group is, by construction, not blind. Leave by_animal empty to keep it that way; the Shotgun button disables itself when it is.",
+    "_order_note": "Which treatment is the LEFT half of every slide, and the order the halves are drawn in. Explicit because dict order is not a decision. Two entries: the slide splits in two.",
+    "order": ["<TREATMENT A>", "<TREATMENT B>"],
+    "_by_animal_note": "animal ID -> treatment, one per animal, using exactly the labels in order above. An animal left empty is reported and skipped rather than guessed at.",
+    "by_animal": {
     }
   }
 }

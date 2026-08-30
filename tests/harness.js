@@ -18,6 +18,28 @@
 const fs = require("fs");
 const path = require("path");
 
+// Smallest legal PNG: 1x1, so a stubbed toBlob hands back something that is
+// really a PNG rather than a placeholder that only looks like one.
+const PNG_1PX = new Uint8Array([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
+  0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+  0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4, 0x89, 0x00, 0x00, 0x00,
+  0x0a, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0x00, 0x01, 0x00, 0x00,
+  0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x49,
+  0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82]);
+
+/** Flatten an array of Uint8Array (and strings) into one buffer. */
+function concat(parts) {
+  const enc = new TextEncoder();
+  const bufs = (parts || []).map(p => typeof p === "string" ? enc.encode(p)
+                                    : p instanceof Uint8Array ? p
+                                    : new Uint8Array(p));
+  const out = new Uint8Array(bufs.reduce((n, b) => n + b.length, 0));
+  let o = 0;
+  for (const b of bufs) { out.set(b, o); o += b.length; }
+  return out;
+}
+
 // Written by tests/run.sh, which regenerates the page with --no-seed and lifts
 // out its <script>. Not committed: it is a build product of a generated file.
 const CURATOR_JS = path.join(__dirname, "build", "curator.js");
@@ -48,6 +70,10 @@ function makeEnv() {
     classList: mkCL(), disabled: false, click() {},
     addEventListener() {}, querySelectorAll() { return []; },
     focus() {}, blur() {},
+    // Shotgun turns each deck tile into PNG bytes through the canvas. Nothing
+    // here renders, so this hands back a fixed 1x1 PNG: what the suites check
+    // is the package that gets built around it, not the picture.
+    toBlob(cb) { cb(mkBlob([PNG_1PX])); },
     getBoundingClientRect: () => ({ left: 0, top: 0, width: 600, height: 600 }),
     getContext: () => new Proxy({}, {
       get: (t, k) => k === "measureText"
@@ -80,17 +106,32 @@ function makeEnv() {
       get naturalWidth() { return 768 }, get naturalHeight() { return 768 },
     };
   };
-  global.Blob = function (parts) { blobs.push(String(parts && parts[0])); };
+  // Kept as a string for the CSV suites, which read env.blobs and compare text.
+  // Binary needs the parts themselves, so those are recorded alongside rather
+  // than instead - and the Blob object carries them too, because the pptx path
+  // reads its own images back with arrayBuffer().
+  const mkBlob = parts => ({
+    parts,
+    arrayBuffer: () => Promise.resolve(concat(parts).buffer),
+  });
+  global.Blob = function (parts) {
+    blobs.push(String(parts && parts[0]));
+    blobParts.push(parts);
+    return mkBlob(parts);
+  };
+  // A page loaded from disk cannot read its own images back, and the curator
+  // disables Shotgun when it sees file:. The suites run against the served case.
+  global.location = { protocol: "http:" };
   global.URL = { createObjectURL: () => "" };
   global.CSS = { escape: s => s };
   global.confirm = () => true;
   global.console.warn = () => {};
 
-  const blobs = [];
+  const blobs = [], blobParts = [];
   // Dispatch a window-level event the page registered for. The page listens on
   // window for mousemove/mouseup, so a drag has to be delivered this way.
   const fire = (ev, o) => (win[ev] || []).forEach(f => f(o));
-  return { store, win, els, blobs, fire };
+  return { store, win, els, blobs, blobParts, fire, concat };
 }
 
 const env = makeEnv();

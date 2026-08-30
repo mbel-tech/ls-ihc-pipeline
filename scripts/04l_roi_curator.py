@@ -53,6 +53,13 @@ Interaction
   wholesale. None of this is a substitute for `Export`, which is what produces
   the actual files.
 
+  **`Shotgun` writes the deck.** Every favourite that has a plate, one slide per
+  plate per marker, split down the middle by treatment, DAPI stripped, downloaded
+  as a `.pptx`. It is the only button here that reads the group key, and the only
+  one that produces a figure rather than a record - see the Shotgun section at the
+  foot of the page script for why that is a declared exception to blinding. With
+  no `groups` block in `config.json` it is disabled and says so.
+
   **`f` marks a section favourite** - the subset worth carrying into actual
   quantification. It is orthogonal to the plate assignment, because a section can
   be worth quantifying before anyone has landmarked it, so it sets no other flag
@@ -222,6 +229,24 @@ PLATE_SET = CONFIG.get("atlas_plate_set", {}).get("dir", "plates")
 PLATE_DIR = os.path.join(OUT_ROOT, "atlas", PLATE_SET)
 CURATOR_HTML = os.path.join(REFORMAT_DIR, "roi_curator.html")
 
+# THE GROUP KEY, and the only place in this pipeline before 06b that reads one.
+# It exists for the Shotgun deck and reaches nothing else - not a count, not a
+# threshold, not a curation decision. `blinding._note` in config.json forbids
+# reading a group label this early; this is the declared exception to it, and it
+# is opt-in: with `groups` absent or empty the page ships with the button
+# disabled and no key in it. Everything else the curator does is unchanged
+# whether the key is there or not.
+#
+# Dropped entirely rather than passed through empty-valued: an animal listed
+# with a blank treatment is an animal nobody has assigned yet, and guessing at
+# it would put a made-up group on a figure.
+_GROUPS_RAW = CONFIG.get("groups", {}) or {}
+GROUPS = {
+    "order": [g for g in _GROUPS_RAW.get("order", []) if g],
+    "by_animal": {a: g for a, g in (_GROUPS_RAW.get("by_animal", {}) or {}).items()
+                  if g and not a.startswith("_")},
+}
+
 PAGE = """<!doctype html>
 <meta charset="utf-8"><title>ROI curator</title>
 <style>
@@ -335,6 +360,11 @@ input[type=range]{width:100%}
 .guide-on{border-color:#3fb950 !important;background:#0f2e18;color:#7ee787 !important}
 .btn-edit{border-color:#2c7a82;color:#39c5cf}
 .btn-edit:hover{border-color:#39c5cf;color:#39c5cf}
+/* Its own colour because it is the only button that writes a DELIVERABLE rather
+   than recording a decision - and the only one that reads the group key. */
+.btn-shot{border-color:#7a5c2e;color:#e8a33d}
+.btn-shot:hover{border-color:#e8a33d;color:#e8a33d}
+.btn-shot:disabled{border-color:#3a3f47;color:#5a6069;cursor:not-allowed}
 label.chk{color:var(--dim);font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer}
 /* The header wraps, and with a dozen counters between them the buttons used to
    break across lines in whatever order the width happened to allow. Filters and
@@ -372,6 +402,7 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
   <span class="row" style="color:#f85149"><b id="nexcl"></b> excluded</span>
   <span class="row" id="savedAt" style="color:#3fb950"></span>
   <span class="row" id="seedOffer" style="display:none"></span>
+  <span class="row" id="shotStat" style="color:#e8a33d"></span>
   <span class="row"><b id="npair"></b> pairs on this section</span>
   <span class="row" id="fit"></span>
   <span class="actions">
@@ -388,6 +419,7 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
   <button class="btn-edit" onclick="undoPt()">Undo point</button>
   <button class="btn-edit" onclick="clearPts()">Clear points</button>
   <button class="primary" onclick="exportCsv()">Export</button>
+  <button id="shotBtn" class="btn-shot" onclick="shotgun()">Shotgun</button>
   </span>
 </header>
 <div id="panes">
@@ -451,6 +483,10 @@ const PLATES = __PLATES__;  // [{id, img, w, h, labelled, seeds:[{region,xf,yf,h
 // DIFFERENT image in each, so every export carries this and a landmark file can
 // never be silently matched against the wrong plates.
 const PLATE_SET = __PLATESET__;
+// The unblinding key, and the ONLY thing in this page that reads one. Empty
+// unless config.json declares `groups`, which is what keeps the Shotgun button
+// off by default. See the Shotgun section at the foot of this script.
+const GROUPS = __GROUPS__;
 // Which channel these sections are, and which subset of it. The two markers are
 // separate physical sections curated independently, so the channel is recorded
 // in every export rather than inferred later from the file name.
@@ -738,19 +774,23 @@ function dapiBtnState(){
 // the opaque image, so the blend does what it says, and the rotated edge keeps
 // its antialiasing instead of picking up a yellow fringe.
 //
-// Rebuilt only when the section changes, not on every redraw.
+// Rebuilt only when the section changes, not on every redraw. The cache belongs
+// to the ON-SCREEN section, so it applies only when this is called with no
+// argument; Shotgun passes each deck image in and gets an uncached copy, which
+// is right - those are built once each and never redrawn.
 let markerCache = null;
-function markerOnly(){
-  if(markerCache) return markerCache;
-  const w=secImg.naturalWidth, h=secImg.naturalHeight;
-  if(!w) return secImg;
+function markerOnly(img){
+  const src = img || secImg;
+  if(src === secImg && markerCache) return markerCache;
+  const w=src.naturalWidth, h=src.naturalHeight;
+  if(!w) return src;
   const c=document.createElement("canvas"); c.width=w; c.height=h;
   const x=c.getContext("2d");
-  x.drawImage(secImg,0,0);
+  x.drawImage(src,0,0);
   x.globalCompositeOperation="multiply";
   x.fillStyle="#ffff00";          // keep red and green, zero blue
   x.fillRect(0,0,w,h);
-  markerCache=c;
+  if(src === secImg) markerCache=c;
   return c;
 }
 
@@ -1731,9 +1771,504 @@ function adoptSeed(){
   render(); status();
   console.log(`adopted seed: ${before} -> ${Object.keys(S).length} sections`);
 }
+// ---- Shotgun: the favourites, as a PowerPoint deck -------------------------
+//
+// One slide per atlas plate per marker, split down the middle by treatment.
+// What goes on it is exactly the pair of decisions this tool exists to record -
+// **favourite** (worth quantifying) and **a plate** (the level it was matched
+// to) - so the deck is the curation, laid out. Nothing here is computed from
+// the registration: no warped seeds, no ROI discs, no residuals. It is the
+// tissue, side by side, at a matched level.
+//
+// THIS READS THE GROUP KEY, at stage 04l, which blinding._note in config.json
+// forbids for anything before 06b. It is a deliberate exception and a narrow
+// one: the key reaches the LAYOUT and nothing else. No count, no threshold and
+// no curation decision depends on it - the state this reads was written before
+// the key was ever loaded - but a deck arranged by treatment is, by
+// construction, not blind. With no key declared the button disables itself,
+// which is what keeps the exception opt-in.
+//
+// Written by hand rather than with a library because the page has no build step
+// and no network: a .pptx is a ZIP of XML, the ZIP is written with the *stored*
+// method (PNGs are already compressed, so deflate would buy nothing but a
+// dependency), and the deck uses real picture and text-box shapes so everything
+// on the slide can still be moved, resized and edited in PowerPoint.
+
+const SHOT_COLS = 5, SHOT_ROWS = 2;
+const SHOT_PER_HALF = SHOT_COLS * SHOT_ROWS;
+const EMU = 914400;                             // EMU per inch, the OOXML unit
+const SLIDE_W = 12192000, SLIDE_H = 6858000;    // 13.333 x 7.5 in, 16:9
+const inch = v => Math.round(v * EMU);
+
+// One block, in inches, so the geometry can be tuned without hunting through
+// the writer. Pictures are deliberately TINY: the PNG in the file is the whole
+// composite at full resolution, so enlarging one in PowerPoint shows real
+// pixels rather than a blur.
+const SHOT_L = {
+  margin: 0.30, gutter: 0.10,
+  titleY: 0.14, titleH: 0.42, titleSz: 1600,
+  plateY: 0.62, plateH: 1.32,
+  headY: 2.10, headH: 0.34, headSz: 1300,
+  gridY: 2.58, cell: 1.15, gapX: 0.08, gapY: 0.10, capH: 0.20, capSz: 800,
+  divTop: 0.58, divBot: 7.20,
+};
+const INK = "1A1A1A", DIM = "6E7681", RULE = "C9D1D9";
+
+// Served over http the canvas is clean and fetch works; opened straight off
+// disk neither is true - a file:// image taints the canvas and toBlob throws,
+// which is the same trap markerOnly() above is written to avoid. Say so on the
+// button instead of failing at the click.
+function shotWhyNot(){
+  if(location.protocol === "file:")
+    return "open the curator from the app, or its Open in browser button - a page "
+         + "loaded from disk cannot read its own images back, so no deck can be built";
+  if(!(GROUPS && GROUPS.order && GROUPS.order.length
+       && GROUPS.by_animal && Object.keys(GROUPS.by_animal).length))
+    return "no group key declared - fill in groups.order and groups.by_animal in "
+         + "config.json and regenerate the page";
+  return "";
+}
+
+function shotBtnState(){
+  const why = shotWhyNot();
+  el("shotBtn").disabled = !!why;
+  el("shotBtn").title = why
+    || "favourites with a plate, one slide per plate, split by treatment";
+}
+const shotSay = m => { el("shotStat").textContent = m; };
+
+// ---- what goes in ----------------------------------------------------------
+
+// The same rule exportCsv() uses, deliberately: a plate is a decision when it
+// was assigned or landmarked, and never merely because the slider sat there.
+// Two definitions of "has a plate" in one file is one too many.
+function shotPick(){
+  const take = [], noPlate = [], noGroup = [], excluded = [];
+  for(const d of DATA){
+    const s = S[d.uid];
+    if(!s || !s.fav) continue;
+    if(s.excl){ excluded.push(d.uid); continue; }
+    if(!(s.assigned || roiPairs(s).length > 0)){ noPlate.push(d.uid); continue; }
+    const g = GROUPS.by_animal[d.animal];
+    if(!g){ noGroup.push(d.uid); continue; }
+    take.push({d, s, g});
+  }
+  return {take, noPlate, noGroup, excluded};
+}
+
+// Slides are (plate x marker), in plate order, pERK before PCNA. A half holding
+// more than SHOT_PER_HALF runs on to a continuation slide rather than being cut
+// short - both halves advance together, so a row always faces its counterpart.
+function shotSlides(take){
+  const order = MARKERS.map(m => m.id);
+  const by = new Map();
+  for(const it of take){
+    const k = it.s.plate + "|" + it.d.m;
+    if(!by.has(k)) by.set(k, []);
+    by.get(k).push(it);
+  }
+  const anim = a => +a.slice(2);
+  const out = [];
+  const keys = [...by.keys()].sort((a, b) => {
+    const pa = a.split("|"), pb = b.split("|");
+    return (+pa[0]) - (+pb[0]) || order.indexOf(pa[1]) - order.indexOf(pb[1]);
+  });
+  for(const k of keys){
+    const items = by.get(k), plate = +k.split("|")[0], marker = k.split("|")[1];
+    const halves = GROUPS.order.map(g => items.filter(it => it.g === g)
+      .sort((a, b) => anim(a.d.animal) - anim(b.d.animal) || a.d.order - b.d.order));
+    const pages = Math.max(1, ...halves.map(h => Math.ceil(h.length / SHOT_PER_HALF)));
+    for(let p = 0; p < pages; p++)
+      out.push({plate, marker, page: p + 1, pages, n: items.length,
+                halves: halves.map(h => h.slice(p * SHOT_PER_HALF, (p + 1) * SHOT_PER_HALF))});
+  }
+  return out;
+}
+
+// ---- pictures --------------------------------------------------------------
+
+const shotLoad = src => new Promise((res, rej) => {
+  const im = new Image();
+  im.onload = () => res(im);
+  im.onerror = () => rej(new Error("could not load " + src));
+  im.src = src;
+});
+
+// The tile as the operator curated it: DAPI stripped where there is a composite
+// to strip it from, and turned by the tilt they left on it. The tilt is a
+// viewing aid everywhere else in this tool and stays one here - it moves no
+// stored coordinate - but a level comparison reads wrong when half the sections
+// are lying at a different angle from the other half.
+//
+// Black behind, because a rotated image leaves transparent corners and a white
+// slide would show them as notches cut out of a black square.
+function shotTile(img, rgb, rot){
+  const w = img.naturalWidth, h = img.naturalHeight;
+  const src = rgb ? markerOnly(img) : img;
+  const c = document.createElement("canvas"), x = c.getContext("2d");
+  if(rot){
+    const D = Math.ceil(Math.hypot(w, h));
+    c.width = D; c.height = D;
+    x.fillStyle = "#000"; x.fillRect(0, 0, D, D);
+    x.translate(D / 2, D / 2); x.rotate(rot * Math.PI / 180); x.drawImage(src, -w / 2, -h / 2);
+  } else {
+    c.width = w; c.height = h;
+    x.fillStyle = "#000"; x.fillRect(0, 0, w, h);
+    x.drawImage(src, 0, 0);
+  }
+  return c;
+}
+
+const shotBytes = blob => blob.arrayBuffer().then(b => new Uint8Array(b));
+const shotPng = c => new Promise((res, rej) =>
+  c.toBlob(b => b ? res(b) : rej(new Error("toBlob returned nothing")), "image/png"));
+
+// ---- ZIP, stored -----------------------------------------------------------
+
+const SHOT_CRC = (function(){
+  const t = new Uint32Array(256);
+  for(let n = 0; n < 256; n++){
+    let c = n;
+    for(let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    t[n] = c >>> 0;
+  }
+  return t;
+})();
+function crc32(b){
+  let c = 0xFFFFFFFF;
+  for(let i = 0; i < b.length; i++) c = SHOT_CRC[(c ^ b[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+
+// Method 0 - stored. Every part is either already-compressed PNG or a few KB of
+// XML, so deflate would trade a real dependency for nothing worth having, and
+// the format allows it: PowerPoint reads a stored package like any other.
+function zipStore(files, when){
+  const enc = new TextEncoder(), parts = [], cen = [];
+  const T = ((when.getHours() << 11) | (when.getMinutes() << 5) | (when.getSeconds() >> 1)) & 0xFFFF;
+  const D = (((when.getFullYear() - 1980) << 9) | ((when.getMonth() + 1) << 5) | when.getDate()) & 0xFFFF;
+  let off = 0;
+  for(const f of files){
+    const name = enc.encode(f.name), body = f.bytes, crc = crc32(body), n = body.length;
+    const lh = new DataView(new ArrayBuffer(30));
+    lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true);
+    lh.setUint16(6, 0, true); lh.setUint16(8, 0, true);
+    lh.setUint16(10, T, true); lh.setUint16(12, D, true);
+    lh.setUint32(14, crc, true); lh.setUint32(18, n, true); lh.setUint32(22, n, true);
+    lh.setUint16(26, name.length, true); lh.setUint16(28, 0, true);
+    parts.push(new Uint8Array(lh.buffer), name, body);
+    const ch = new DataView(new ArrayBuffer(46));
+    ch.setUint32(0, 0x02014b50, true); ch.setUint16(4, 20, true); ch.setUint16(6, 20, true);
+    ch.setUint16(8, 0, true); ch.setUint16(10, 0, true);
+    ch.setUint16(12, T, true); ch.setUint16(14, D, true);
+    ch.setUint32(16, crc, true); ch.setUint32(20, n, true); ch.setUint32(24, n, true);
+    ch.setUint16(28, name.length, true); ch.setUint16(30, 0, true); ch.setUint16(32, 0, true);
+    ch.setUint16(34, 0, true); ch.setUint16(36, 0, true); ch.setUint32(38, 0, true);
+    ch.setUint32(42, off, true);
+    cen.push({h: new Uint8Array(ch.buffer), name});
+    off += 30 + name.length + n;
+  }
+  const start = off;
+  let size = 0;
+  for(const c of cen){ parts.push(c.h, c.name); size += c.h.length + c.name.length; }
+  const eo = new DataView(new ArrayBuffer(22));
+  eo.setUint32(0, 0x06054b50, true); eo.setUint16(4, 0, true); eo.setUint16(6, 0, true);
+  eo.setUint16(8, cen.length, true); eo.setUint16(10, cen.length, true);
+  eo.setUint32(12, size, true); eo.setUint32(16, start, true); eo.setUint16(20, 0, true);
+  parts.push(new Uint8Array(eo.buffer));
+  return parts;
+}
+
+// ---- OOXML -----------------------------------------------------------------
+
+const xs = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;")
+                         .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+const XML_HEAD = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>`;
+const NS_A = `xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+const NS_R = `xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"`;
+const NS_P = `xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"`;
+const REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+
+let shotId = 1;
+const xfrm = (x, y, w, h) =>
+  `<a:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${w}" cy="${h}"/></a:xfrm>`;
+
+function tbox(x, y, w, h, text, sz, bold, colour, align){
+  return `<p:sp><p:nvSpPr><p:cNvPr id="${++shotId}" name="t${shotId}"/>`
+    + `<p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>`
+    + `<p:spPr>${xfrm(x, y, w, h)}<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>`
+    + `<a:noFill/></p:spPr>`
+    + `<p:txBody><a:bodyPr wrap="square" lIns="0" rIns="0" tIns="0" bIns="0" anchor="ctr">`
+    + `<a:noAutofit/></a:bodyPr><a:lstStyle/><a:p><a:pPr algn="${align}"/>`
+    + `<a:r><a:rPr lang="en-US" sz="${sz}" b="${bold ? 1 : 0}" dirty="0">`
+    + `<a:solidFill><a:srgbClr val="${colour}"/></a:solidFill></a:rPr>`
+    + `<a:t>${xs(text)}</a:t></a:r></a:p></p:txBody></p:sp>`;
+}
+
+function pic(x, y, w, h, rid, name){
+  return `<p:pic><p:nvPicPr><p:cNvPr id="${++shotId}" name="${xs(name)}"/>`
+    + `<p:cNvPicPr><a:picLocks noChangeAspect="1"/></p:cNvPicPr><p:nvPr/></p:nvPicPr>`
+    + `<p:blipFill><a:blip r:embed="${rid}"/><a:stretch><a:fillRect/></a:stretch></p:blipFill>`
+    + `<p:spPr>${xfrm(x, y, w, h)}<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic>`;
+}
+
+function vline(x, y0, y1){
+  return `<p:sp><p:nvSpPr><p:cNvPr id="${++shotId}" name="rule"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>`
+    + `<p:spPr>${xfrm(x, y0, 0, y1 - y0)}<a:prstGeom prst="line"><a:avLst/></a:prstGeom>`
+    + `<a:ln w="9525"><a:solidFill><a:srgbClr val="${RULE}"/></a:solidFill></a:ln></p:spPr>`
+    + `<p:txBody><a:bodyPr/><a:lstStyle/><a:p/></p:txBody></p:sp>`;
+}
+
+const slideXml = body => XML_HEAD
+  + `<p:sld ${NS_A} ${NS_R} ${NS_P}><p:cSld><p:bg><p:bgPr>`
+  + `<a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill><a:effectLst/></p:bgPr></p:bg>`
+  + `<p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>`
+  + `<p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/>`
+  + `<a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>`
+  + body + `</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>`;
+
+const rels = list => XML_HEAD
+  + `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">`
+  + list.map(r => `<Relationship Id="${r.id}" Type="${r.type}" Target="${r.target}"/>`).join("")
+  + `</Relationships>`;
+
+// A theme is not optional - PowerPoint refuses a package without one - but it
+// can be plain. Office colours, one font pair, the three-entry style lists the
+// schema requires and nothing beyond them.
+const THEME = XML_HEAD
+  + `<a:theme ${NS_A} name="Shotgun"><a:themeElements><a:clrScheme name="Office">`
+  + `<a:dk1><a:sysClr val="windowText" lastClr="000000"/></a:dk1>`
+  + `<a:lt1><a:sysClr val="window" lastClr="FFFFFF"/></a:lt1>`
+  + `<a:dk2><a:srgbClr val="44546A"/></a:dk2><a:lt2><a:srgbClr val="E7E6E6"/></a:lt2>`
+  + `<a:accent1><a:srgbClr val="4472C4"/></a:accent1><a:accent2><a:srgbClr val="ED7D31"/></a:accent2>`
+  + `<a:accent3><a:srgbClr val="A5A5A5"/></a:accent3><a:accent4><a:srgbClr val="FFC000"/></a:accent4>`
+  + `<a:accent5><a:srgbClr val="5B9BD5"/></a:accent5><a:accent6><a:srgbClr val="70AD47"/></a:accent6>`
+  + `<a:hlink><a:srgbClr val="0563C1"/></a:hlink><a:folHlink><a:srgbClr val="954F72"/></a:folHlink>`
+  + `</a:clrScheme><a:fontScheme name="Office">`
+  + `<a:majorFont><a:latin typeface="Calibri Light"/><a:ea typeface=""/><a:cs typeface=""/></a:majorFont>`
+  + `<a:minorFont><a:latin typeface="Calibri"/><a:ea typeface=""/><a:cs typeface=""/></a:minorFont>`
+  + `</a:fontScheme><a:fmtScheme name="Office">`
+  + `<a:fillStyleLst><a:solidFill><a:schemeClr val="phClr"/></a:solidFill>`
+  + `<a:solidFill><a:schemeClr val="phClr"/></a:solidFill>`
+  + `<a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:fillStyleLst>`
+  + `<a:lnStyleLst>`
+  + `<a:ln w="6350"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:ln>`
+  + `<a:ln w="12700"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:ln>`
+  + `<a:ln w="19050"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:ln></a:lnStyleLst>`
+  + `<a:effectStyleLst><a:effectStyle><a:effectLst/></a:effectStyle>`
+  + `<a:effectStyle><a:effectLst/></a:effectStyle>`
+  + `<a:effectStyle><a:effectLst/></a:effectStyle></a:effectStyleLst>`
+  + `<a:bgFillStyleLst><a:solidFill><a:schemeClr val="phClr"/></a:solidFill>`
+  + `<a:solidFill><a:schemeClr val="phClr"/></a:solidFill>`
+  + `<a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:bgFillStyleLst>`
+  + `</a:fmtScheme></a:themeElements></a:theme>`;
+
+const EMPTY_TREE = `<p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/>`
+  + `</p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/>`
+  + `<a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr></p:spTree>`;
+
+const MASTER = XML_HEAD
+  + `<p:sldMaster ${NS_A} ${NS_R} ${NS_P}><p:cSld>${EMPTY_TREE}</p:cSld>`
+  + `<p:clrMap bg1="lt1" tx1="dk1" bg2="lt2" tx2="dk2" accent1="accent1" accent2="accent2"`
+  + ` accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6"`
+  + ` hlink="hlink" folHlink="folHlink"/>`
+  + `<p:sldLayoutIdLst><p:sldLayoutId id="2147483649" r:id="rId1"/></p:sldLayoutIdLst>`
+  + `</p:sldMaster>`;
+
+const LAYOUT = XML_HEAD
+  + `<p:sldLayout ${NS_A} ${NS_R} ${NS_P} type="blank" preserve="1">`
+  + `<p:cSld name="Blank">${EMPTY_TREE}</p:cSld>`
+  + `<p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sldLayout>`;
+
+const PRESPROPS = XML_HEAD + `<p:presentationPr ${NS_A} ${NS_R} ${NS_P}/>`;
+
+// ---- the deck --------------------------------------------------------------
+
+function shotgun(){
+  const why = shotWhyNot();
+  if(why){ shotSay(why); return; }
+  el("shotBtn").disabled = true;
+  return shotBuild()
+    .catch(err => { shotSay("shotgun failed: " + ((err && err.message) || err)); throw err; })
+    .then(() => shotBtnState(), () => shotBtnState());
+}
+
+async function shotBuild(){
+  const got = shotPick();
+  const take = got.take;
+  if(!take.length){
+    shotSay("nothing to build: no favourite has a plate assigned"
+      + (got.noPlate.length ? " (" + got.noPlate.length + " favourite"
+          + (got.noPlate.length > 1 ? "s" : "") + " with no plate)" : ""));
+    return;
+  }
+  const slides = shotSlides(take);
+  shotSay("building " + slides.length + " slide" + (slides.length > 1 ? "s" : "") + "...");
+
+  shotId = 1;
+  const media = [];             // {name, bytes}
+  const bySrc = new Map();      // source -> media index, so a plate shown on six
+                                // slides is stored once rather than six times
+  async function addMedia(src, bytesFn){
+    if(bySrc.has(src)) return bySrc.get(src);
+    const i = media.length;
+    media.push({name: "image" + (i + 1) + ".png", bytes: await bytesFn()});
+    bySrc.set(src, i);
+    return i;
+  }
+
+  const half = (SLIDE_W / 2) - inch(SHOT_L.margin) - inch(SHOT_L.gutter);
+  const gridW = SHOT_COLS * inch(SHOT_L.cell) + (SHOT_COLS - 1) * inch(SHOT_L.gapX);
+  const rowH = inch(SHOT_L.cell) + inch(SHOT_L.capH) + inch(SHOT_L.gapY);
+  const manifest = [["slide", "plate_set", "plate_id", "marker", "treatment", "half",
+                     "scene_uid", "animal", "section_order", "view_rotation_deg"]];
+
+  const slideXmls = [], slideRels = [];
+  for(let si = 0; si < slides.length; si++){
+    const sl = slides[si], P = PLATES[sl.plate];
+    const mk = MARKERS.find(m => m.id === sl.marker);
+    const rel = [{id: "rId1", type: REL + "/slideLayout",
+                  target: "../slideLayouts/slideLayout1.xml"}];
+    const addPic = async (src, bytesFn) => {
+      const i = await addMedia(src, bytesFn);
+      const id = "rId" + (rel.length + 1);
+      rel.push({id, type: REL + "/image", target: "../media/image" + (i + 1) + ".png"});
+      return id;
+    };
+
+    let body = "";
+    body += tbox(inch(SHOT_L.margin), inch(SHOT_L.titleY),
+                 SLIDE_W - 2 * inch(SHOT_L.margin), inch(SHOT_L.titleH),
+                 P.id + "   " + (mk ? mk.label : sl.marker) + "   " + sl.n + " section"
+                   + (sl.n > 1 ? "s" : "")
+                   + (sl.pages > 1 ? "   (" + sl.page + " of " + sl.pages + ")" : ""),
+                 SHOT_L.titleSz, true, INK, "l");
+    body += tbox(inch(SHOT_L.margin), inch(SHOT_L.titleY),
+                 SLIDE_W - 2 * inch(SHOT_L.margin), inch(SHOT_L.titleH),
+                 PLATE_SET, SHOT_L.capSz + 100, false, DIM, "r");
+
+    // The plate the sections were matched to, at its own aspect and its own
+    // resolution: fetched as bytes rather than redrawn, so nothing is resampled.
+    const pw = Math.round(inch(SHOT_L.plateH) * (P.w / P.h));
+    const prid = await addPic(P.img, () => fetch(P.img).then(r => {
+      if(!r.ok) throw new Error("plate " + P.id + ": HTTP " + r.status);
+      return r.arrayBuffer();
+    }).then(b => new Uint8Array(b)));
+    body += pic(Math.round(SLIDE_W / 2 - pw / 2), inch(SHOT_L.plateY),
+                pw, inch(SHOT_L.plateH), prid, P.id);
+    body += vline(Math.round(SLIDE_W / 2), inch(SHOT_L.divTop), inch(SHOT_L.divBot));
+
+    for(let h = 0; h < GROUPS.order.length; h++){
+      const x0 = h === 0 ? inch(SHOT_L.margin)
+                         : Math.round(SLIDE_W / 2) + inch(SHOT_L.gutter);
+      body += tbox(x0, inch(SHOT_L.headY), half, inch(SHOT_L.headH),
+                   String(GROUPS.order[h]).toUpperCase(), SHOT_L.headSz, true, INK, "ctr");
+      const gx = x0 + Math.round((half - gridW) / 2);
+      const cells = sl.halves[h];
+      for(let i = 0; i < cells.length; i++){
+        const it = cells[i];
+        const cx = gx + (i % SHOT_COLS) * (inch(SHOT_L.cell) + inch(SHOT_L.gapX));
+        const cy = inch(SHOT_L.gridY) + Math.floor(i / SHOT_COLS) * rowH;
+        const rid = await addPic(it.d.uid, async () => {
+          const img = await shotLoad(it.d.img);
+          return shotBytes(await shotPng(shotTile(img, it.d.rgb, it.s.rot || 0)));
+        });
+        body += pic(cx, cy, inch(SHOT_L.cell), inch(SHOT_L.cell), rid, it.d.uid);
+        body += tbox(cx, cy + inch(SHOT_L.cell), inch(SHOT_L.cell), inch(SHOT_L.capH),
+                     it.d.animal + " " + it.d.order, SHOT_L.capSz, false, DIM, "ctr");
+        manifest.push([si + 1, PLATE_SET, P.id, it.d.m, it.g, h + 1,
+                       it.d.uid, it.d.animal, it.d.order, (it.s.rot || 0).toFixed(1)]);
+      }
+    }
+    slideXmls.push(slideXml(body));
+    slideRels.push(rels(rel));
+    shotSay("slide " + (si + 1) + " of " + slides.length + "...");
+  }
+
+  // ---- package -------------------------------------------------------------
+  const enc = new TextEncoder(), files = [];
+  const put = (name, text) => files.push({name, bytes: enc.encode(text)});
+
+  put("[Content_Types].xml", XML_HEAD
+    + `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">`
+    + `<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>`
+    + `<Default Extension="xml" ContentType="application/xml"/>`
+    + `<Default Extension="png" ContentType="image/png"/>`
+    + `<Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>`
+    + `<Override PartName="/ppt/presProps.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presProps+xml"/>`
+    + `<Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/>`
+    + `<Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/>`
+    + `<Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>`
+    + slideXmls.map((_, i) => `<Override PartName="/ppt/slides/slide${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>`).join("")
+    + `</Types>`);
+
+  put("_rels/.rels", rels([{id: "rId1", type: REL + "/officeDocument",
+                            target: "ppt/presentation.xml"}]));
+
+  const sldIds = slideXmls.map((_, i) => `<p:sldId id="${256 + i}" r:id="rId${i + 2}"/>`).join("");
+  put("ppt/presentation.xml", XML_HEAD
+    + `<p:presentation ${NS_A} ${NS_R} ${NS_P}>`
+    + `<p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rId1"/></p:sldMasterIdLst>`
+    + `<p:sldIdLst>${sldIds}</p:sldIdLst>`
+    + `<p:sldSz cx="${SLIDE_W}" cy="${SLIDE_H}"/>`
+    + `<p:notesSz cx="${SLIDE_H}" cy="${SLIDE_W}"/></p:presentation>`);
+
+  put("ppt/_rels/presentation.xml.rels", rels(
+    [{id: "rId1", type: REL + "/slideMaster", target: "slideMasters/slideMaster1.xml"}]
+    .concat(slideXmls.map((_, i) => ({id: "rId" + (i + 2), type: REL + "/slide",
+                                      target: "slides/slide" + (i + 1) + ".xml"})))
+    .concat([{id: "rId" + (slideXmls.length + 2), type: REL + "/theme",
+              target: "theme/theme1.xml"},
+             {id: "rId" + (slideXmls.length + 3), type: REL + "/presProps",
+              target: "presProps.xml"}])));
+
+  put("ppt/presProps.xml", PRESPROPS);
+  put("ppt/theme/theme1.xml", THEME);
+  put("ppt/slideMasters/slideMaster1.xml", MASTER);
+  put("ppt/slideMasters/_rels/slideMaster1.xml.rels", rels([
+    {id: "rId1", type: REL + "/slideLayout", target: "../slideLayouts/slideLayout1.xml"},
+    {id: "rId2", type: REL + "/theme", target: "../theme/theme1.xml"}]));
+  put("ppt/slideLayouts/slideLayout1.xml", LAYOUT);
+  put("ppt/slideLayouts/_rels/slideLayout1.xml.rels", rels([
+    {id: "rId1", type: REL + "/slideMaster", target: "../slideMasters/slideMaster1.xml"}]));
+  for(let i = 0; i < slideXmls.length; i++){
+    put("ppt/slides/slide" + (i + 1) + ".xml", slideXmls[i]);
+    put("ppt/slides/_rels/slide" + (i + 1) + ".xml.rels", slideRels[i]);
+  }
+  for(const m of media) files.push({name: "ppt/media/" + m.name, bytes: m.bytes});
+
+  const now = new Date();
+  const stamp = now.getFullYear() + pad2(now.getMonth() + 1) + pad2(now.getDate())
+              + "_" + pad2(now.getHours()) + pad2(now.getMinutes());
+  const blob = new Blob(zipStore(files, now),
+    {type: "application/vnd.openxmlformats-officedocument.presentationml.presentation"});
+  shotSave(blob, "shotgun_" + PLATE_SET + "_" + stamp + ".pptx");
+  dl(manifest, "shotgun_manifest.csv");
+
+  const bits = [slides.length + " slides", take.length + " sections",
+                media.length + " images"];
+  if(got.noPlate.length)  bits.push(got.noPlate.length + " favourites skipped (no plate)");
+  if(got.noGroup.length)  bits.push(got.noGroup.length + " skipped (not in the group key)");
+  if(got.excluded.length) bits.push(got.excluded.length + " skipped (excluded)");
+  shotSay(bits.join(" - "));
+  return {slides: slides.length, sections: take.length, files, blob};
+}
+
+const pad2 = n => (n < 10 ? "0" : "") + n;
+
+// Same route as the CSV exports: a Blob and a clicked <a download>. In the app
+// that is caught by downloadRequested and lands in out_root/reformatted.
+function shotSave(blob, name){
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+}
+
 el("roiSize").value = PT_R_CANON;
 el("roiSizeVal").textContent = PT_R_CANON;
 scopeLabel();
+shotBtnState();
 render();
 </script>
 """
@@ -1932,12 +2467,23 @@ def main():
                 .replace("__PLATESET__", json.dumps(PLATE_SET))
                 .replace("__MARKERS__", json.dumps(markers))
                 .replace("__MARKER__", json.dumps(args.marker))
-                .replace("__SECGRID__", json.dumps(SEC_GRID)))
+                .replace("__SECGRID__", json.dumps(SEC_GRID))
+                .replace("__GROUPS__", json.dumps(GROUPS)))
     with open(CURATOR_HTML, "w", encoding="utf-8") as fh:
         fh.write(page)
 
     lab = [p for p in pl if p["labelled"]]
     print(f"wrote {CURATOR_HTML}")
+    # Loud, because a page that can lay itself out by treatment is a page that
+    # is no longer blind, and that should never be discovered by accident.
+    if GROUPS["by_animal"] and GROUPS["order"]:
+        n = len(GROUPS["by_animal"])
+        print(f"  UNBLINDED: group key loaded for {n} animals "
+              f"({' / '.join(GROUPS['order'])}) - the Shotgun deck is laid out by "
+              f"treatment. Nothing else in the page reads it.")
+    else:
+        print("  no group key in config.json - Shotgun is disabled in this page "
+              "(fill in groups.order and groups.by_animal to enable it)")
     if seed:
         print(f"  carrying {len(seed)} curated sections into the page")
     for m in markers:
