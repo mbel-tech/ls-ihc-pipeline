@@ -44,7 +44,7 @@ def _blank():
             "noroi": False, "fav": False, "rot": 0.0, "excl": False}
 
 
-def rebuild(plates_csv, landmarks_csv=None, k=3.0):
+def rebuild(plates_csv, landmarks_csv=None, k=3.0, regions_csv=None):
     """Turn the exports back into the curator's `S` map.
 
     `k` is the ratio between the pixels the operator clicked in and the canonical
@@ -52,6 +52,15 @@ def rebuild(plates_csv, landmarks_csv=None, k=3.0):
     export divides by it on the way out, so the rebuild multiplies by it on the
     way back in. Get this wrong and every landmark lands at the wrong scale,
     which is why it is a named argument rather than a constant buried below.
+
+    `regions_csv` is read for its BACKGROUND rows and nothing else. Background
+    discs are not landmarks - they have no plate counterpart, so they are absent
+    from `roi_landmarks.csv` entirely - and this function is the path that
+    recovered the operator's work once already. Rebuilding without them would
+    restore a session that looked complete and had quietly lost every background
+    measurement in it. The region rows for real ROIs are deliberately NOT read
+    back: those are derived from the landmarks, and reading both would duplicate
+    every pair.
     """
     S = {}
     with open(plates_csv, newline="", encoding="utf-8") as fh:
@@ -105,7 +114,32 @@ def rebuild(plates_csv, landmarks_csv=None, k=3.0):
                 pair = [sx, sy, px, py, seed, rad] if (seed or rad) else [sx, sy, px, py]
                 e["pairs"].append(pair)
                 n_pairs += 1
-    return S, n_pairs
+
+    n_bg = 0
+    if regions_csv and os.path.exists(regions_csv):
+        with open(regions_csv, newline="", encoding="utf-8") as fh:
+            for r in csv.DictReader(fh):
+                # roi_kind is absent from exports written before background
+                # discs existed; those files carry region rows only, and this
+                # loop should find nothing in them.
+                if (r.get("roi_kind") or "") != "background":
+                    continue
+                uid = (r.get("scene_uid") or "").strip()
+                if not uid:
+                    continue
+                try:
+                    sx = float(r["sec_x"]) * k
+                    sy = float(r["sec_y"]) * k
+                    rad = float(r.get("sec_r") or 0) * k
+                except (KeyError, ValueError):
+                    continue
+                # Plate coords 0,0 and seed 0, exactly as the curator stores
+                # them - the "bg" marker is what identifies it, and the fit
+                # filters on that rather than on the coordinates.
+                S.setdefault(uid, _blank())["pairs"].append(
+                    [sx, sy, 0.0, 0.0, 0, rad, "bg"])
+                n_bg += 1
+    return S, n_pairs, n_bg
 
 
 def main():
@@ -120,11 +154,13 @@ def main():
     if os.path.isdir(src):
         plates = os.path.join(src, "roi_plates.csv")
         marks = os.path.join(src, "roi_landmarks.csv")
+        regions = os.path.join(src, "roi_regions.csv")
     else:
-        # Given a plates file directly, look for the landmarks file that came
-        # with it - same folder, same "(1)" suffix the browser added.
+        # Given a plates file directly, look for the siblings that came with it -
+        # same folder, same "(1)" suffix the browser added.
         plates = src
         marks = src.replace("roi_plates", "roi_landmarks")
+        regions = src.replace("roi_plates", "roi_regions")
     if not os.path.exists(plates):
         print(f"no plates CSV at {plates}")
         return 1
@@ -133,7 +169,7 @@ def main():
     with open(cfg, encoding="utf-8") as fh:
         out_root = json.load(fh)["out_root"]
 
-    S, n_pairs = rebuild(plates, marks)
+    S, n_pairs, n_bg = rebuild(plates, marks, regions_csv=regions)
     fresh = len(S)
 
     if merge:
@@ -152,6 +188,11 @@ def main():
     print(f"  {sum(1 for v in S.values() if v['assigned'])} with a plate")
     print(f"  {sum(1 for v in S.values() if v['rot'])} rotated")
     print(f"  {n_pairs} landmark pairs")
+    # Reported separately, and reported even when zero: a silent 0 here is how
+    # you find out too late that the regions CSV was not beside the plates one.
+    print(f"  {n_bg} background discs"
+          + ("" if os.path.exists(regions) else
+             f"   (no {os.path.basename(regions)} found beside the plates file)"))
 
     store = ST.CurationStore(out_root)
     existing = None if merge else store.read(ROI_KEY)

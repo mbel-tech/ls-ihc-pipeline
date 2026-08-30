@@ -258,6 +258,10 @@ button.primary{background:var(--accent);border-color:var(--accent);color:#04121f
 canvas{display:block;width:100%;height:100%;object-fit:contain;cursor:crosshair;
        user-select:none;-webkit-user-drag:none}
 #cSec.rotmode{cursor:ew-resize}
+#cSec.bgmode{cursor:crosshair;outline:3px solid #f778ba;outline-offset:-3px}
+.btn-bg{border-color:#8b3d6b;color:#f778ba}
+.btn-bg:hover{border-color:#f778ba;color:#f778ba}
+.bg-on{border-color:#f778ba !important;background:#33132a;color:#ffb3d9 !important}
 #cSec.rotating{cursor:ew-resize}
 button[disabled]{opacity:.4;cursor:default}
 button[disabled]:hover{border-color:var(--line)}
@@ -372,6 +376,7 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
   <button id="noroiBtn" class="btn-excl" onclick="toggleNoRoi()">No ROI here</button>
   <button id="exclBtn" class="btn-kill" onclick="toggleExcl()">Exclude</button>
   <button id="dapiBtn" class="btn-plate" onclick="toggleDapi()">DAPI</button>
+  <button id="bgBtn" class="btn-bg" onclick="toggleBgMode()">Background</button>
   <button id="guideBtn" class="btn-guide" onclick="toggleGuided()">Guided</button>
   <button id="skipBtn" class="btn-guide" onclick="skipSeed()">Skip seed</button>
   <button class="btn-edit" onclick="undoPt()">Undo point</button>
@@ -421,11 +426,15 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
   <kbd>f</kbd> favourite &middot; <kbd>x</kbd> exclude this section &middot;
   <kbd>g</kbd> guided (walk the plate's numbered seeds, one click each) &middot;
   <kbd>s</kbd> skip a seed that is not on this section &middot;
+  <kbd>b</kbd> background: mark tissue with NO signal, 2-3 per section - it is
+  measured by the same detector, so it reports the false-positive rate here
+  (it takes no seed number and does not move the guided cursor) &middot;
   <kbd>[</kbd><kbd>]</kbd> ROI size (or drag as you place one) &middot;
   3 pairs for an affine, 6 for a spline &middot;
   <span style="color:#7c5cff">purple</span> = registered &middot;
   <span style="color:#4da3ff">blue</span> = plate assigned only &middot;
   <span style="color:#e3b341">gold edge</span> = favourite &middot;
+  <span style="color:#f778ba">pink</span> = background disc &middot;
   faded = marked no-ROI &middot; autosaves &middot;
   filters (sample, channel, favourites, excluded) are top left, actions top right
 </footer>
@@ -574,7 +583,19 @@ function solve3(A, b){
     for(let r=0;r<3;r++){ if(r===c) continue;
       const f=M[r][c]/M[c][c]; for(let k=c;k<4;k++) M[r][k]-=f*M[c][k]; }
   }
-  return [M[0][3]/M[0][0], M[1][3]/M[1][1], M[2][3]/M[2][2]];
+  const out = [M[0][3]/M[0][0], M[1][3]/M[1][1], M[2][3]/M[2][2]];
+  // A pivot can clear the test above and still leave a non-finite result on a
+  // badly conditioned system. Returning null says "no fit", which every caller
+  // already handles; returning an array of NaNs says "a fit", and is truthy, so
+  // it would be treated as one - and reach mean_residual_px as the string NaN.
+  //
+  // The pivot floor above is deliberately left as it was. Making it relative to
+  // the matrix looked like the tidier fix, but measured across the 23 seeded
+  // plates it rejected the first-three-seed fit at 0.83 and 1.02 degrees off
+  // collinear while accepting one at 1.07 - a threshold that does not track the
+  // degeneracy it is supposed to catch. This guard only removes results that
+  // are already not numbers.
+  return out.every(Number.isFinite) ? out : null;
 }
 function affine(pairs){          // plate (px,py) -> section (sx,sy)
   if(pairs.length < 3) return null;
@@ -637,7 +658,15 @@ function tpsApply(T,px,py){
 }
 
 // The transform actually used: TPS once there are enough points, affine below.
-function transform(pairs){ return tps(pairs) || affine(pairs); }
+function transform(pairs){
+  // A background disc is a position on the SECTION with no counterpart on the
+  // plate, so it must never enter the fit - its (0,0) plate coordinate would
+  // drag the whole spline to the corner. Filtered here rather than at each call
+  // site, so a new caller cannot forget: there is no way to ask for a transform
+  // that includes them.
+  const p = pairs.filter(q => q[6] !== "bg");
+  return tps(p) || affine(p);
+}
 function apply(T,px,py){
   return T.kind==="tps" ? tpsApply(T,px,py)
                         : [T.a[0]*px+T.a[1]*py+T.a[2], T.d[0]*px+T.d[1]*py+T.d[2]];
@@ -766,12 +795,23 @@ function drawSec(){
       x.restore();
     }
   }
-  s.pairs.forEach((p,i)=>{ const [X,Y]=img2can(p[0],p[1],g);
-                           mark(x,X,Y,p[4]||i+1,"#4da3ff",u,pairR(p),ns); });
+  // Two independent numberings. The index into s.pairs used to serve as the
+  // free-mode label, but background discs are interleaved with landmarks, so an
+  // index would number the landmarks 1,3,4 the moment one was placed between
+  // them. Each kind counts its own.
+  let nRoi=0, nBg=0;
+  s.pairs.forEach(p=>{
+    const [X,Y]=img2can(p[0],p[1],g);
+    if(isBg(p)) mark(x,X,Y,"B"+(++nBg),BG_COL,u,pairR(p),ns);
+    else        mark(x,X,Y,p[4]||(++nRoi),"#4da3ff",u,pairR(p),ns);
+  });
+  const nextLabel = bgMode ? "B"+(bgPairs(s).length+1)
+                  : guided ? gTarget : roiPairs(s).length+1;
+  const nextCol = bgMode ? BG_COL : "#d29922";
   if(pending){ const [X,Y]=img2can(pending[0],pending[1],g);
-               mark(x,X,Y,guided?gTarget:s.pairs.length+1,"#d29922",u,pending[2]||defaultR(),ns); }
+               mark(x,X,Y,nextLabel,nextCol,u,pending[2]||defaultR(),ns); }
   if(ptDrag){ const [X,Y]=img2can(ptDrag.ix,ptDrag.iy,g);
-              mark(x,X,Y,guided?gTarget:s.pairs.length+1,"#d29922",u,ptDrag.r,ns); }
+              mark(x,X,Y,nextLabel,nextCol,u,ptDrag.r,ns); }
 }
 function drawPl(){
   const c=el("cPl"), x=c.getContext("2d");
@@ -1032,8 +1072,52 @@ const defaultR = () => PT_R_CANON * imgK();
 const pairR = p => p[5] || defaultR();      // 4- and 5-element pairs predate this
 let ptDrag = null;                          // {ix, iy, r} while the button is down
 
+// ---- background discs -----------------------------------------------------
+//
+// A second kind of disc, marking tissue the operator judges to carry no real
+// signal. Everything downstream measures it with the SAME detector as a real
+// ROI - that identity is the whole point, because "how many cells does the
+// detector find where there are none" is a false-positive rate, and it is
+// measured per section rather than assumed.
+//
+// It is not a negative control. The primary antibody is still on that tissue,
+// so this is non-specific binding plus autofluorescence, not zero. It sharpens
+// relative comparisons; it does not license absolute positivity.
+//
+// Stored as a 7th element on an ordinary pair. Pairs are 5 or 6 long already,
+// so this is additive and every existing saved section loads unchanged - the
+// same reason `companion` extends reformat()'s return rather than altering it.
+const BG_MARK = "bg";
+const isBg      = p => p[6] === BG_MARK;
+const roiPairs  = s => s.pairs.filter(p => !isBg(p));
+const bgPairs   = s => s.pairs.filter(isBg);
+// Distinct from ROI blue, pending amber, ambiguous gold and guided green, and
+// still legible on dark tissue.
+const BG_COL = "#f778ba";
+let bgMode = false;
+
+// A mode rather than a modifier key, matching Rotate: two or three go down in a
+// row, and a held key that slips would silently file a background disc as a
+// region - the error that costs most and shows least.
+function toggleBgMode(){
+  if(!active) return;
+  bgMode = !bgMode;
+  if(bgMode) rotMode = false;          // two modes owning the mouse is one too many
+  el("cSec").classList.toggle("bgmode", bgMode);
+  el("cSec").classList.toggle("rotmode", rotMode);
+  drawSec(); status();
+}
+
 function commitPoint(ix, iy, r){
   const s=st(active);
+  if(bgMode){
+    // No plate coordinate, and deliberately no seed number: the guided cursor
+    // must not advance, or placing a background disc would silently consume the
+    // next region and desync the click-through order for the rest of the plate.
+    s.pairs.push([ix, iy, 0, 0, 0, r, BG_MARK]);
+    save(); drawSec(); drawPl(); status(); paintCell(active);
+    return;
+  }
   if(guided){
     const sd=seedsOf(s)[gTarget-1];
     if(!sd) return;                          // list finished - nothing to pair
@@ -1077,12 +1161,17 @@ function clearPts(){ if(!active) return; st(active).pairs=[]; pending=null; save
 
 function status(){
   const s=st(active), T=transform(s.pairs);
-  el("npair").textContent = s.pairs.length;
+  const nRoi = roiPairs(s).length, nBg = bgPairs(s).length;
+  el("npair").textContent = nRoi;
+  el("bgBtn").textContent = bgMode ? "Background \u2713" : "Background";
+  el("bgBtn").classList.toggle("bg-on", bgMode);
+  el("bgBtn").title = "mark tissue with no real signal - this measures the"
+                    + " false-positive rate of the detector on this section";
   // Landmarks are numbered in the order they are placed, so the pair being built
   // right now has a number before it exists. Both panes say which one, and which
   // half of it is outstanding - counting rings to work out "am I on 4 or 5?" is
   // exactly the bookkeeping the numbers are there to remove.
-  const nextN = s.pairs.length + 1;
+  const nextN = nRoi + 1;
   const seeds = seedsOf(s), tgt = gTarget ? seeds[gTarget-1] : null;
 
   el("guideBtn").textContent = guided ? "Guided ✓" : "Guided";
@@ -1118,6 +1207,14 @@ function status(){
   }
   // Sizing owns the hint line while the button is down, but only the hint - the
   // rest of the panel keeps updating underneath.
+  if(bgMode){
+    el("secTitle").textContent = "SECTION - click tissue with NO signal (background "
+                              + (nBg + 1) + ")";
+    el("lmHint").innerHTML =
+      `<b style="color:${BG_COL}">background mode</b> &middot; ${nBg} placed`
+      + `<br><span style="color:#9aa0a8">click tissue you judge to carry no real`
+      + ` signal &middot; 2-3 per section &middot; b to leave</span>`;
+  }
   if(ptDrag){
     el("lmHint").innerHTML =
       `radius <b>${(ptDrag.r/imgK()).toFixed(1)} px</b> `
@@ -1128,15 +1225,19 @@ function status(){
   let html="";
   if(T){
     let tot=0;
-    s.pairs.forEach(([sx,sy,px,py],i)=>{
+    roiPairs(s).forEach(([sx,sy,px,py],i)=>{
       const [X,Y]=apply(T,px,py), r=Math.hypot(X-sx,Y-sy); tot+=r;
       html += `<div class="${r>25?"bad":""}"><span>#${i+1}</span><span>${r.toFixed(1)} px</span></div>`;
     });
+    // Both counts are LANDMARKS. `tot` is summed over roiPairs, so dividing by
+    // s.pairs.length would have shrunk the mean residual by however many
+    // background discs the section carried - a fit quietly reported as better
+    // than it is, and better the more background was marked.
     el("fit").innerHTML = T.kind==="tps"
-      ? `<b style="color:#7c5cff">thin-plate spline</b> on ${s.pairs.length} points `
+      ? `<b style="color:#7c5cff">thin-plate spline</b> on ${nRoi} points `
         + `&middot; residual is 0 by construction`
-      : `<b>affine</b> &middot; mean residual <b>${(tot/s.pairs.length).toFixed(1)} px</b>`
-        + ` &middot; ${TPS_MIN - s.pairs.length} more point${TPS_MIN-s.pairs.length===1?"":"s"} for a spline`;
+      : `<b>affine</b> &middot; mean residual <b>${(tot/nRoi).toFixed(1)} px</b>`
+        + ` &middot; ${TPS_MIN - nRoi} more point${TPS_MIN-nRoi===1?"":"s"} for a spline`;
     const P=PLATES[s.plate];
     // Ambiguous regions are listed as their group and flagged, so the summary
     // never reads as a firmer claim than the section supports.
@@ -1151,6 +1252,7 @@ function status(){
       ? `<span style="color:#e3b341">${n}</span>` : n).join(", ");
     el("regInfo").innerHTML = P.seeds.length
       ? `<b>${usedSeeds(s).size}</b> of <b>${P.seeds.length}</b> placed: ${shown}`
+        + bgLine(s)
         + (gold.size ? `<div style="color:#9aa0a8;margin-top:4px">`
                   + `<span style="color:#e3b341">gold</span> is ONE group whose members`
                   + ` cannot be told apart without the rostrocaudal level.`
@@ -1158,9 +1260,10 @@ function status(){
       : "<span class='unlab'>this plate has no region seeds</span>";
   } else {
     el("fit").textContent = "";
-    el("regInfo").textContent = `needs 3 pairs for an affine, ${TPS_MIN} for a spline `
-      + `(have ${s.pairs.length})`;
-    s.pairs.forEach((_,i)=>html+=`<div><span>#${i+1}</span><span>-</span></div>`);
+    el("regInfo").innerHTML = `needs 3 pairs for an affine, ${TPS_MIN} for a spline `
+      + `(have ${nRoi})`
+      + bgLine(s);
+    roiPairs(s).forEach((_,i)=>html+=`<div><span>#${i+1}</span><span>-</span></div>`);
   }
   el("lmlist").innerHTML = html;
   const sa = st(active);
@@ -1275,7 +1378,10 @@ function select(uid, keep){
   // The one exception is a section carrying a real decision - assigned, or
   // landmarked - where the stored plate IS the thing worth seeing.
   draftRot = null;            // a tilt drafted on one section is not another's
-  const decided = s.assigned || s.pairs.length > 0;
+  // Landmarks, not all pairs: a background disc says where there is no signal,
+  // which is no evidence at all about which plate this section is - snapping
+  // the slider on one would jump to the default plate and look like a decision.
+  const decided = s.assigned || roiPairs(s).length > 0;
   const p = decided ? s.plate : Math.min(PLATES.length - 1, +el("slider").value || 0);
   el("slider").value = p;
   secImg.src = d.img;
@@ -1331,6 +1437,20 @@ function counts(){
 // never drift from what is drawn. Counted per region, because "Dl" appearing
 // fourteen times on a plate is worth knowing when reading the overlay - and the
 // numbers those seeds carry are the order they are placed in.
+function bgLine(s){
+  const n = bgPairs(s).length;
+  if(n >= 2) return `<div style="margin-top:4px;color:${BG_COL}">`
+                  + `<b>${n}</b> background discs</div>`;
+  // Only nag where it matters. A section nobody has decided to measure does not
+  // need a background level yet, so the prompt waits for the favourite.
+  const want = s.fav ? `<div style="margin-top:4px;color:#d29922">`
+                     + `<b>${n}</b> background ${n === 1 ? "disc" : "discs"} - `
+                     + `2-3 give this section a reference level and a `
+                     + `false-positive rate (press b)</div>`
+             : `<div style="margin-top:4px;color:#9aa0a8">${n} background discs</div>`;
+  return want;
+}
+
 function regionKey(P){
   const box = el("regKey");
   if(!box) return;
@@ -1360,7 +1480,14 @@ function regionKey(P){
            + `<span>&times;${e.n}</span>`
            + (e.amb ? `<span style="color:#e3b341">&#9670;</span>` : "")
            + `</div>`;
-    }).join("");
+    }).join("")
+    // Background is not a region on the plate, so it has no seed to read a
+    // colour off - but it IS drawn on the section, and a key showing every
+    // colour except the pink one would be a key with a hole in it.
+    + `<div title="tissue marked as carrying no real signal - measured by the`
+    + ` same detector, so it reports a false-positive rate">`
+    + `<i style="background:${BG_COL}"></i><b>background</b>`
+    + `<span>B1, B2, ...</span></div>`;
 }
 
 function rotOf(uid){ return (S[uid] || {}).rot || 0; }
@@ -1438,6 +1565,7 @@ addEventListener("keydown", e=>{
   else if(e.key==="x" || e.key==="X"){ toggleExcl(); }
   else if(e.key==="z" || e.key==="Z"){ undoPt(); }
   else if(e.key==="r" || e.key==="R"){ restoreTilt(); }
+  else if(e.key==="b" || e.key==="B"){ toggleBgMode(); }
   else if(e.key==="g" || e.key==="G"){ toggleGuided(); }
   else if(e.key==="s" || e.key==="S"){ skipSeed(); }
   else if(e.key==="[" || e.key==="]"){
@@ -1454,7 +1582,7 @@ function exportCsv(){
   // three landmarks, which is exactly the case where the operator has decided the
   // section is not worth landmarking.
   const pl=[["scene_uid","animal","marker","subset","section_order","plate_set","plate_id","plate_index",
-             "plate_has_seeds","n_landmarks","transform","status",
+             "plate_has_seeds","n_landmarks","n_background","transform","status",
              "favorite","view_rotation_deg",
              "excluded"]];
   // seed_n / seed_region say whether a landmark was placed against a numbered
@@ -1467,7 +1595,13 @@ function exportCsv(){
              "seed_n","seed_region"]];
   // sec_r is the radius the ROI was placed with - the area to quantify - and
   // seed_n says which numbered atlas ROI it answers.
-  const rg=[["scene_uid","animal","marker","plate_set","plate_id","region",
+  //
+  // roi_kind separates the two kinds of disc, and it is the ONLY thing that
+  // separates them: identical columns, identical units, identical meaning of
+  // sec_x/sec_y/sec_r. Everything downstream measures both the same way, which
+  // is what makes the background rows a false-positive rate rather than a
+  // different quantity that happens to live nearby.
+  const rg=[["scene_uid","animal","marker","plate_set","plate_id","roi_kind","region",
              "region_ambiguous","ambiguity_group","region_uncertain_in_atlas",
              "sec_x","sec_y","sec_r","seed_n","n_landmarks","transform",
              "mean_residual_px"]];
@@ -1478,8 +1612,10 @@ function exportCsv(){
     // An exclusion is a judgement in its own right, exactly like a favourite or
     // a bare plate assignment, so it is reported even when nothing else was done
     // to the section.
-    if(!s || !(s.assigned || s.fav || s.excl)) continue;
-    const P=PLATES[s.plate], n=s.pairs.length;
+    // Background discs are work too, so a section carrying only those is
+    // reported rather than dropped for having made no other decision.
+    if(!s || !(s.assigned || s.fav || s.excl || s.pairs.length)) continue;
+    const P=PLATES[s.plate], n=roiPairs(s).length, nBg=bgPairs(s).length;
     const T=transform(s.pairs);
     const chosen = s.assigned || n>0;   // is the plate a decision, or still the default?
     const status = s.excl ? "excluded"
@@ -1488,7 +1624,7 @@ function exportCsv(){
     // Blank rather than plate_001 when no plate was ever chosen - otherwise a
     // favourite with no assignment reads as a deliberate call on plate_001.
     pl.push([d.uid,d.animal,d.m,d.sub,d.order,PLATE_SET, chosen?P.id:"", chosen?s.plate:"",
-             chosen?(P.labelled?1:0):"", n, T?T.kind:"", status,
+             chosen?(P.labelled?1:0):"", n, nBg, T?T.kind:"", status,
              s.fav?1:0, (s.rot||0).toFixed(1),
              s.excl?1:0]);
     // Gate on the landmarks themselves, NOT on status - a section that was
@@ -1496,32 +1632,55 @@ function exportCsv(){
     // status would silently drop it from both files the moment the exclude
     // button was pressed. The exclusion is recorded in roi_plates.csv; dropping
     // a section is a filter on that, not a hole in this one.
-    if(n < 3 || !T) continue;
-
     // Coordinates are captured in the pixels of whatever image is on screen, and
     // 04o can render that at a multiple of the canonical grid. Divide by the
     // multiple on the way out so sec_x/sec_y always mean canonical-frame pixels -
     // the same frame the masks and every other reformatted product live in.
     // Residuals are a length in the same space, so they scale too.
     const K = (secImg.naturalWidth || SEC_GRID) / SEC_GRID;
+
+    // Background discs need neither a transform nor three landmarks: they are
+    // positions on the section, full stop. Emitting them ABOVE the gate means a
+    // section the operator landmarked lightly still contributes its background
+    // measurement - and that measurement is per section, so losing it would
+    // leave the section's own ROIs with no reference level of their own.
+    for(const pr of bgPairs(s)){
+      rg.push([d.uid,d.animal,d.m,PLATE_SET, chosen?P.id:"", "background","__background__",
+               0,"",0,
+               (pr[0]/K).toFixed(2),(pr[1]/K).toFixed(2),(pairR(pr)/K).toFixed(2),
+               "", n, "", ""]);
+    }
+
+    if(!n) continue;                    // nothing placed - nothing to say
+
+    // The residual needs a transform; the POSITION does not. This used to be
+    // gated as `n < 3 || !T`, which made a fit the price of admission for both
+    // files - so a section with two landmarks, or three collinear ones, exported
+    // nothing at all and looked exactly like a section nobody had touched.
+    //
+    // Since the automatic placement was removed, a landmark and an ROI are both
+    // just things the operator put somewhere. They are recorded whether or not a
+    // transform happens to exist, and the residual columns go blank when it does
+    // not, which is the honest way to say "not measurable" rather than "zero".
     let tot=0;
-    s.pairs.forEach((pr,i)=>{
+    roiPairs(s).forEach((pr,i)=>{
       const [sx,sy,px,py,sn]=pr;
-      const [X,Y]=apply(T,px,py), r=Math.hypot(X-sx,Y-sy); tot+=r;
+      let r=null;
+      if(T){ const [X,Y]=apply(T,px,py); r=Math.hypot(X-sx,Y-sy); tot+=r; }
       const sd = sn ? P.seeds[sn-1] : null;
       lm.push([d.uid,d.animal,d.m,d.order,PLATE_SET,P.id,i+1,
                (sx/K).toFixed(2),(sy/K).toFixed(2),(pairR(pr)/K).toFixed(2),
-               px.toFixed(2),py.toFixed(2),(r/K).toFixed(2),
+               px.toFixed(2),py.toFixed(2), r===null ? "" : (r/K).toFixed(2),
                sn||"", sd ? ((sd.amb || sd.region) + (sd.unk ? "?" : "")) : ""]);
     });
-    const mr=(tot/n/K).toFixed(2);
+    const mr = T ? (tot/n/K).toFixed(2) : "";
     // One row per ROI actually placed, at the position and radius it was placed
     // with. Nothing here is derived from the transform, so every row is a
     // measurement rather than a guess about where a region probably is.
-    for(const pr of s.pairs){
+    for(const pr of roiPairs(s)){
       const sd = pr[4] ? P.seeds[pr[4] - 1] : null;
       if(!sd) continue;
-      rg.push([d.uid,d.animal,d.m,PLATE_SET,P.id,sd.region,
+      rg.push([d.uid,d.animal,d.m,PLATE_SET,P.id,"roi",sd.region,
                sd.amb?1:0, sd.amb||"", sd.unk?1:0,
                (pr[0]/K).toFixed(2),(pr[1]/K).toFixed(2),(pairR(pr)/K).toFixed(2),
                sd.n, n, T?T.kind:"", mr]);

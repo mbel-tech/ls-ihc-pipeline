@@ -56,6 +56,15 @@ for t in "$TESTS"/*.test.js; do
   node "$t" || fail=1
 done
 
+# The Python suites run alongside rather than inside the Node harness: they
+# exercise app/ modules directly and have no browser stub to share.
+for t in "$TESTS"/test_*.py; do
+  [ -e "$t" ] || continue
+  echo
+  echo "=== $(basename "$t") ==="
+  "$PY" "$t" || fail=1
+done
+
 echo
 echo "restoring the page with its curation..."
 "$PY" "$CURATOR" "${ARGS[@]}" | grep -i "carrying" || true
