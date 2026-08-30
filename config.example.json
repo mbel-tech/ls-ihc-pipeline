@@ -25,7 +25,12 @@
   "marker_identity": {
     "_note": "Filled in by 00c_channel_identity.py, then confirmed by the user. Until then neither fluorophore may be referred to as pERK or PCNA downstream.",
     "AF568": null,
-    "AF488": null
+    "AF488": null,
+    "DAPI": {
+      "_note": "Nuclear counterstain excitation/emission in nm, as configured on the scope. Read them off the CZI channel metadata (ExcitationWavelength / EmissionWavelength, exposed by scripts/czi_meta.py) rather than quoting a datasheet - what matters is the filter set actually used, not the dye in the abstract. Left null until filled in.",
+      "excitation_nm": null,
+      "emission_nm": null
+    }
   },
   "flatfield": {
     "tile_sample_per_channel": 2000,
@@ -70,5 +75,26 @@
   "blinding": {
     "enabled": true,
     "_note": "No stage before 06b may read a group label. Outputs are keyed by animal ID only."
+  },
+  "atlas_plate_set": {
+    "_note": "Which plate set the ROI curator and the registration use. Both read this, so they cannot drift apart. IDs COLLIDE between sets - the same plate_NNN name exists in more than one set and points at a different image - so a landmark file records the set it was made against. Set this once, before any landmark is placed; changing it later invalidates landmarks made against the old set.",
+    "dir": "plates",
+    "_options": [
+      "plates",
+      "plates_merged",
+      "plates_final"
+    ],
+    "_options_note": "plates = one image per atlas page as extracted; plates_merged = one image per figure; plates_final = the curated set. Start at plates and move up as the atlas chain produces them."
+  },
+  "atlas_figure_sections": {
+    "_note": "How many sections each MERGED atlas figure holds, where geometry cannot recover it. Operator knowledge, not measurement: the band detector in 04a2 mis-counts when two sections touch (their legend text bridges every row, so no row is empty) and when one section is crossed by an internal white band (read as two). This declaration is the authority; the detector is not. 04a3b_enforce_sections.py takes the count from here and decides only WHERE to cut.",
+    "two_sections": null,
+    "_two_sections_note": "Inclusive figure-number range, as a string, of the merged figures holding two sections each - e.g. \"31-47\". null means every figure is left at whatever 04a2 detected. Record the date and the reason alongside it when you fill it in.",
+    "drop_inset_boxes": {
+      "_note": "Boxes that are labelled INSETS, not sections - a detached callout of a structure that is also shown attached and labelled inside a section elsewhere in the atlas. An inset is not a plate, and holds no region seed. Key = merged figure id, value = the 1-based index of the box to drop, counted top to bottom.",
+      "_placeholder_note": "The two entries below are the shape of the thing, not values for your atlas. 0 means drop nothing, so the template is inert as it stands. NOTE that a figure listed here is exempt from the two_sections count enforcement, so DELETE the entries that do not apply to your atlas rather than leaving them at 0.",
+      "mplate_020": 0,
+      "mplate_021": 0
+    }
   }
 }
