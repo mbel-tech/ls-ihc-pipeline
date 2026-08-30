@@ -263,7 +263,14 @@ input[type=range]{width:100%}
 .cell{flex:0 0 auto;width:74px;border:2px solid var(--line);border-radius:6px;padding:2px;
       background:#0e1014;cursor:pointer;user-select:none}
 .cell:hover{border-color:var(--accent)}
-.cell.active{border-color:var(--accent);box-shadow:0 0 0 2px rgba(77,163,255,.3)}
+/* Three times the resting border. The strip is scanned at a glance while the
+   eye is really on the section, and a 2px accent edge is not enough to find
+   your place in sixty near-identical thumbnails - especially once done,
+   plate-only and excluded are all colouring their borders too. box-sizing is
+   border-box globally, so the cell keeps its 74px and the strip does not
+   reflow as the selection moves. */
+.cell.active{border-color:var(--accent);border-width:6px;
+             box-shadow:0 0 0 2px rgba(77,163,255,.35)}
 .cell.done{border-color:var(--done);background:#141026}
 .cell.plateonly{border-color:var(--accent);background:#0d1520}
 .cell.noroi{border-color:#3a3f47;opacity:.55}
@@ -333,6 +340,7 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
   <span class="row" style="color:#e3b341"><b id="nfav"></b> favourite</span>
   <span class="row" style="color:#f85149"><b id="nexcl"></b> excluded</span>
   <span class="row" id="savedAt" style="color:#3fb950"></span>
+  <span class="row" id="seedOffer" style="display:none"></span>
   <span class="row"><b id="npair"></b> pairs on this section</span>
   <span class="row" id="fit"></span>
   <span class="actions">
@@ -411,7 +419,22 @@ const DEFAULT_MARKER = __MARKER__;
 // The canonical reformatted grid (04a GRID). Display may be a multiple of it.
 const SEC_GRID = __SECGRID__;
 const KEY = "ls_roi_curator_v1";
-let S = JSON.parse(localStorage.getItem(KEY) || "{}");   // uid -> {plate, pairs:[[sx,sy,px,py]]}
+// Curation as it stood when this page was generated. localStorage is partitioned
+// per origin AND per browser profile, so a page opened from disk in one browser
+// cannot see what the app - or the same file in another browser - recorded. That
+// is not a bug to route around; it means a page handed to someone has to carry
+// the state with it or arrive empty.
+//
+// Whatever this browser already holds wins. The seed only fills an empty store,
+// so opening a stale copy of the page can never overwrite work in progress.
+const SEED_STATE = __SEED__;
+let S = (function(){
+  try {
+    const raw = localStorage.getItem(KEY);
+    if (raw) { const v = JSON.parse(raw); if (v && Object.keys(v).length) return v; }
+  } catch (e) {}
+  return SEED_STATE && Object.keys(SEED_STATE).length ? SEED_STATE : {};
+})();
 let active = null, pending = null;   // pending section point awaiting its plate partner
 const el = id => document.getElementById(id);
 const save = () => localStorage.setItem(KEY, JSON.stringify(S));
@@ -1404,6 +1427,37 @@ function dl(rowsArr,name){
   const b=new Blob([rowsArr.map(r=>r.join(",")).join("\\n")],{type:"text/csv"});
   const a=document.createElement("a"); a.href=URL.createObjectURL(b); a.download=name; a.click();
 }
+// Write the seed through on first load, so this browser holds it like any other
+// decision rather than depending on the page it came from.
+try { if(!localStorage.getItem(KEY) && Object.keys(S).length) save(); } catch(e){}
+
+// When this browser already holds something, it wins - but silence is wrong when
+// what it holds is one stale section and the page is carrying 257. Neither
+// answer should be automatic: overwriting loses work, ignoring loses the point
+// of seeding. So the page says what it has and makes taking it one click.
+(function(){
+  const seedN = Object.keys(SEED_STATE || {}).length;
+  if(!seedN) return;
+  const missing = Object.keys(SEED_STATE).filter(u => !S[u]).length;
+  if(!missing) return;
+  const el2 = el("seedOffer");
+  el2.style.display = "";
+  el2.innerHTML = `<span style="color:#d29922">this page carries `
+    + `<b>${seedN}</b> curated sections, ${missing} not in this browser</span> `
+    + `<button class="btn-plate" style="padding:2px 8px;font-size:12px" `
+    + `onclick="adoptSeed()">Load them</button>`;
+})();
+
+// Merge, not replace: anything decided in this browser stays, and the seed fills
+// what it does not have. Replacing would make the button a way to lose work.
+function adoptSeed(){
+  const before = Object.keys(S).length;
+  for(const [uid, v] of Object.entries(SEED_STATE || {})) if(!S[uid]) S[uid] = v;
+  save();
+  el("seedOffer").style.display = "none";
+  render(); status();
+  console.log(`adopted seed: ${before} -> ${Object.keys(S).length} sections`);
+}
 el("roiSize").value = PT_R_CANON;
 el("roiSizeVal").textContent = PT_R_CANON;
 scopeLabel();
@@ -1430,6 +1484,11 @@ def main():
                          "Keyed on pERK uids, so PCNA keeps its full set")
     ap.add_argument("--tier", default=None,
                     help="with --worklist: only this tier (e.g. core)")
+    ap.add_argument("--no-seed", action="store_true",
+                    help="do not carry the app's curation into the page. The "
+                         "page normally embeds whatever is in "
+                         "out_root/curation so a browser copy opens with the "
+                         "same work; this leaves it empty instead")
     ap.add_argument("--rgb", action="store_true",
                     help="show the two-colour composites from 04o_section_rgb.py "
                          "(DAPI blue + marker) instead of the greyscale DAPI the "
@@ -1582,7 +1641,20 @@ def main():
                    "w": int(p["px_w"]), "h": int(p["px_h"]),
                    "labelled": int(bool(sd)), "seeds": sd})
 
-    page = (PAGE.replace("__DATA__", json.dumps(data))
+    # The curation the app has on file, carried into the page so a browser copy
+    # opens with the same work rather than empty. --no-seed leaves it out, which
+    # is what you want when handing the file to someone who should start clean.
+    seed = {}
+    if not args.no_seed:
+        seed_path = os.path.join(OUT_ROOT, "curation", "ls_roi_curator_v1.json")
+        try:
+            with open(seed_path, encoding="utf-8") as fh:
+                seed = json.load(fh)
+        except (OSError, ValueError):
+            seed = {}
+
+    page = (PAGE.replace("__SEED__", json.dumps(seed))
+                .replace("__DATA__", json.dumps(data))
                 .replace("__PLATES__", json.dumps(pl))
                 .replace("__PLATESET__", json.dumps(PLATE_SET))
                 .replace("__MARKERS__", json.dumps(markers))
@@ -1593,6 +1665,8 @@ def main():
 
     lab = [p for p in pl if p["labelled"]]
     print(f"wrote {CURATOR_HTML}")
+    if seed:
+        print(f"  carrying {len(seed)} curated sections into the page")
     for m in markers:
         got, _sub, before = per_marker[m["id"]]
         nrgb = sum(1 for d in got if d["rgb"])

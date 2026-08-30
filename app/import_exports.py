@@ -13,7 +13,17 @@ browser profile, and a `file://` page may have an opaque origin no other page ca
 read - is the more reliable of the two.
 
 Run:  python -m app.import_exports C:\\path\\to\\downloads
+      python -m app.import_exports <dir> --merge
+      python -m app.import_exports "C:/.../roi_plates(1).csv" --merge
       python -m app.import_exports <dir> --dry-run
+
+A path to a plates CSV works as well as a directory, because a second export
+lands as `roi_plates(1).csv` and that is exactly when it is needed.
+
+--merge keeps sections the export does not mention. A session spent on one animal
+exports only that animal, so a plain import would silently drop every decision
+made about the other eleven; the export wins only where the two overlap, being
+the more recent statement about those sections.
 """
 
 import csv
@@ -101,15 +111,22 @@ def rebuild(plates_csv, landmarks_csv=None, k=3.0):
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     dry = "--dry-run" in sys.argv
+    merge = "--merge" in sys.argv
     if not args:
         print(__doc__)
         return 2
     src = args[0]
 
-    plates = os.path.join(src, "roi_plates.csv")
-    marks = os.path.join(src, "roi_landmarks.csv")
+    if os.path.isdir(src):
+        plates = os.path.join(src, "roi_plates.csv")
+        marks = os.path.join(src, "roi_landmarks.csv")
+    else:
+        # Given a plates file directly, look for the landmarks file that came
+        # with it - same folder, same "(1)" suffix the browser added.
+        plates = src
+        marks = src.replace("roi_plates", "roi_landmarks")
     if not os.path.exists(plates):
-        print(f"no roi_plates.csv in {src}")
+        print(f"no plates CSV at {plates}")
         return 1
 
     cfg = os.path.join(os.path.dirname(HERE), "config.json")
@@ -117,6 +134,15 @@ def main():
         out_root = json.load(fh)["out_root"]
 
     S, n_pairs = rebuild(plates, marks)
+    fresh = len(S)
+
+    if merge:
+        prior_raw = ST.CurationStore(out_root).read(ROI_KEY)
+        prior = json.loads(prior_raw) if prior_raw else {}
+        kept = {u: v for u, v in prior.items() if u not in S}
+        S = {**kept, **S}
+        print(f"merging: {fresh} from the export, {len(kept)} kept of "
+              f"{len(prior)} already on file")
     dec = sum(1 for v in S.values()
               if v["assigned"] or v["fav"] or v["excl"] or v["noroi"] or v["rot"])
     print(f"rebuilt {len(S)} sections from {os.path.basename(plates)}")
@@ -128,7 +154,7 @@ def main():
     print(f"  {n_pairs} landmark pairs")
 
     store = ST.CurationStore(out_root)
-    existing = store.read(ROI_KEY)
+    existing = None if merge else store.read(ROI_KEY)
     if existing:
         try:
             had = len(json.loads(existing))
