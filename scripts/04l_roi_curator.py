@@ -404,7 +404,7 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
       <div class="kv" id="lmHint">click section, then plate</div>
       <div id="lmlist"></div>
     </div>
-    <div class="card"><h3>REGIONS WARPED</h3>
+    <div class="card"><h3>ROIs PLACED</h3>
       <div class="kv" id="regInfo">needs 3 pairs</div>
       <div id="regKey"></div></div>
   </div>
@@ -730,44 +730,39 @@ function drawSec(){
   x.restore();
   const s=st(active), T=transform(s.pairs), u=uiScale(c);
   const ns=numScale(PLATES[s.plate], c, u), NP=NUM_PX*ns;
-  if(T){                                   // warped atlas seeds - the deliverable
-    const P=PLATES[s.plate];
-    for(const sd of P.seeds){
-      const [ix,iy]=apply(T, sd.xf*P.w, sd.yf*P.h);
-      const [X,Y]=img2can(ix,iy,g);
-      x.beginPath(); x.arc(X,Y,6*u,0,6.284); x.fillStyle=sd.hex||"#4da3ff"; x.globalAlpha=.85; x.fill();
-      x.globalAlpha=1; x.lineWidth=1.5*u; x.strokeStyle="#000"; x.stroke();
-      // The seed's NUMBER as well as its name, and the same number the plate
-      // shows - that is what ties the overlay back to the click-through list, so
-      // "seed 7 landed in the wrong place" is a statement you can make.
-      //
-      // The number is the part that was asked to be large; the region name rides
-      // along at 60% of it. At full size both together overlapped their
-      // neighbours on a 10-seed plate and were unreadable on a 30-seed one, and
-      // the number is what carries the order.
-      //
-      // An ambiguous region is drawn as its group. Writing "Vd" on a section
-      // whose level is unknown asserts something the data cannot support.
+  // ROIs are the ones that were placed. Nothing is positioned by the transform.
+  //
+  // This used to warp every seed on the plate through the fit and draw them all,
+  // so ten placed ROIs produced thirty on screen and twenty-seven in the export.
+  // The seventeen nobody touched were extrapolation - a thin-plate spline is
+  // exact at its own landmarks and speculative everywhere else, most of all past
+  // the edge of them, which is precisely where the untouched seeds were. They
+  // looked like measurements.
+  //
+  // The label is still the seed's number and region, because a placed ROI knows
+  // which seed it answers.
+  {
+    const P = PLATES[s.plate];
+    for(const pr of s.pairs){
+      const sd = pr[4] ? P.seeds[pr[4] - 1] : null;
+      if(!sd) continue;                       // a free pair names no region
+      const [X,Y] = img2can(pr[0], pr[1], g);
+      // The name only. mark() puts the number in its badge, and printing it
+      // here too meant twenty numbers on ten overlapping ROIs.
       const nm = (sd.amb || sd.region) + (sd.unk ? "?" : "");
+      const rad = pairR(pr);
       x.save();
-      x.textBaseline="middle";
-      x.font="bold "+(NP*u)+"px system-ui";
-      const wn = x.measureText(sd.n).width;
-      x.font="bold "+(NP*0.6*u)+"px system-ui";
-      const wr = x.measureText(" "+nm).width;
-      // flip the label to the other side rather than let it run off the canvas
-      const flip = (X + 9*u + wn + wr) > g.D;
-      const lx = flip ? X - 9*u - wn - wr : X + 9*u;
-      x.lineWidth=4*u; x.strokeStyle="#000"; x.lineJoin="round";
-      x.font="bold "+(NP*u)+"px system-ui";
-      x.strokeText(sd.n, lx, Y);
+      x.textBaseline = "middle";
+      x.font = "bold " + (NP*0.6*u) + "px system-ui";
+      const wr = x.measureText(nm).width;
+      // Clear of the ROI's own circle, and flipped rather than run off the edge.
+      const off = rad + 6*u;
+      const flip = (X + off + wr) > g.D;
+      const lx = flip ? X - off - wr : X + off;
+      x.lineWidth = 3.5*u; x.strokeStyle = "#000"; x.lineJoin = "round";
+      x.strokeText(nm, lx, Y);
       x.fillStyle = sd.amb ? "#e3b341" : "#fff";
-      x.fillText(sd.n, lx, Y);
-      x.font="bold "+(NP*0.6*u)+"px system-ui";
-      x.lineWidth=3*u; x.strokeStyle="#000";
-      x.strokeText(" "+nm, lx+wn, Y);
-      x.fillStyle = sd.amb ? "#e3b341" : "#fff";
-      x.fillText(" "+nm, lx+wn, Y);
+      x.fillText(nm, lx, Y);
       x.restore();
     }
   }
@@ -1155,7 +1150,7 @@ function status(){
     const shown = names.map(n => gold.has(n)
       ? `<span style="color:#e3b341">${n}</span>` : n).join(", ");
     el("regInfo").innerHTML = P.seeds.length
-      ? `<b>${P.seeds.length}</b> seeds warped: ${shown}`
+      ? `<b>${usedSeeds(s).size}</b> of <b>${P.seeds.length}</b> placed: ${shown}`
         + (gold.size ? `<div style="color:#9aa0a8;margin-top:4px">`
                   + `<span style="color:#e3b341">gold</span> is ONE group whose members`
                   + ` cannot be told apart without the rostrocaudal level.`
@@ -1470,10 +1465,12 @@ function exportCsv(){
   const lm=[["scene_uid","animal","marker","section_order","plate_set","plate_id","pair",
              "sec_x","sec_y","sec_r","plate_x","plate_y","residual_px",
              "seed_n","seed_region"]];
+  // sec_r is the radius the ROI was placed with - the area to quantify - and
+  // seed_n says which numbered atlas ROI it answers.
   const rg=[["scene_uid","animal","marker","plate_set","plate_id","region",
              "region_ambiguous","ambiguity_group","region_uncertain_in_atlas",
-             "sec_x","sec_y",
-             "n_landmarks","transform","mean_residual_px"]];
+             "sec_x","sec_y","sec_r","seed_n","n_landmarks","transform",
+             "mean_residual_px"]];
 
   for(const d of DATA){
     const s=S[d.uid];
@@ -1518,11 +1515,16 @@ function exportCsv(){
                sn||"", sd ? ((sd.amb || sd.region) + (sd.unk ? "?" : "")) : ""]);
     });
     const mr=(tot/n/K).toFixed(2);
-    for(const sd of P.seeds){
-      const [X,Y]=apply(T, sd.xf*P.w, sd.yf*P.h);
+    // One row per ROI actually placed, at the position and radius it was placed
+    // with. Nothing here is derived from the transform, so every row is a
+    // measurement rather than a guess about where a region probably is.
+    for(const pr of s.pairs){
+      const sd = pr[4] ? P.seeds[pr[4] - 1] : null;
+      if(!sd) continue;
       rg.push([d.uid,d.animal,d.m,PLATE_SET,P.id,sd.region,
                sd.amb?1:0, sd.amb||"", sd.unk?1:0,
-               (X/K).toFixed(2),(Y/K).toFixed(2),n,T.kind,mr]);
+               (pr[0]/K).toFixed(2),(pr[1]/K).toFixed(2),(pairR(pr)/K).toFixed(2),
+               sd.n, n, T?T.kind:"", mr]);
     }
   }
   dl(pl,"roi_plates.csv");
