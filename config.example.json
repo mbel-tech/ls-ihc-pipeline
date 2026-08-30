@@ -8,6 +8,8 @@
   "pixel_size_um": 0.65,
   "section_thickness_um": 14.0,
   "_section_thickness_note": "How thick the sections were cut. NOT recoverable from the CZIs - they carry no size_z, being single-plane images of a physical section - so it has to be supplied. This is the number the Abercrombie correction needs; see detection.abercrombie below. 14.0 for the LS dataset, operator-stated 2026-08-30.",
+  "section_interval_um": 14.0,
+  "_section_interval_note": "Sections are CONSECUTIVE - the interval equals the thickness, operator-stated 2026-08-30. Two consequences. (1) section_order * 14 um is rostrocaudal position within the block, so the ~115 sections per animal are a ~1.6 mm forebrain block, which is consistent with every ROI in this study being telencephalic or preoptic. (2) Adjacent sections are NOT independent tissue: a nucleus cut by the boundary appears in both, so summing or averaging raw profile counts across neighbours double-counts it. That is exactly what the Abercrombie correction below removes, which is why it is enabled rather than optional here.",
   "overview_target_um_per_px": 5.2,
   "triage_target_um_per_px": 2.6,
   "detection_target_um_per_px": 1.3,
