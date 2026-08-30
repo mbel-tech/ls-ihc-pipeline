@@ -1,15 +1,18 @@
-// seed order, guided placement, landmark radius, export provenance
+// Guided mode: the plate's numbered seeds as a click-through list.
 //
-// Ported from the scratch suites that were used while building the curator.
-// The assertions are unchanged: they are the record of bugs already found.
+// Also covers the seed ORDER itself - down each column, columns left to
+// right - and the two kinds of region uncertainty, because those are
+// claims the exports make and a silent change to either would be wrong
+// in a way no screenshot would show.
 
-const { load, chk, note, fire, done, els, store } = require("./harness");
+const { env, load, chk, note, done } = require('./harness');
+const { els, store, blobs, fire } = env;
 
-const blobs = [];
-const X = load(
-  '{KEY,PLATES,DATA,st,rows,select,onSlideUser,exportCsv,markAssigned,toggleGuided,skipSeed,secDown,clickPl,undoPt,clearPts,seedsOf,usedSeeds,status,defaultR,imgK,pairR,get guided(){return guided},get gTarget(){return gTarget},set active(v){active=v},get active(){return active}}',
-  { blobs });
-
+const X = load(`{KEY, PLATES, DATA, st, rows, select, onSlideUser, exportCsv, markAssigned,
+  toggleGuided, skipSeed, secDown, clickPl, undoPt, clearPts, seedsOf,
+  usedSeeds, status, defaultR, imgK, pairR,
+  get guided(){return guided}, get gTarget(){return gTarget},
+  set active(v){active=v}, get active(){return active}}`);
 // a plate that actually carries seeds
 const pi = X.PLATES.findIndex(P=>P.labelled);
 const P  = X.PLATES[pi];
@@ -17,7 +20,7 @@ els["animal"].value="LS105";
 const uid = X.rows()[0].uid; X.select(uid, true); X.active=uid;
 X.onSlideUser(pi);
 
-console.log("plate "+P.id+" carries "+P.seeds.length+" seeds\n");
+note("plate "+P.id+" carries "+P.seeds.length+" seeds\n");
 chk("seeds arrive in a fixed order (n = 1..N)",
     P.seeds.every((s,i)=>s.n===i+1), true);
 // Seeds are grouped into COLUMNS and sorted by y within one, so x wobbles by up
@@ -47,6 +50,7 @@ chk("Dl and Dm are not flagged ambiguous - they are distinct places",
 chk("...nor is anything outside Vd/Vv/POA",
     [...new Set(allSeeds.filter(sd=>sd.amb).map(sd=>sd.region))].sort().join("/"),
     "POA/Vd/Vv");
+
 
 // placement is press -> (optional drag to size) -> release, so drive the real
 // gesture rather than a handler that no longer exists

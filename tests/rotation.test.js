@@ -1,62 +1,59 @@
-// rotation commits on release and survives a reload
+// Rotation: committed on release, kept per section, survives a reload.
 //
-// Ported from the scratch suite used while building the curator. The scenario is
-// unchanged - it is the record of the bug where a tilt sprang back to level
-// because it was only a draft until a button was pressed.
-//
-// The original printed its results and decided pass/fail at the end from two of
-// them. Rewritten as assertions: every step now says what it expects, so a
-// regression anywhere in the sequence fails rather than scrolling past.
+// Rotation is a viewing aid - every stored coordinate stays in the unrotated
+// frame - so what matters here is not geometry but WHEN the angle is written.
+// It used to be a draft until a button was pressed, and losing it was silent:
+// the section sprang back to level and looked like it had never been turned.
 
-const { load, chk, note, fire, done, store } = require("./harness");
+const { env, load, chk, note, done } = require("./harness");
+const { store, fire } = env;
 
-const X = load(
-  '{KEY,st,rows,toggleRotMode,restoreTilt,secDown,select,' +
-  'get rotMode(){return rotMode},get draftRot(){return draftRot},' +
-  'set active(v){active=v},get active(){return active}}');
+const X = load(`{KEY, st, rows, toggleRotMode, restoreTilt, secDown, select,
+  get rotMode(){return rotMode}, get draftRot(){return draftRot},
+  set active(v){active=v}, get active(){return active}}`);
 
 const uids = X.rows().map(r => r.uid);
 const uid = uids[0], other = uids[1];
 X.active = uid;
+
 const disk = u => JSON.parse(store[X.KEY] || "{}")[u] || {};
 
-chk("starts untilted", X.st(uid).rot || 0, 0);
-chk("nothing on disk yet", disk(uid).rot === undefined, true);
+chk("starts unrotated", X.st(uid).rot || 0, 0);
 
 X.toggleRotMode();
 X.secDown({ button: 0, clientX: 100, preventDefault() {} });
-fire("mousemove", { clientX: 150, shiftKey: false });     // +50 px * 0.4 = 20 deg
-
+fire("mousemove", { clientX: 150, shiftKey: false });   // +50 px * 0.4 deg = 20
 chk("mid-drag shows a live draft", X.draftRot.toFixed(1), "20.0");
-chk("...and has still written nothing", disk(uid).rot === undefined, true);
+chk("...and nothing is on disk yet", disk(uid).rot, undefined);
 
 fire("mouseup", {});
-chk("release commits the tilt", X.st(uid).rot.toFixed(1), "20.0");
-chk("...writes it to storage", disk(uid).rot.toFixed(1), "20.0");
+chk("release commits the angle", X.st(uid).rot.toFixed(1), "20.0");
+chk("...and writes it to storage", disk(uid).rot.toFixed(1), "20.0");
 chk("...and clears the draft", X.draftRot, null);
 
-X.select(other, true); X.select(uid, true);
-chk("leaving and returning keeps it", X.st(uid).rot.toFixed(1), "20.0");
+X.select(other, true);
+X.select(uid, true);
+chk("leaving the section and returning keeps it", X.st(uid).rot.toFixed(1), "20.0");
 
-// shift is the fine modifier: -20 px * 0.05 = -1 deg, from the saved 20
+// shift is the fine modifier: -20 px * 0.05 deg = -1, so 20 -> 19
 X.secDown({ button: 0, clientX: 200, preventDefault() {} });
 fire("mousemove", { clientX: 180, shiftKey: true });
 fire("mouseup", {});
 chk("a second drag starts from the saved angle", X.st(uid).rot.toFixed(1), "19.0");
 
-// a press that never passes the jitter floor must not count as a drag
 const before = X.st(uid).rot;
 X.secDown({ button: 0, clientX: 300, preventDefault() {} });
-fire("mousemove", { clientX: 301, shiftKey: false });     // 1 px
+fire("mousemove", { clientX: 301, shiftKey: false });   // 1 px, under the jitter floor
 fire("mouseup", {});
-chk("a click that never moved changes nothing",
+chk("a press that never moved changes nothing",
     X.st(uid).rot.toFixed(1), before.toFixed(1));
 
-// rebuilt from storage alone, as a reload would
-chk("survives a reload", JSON.parse(store[X.KEY])[uid].rot.toFixed(1), "19.0");
+// Rebuilt from storage alone: this is what a reload would see.
+const reloaded = JSON.parse(store[X.KEY])[uid];
+chk("survives a reload", reloaded.rot.toFixed(1), "19.0");
 
 X.restoreTilt();
-chk("Restore returns it to the reformatted frame", X.st(uid).rot, 0);
-chk("...and persists that too", disk(uid).rot, 0);
+chk("Restore original tilt zeroes it", X.st(uid).rot.toFixed(1), "0.0");
+chk("...on disk too", disk(uid).rot.toFixed(1), "0.0");
 
 done();

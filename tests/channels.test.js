@@ -1,19 +1,19 @@
-// both markers in one page, the filters, per-row export
+// Both channels in one page, the view filters, and per-row export.
 //
-// Ported from the scratch suites that were used while building the curator.
-// The assertions are unchanged: they are the record of bugs already found.
+// pERK and PCNA are separate physical sections that share only the tool,
+// so the thing under test is that nothing crosses between them: each row
+// carries its own marker and subset, and hiding the excluded is a view
+// rather than a deletion.
 
-const { load, chk, note, fire, done, els, store } = require("./harness");
+const { env, load, chk, note, done } = require('./harness');
+const { els, store, blobs, fire } = env;
 
-const blobs = [];
-const X = load(
-  '{KEY,DATA,MARKERS,st,rows,inScope,render,onMarker,select,exportCsv,toggleExcl,hasRgb,status,scopeLabel,counts,set active(v){active=v},get active(){return active}}',
-  { blobs });
-
+const X = load(`{KEY, DATA, MARKERS, st, rows, inScope, render, onMarker, select,
+  exportCsv, toggleExcl, hasRgb, status, scopeLabel, counts,
+  set active(v){active=v}, get active(){return active}}`);
 console.log("MARKERS:", JSON.stringify(X.MARKERS));
 console.log("marker options:", els["marker"].innerHTML.replace(/<[^>]*>/g,"|").replace(/\|+/g,"|"));
-console.log("");
-
+note("");
 const perk=X.DATA.filter(d=>d.m==="AF568"), pcna=X.DATA.filter(d=>d.m==="AF488");
 chk("both channels in one page", X.DATA.length, perk.length+pcna.length);
 chk("pERK rows", perk.length, 454);
