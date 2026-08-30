@@ -240,6 +240,19 @@ button.primary{background:var(--accent);border-color:var(--accent);color:#04121f
 .pane{position:relative;background:#0e1014;border:1px solid var(--line);border-radius:9px;
       overflow:hidden;min-width:0;min-height:0}
 
+/* Step buttons on each pane. Absolute over the canvas so they cost no layout,
+   dim until pointed at so they do not compete with the tissue, and skipped by
+   the tab order because the keyboard already has the same moves on the arrows.
+   z-index above the h2 so the left one is not swallowed by the title. */
+.nav{position:absolute;top:50%;transform:translateY(-50%);z-index:4;
+     width:34px;height:54px;border-radius:8px;border:1px solid var(--line);
+     background:rgba(14,16,20,.55);color:var(--dim);font:600 20px system-ui;
+     cursor:pointer;opacity:.45;transition:opacity .12s,border-color .12s,color .12s;
+     display:flex;align-items:center;justify-content:center;padding:0}
+.pane:hover .nav{opacity:.9}
+.nav:hover{border-color:var(--accent);color:var(--accent);opacity:1}
+.nav:disabled{opacity:.12;cursor:default;border-color:var(--line);color:var(--dim)}
+.nav.l{left:6px} .nav.r{right:6px}
 .pane h2{position:absolute;top:6px;left:8px;margin:0;font-size:11px;color:var(--dim);
          z-index:3;pointer-events:none;text-shadow:0 0 6px #000}
 canvas{display:block;width:100%;height:100%;object-fit:contain;cursor:crosshair;
@@ -360,9 +373,17 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
 </header>
 <div id="panes">
   <div class="pane"><h2 id="secTitle">SECTION - click to place a point</h2>
-    <canvas id="cSec" tabindex="0" onmousedown="secDown(event)"></canvas></div>
+    <canvas id="cSec" tabindex="0" onmousedown="secDown(event)"></canvas>
+    <button class="nav l" id="secPrev" tabindex="-1" title="Previous section (up arrow)"
+            onclick="stepSection(-1)">&lsaquo;</button>
+    <button class="nav r" id="secNext" tabindex="-1" title="Next section (down arrow)"
+            onclick="stepSection(1)">&rsaquo;</button></div>
   <div class="pane"><h2 id="plTitle">ATLAS PLATE - click the matching point</h2>
-    <canvas id="cPl" tabindex="0" onclick="clickPl(event)"></canvas></div>
+    <canvas id="cPl" tabindex="0" onclick="clickPl(event)"></canvas>
+    <button class="nav l" id="plPrev" tabindex="-1" title="Previous plate (left arrow)"
+            onclick="stepPlate(-1)">&lsaquo;</button>
+    <button class="nav r" id="plNext" tabindex="-1" title="Next plate (right arrow)"
+            onclick="stepPlate(1)">&rsaquo;</button></div>
   <div id="side">
     <div class="card"><h3>SECTION</h3><div class="kv" id="secInfo">-</div>
       <div class="kv" id="rotInfo"></div></div>
@@ -383,7 +404,8 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
 <footer>
   <kbd>click</kbd> section then plate to add a pair &middot;
   <kbd>&larr;</kbd><kbd>&rarr;</kbd> plate &middot; <kbd>z</kbd> undo point &middot;
-  <kbd>&uarr;</kbd>/<kbd>&darr;</kbd> previous / next section (the plate stays put) &middot;
+  <kbd>&uarr;</kbd>/<kbd>&darr;</kbd> previous / next section (the plate stays put,
+  or use the arrows on the panes) &middot;
   <kbd>a</kbd> assign plate &middot;
   <kbd>Rotate</kbd> then drag the section left/right (<kbd>shift</kbd> fine) - kept on release,
   <kbd>r</kbd> restores the original &middot;
@@ -1141,6 +1163,7 @@ function status(){
   // Two facts now, not three: is the tool open, and what is drawn. There is no
   // uncommitted state left to report, because the drag commits itself.
   const saved = sa.rot||0;
+  navState();
   dapiBtnState();
   el("rotBtn").textContent = rotMode ? "Rotate ✓" : "Rotate";
   el("rotBtn").classList.toggle("mode-on", rotMode);
@@ -1183,6 +1206,34 @@ function toggleExcl(){
   const s=st(active);
   s.excl = !s.excl;
   save(); paintCell(active); status();
+}
+
+// The buttons and the arrow keys are the same two moves, so they are the same
+// two functions. Wiring the buttons to their own copy would let the pair drift -
+// and it is the kind of drift nobody notices, because both still appear to work.
+function stepPlate(d){
+  if(!active) return;
+  const v = Math.min(PLATES.length - 1, Math.max(0, +el("slider").value + d));
+  el("slider").value = v;
+  onSlide(v);
+  navState();
+}
+function stepSection(d){
+  if(!active) return;
+  const list = rows(), i = list.findIndex(x => x.uid === active);
+  const j = i + d;
+  if(i < 0 || j < 0 || j >= list.length) return;
+  select(list[j].uid);            // the plate stays put, as with the arrow keys
+}
+// Grey a button out at the ends rather than have it silently do nothing - the
+// strip already shows where you are, and this says where you can still go.
+function navState(){
+  const list = rows(), i = list.findIndex(x => x.uid === active);
+  const v = +el("slider").value;
+  el("secPrev").disabled = !(i > 0);
+  el("secNext").disabled = !(i >= 0 && i < list.length - 1);
+  el("plPrev").disabled = !active || v <= 0;
+  el("plNext").disabled = !active || v >= PLATES.length - 1;
 }
 
 function onSlide(v){
@@ -1324,14 +1375,14 @@ addEventListener("keydown", e=>{
   }
   if(!active) return;
   const list=rows(), i=list.findIndex(d=>d.uid===active);
-  if(e.key==="ArrowRight"){ el("slider").value=Math.min(PLATES.length-1,+el("slider").value+1); onSlide(el("slider").value); e.preventDefault(); }
-  else if(e.key==="ArrowLeft"){ el("slider").value=Math.max(0,+el("slider").value-1); onSlide(el("slider").value); e.preventDefault(); }
+  if(e.key==="ArrowRight"){ stepPlate(1); e.preventDefault(); }
+  else if(e.key==="ArrowLeft"){ stepPlate(-1); e.preventDefault(); }
   // Arrows move, letters act. x used to be "next section", paired with z; the
   // up/down arrows do that now, so the pair is retired rather than left half
   // bound - leaving z on prev while x excluded would make the muscle memory of
   // one a trap for the other.
-  else if(e.key==="ArrowDown" && i<list.length-1){ select(list[i+1].uid); e.preventDefault(); }
-  else if(e.key==="ArrowUp"   && i>0){ select(list[i-1].uid); e.preventDefault(); }
+  else if(e.key==="ArrowDown"){ stepSection(1); e.preventDefault(); }
+  else if(e.key==="ArrowUp"){ stepSection(-1); e.preventDefault(); }
   else if(e.key==="a" || e.key==="A"){ markAssigned(); }
   else if(e.key==="f" || e.key==="F"){ toggleFav(); }
   else if(e.key==="x" || e.key==="X"){ toggleExcl(); }
