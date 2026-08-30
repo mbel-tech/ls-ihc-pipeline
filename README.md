@@ -154,6 +154,30 @@ appearing proves nothing about whether QtWebEngine actually renders.
 
 ---
 
+## Tests
+
+```bash
+bash tests/run.sh
+```
+
+Node suites over the ROI curator's own JavaScript, evaluated against a small DOM
+stub. They cover seed ordering, guided placement, the landmark radius, both
+markers in one page, the filters, rotation, and what reaches the exports — 70-odd
+assertions, most of which exist because they caught something.
+
+`run.sh` regenerates the curator with `--no-seed` first and extracts its script.
+That matters: the page normally embeds whatever curation is in
+`out_root/curation`, and a suite reading that would start with hundreds of
+sections it knows nothing about, with counts that changed every time someone
+curated. The page is regenerated *with* the seed afterwards, so running the tests
+does not quietly downgrade the file you use.
+
+**They check logic, not rendering.** Canvas calls are swallowed by the stub, so
+nothing here says anything about what is drawn — that is checked in a real
+browser, by reading pixels back off the canvas.
+
+---
+
 ## Design notes
 
 Things that are non-obvious, and that took measurement to get right.
