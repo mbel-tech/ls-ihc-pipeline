@@ -312,6 +312,14 @@ input[type=range]{width:100%}
    pane resizes between a 3-column and a 4-column layout. */
 .cell.excl{border-color:#f85149;opacity:.5}
 .cell.excl img{filter:grayscale(1)}
+/* The seeds are drawn in the atlas's own colours on both panes, so the key has
+   to use those same colours - reading it off the seed rather than a table here
+   is what keeps the two from ever disagreeing. */
+#regKey{margin-top:7px;display:flex;flex-direction:column;gap:3px}
+#regKey div{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--dim)}
+#regKey i{width:11px;height:11px;border-radius:50%;border:1px solid #000;
+          flex:0 0 auto;display:inline-block}
+#regKey b{color:var(--fg);font-weight:600}
 .btn-guide{border-color:#2ea043;color:#3fb950}
 .btn-guide:hover{border-color:#3fb950;color:#3fb950}
 .guide-on{border-color:#3fb950 !important;background:#0f2e18;color:#7ee787 !important}
@@ -397,7 +405,8 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
       <div id="lmlist"></div>
     </div>
     <div class="card"><h3>REGIONS WARPED</h3>
-      <div class="kv" id="regInfo">needs 3 pairs</div></div>
+      <div class="kv" id="regInfo">needs 3 pairs</div>
+      <div id="regKey"></div></div>
   </div>
 </div>
 <div id="strip"></div>
@@ -965,7 +974,13 @@ addEventListener("mouseup", ()=>{
 // being an independent check on a guided pair, so every landmark records the
 // seed it came from (or blank for a free click) and the exports carry it. Which
 // method produced a number stays recoverable instead of being lost in the mean.
-let guided=false, gTarget=0;
+// ON by default, because this IS the curation process rather than an
+// alternative to it: the plate's ROIs are numbered, one click places the next
+// one on the section at the size you drag, and z steps back. Free
+// correspondence is still there behind the button for the cases where the
+// useful matching feature is not a region centre, but it is no longer what you
+// get by accident on first load.
+let guided=true, gTarget=0;
 const seedsOf   = s => PLATES[s.plate].seeds;
 const usedSeeds = s => new Set(s.pairs.map(p=>p[4]).filter(n=>n));
 // Resume where the section was left: the pairs record which seeds are done, so
@@ -1163,6 +1178,10 @@ function status(){
   // Two facts now, not three: is the tool open, and what is drawn. There is no
   // uncommitted state left to report, because the drag commits itself.
   const saved = sa.rot||0;
+  // Outside the transform branch on purpose: the colour key is a fact about
+  // the plate on screen, and it is most wanted before three landmarks exist,
+  // not after.
+  regionKey(PLATES[st(active).plate]);
   navState();
   dapiBtnState();
   el("rotBtn").textContent = rotMode ? "Rotate ✓" : "Rotate";
@@ -1313,6 +1332,42 @@ function counts(){
 // Read S directly rather than through st(): this runs for every visible cell on
 // every render, and st() would create a state entry for each one, turning "shown
 // in the strip" into "has a record".
+// Which colour means which region, taken from the seeds themselves so it can
+// never drift from what is drawn. Counted per region, because "Dl" appearing
+// fourteen times on a plate is worth knowing when reading the overlay - and the
+// numbers those seeds carry are the order they are placed in.
+function regionKey(P){
+  const box = el("regKey");
+  if(!box) return;
+  if(!P || !P.seeds.length){ box.innerHTML = ""; return; }
+  // Keyed on the atlas's OWN region, not on the ambiguity group. Grouping
+  // Vd, Vv and POA into one row gave them one swatch, and they are drawn in
+  // three different colours - a key that shows red for a grey dot is worse than
+  // no key. The group membership is still flagged, on each member.
+  const by = new Map();
+  for(const sd of P.seeds){
+    const name = sd.region;
+    const e = by.get(name) || {n: 0, hex: sd.hex || "#4da3ff", amb: sd.amb || "",
+                               unk: false, seeds: []};
+    e.n++;
+    e.unk = e.unk || !!sd.unk;
+    e.seeds.push(sd.n);
+    by.set(name, e);
+  }
+  box.innerHTML = [...by.entries()]
+    .sort((a, b) => b[1].n - a[1].n)
+    .map(([name, e]) => {
+      const nums = e.seeds.sort((x, y) => x - y).join(", ");
+      const tip = `ROI ${nums}` + (e.amb ? `  -  one of ${e.amb}, which cannot be`
+                                         + ` told apart without the rostrocaudal level` : "");
+      return `<div title="${tip}"><i style="background:${e.hex}"></i>`
+           + `<b style="${e.amb ? "color:#e3b341" : ""}">${name}${e.unk ? "?" : ""}</b>`
+           + `<span>&times;${e.n}</span>`
+           + (e.amb ? `<span style="color:#e3b341">&#9670;</span>` : "")
+           + `</div>`;
+    }).join("");
+}
+
 function rotOf(uid){ return (S[uid] || {}).rot || 0; }
 
 // A square rotated inside a square box overflows it by (|cos|+|sin|), so scale

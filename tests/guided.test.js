@@ -59,8 +59,11 @@ const clickAt = (cx,cy,dragTo) => {
   if(dragTo) fire("mousemove",{clientX:dragTo[0], clientY:dragTo[1]});
   fire("mouseup",{});
 };
-X.toggleGuided();
-chk("guided mode on", X.guided, true);
+// Numbered placement is the default now, not a mode to switch on. Asserting
+// that directly is the point: if it ever silently reverts to free
+// correspondence, the whole documented process changes and nothing else here
+// would notice.
+chk("numbered placement is on by default", X.guided, true);
 chk("cursor starts at seed 1", X.gTarget, 1);
 
 clickAt(100,100);
