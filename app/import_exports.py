@@ -1,0 +1,149 @@
+"""Rebuild curator state from exported CSVs.
+
+The exports are the durable form of a curation session - `roi_plates.csv` holds
+one row per decided section and `roi_landmarks.csv` one row per placed pair. If
+the browser storage behind them is gone, unreachable or on an origin nothing else
+can see, these files are still a complete record of what was decided, and the
+curator's working state can be rebuilt from them exactly.
+
+This is the other half of the migration story. `collect_state` gets the state out
+of a browser that will talk to us; this gets it back out of the exports when the
+browser will not, which - given localStorage is partitioned per origin and per
+browser profile, and a `file://` page may have an opaque origin no other page can
+read - is the more reliable of the two.
+
+Run:  python -m app.import_exports C:\\path\\to\\downloads
+      python -m app.import_exports <dir> --dry-run
+"""
+
+import csv
+import json
+import os
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+
+import state as ST                                          # noqa: E402
+
+ROI_KEY = "ls_roi_curator_v1"
+
+
+def _blank():
+    return {"plate": 0, "pairs": [], "assigned": False,
+            "noroi": False, "fav": False, "rot": 0.0, "excl": False}
+
+
+def rebuild(plates_csv, landmarks_csv=None, k=3.0):
+    """Turn the exports back into the curator's `S` map.
+
+    `k` is the ratio between the pixels the operator clicked in and the canonical
+    256 grid the export is written in - 3 for the 768 px colour composites. The
+    export divides by it on the way out, so the rebuild multiplies by it on the
+    way back in. Get this wrong and every landmark lands at the wrong scale,
+    which is why it is a named argument rather than a constant buried below.
+    """
+    S = {}
+    with open(plates_csv, newline="", encoding="utf-8") as fh:
+        for r in csv.DictReader(fh):
+            uid = (r.get("scene_uid") or "").strip()
+            if not uid:
+                continue
+            e = _blank()
+            idx = (r.get("plate_index") or "").strip()
+            if idx:
+                # A recorded plate index means the plate was a decision: the
+                # export only writes it when the operator chose one.
+                e["plate"] = int(float(idx))
+                e["assigned"] = True
+            e["fav"] = r.get("favorite") == "1"
+            e["excl"] = r.get("excluded") == "1"
+            e["noroi"] = (r.get("status") or "") == "no_roi"
+            try:
+                e["rot"] = float(r.get("view_rotation_deg") or 0) or 0.0
+            except ValueError:
+                e["rot"] = 0.0
+            S[uid] = e
+
+    n_pairs = 0
+    if landmarks_csv and os.path.exists(landmarks_csv):
+        with open(landmarks_csv, newline="", encoding="utf-8") as fh:
+            for r in csv.DictReader(fh):
+                uid = (r.get("scene_uid") or "").strip()
+                if not uid:
+                    continue
+                e = S.setdefault(uid, _blank())
+                try:
+                    sx = float(r["sec_x"]) * k
+                    sy = float(r["sec_y"]) * k
+                    px = float(r["plate_x"])
+                    py = float(r["plate_y"])
+                except (KeyError, ValueError):
+                    continue
+                # sec_r and seed_n only exist in exports written after they were
+                # added; older files simply have no radius and no seed to carry.
+                seed = 0
+                try:
+                    seed = int(float(r.get("seed_n") or 0))
+                except ValueError:
+                    seed = 0
+                rad = 0.0
+                try:
+                    rad = float(r.get("sec_r") or 0) * k
+                except ValueError:
+                    rad = 0.0
+                pair = [sx, sy, px, py, seed, rad] if (seed or rad) else [sx, sy, px, py]
+                e["pairs"].append(pair)
+                n_pairs += 1
+    return S, n_pairs
+
+
+def main():
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    dry = "--dry-run" in sys.argv
+    if not args:
+        print(__doc__)
+        return 2
+    src = args[0]
+
+    plates = os.path.join(src, "roi_plates.csv")
+    marks = os.path.join(src, "roi_landmarks.csv")
+    if not os.path.exists(plates):
+        print(f"no roi_plates.csv in {src}")
+        return 1
+
+    cfg = os.path.join(os.path.dirname(HERE), "config.json")
+    with open(cfg, encoding="utf-8") as fh:
+        out_root = json.load(fh)["out_root"]
+
+    S, n_pairs = rebuild(plates, marks)
+    dec = sum(1 for v in S.values()
+              if v["assigned"] or v["fav"] or v["excl"] or v["noroi"] or v["rot"])
+    print(f"rebuilt {len(S)} sections from {os.path.basename(plates)}")
+    print(f"  {dec} carry a decision")
+    print(f"  {sum(1 for v in S.values() if v['excl'])} excluded")
+    print(f"  {sum(1 for v in S.values() if v['fav'])} favourite")
+    print(f"  {sum(1 for v in S.values() if v['assigned'])} with a plate")
+    print(f"  {sum(1 for v in S.values() if v['rot'])} rotated")
+    print(f"  {n_pairs} landmark pairs")
+
+    store = ST.CurationStore(out_root)
+    existing = store.read(ROI_KEY)
+    if existing:
+        try:
+            had = len(json.loads(existing))
+        except ValueError:
+            had = "?"
+        print(f"\n  NOTE: {ROI_KEY} already holds {had} sections and will be replaced.")
+
+    if dry:
+        print("\n--dry-run: nothing written")
+        return 0
+
+    store.write(ROI_KEY, json.dumps(S))
+    print(f"\nwrote {store.path(ROI_KEY)}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

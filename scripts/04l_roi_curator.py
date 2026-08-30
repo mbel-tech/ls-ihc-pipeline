@@ -320,6 +320,11 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
     <select id="marker" onchange="onMarker(); this.blur()"></select>
     <label class="chk"><input type="checkbox" id="favOnly" onchange="render(); this.blur()">favourites only</label>
     <label class="chk"><input type="checkbox" id="hideExcl" onchange="render(); this.blur()">hide excluded</label>
+    <span class="row" style="margin-left:6px">ROI <b id="roiSizeVal"></b> px</span>
+    <input type="range" id="roiSize" min="2" max="60" step="1"
+           title="Default radius for a new ROI. Dragging as you place one still overrides it."
+           oninput="onRoiSize(this.value)" onchange="this.blur()"
+           style="width:90px;vertical-align:middle">
   </span>
   <span class="row"><b id="nsec"></b> shown</span>
   <span class="row" style="color:#7c5cff"><b id="ndone"></b> registered</span>
@@ -347,9 +352,9 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
 </header>
 <div id="panes">
   <div class="pane"><h2 id="secTitle">SECTION - click to place a point</h2>
-    <canvas id="cSec" onmousedown="secDown(event)"></canvas></div>
+    <canvas id="cSec" tabindex="0" onmousedown="secDown(event)"></canvas></div>
   <div class="pane"><h2 id="plTitle">ATLAS PLATE - click the matching point</h2>
-    <canvas id="cPl" onclick="clickPl(event)"></canvas></div>
+    <canvas id="cPl" tabindex="0" onclick="clickPl(event)"></canvas></div>
   <div id="side">
     <div class="card"><h3>SECTION</h3><div class="kv" id="secInfo">-</div>
       <div class="kv" id="rotInfo"></div></div>
@@ -377,6 +382,7 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
   <kbd>f</kbd> favourite &middot; <kbd>x</kbd> exclude this section &middot;
   <kbd>g</kbd> guided (walk the plate's numbered seeds, one click each) &middot;
   <kbd>s</kbd> skip a seed that is not on this section &middot;
+  <kbd>[</kbd><kbd>]</kbd> ROI size (or drag as you place one) &middot;
   3 pairs for an affine, 6 for a spline &middot;
   <span style="color:#7c5cff">purple</span> = registered &middot;
   <span style="color:#4da3ff">blue</span> = plate assigned only &middot;
@@ -845,6 +851,10 @@ function restoreTilt(){
 }
 function secDown(e){
   if(!active || e.button!==0) return;
+  // preventDefault below stops the browser moving focus here, so take it
+  // explicitly - otherwise focus stays on whatever was clicked last and the
+  // arrow keys keep going to that instead of the plate.
+  el("cSec").focus();
   if(rotMode){                               // the rotate tool owns the mouse
     rotDrag={x:e.clientX, rot:effRot(), live:false}; e.preventDefault();
     return;
@@ -947,7 +957,20 @@ function skipSeed(){ if(!guided || !active || !gTarget) return;
 //
 // This is why the canvas has no onclick any more: a click handler would fire
 // after mouseup and place the point a second time.
-const PT_R_CANON = 8;                       // default radius, canonical grid px
+// Default radius for a new ROI, in canonical grid px. Set once and reused, so
+// placing twenty ROIs of the same size is twenty clicks rather than twenty
+// drags; dragging still overrides it for the one being placed. Kept in the same
+// store as everything else, so it survives a reload like every other decision.
+const PT_R_KEY = "ls_roi_curator_v1_size";
+let PT_R_CANON = 8;
+try { const v = parseFloat(localStorage.getItem(PT_R_KEY)); if(v > 0) PT_R_CANON = v; }
+catch(e){}
+function onRoiSize(v){
+  PT_R_CANON = Math.max(1, +v || 1);
+  try { localStorage.setItem(PT_R_KEY, String(PT_R_CANON)); } catch(e){}
+  el("roiSizeVal").textContent = PT_R_CANON;
+  drawSec();
+}
 const imgK = () => (secImg.naturalWidth || SEC_GRID) / SEC_GRID;
 const defaultR = () => PT_R_CANON * imgK();
 const pairR = p => p[5] || defaultR();      // 4- and 5-element pairs predate this
@@ -1230,11 +1253,23 @@ function render(){
 }
 
 addEventListener("keydown", e=>{
-  // A focused control eats its own keys. The plate slider is an input[type=range]
-  // that already steps on the arrows, so without this it would step twice per
-  // press, and the animal select does type-ahead on letters and would swallow x.
-  const tag = e.target && e.target.tagName;
-  if(tag==="SELECT" || tag==="INPUT" || tag==="TEXTAREA") return;
+  // A focused control eats its own keys - but only the ones it actually uses.
+  //
+  // This used to bail on ANY input, which killed the arrows for good: tick
+  // "hide excluded" once and focus sits on that checkbox, and clicking the
+  // section cannot take it back because a canvas is not focusable and secDown
+  // calls preventDefault. Left and right then did nothing for the rest of the
+  // session, with nothing on screen to explain why.
+  //
+  // Only two controls genuinely need protecting: the plate slider steps itself
+  // on the arrows (so letting them through moves two plates per press), and the
+  // animal select does type-ahead that would swallow the letter shortcuts.
+  const t = e.target, tag = t && t.tagName;
+  if(tag==="TEXTAREA" || tag==="SELECT") return;
+  if(tag==="INPUT"){
+    if(t.type==="range" && e.key.startsWith("Arrow")) return;
+    if(t.type==="text" || t.type==="search" || t.type==="number") return;
+  }
   if(!active) return;
   const list=rows(), i=list.findIndex(d=>d.uid===active);
   if(e.key==="ArrowRight"){ el("slider").value=Math.min(PLATES.length-1,+el("slider").value+1); onSlide(el("slider").value); e.preventDefault(); }
@@ -1252,6 +1287,11 @@ addEventListener("keydown", e=>{
   else if(e.key==="r" || e.key==="R"){ restoreTilt(); }
   else if(e.key==="g" || e.key==="G"){ toggleGuided(); }
   else if(e.key==="s" || e.key==="S"){ skipSeed(); }
+  else if(e.key==="[" || e.key==="]"){
+    const step = e.key === "]" ? 1 : -1;
+    const v = Math.min(60, Math.max(1, PT_R_CANON + step));
+    el("roiSize").value = v; onRoiSize(v); e.preventDefault();
+  }
 });
 
 function exportCsv(){
@@ -1335,6 +1375,8 @@ function dl(rowsArr,name){
   const b=new Blob([rowsArr.map(r=>r.join(",")).join("\\n")],{type:"text/csv"});
   const a=document.createElement("a"); a.href=URL.createObjectURL(b); a.download=name; a.click();
 }
+el("roiSize").value = PT_R_CANON;
+el("roiSizeVal").textContent = PT_R_CANON;
 scopeLabel();
 render();
 </script>
