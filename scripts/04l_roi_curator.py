@@ -870,7 +870,31 @@ function drawPl(){
     x.fillText(N, lx, ly);
     x.restore();
   });
-  s.pairs.forEach((p,i)=>mark(x,p[2],p[3],p[4]||i+1,"#4da3ff",u,null,ns));
+  // ONLY FREE PAIRS get a blue mark here, and the reason is that blue means
+  // "an ROI on the section" everywhere else in this page.
+  //
+  // A GUIDED pair's plate point IS the seed - commitPoint stores sd.xf*P.w,
+  // sd.yf*P.h, and P.w is the plate canvas width - so this was drawing a second
+  // marker exactly on top of a seed already drawn above, carrying the same
+  // number but in section blue instead of the atlas's own colour. Since guided
+  // placement is the normal process, that meant a blue ROI appearing on the
+  // atlas for every ROI placed on the section.
+  //
+  // A BACKGROUND disc has no plate point at all. Its (0,0) put a stray blue
+  // numbered ROI in the top-left corner of every plate - a mark for something
+  // the atlas has no opinion about whatsoever.
+  //
+  // A free pair is the one case worth drawing: the operator picked that point
+  // on the plate by hand and nothing else on this pane shows it. Numbered by
+  // its position among the ROIs, the same way drawSec numbers it, so the two
+  // panes agree about which pair is which.
+  let nRoi = 0;
+  s.pairs.forEach(p => {
+    if(isBg(p)) return;
+    nRoi++;
+    if(p[4]) return;
+    mark(x, p[2], p[3], nRoi, "#4da3ff", u, null, ns);
+  });
 }
 // Both canvases are drawn at their bitmap's own resolution and then fitted into
 // the pane by CSS, so a size in CANVAS pixels is not a size on SCREEN: a 1427 px
