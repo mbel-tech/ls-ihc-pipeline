@@ -308,6 +308,11 @@ input[type=range]{width:100%}
 #lmlist .bad{color:#ff6b5e}
 #strip{flex:0 0 auto;display:flex;gap:4px;overflow-x:auto;overflow-y:hidden;
        padding:7px 14px;border-top:1px solid var(--line);background:#101318}
+/* The strip is where the sections would have been, so it is where the reason
+   they are not belongs. Sized like a cell so the bar does not collapse. */
+#strip .empty{flex:1 1 auto;display:flex;align-items:center;min-height:74px;
+              color:var(--warn);font-size:13px;padding:0 4px}
+#strip .empty b{color:var(--fg)}
 .cell{flex:0 0 auto;width:74px;border:2px solid var(--line);border-radius:6px;padding:2px;
       background:#0e1014;cursor:pointer;user-select:none}
 .cell:hover{border-color:var(--accent)}
@@ -1590,6 +1595,54 @@ function paintCell(uid){
   counts();
 }
 // Full rebuild. Only on load and on animal change - not on interaction.
+// Why the strip is empty, said in terms this page can vouch for.
+//
+// It does NOT guess at the reason a channel is missing for an animal - that is
+// a property of the analysis set and was decided upstream. What it can state is
+// the count it holds: "LS53 has no pERK sections here, it has 73 PCNA ones" is
+// a fact, and it is also exactly what the operator needs in order to act.
+function emptyNote(){
+  const a = el("animal").value, m = el("marker").value;
+  const mine = DATA.filter(d => d.animal === a);
+  if(!mine.length) return `<b>${a}</b> has no sections in this page at all.`;
+  const label = {}; MARKERS.forEach(k => label[k.id] = k.label);
+  const by = {};
+  for(const d of mine) by[d.m] = (by[d.m] || 0) + 1;
+  const have = Object.keys(by).sort()
+    .map(k => `<b>${by[k]}</b> ${label[k] || k}`).join(" and ");
+  return `<b>${a}</b> has no ${label[m] || m} sections in this subset`
+       + ` - it has ${have}. Change the channel selector to see them.`;
+}
+
+// Nothing selected: blank everything that describes a section.
+//
+// render() used to leave the panes alone when the list came back empty. active
+// went null, select() was never called, and the section canvas, the plate and
+// the whole sidebar kept showing the PREVIOUS animal - so choosing LS53, which
+// has no pERK sections at all, left LS22's section on screen under LS53's name.
+// An empty strip with someone else's tissue above it is worse than an error.
+function showEmpty(){
+  const note = emptyNote();
+  el("strip").innerHTML = `<div class="empty">${note}</div>`;
+  el("secTitle").textContent = "SECTION - nothing to show";
+  el("plTitle").textContent = "ATLAS PLATE";
+  el("secInfo").innerHTML = note;
+  el("rotInfo").textContent = "";
+  el("lmHint").textContent = "";
+  el("lmlist").innerHTML = "";
+  el("regInfo").textContent = "";
+  el("regKey").innerHTML = "";
+  el("fit").textContent = "";
+  el("npair").textContent = "0";
+  el("plName").textContent = "-";
+  el("plLab").innerHTML = "";
+  for(const id of ["cSec", "cPl"]){
+    const c = el(id);
+    c.getContext("2d").clearRect(0, 0, c.width, c.height);
+  }
+  navState();
+}
+
 function render(){
   const list=rows();
   counts();
@@ -1600,6 +1653,7 @@ function render(){
       <div class="cap">${d.order}<br>${cellTag(d.uid)}</div></div>`).join("");
   if(active && !list.some(d=>d.uid===active)) active=null;
   if(list.length) select(active && list.some(d=>d.uid===active) ? active : list[0].uid, true);
+  else showEmpty();
 }
 
 addEventListener("keydown", e=>{
