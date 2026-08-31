@@ -31,7 +31,17 @@ const perk = X.DATA.filter(d => d.m === "AF568");
 const pcna = X.DATA.filter(d => d.m === "AF488");
 const byAnimal = a => perk.filter(d => d.animal === a);
 
-// GROUPS is a const in the page, so it is filled rather than replaced.
+// GROUPS is a const in the page, so it is emptied and refilled rather than
+// replaced. CLEARED FIRST, for the same reason S is above: the page embeds
+// whatever groups.by_animal config.json holds, and config.json is gitignored -
+// it differs per machine and changes the day somebody fills in the real
+// unblinding key. Appending to it, which is what this used to do, made five
+// assertions here depend on that file: the real key put twelve animals in
+// scope, so "an animal outside the key" was no longer outside it, and
+// order became ["control","exercise","control","exercise"] which split every
+// slide four ways.
+X.GROUPS.order.length = 0;
+for (const k of Object.keys(X.GROUPS.by_animal)) delete X.GROUPS.by_animal[k];
 X.GROUPS.order.push("control", "exercise");
 Object.assign(X.GROUPS.by_animal, {
   LS22: "control", LS45: "control", LS61: "control",
