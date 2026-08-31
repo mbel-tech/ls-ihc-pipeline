@@ -130,13 +130,37 @@ def main():
     # density in the file.
     live = [b for b in boxes if b["scene_uid"] in measured]
 
+    # ONE PASS over the nuclei, building every index at once.
+    #
+    # This used to re-scan the whole file for each output row: n_sections
+    # filtered all of it per (animal, region), h did the same again, and
+    # by_section did it once per section. At 883,078 nuclei that is tens of
+    # millions of comparisons and the rebuild ran long enough to be killed
+    # part-written - which is how a 7 KB xlsx that openpyxl could not reopen got
+    # there. It only gets worse: PCNA is roughly six times this.
     n_by = collections.Counter()
+    sec_by = collections.defaultdict(set)      # (animal, region) -> scene_uids
+    diam_by = collections.defaultdict(list)    # (animal, region) -> diameters
+    per_disc_n = collections.Counter()         # (scene_uid, roi_index) -> nuclei
+    per_sec = collections.defaultdict(lambda: [0, 0, set()])  # uid -> roi, bg, regions
     for r in nuc:
-        if r["roi_kind"] != "roi":
-            continue
-        n_by[(r["animal"], r["region"])] += 1
+        uid = r["scene_uid"]
+        per_disc_n[(uid, int(r["roi_index"]))] += 1
+        slot = per_sec[uid]
+        if r["roi_kind"] == "roi":
+            key = (r["animal"], r["region"])
+            n_by[key] += 1
+            sec_by[key].add(uid)
+            diam_by[key].append(float(r["equiv_diam_um"]))
+            slot[0] += 1
+            slot[2].add(r["region"])
+        else:
+            slot[1] += 1
+
     a_by, d_by = collections.Counter(), collections.Counter()
+    disc_by_sec = collections.defaultdict(list)
     for b in live:
+        disc_by_sec[b["scene_uid"]].append(b)
         if b["roi_kind"] != "roi":
             continue
         a_by[(b["animal"], b["region"])] += disc_area_mm2(b)
@@ -144,12 +168,7 @@ def main():
 
     # h for Abercrombie, measured per region from the segmentation rather than
     # assumed. See config.detection.abercrombie.
-    h_by = {}
-    for (an, rg) in a_by:
-        d = [float(r["equiv_diam_um"]) for r in nuc
-             if r["roi_kind"] == "roi" and r["animal"] == an and r["region"] == rg]
-        if d:
-            h_by[(an, rg)] = st.mean(d)
+    h_by = {k: st.mean(v) for k, v in diam_by.items() if v}
 
     by_roi = []
     for key in sorted(a_by, key=lambda k: (k[0], k[1])):
@@ -167,9 +186,7 @@ def main():
             # Everything past this point is derived from the five columns above
             # and is here so the sheet can be checked without recomputing it.
             "n_discs": d_by[key],
-            "n_sections": len({r["scene_uid"] for r in nuc
-                               if r["roi_kind"] == "roi" and r["animal"] == an
-                               and r["region"] == rg}),
+            "n_sections": len(sec_by.get(key, ())),
             "profiles_per_mm2": round(n / area, 1) if area else "",
             "mean_nucleus_diam_um": round(h, 2) if h else "",
             "abercrombie_factor": round(ab, 4),
@@ -177,10 +194,6 @@ def main():
         })
 
     by_disc = []
-    idx = collections.Counter()
-    per_disc_n = collections.Counter()
-    for r in nuc:
-        per_disc_n[(r["scene_uid"], int(r["roi_index"]))] += 1
     seen = collections.Counter()
     for b in live:
         seen[b["scene_uid"]] += 1
@@ -196,18 +209,15 @@ def main():
 
     by_section = []
     for uid in sorted(measured):
-        rows = [r for r in nuc if r["scene_uid"] == uid]
-        an = rows[0]["animal"] if rows else uid.split("_")[0]
+        n_roi, n_bg, regions = per_sec[uid]
+        discs = disc_by_sec.get(uid, ())
+        an = next((b["animal"] for b in discs), uid.split("_")[0])
         by_section.append({
             "sample": an, "treatment": groups.get(an, ""), "scene_uid": uid,
-            "n_roi_nuclei": sum(1 for r in rows if r["roi_kind"] == "roi"),
-            "n_background_nuclei": sum(1 for r in rows if r["roi_kind"] == "background"),
-            "n_roi_discs": sum(1 for b in live if b["scene_uid"] == uid
-                               and b["roi_kind"] == "roi"),
-            "n_background_discs": sum(1 for b in live if b["scene_uid"] == uid
-                                      and b["roi_kind"] == "background"),
-            "regions": ", ".join(sorted({r["region"] for r in rows
-                                         if r["roi_kind"] == "roi"})),
+            "n_roi_nuclei": n_roi, "n_background_nuclei": n_bg,
+            "n_roi_discs": sum(1 for b in discs if b["roi_kind"] == "roi"),
+            "n_background_discs": sum(1 for b in discs if b["roi_kind"] == "background"),
+            "regions": ", ".join(sorted(regions)),
         })
 
     coverage = []

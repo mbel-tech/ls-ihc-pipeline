@@ -256,6 +256,18 @@ STAGES = [
           blurb="The same table one level finer - one row per ROI per slide, so "
                 "within-animal spread is visible instead of averaged away. "
                 "Carries a per-section sheet too."),
+
+    Stage("refresh_loop", "Refresh datasets and figures hourly", "Quantification",
+          script="06e_refresh_loop.py",
+          outputs=["results/ROI_plots"],
+          needs=["detect"],
+          cli_only="a long-running loop, not a one-shot stage - it would hold "
+                   "the app's runner open for hours. Run: refresh_loop.bat",
+          blurb="Rebuilds both spreadsheets and re-draws the per-ROI figures "
+                "every hour, then stops when detection has measured every "
+                "section. Also stops, non-zero, if the count has not moved for "
+                "three cycles - a dead detection run should not look like "
+                "progress."),
 ]
 
 BY_ID = {s.sid: s for s in STAGES}
