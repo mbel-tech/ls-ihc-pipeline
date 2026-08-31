@@ -62,6 +62,13 @@ class Stage:
 # Groups, in the order they appear in the sidebar.
 GROUPS = ["Slides", "Extraction", "Atlas", "Curation", "Quantification"]
 
+# StarDist pulls in TensorFlow, which would roughly quadruple the 494 MB
+# frozen build for a stage that runs once per curation pass. The app lists it
+# and says where to run it rather than hiding it.
+DL_REASON = ("needs StarDist and TensorFlow, which are not in the packaged app "
+             "- they would quadruple its size for a stage that runs once per "
+             "curation pass. Run: python scripts/05c_detect_rois.py")
+
 FIJI_REASON = ("needs Fiji, which the app does not drive. Already complete for "
                "this dataset - qc/flatfield/tilefield_c*.npy are on disk. Run "
                "via scripts/run_all.sh if starting a new dataset.")
@@ -201,6 +208,34 @@ STAGES = [
                 "normalised frame becomes a rectangle in CZI pixels. Reads the "
                 "roi_regions.csv the curator exported; --verify checks the map "
                 "against the transform it inverts."),
+
+    Stage("detect", "Count nuclei in the ROIs", "Quantification",
+          script="05c_detect_rois.py",
+          outputs=["results/roi_nuclei.csv"],
+          needs=["roi_geometry"],
+          cli_only=DL_REASON,
+          blurb="Reads the CZI at 0.65 um/px over each ROI, segments nuclei on "
+                "DAPI with StarDist and measures the marker inside them. One "
+                "row per nucleus, so the positivity cut can change later "
+                "without re-reading a single CZI."),
+
+    Stage("roi_dataset", "Per-ROI dataset", "Quantification",
+          script="06a_roi_dataset.py",
+          outputs=["results/roi_measurements.csv",
+                   "results/detector_specificity.csv"],
+          needs=["detect"],
+          blurb="Counts, positivity against each section's own background discs, "
+                "and the Abercrombie correction. Still keyed by animal only - "
+                "no group label is read here."),
+
+    Stage("join_sampling", "Join the experiment (UNBLINDS)", "Quantification",
+          script="06b_join_sampling.py",
+          outputs=["results/roi_dataset.csv", "results/animal_metadata.csv"],
+          needs=["roi_dataset"],
+          blurb="The first stage permitted to read a group label - config's "
+                "blinding note names 06b exactly. Joins LSnn to Fish ID in the "
+                "sampling workbook and asserts the cohort matches the sheet's "
+                "own 'slicing IHC July 2025' column."),
 ]
 
 BY_ID = {s.sid: s for s in STAGES}

@@ -117,6 +117,15 @@ step 13 "infer which fluorophore is pERK and which is PCNA" \
 step 14 "place the curated ROIs on the slide (needs a curator export)" \
   python 05a_roi_geometry.py || true
 
+# 05c is NOT run here. It needs StarDist and TensorFlow, which the packaged app
+# deliberately does not carry, and it is the one stage measured in hours rather
+# than minutes. Run the rest once a curation pass has been exported:
+#
+#   python 05c_detect_rois.py     nuclei on DAPI, marker measured in them.
+#                                 Resumable per section - safe to interrupt.
+#   python 06a_roi_dataset.py     counts and positivity. Still blind.
+#   python 06b_join_sampling.py   the unblinding join. See config.blinding.
+
 printf '\n========================================================================\n'
 printf 'PIPELINE COMPLETE\n'
 printf '  contact sheets : %s/contactsheets/\n' "$ROOT"

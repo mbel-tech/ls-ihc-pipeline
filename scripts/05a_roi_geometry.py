@@ -205,8 +205,59 @@ def scene_rects(czi_path):
 # --------------------------------------------------------------------------
 
 
-def build(regions_csv, limit=None):
+def analysis_set(regions, plates):
+    """Which sections are measurable, and a full account of what was dropped.
+
+    Three conditions, and each rejects for a different reason:
+
+      * at least one ROI - there is nothing to measure otherwise;
+      * at least one BACKGROUND disc - the positivity cut is per section and is
+        read against that section's own background, so a section without one has
+        no reference of its own. Borrowing another section's would silently
+        substitute a different piece of tissue for the control;
+      * not excluded - `excluded` is the operator's own judgement recorded in
+        roi_plates.csv, and measuring a section they threw out would quietly
+        overrule it.
+
+    Reported rather than filtered silently, because the counts are a result in
+    their own right: how many sections were curated but cannot be used, and why,
+    is exactly what someone reading the dataset will ask.
+    """
+    roi, bg = {}, {}
+    for r in regions:
+        u = r["scene_uid"]
+        d = bg if r.get("roi_kind") == "background" else roi
+        d[u] = d.get(u, 0) + 1
+    excluded = {r["scene_uid"] for r in plates if r.get("excluded") == "1"}
+
+    keep, dropped = [], []
+    for u in sorted(set(roi) | set(bg)):
+        if u in excluded:
+            dropped.append((u, "excluded by the operator"))
+        elif not roi.get(u):
+            dropped.append((u, f"no ROI ({bg.get(u, 0)} background only)"))
+        elif not bg.get(u):
+            dropped.append((u, f"no background disc ({roi[u]} ROIs)"))
+        else:
+            keep.append(u)
+    return keep, dropped, roi, bg
+
+
+def build(regions_csv, limit=None, plates_csv=None, require_background=True):
     regions = load_csv(regions_csv)
+    plates = load_csv(plates_csv) if (plates_csv and os.path.exists(plates_csv)) else []
+
+    if require_background:
+        keep, dropped, n_roi, n_bg = analysis_set(regions, plates)
+        by_reason = {}
+        for _u, wh in dropped:
+            k = wh.split(" (")[0]
+            by_reason[k] = by_reason.get(k, 0) + 1
+        print(f"analysis set: {len(keep)} sections of {len(keep) + len(dropped)} curated")
+        for k, n in sorted(by_reason.items()):
+            print(f"    dropped {n:3d}: {k}")
+        kept = set(keep)
+        regions = [r for r in regions if r["scene_uid"] in kept]
     focus = {r["scene_uid"]: r for r in load_csv(FOCUS_CSV)}
     man = {r["scene_uid"]: r for r in load_csv(MANIFEST_CSV)}
 
@@ -524,6 +575,11 @@ def verify_czi(limit=4):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("regions", nargs="?", help="roi_regions.csv from the curator")
+    ap.add_argument("--plates", help="roi_plates.csv, for the excluded flag "
+                                     "(default: the sibling of the regions file)")
+    ap.add_argument("--all-sections", action="store_true",
+                    help="skip the analysis-set rule and take every section with "
+                         "an ROI, background disc or not")
     ap.add_argument("--verify", action="store_true",
                     help="check the composed map against the real reformat")
     ap.add_argument("--limit", type=int, help="only the first N sections")
@@ -559,9 +615,16 @@ def main():
               "Export from the ROI curator, then pass the path:\n"
               "    python 05a_roi_geometry.py \"C:/Users/you/Downloads/roi_regions.csv\"")
         return 1
+    plates = args.plates or regions.replace("roi_regions", "roi_plates")
     print(f"ROIs from {regions}")
+    if os.path.exists(plates):
+        print(f"exclusions from {plates}")
+    else:
+        print(f"NO plates CSV beside it ({os.path.basename(plates)}) - the operator's "
+              f"exclusions cannot be honoured; pass --plates")
 
-    geom, boxes, skipped = build(regions, limit=args.limit)
+    geom, boxes, skipped = build(regions, limit=args.limit, plates_csv=plates,
+                                 require_background=not args.all_sections)
     if not geom:
         print("no section could be placed")
         if skipped:
