@@ -47,6 +47,11 @@ _spec = importlib.util.spec_from_file_location("_g5", os.path.join(_HERE, "05a_r
 G5 = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(G5)
 
+_spec6b = importlib.util.spec_from_file_location(
+    "_g6b", os.path.join(_HERE, "06b_join_sampling.py"))
+G6B = importlib.util.module_from_spec(_spec6b)
+_spec6b.loader.exec_module(G6B)
+
 CONFIG = G5.CONFIG
 OUT_ROOT = G5.OUT_ROOT
 RESULTS = os.path.join(OUT_ROOT, "results")
@@ -55,6 +60,30 @@ XLSX = os.path.join(RESULTS, "roi_dataset.xlsx")
 
 T_UM = CONFIG["section_thickness_um"]
 AB_ON = bool(CONFIG["detection"].get("abercrombie", {}).get("enabled"))
+
+
+def animal_environment():
+    """animal -> sea / brackish, read straight from the sampling workbook.
+
+    Reuses `read_sheet()` from 06b rather than requiring 06a and 06b to have run
+    first: this stage is meant to be runnable while detection is still going,
+    and making it depend on the end of the chain would take that away.
+
+    NOTE that environment is perfectly confounded with timepoint in this design
+    - brackish IS timepoint 1 and sea IS timepoint 2 - so anything reported by
+    environment is equally a statement about time.
+    """
+    try:
+        sheet = G6B.read_sheet(G6B.DEFAULT_XLSX)[1:]
+    except Exception as exc:                                   # noqa: BLE001
+        print(f"  (no environment: {exc})")
+        return {}
+    out = {}
+    for r in sheet:
+        fid = (r.get(G6B.COL["fish"], "") or "").strip()
+        if fid.isdigit():
+            out["LS" + fid] = (r.get(G6B.COL["environment"], "") or "").strip()
+    return out
 
 
 def disc_area_mm2(b):
@@ -112,6 +141,7 @@ def main():
     nuc = G5.load_csv(NUCLEI_CSV)
     boxes = G5.load_csv(G5.BOX_CSV)
     groups = (CONFIG.get("groups") or {}).get("by_animal") or {}
+    envs = animal_environment()
 
     measured = {r["scene_uid"] for r in nuc}
     planned = {b["scene_uid"] for b in boxes}
@@ -182,6 +212,7 @@ def main():
             "ROI": rg,
             "sample": an,
             "treatment": groups.get(an, ""),
+            "environment": envs.get(an, ""),
             "total_tissue_area_mm2": round(area, 6),   # already a sum of rounded discs
             # Everything past this point is derived from the five columns above
             # and is here so the sheet can be checked without recomputing it.
@@ -200,6 +231,7 @@ def main():
         i = seen[b["scene_uid"]]
         by_disc.append({
             "sample": b["animal"], "treatment": groups.get(b["animal"], ""),
+            "environment": envs.get(b["animal"], ""),
             "scene_uid": b["scene_uid"], "roi_index": i,
             "roi_kind": b["roi_kind"], "ROI": b["region"], "seed_n": b["seed_n"],
             "n_nuclei": per_disc_n.get((b["scene_uid"], i), 0),
@@ -213,7 +245,8 @@ def main():
         discs = disc_by_sec.get(uid, ())
         an = next((b["animal"] for b in discs), uid.split("_")[0])
         by_section.append({
-            "sample": an, "treatment": groups.get(an, ""), "scene_uid": uid,
+            "sample": an, "treatment": groups.get(an, ""),
+            "environment": envs.get(an, ""), "scene_uid": uid,
             "n_roi_nuclei": n_roi, "n_background_nuclei": n_bg,
             "n_roi_discs": sum(1 for b in discs if b["roi_kind"] == "roi"),
             "n_background_discs": sum(1 for b in discs if b["roi_kind"] == "background"),
@@ -226,6 +259,7 @@ def main():
         pl = {b["scene_uid"] for b in boxes if b["animal"] == an}
         coverage.append({
             "sample": an, "treatment": groups.get(an, ""),
+            "environment": envs.get(an, ""),
             "sections_measured": len(pl & measured),
             "sections_planned": len(pl),
             "percent": round(100 * len(pl & measured) / len(pl), 1) if pl else "",

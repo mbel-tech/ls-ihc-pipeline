@@ -53,7 +53,7 @@ def slide_of(uid):
     return f"{m['animal']}_s{m['slide']}{m['variant']}"
 
 
-def group_rows(nuc, live, keyfn, keyname, groups):
+def group_rows(nuc, live, keyfn, keyname, groups, envs):
     """One row per (key, region), where key is a slide or a section.
 
     `keyfn` maps a scene_uid to whatever the row is keyed by, so the slide and
@@ -97,6 +97,7 @@ def group_rows(nuc, live, keyfn, keyname, groups):
             keyname: k,
             "sample": an,
             "treatment": groups.get(an, ""),
+            "environment": envs.get(an, ""),
             "total_tissue_area_mm2": round(area, 6),
             "n_discs": d_by[key],
             "n_sections": len(sec_by.get(key, ())),
@@ -120,6 +121,7 @@ def main():
     nuc = G5.load_csv(G6C.NUCLEI_CSV)
     boxes = G5.load_csv(G5.BOX_CSV)
     groups = (CONFIG.get("groups") or {}).get("by_animal") or {}
+    envs = G6C.animal_environment()
 
     measured = {r["scene_uid"] for r in nuc}
     planned = {b["scene_uid"] for b in boxes}
@@ -131,8 +133,8 @@ def main():
     # be divided by a complete area. Same rule as 06c.
     live = [b for b in boxes if b["scene_uid"] in measured]
 
-    by_slide = group_rows(nuc, live, slide_of, "slide", groups)
-    by_section = group_rows(nuc, live, lambda u: u, "scene_uid", groups)
+    by_slide = group_rows(nuc, live, slide_of, "slide", groups, envs)
+    by_section = group_rows(nuc, live, lambda u: u, "scene_uid", groups, envs)
 
     coverage = []
     for sl in sorted({slide_of(b["scene_uid"]) for b in boxes}):
@@ -140,6 +142,7 @@ def main():
         an = next(b["animal"] for b in boxes if slide_of(b["scene_uid"]) == sl)
         coverage.append({
             "slide": sl, "sample": an, "treatment": groups.get(an, ""),
+            "environment": envs.get(an, ""),
             "sections_measured": len(pl & measured), "sections_planned": len(pl),
             "percent": round(100 * len(pl & measured) / len(pl), 1) if pl else "",
         })
