@@ -87,14 +87,18 @@ term_line <- function(fit, term, label = term) {
     return(sprintf("%s: not estimable", label))
   }
   row <- a[term, ]
+  # Degrees of freedom go in a SUBSCRIPT with no brackets - F<sub>1,6.0</sub> -
+  # which is the convention in print and is what ggtext's element_markdown()
+  # renders. Everything downstream that shows a caption has to use
+  # element_markdown, or these tags appear as literal text.
   if ("DenDF" %in% colnames(a)) {          # lmerTest
     dfd <- row[["DenDF"]]
-    out <- sprintf("%s: F(%.0f, %.1f) = %.2f, %s", label,
+    out <- sprintf("%s: F<sub>%.0f,%.1f</sub> = %.2f, %s", label,
                    row[["NumDF"]], dfd, row[["F value"]],
                    fmt_p(row[["Pr(>F)"]]))
   } else {                                  # lm
     dfd <- a["Residuals", "Df"]
-    out <- sprintf("%s: F(%.0f, %.0f) = %.2f, %s", label,
+    out <- sprintf("%s: F<sub>%.0f,%.0f</sub> = %.2f, %s", label,
                    row[["Df"]], dfd, row[["F value"]],
                    fmt_p(row[["Pr(>F)"]]))
   }
@@ -119,8 +123,9 @@ stat_treatment <- function(d) {
   }
   m <- fit_model(value ~ treatment, d)
   if (is.null(m$fit)) return("no test: the model could not be fitted")
-  paste0(term_line(m$fit, "treatment", "treatment"),
-         if (m$mixed) "  [mixed, animal random]" else "  [one slide per animal]")
+  paste0(term_line(m$fit, "treatment", "treatment"), "<br>",
+         if (m$mixed) "mixed model, animal as a random effect"
+         else "one slide per animal, plain ANOVA")
 }
 
 # --------------------------------------------------------------- series 2
@@ -145,19 +150,24 @@ stat_group4 <- function(d) {
     return(list(caption = "no test: the model could not be fitted", letters = NULL))
   }
 
+  # One term per line. Three F tests joined by pipes ran off the right edge of
+  # the figure and had to be rescued by widening it; as lines they simply fit.
   cap <- if (full) {
     paste(term_line(fit, "treatment", "treatment"),
           term_line(fit, "environment", "environment"),
+          # The first argument is the row name anova() actually uses; only the
+          # second is the label shown. Changing the lookup to a prettier string
+          # makes every interaction line read "not estimable".
           term_line(fit, "treatment:environment", "interaction"),
-          sep = "   |   ")
+          sep = "<br>")
   } else {
     term_line(fit, "group4", "group")
   }
   # A singular fit means the animal variance collapsed to zero. The letters are
   # still computed - the fixed effects are fine - but it is said out loud,
   # because it is the model telling you the design is thin.
-  cap <- paste0(cap, if (m$mixed) "   [mixed, animal random]"
-                     else "   [one slide per animal, plain ANOVA]")
+  cap <- paste0(cap, "<br>", if (m$mixed) "mixed model, animal as a random effect"
+                             else "one slide per animal, plain ANOVA")
   if (m$mixed && isTRUE(lme4::isSingular(fit))) cap <- paste(cap, "(singular fit)")
 
   # THE LETTERS COME FROM THE ONE-WAY PARAMETERISATION, and that is not a second

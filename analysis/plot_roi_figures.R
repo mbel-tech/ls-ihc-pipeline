@@ -5,21 +5,26 @@
 #   treatment/    control vs exercise
 #   environment/  brackish control | brackish exercise, sea control | sea exercise
 #
-# Both series: two panels (per sample, per slide), colour by treatment, and two
-# scatters per group - fully opaque is Abercrombie-corrected, 50% is raw counts
-# over area. The panels share a y axis because it is the same quantity in the
-# same units, and the axis includes zero because these are densities.
+# ONE measure and ONE level. The y value is `cells_per_mm2` - Abercrombie
+# corrected - and every point is a SLIDE. The raw counts/area layer and the
+# per-sample panel were both dropped: two scatters of one hue at different
+# opacity, doubled across two panels, was four clouds per group to read before
+# the reader got to the statistics.
 #
-# READ THE CORRECTED LAYER. Sections are consecutive at 14 um, so a nucleus cut
-# by the boundary appears in both, and both datasets pool across sections - the
-# raw layer counts those twice. It is drawn so the size of the correction is
-# visible per region, not because it is the answer.
+# Sections are consecutive at 14 um, so a nucleus cut by the boundary appears in
+# both and pooling raw counts across sections counts it twice. The correction is
+# not optional here, which is why the raw layer went rather than the corrected
+# one.
 #
-# Statistics live in roi_stats.R: a mixed model on slide-level rows with the
-# animal as a random effect. Series 1 gets an F test as a caption; series 2 gets
-# that plus Tukey compact-letter display above the scatters.
+# SHAPE IS THE ANIMAL. Points are slides and an animal contributes several, so
+# without the shape a cluster of five points reads as five fish. The filled pch
+# set is used so they stay solid at size.
 #
-# Finally every PNG is packed into results/ROI_figures.pptx, one per slide.
+# Statistics live in roi_stats.R: a mixed model on slides with the animal as a
+# random effect, or a plain ANOVA where each animal has only one slide. Series 1
+# gets an F test; series 2 adds Tukey compact-letter display above the scatters.
+#
+# Every PNG is packed into results/ROI_figures.pptx, one per slide.
 #
 # Run:  Rscript analysis/plot_roi_figures.R
 #       Rscript analysis/plot_roi_figures.R D:/LS-analysis/results
@@ -30,92 +35,70 @@ here <- dirname(sub("^--file=", "",
 source(file.path(here, "roi_plots.R"))
 source(file.path(here, "roi_stats.R"))
 
+if (!requireNamespace("ggtext", quietly = TRUE)) {
+  stop("needs ggtext for the subscripted df and the two-line axis labels:\n",
+       "  install.packages(\"ggtext\")")
+}
+library(ggtext)
+
 results <- if (length(args) >= 1) args[1] else RESULTS_DEFAULT
 outdir <- file.path(results, "ROI_plots")
 dirs <- list(treatment = file.path(outdir, "treatment"),
              environment = file.path(outdir, "environment"))
 PPTX <- file.path(results, "ROI_figures.pptx")
 
-CORRECTED <- "cells_per_mm2"
-RAW       <- "profiles_per_mm2"
-MEASURES  <- c("Abercrombie-corrected", "raw counts / area")
+VALUE <- "cells_per_mm2"          # Abercrombie-corrected density
 
 # All 8 Rm seeds are flagged uncertain in the atlas itself (LOGS.md), so a
 # figure of it would look exactly like the others and mean less. Dropped from
-# the FIGURES AND STATISTICS only - the spreadsheets keep it, because they are
-# the record of what was measured.
+# the FIGURES AND STATISTICS only - the spreadsheets keep it.
 DROP_ROIS <- c("Rm")
 
-# Nudge the two measures apart inside each group as well as separating them by
-# opacity: two clouds of one hue at 1.0 and 0.5 alpha are hard to tell apart
-# where the correction is small. Set to 0 to stack them exactly.
-DODGE <- 0.34
+# Filled and solid pch only, so the markers stay solid at this size. Eleven
+# animals, eleven shapes; an animal belongs to exactly one group, so shapes
+# never have to be told apart across a boundary.
+SHAPES <- c(21, 22, 23, 24, 25, 15, 16, 17, 18, 19, 20)
+
+# An animal keeps ITS OWN shape in every figure. Assigning shapes per ROI from
+# whichever animals happen to be present looked fine on any single plot and made
+# LS37 a circle in one figure and a square in the next - which, in a twenty-slide
+# deck someone reads in order, is worse than no shapes at all. The mapping is
+# built once from the full animal list and reused.
+animal_shapes <- function(levels_all) setNames(
+  rep_len(SHAPES, length(levels_all)), levels_all)
+
+BASE <- 18                        # everything is sized off this
+PT   <- 4.6
 
 message(sprintf("reading %s", results))
-samp <- load_sheet(file.path(results, "roi_dataset.xlsx"), "by_roi")
 slide <- load_sheet(file.path(results, "roi_dataset_by_slide.xlsx"), "by_slide")
 
-drop_rois <- function(df, what) {
-  n <- sum(as.character(df$ROI) %in% DROP_ROIS)
-  if (n) message(sprintf("  dropped %d %s row%s: %s",
-                         n, what, if (n == 1) "" else "s",
-                         paste(DROP_ROIS, collapse = ", ")))
-  df <- df[!as.character(df$ROI) %in% DROP_ROIS, ]
-  # Drop the LEVEL too, not just the rows. Left in, Rm kept appearing in the
-  # per-panel summary as "0 control, 0 exercise" with a warning that it had too
-  # few points - which reads as though it were still being considered.
-  df$ROI <- droplevels(df$ROI)
-  df
-}
-samp <- drop_rois(samp, "per-sample")
-slide <- drop_rois(slide, "per-slide")
+n0 <- sum(as.character(slide$ROI) %in% DROP_ROIS)
+if (n0) message(sprintf("  dropped %d row%s: %s", n0, if (n0 == 1) "" else "s",
+                        paste(DROP_ROIS, collapse = ", ")))
+slide <- slide[!as.character(slide$ROI) %in% DROP_ROIS, ]
+slide$ROI <- droplevels(slide$ROI)
 
-# environment arrived with 06c/06d; without it the four-group series cannot be
-# built and saying so beats drawing an empty one.
-if (!"environment" %in% names(samp) || all(is.na(samp$environment) | samp$environment == "")) {
+if (!"environment" %in% names(slide) ||
+    all(is.na(slide$environment) | slide$environment == "")) {
   stop("no environment column - rebuild the datasets:\n",
        "  python scripts/06c_excel_dataset.py && python scripts/06d_excel_by_slide.py")
 }
 
-# Brackish pair first, then sea, reading left to right from the y axis.
 GROUP_LEVELS <- c("brackish control", "brackish exercise",
                   "sea control", "sea exercise")
-add_keys <- function(df) {
-  df$environment <- factor(trimws(df$environment), levels = c("brackish", "sea"))
-  df$group4 <- factor(paste(df$environment, df$treatment), levels = GROUP_LEVELS)
-  df
-}
-samp <- add_keys(samp); slide <- add_keys(slide)
+slide$environment <- factor(trimws(slide$environment), levels = c("brackish", "sea"))
+slide$group4 <- factor(paste(slide$environment, slide$treatment), levels = GROUP_LEVELS)
+slide$sample <- factor(slide$sample,
+                       levels = unique(slide$sample[order(
+                         as.numeric(sub("^LS", "", slide$sample)))]))
+slide$value <- suppressWarnings(as.numeric(slide[[VALUE]]))
+slide <- slide[is.finite(slide$value), ]
 
-message(sprintf("  per sample: %d rows, %d samples", nrow(samp),
-                length(unique(samp$sample))))
-message(sprintf("  per slide : %d rows, %d slides", nrow(slide),
-                length(unique(slide$slide))))
+message(sprintf("  %d slides, %d animals, %d ROIs", nrow(slide),
+                nlevels(droplevels(slide$sample)), nlevels(slide$ROI)))
+report_n(slide, "one point = one slide")
 
-# One long frame per level, with both measures stacked.
-stack_level <- function(df, level) {
-  keep <- c("ROI", "treatment", "environment", "group4", "sample")
-  do.call(rbind, lapply(
-    list(c(CORRECTED, MEASURES[1]), c(RAW, MEASURES[2])),
-    function(m) {
-      out <- df[, keep]
-      out$ROI <- as.character(out$ROI)
-      out$level <- level
-      out$measure <- m[2]
-      out$value <- suppressWarnings(as.numeric(df[[m[1]]]))
-      out
-    }))
-}
-long <- rbind(stack_level(samp, "per sample"), stack_level(slide, "per slide"))
-long <- long[is.finite(long$value), ]
-long$level <- factor(long$level, levels = c("per sample", "per slide"))
-long$measure <- factor(long$measure, levels = MEASURES)
-
-report_n(samp, "one point = one sample")
-
-# "Overwrite the past set" means the SET: a region that stops appearing would
-# otherwise leave a stale figure looking current. The PNGs go, not the folders -
-# deleting a directory open in Explorer fails on Windows.
 for (d in dirs) dir.create(d, showWarnings = FALSE, recursive = TRUE)
 old <- unlist(lapply(dirs, list.files, pattern = "\\.png$", full.names = TRUE))
 if (length(old)) {
@@ -125,109 +108,119 @@ if (length(old)) {
 }
 
 safe_name <- function(x) gsub("^_+|_+$", "", gsub("[^A-Za-z0-9]+", "_", x))
-rois <- levels(droplevels(factor(long$ROI, levels = levels(samp$ROI))))
 
-base_theme <- theme_minimal(base_size = 11) +
+# The group name, one word per line. Bold comes from the theme.
+axis_labeller <- function(x) gsub(" ", "\n", x)
+
+# (N=x) is drawn as an ANNOTATION below the axis line, not folded into the axis
+# label, so it sits above the group name with real padding and the name alone
+# carries the bold.
+#
+# It cannot be part of the label: with ggplot2 4.0.3 and ggtext 0.1.2,
+# element_markdown() renders on plot.caption but NOT on axis.text.x - ggplot2
+# 4.0's axis code does not dispatch to it, and the tags print literally. Checked
+# on a two-point toy plot before changing anything here.
+n_labels <- function(d, col, top) {
+  lv <- levels(droplevels(d[[col]]))
+  data.frame(x = factor(lv, levels = levels(d[[col]])),
+             n = vapply(lv, function(g) sum(as.character(d[[col]]) == g), integer(1)),
+             y = -0.055 * top, row.names = NULL)
+}
+
+base_theme <- theme_minimal(base_size = BASE) +
   theme(legend.position = "top", legend.box = "horizontal",
+        legend.text = element_text(size = BASE * 0.8),
         panel.grid.minor = element_blank(),
-        plot.title = element_text(face = "bold"),
-        plot.caption = element_text(hjust = 0, size = 7.6, colour = "grey25"),
-        strip.text = element_text(face = "bold"))
+        panel.grid.major.x = element_blank(),
+        plot.title = element_text(face = "bold", size = BASE * 1.5),
+        plot.subtitle = element_text(size = BASE * 0.85, colour = "grey30"),
+        # Every caption carries <sub> tags from roi_stats.R, so it MUST be
+        # markdown - element_text would print the tags literally.
+        plot.caption = element_markdown(hjust = 0, size = BASE * 0.78,
+                                        colour = "grey15", lineheight = 1.45),
+        axis.text.x = element_text(size = BASE * 0.92, colour = "black",
+                                   face = "bold", lineheight = 1.05,
+                                   margin = margin(t = 26)),
+        axis.text.y = element_text(size = BASE * 0.92, colour = "black"),
+        axis.title.y = element_text(size = BASE, margin = margin(r = 10)),
+        axis.line = element_line(colour = "black", linewidth = 1.1),
+        axis.ticks = element_line(colour = "black", linewidth = 1.1),
+        axis.ticks.length = unit(5, "pt"),
+        plot.margin = margin(14, 22, 12, 14))
 
-alpha_scale <- scale_alpha_manual(
-  values = setNames(c(1, 0.5), MEASURES), drop = FALSE,
-  guide = guide_legend(order = 2, override.aes = list(size = 3.2)))
+SHAPE_MAP <- animal_shapes(levels(slide$sample))
+shape_scale <- scale_shape_manual(
+  values = SHAPE_MAP, drop = TRUE, name = NULL,
+  guide = guide_legend(order = 2, nrow = 2,
+                       override.aes = list(size = 3.6, colour = "grey20",
+                                           fill = "grey60")))
 
-message(sprintf("\n  writing %d ROIs x 2 series", length(rois)))
+message(sprintf("\n  writing %d ROIs x 2 series", nlevels(slide$ROI)))
 
-for (roi in rois) {
-  d <- long[long$ROI == roi, ]
+for (roi in levels(slide$ROI)) {
+  d <- slide[slide$ROI == roi, ]
   if (!nrow(d)) next
-  d_slide <- d[d$level == "per slide", ]
+  d$environment <- droplevels(d$environment)
+  # sample keeps ALL its levels so the shape scale stays identical across
+  # figures; drop = TRUE on the scale keeps absent animals out of the legend.
+  top <- max(d$value, na.rm = TRUE)
+
+  common <- list(
+    scale_colour_manual(values = TREATMENT_COLOURS, drop = FALSE, name = NULL,
+                        guide = guide_legend(order = 1,
+                                             override.aes = list(size = 4.4, shape = 16))),
+    scale_fill_manual(values = TREATMENT_COLOURS, drop = FALSE, guide = "none"),
+    shape_scale,
+    expand_limits(y = 0),
+    # clip="off" lets the (N=x) annotation sit outside the panel, between the
+    # axis line and the group name.
+    coord_cartesian(clip = "off"),
+    labs(x = NULL, y = expression(density~(cells~per~mm^2)), title = roi),
+    base_theme)
 
   # ---- series 1: treatment ------------------------------------------------
-  caps <- vapply(MEASURES, function(m)
-    sprintf("%s - %s", m, stat_treatment(d_slide[d_slide$measure == m, ])),
-    character(1))
-
-  p1 <- ggplot(d, aes(x = treatment, y = value,
-                      colour = treatment, alpha = measure, group = measure)) +
-    geom_point(position = position_jitterdodge(jitter.width = 0.12,
-                                               dodge.width = DODGE, seed = 1),
-               size = 2.6) +
-    facet_wrap(~ level) +
-    scale_colour_manual(values = TREATMENT_COLOURS, drop = FALSE,
-                        guide = guide_legend(order = 1)) +
-    alpha_scale + expand_limits(y = 0) +
-    labs(title = roi, x = NULL, y = expression(density~(per~mm^2)),
-         colour = NULL, alpha = NULL,
-         subtitle = "opaque is Abercrombie-corrected",
-         # The footer states what does NOT vary. Which model was used varies by
-         # ROI - five of the ten have one slide per animal and get a plain
-         # ANOVA - and is already named on each line, so asserting "mixed
-         # model" here contradicted the line above it on half the figures.
-         caption = paste(c(paste(caps, collapse = "\n"),
-                           "the animal is the experimental unit; the model used is named on each line"),
-                         collapse = "\n")) +
-    base_theme
+  p1 <- ggplot(d, aes(x = treatment, y = value, colour = treatment,
+                      fill = treatment, shape = sample)) +
+    geom_jitter(width = 0.16, height = 0, size = PT, stroke = 1.1) +
+    geom_text(data = n_labels(d, "treatment", top),
+              aes(x = x, y = y, label = sprintf("(N=%d)", n)),
+              inherit.aes = FALSE, vjust = 1, size = BASE * 0.30,
+              colour = "grey25") +
+    scale_x_discrete(labels = axis_labeller) +
+    common +
+    labs(subtitle = "Abercrombie-corrected; one point per slide, shape = animal",
+         caption = stat_treatment(d))
   ggsave(file.path(dirs$treatment, paste0(safe_name(roi), ".png")), p1,
-         width = 7.6, height = 5.2, dpi = 200)
+         width = 9.5, height = 8.0, dpi = 200, bg = "white")
 
   # ---- series 2: the four groups -----------------------------------------
-  st4 <- lapply(setNames(MEASURES, MEASURES),
-                function(m) stat_group4(d_slide[d_slide$measure == m, ]))
+  st4 <- stat_group4(d)
+  p2 <- ggplot(d, aes(x = group4, y = value, colour = treatment,
+                      fill = treatment, shape = sample)) +
+    geom_jitter(width = 0.16, height = 0, size = PT, stroke = 1.1) +
+    geom_text(data = n_labels(d, "group4", top),
+              aes(x = x, y = y, label = sprintf("(N=%d)", n)),
+              inherit.aes = FALSE, vjust = 1, size = BASE * 0.30,
+              colour = "grey25") +
+    scale_x_discrete(drop = FALSE, labels = axis_labeller) +
+    common +
+    labs(subtitle = paste("Abercrombie-corrected; one point per slide,",
+                          "shape = animal; letters share = not different (Tukey)"),
+         caption = paste(st4$caption,
+                         "environment is confounded with timepoint: brackish = tp1, sea = tp2",
+                         sep = "<br>"))
 
-  # Letters sit above the slide panel, the one the model was fitted on. Placed
-  # at a fixed fraction above the tallest point in the whole figure so they
-  # never collide with the data or with each other.
-  top <- max(d$value, na.rm = TRUE)
-  lab <- do.call(rbind, lapply(MEASURES, function(m) {
-    L <- st4[[m]]$letters
-    if (is.null(L) || !nrow(L)) return(NULL)
-    L$measure <- factor(m, levels = MEASURES)
-    L$level <- factor("per slide", levels = levels(d$level))
+  L <- st4$letters
+  if (!is.null(L) && nrow(L)) {
     L$group4 <- factor(L$group4, levels = GROUP_LEVELS)
-    L$treatment <- sub("^\\S+ ", "", as.character(L$group4))
-    L$y <- top * (if (m == MEASURES[1]) 1.10 else 1.19)
-    L
-  }))
-
-  p2 <- ggplot(d, aes(x = group4, y = value,
-                      colour = treatment, alpha = measure, group = measure)) +
-    geom_point(position = position_jitterdodge(jitter.width = 0.12,
-                                               dodge.width = DODGE, seed = 1),
-               size = 2.4) +
-    facet_wrap(~ level) +
-    scale_colour_manual(values = TREATMENT_COLOURS, drop = FALSE,
-                        guide = guide_legend(order = 1)) +
-    alpha_scale +
-    scale_x_discrete(drop = FALSE,
-                     labels = function(x) sub(" ", "\n", x)) +
-    expand_limits(y = 0) +
-    labs(title = roi, x = NULL, y = expression(density~(per~mm^2)),
-         colour = NULL, alpha = NULL,
-         subtitle = "opaque is Abercrombie-corrected; letters share = not different (Tukey)",
-         caption = paste(c(
-           paste(sprintf("%s - %s", MEASURES,
-                         vapply(st4, `[[`, character(1), "caption")),
-                 collapse = "\n"),
-           "the animal is the experimental unit; the model used is named on each line. Letters describe the four groups",
-           "environment is confounded with timepoint here: brackish = tp1, sea = tp2"),
-           collapse = "\n")) +
-    base_theme +
-    theme(axis.text.x = element_text(size = 8.5))
-
-  if (!is.null(lab) && nrow(lab)) {
-    p2 <- p2 + geom_text(data = lab,
-                         aes(x = group4, y = y, label = letter,
-                             colour = treatment, alpha = measure),
-                         inherit.aes = FALSE, size = 3.4, fontface = "bold",
-                         position = position_dodge(width = DODGE),
-                         show.legend = FALSE) +
-      expand_limits(y = top * 1.26)
+    L$y <- top * 1.10
+    p2 <- p2 + geom_text(data = L, aes(x = group4, y = y, label = letter),
+                         inherit.aes = FALSE, size = BASE * 0.42,
+                         fontface = "bold", colour = "grey15") +
+      expand_limits(y = top * 1.18)
   }
   ggsave(file.path(dirs$environment, paste0(safe_name(roi), ".png")), p2,
-         width = 11.0, height = 5.8, dpi = 200)
+         width = 12.0, height = 8.4, dpi = 200, bg = "white")
 }
 
 pngs <- unlist(lapply(dirs, list.files, pattern = "\\.png$", full.names = TRUE))
@@ -246,9 +239,9 @@ if (!requireNamespace("officer", quietly = TRUE)) {
     title <- sprintf("%s - %s", sub("\\.png$", "", basename(f)), series)
     doc <- add_slide(doc, layout = "Title Only", master = "Office Theme")
     doc <- ph_with(doc, value = title, location = ph_location_type(type = "title"))
-    doc <- ph_with(doc, value = external_img(f, width = 9.2, height = 6.1),
-                   location = ph_location(left = 0.4, top = 1.35,
-                                          width = 9.2, height = 6.1))
+    doc <- ph_with(doc, value = external_img(f, width = 9.6, height = 6.4),
+                   location = ph_location(left = 0.2, top = 1.2,
+                                          width = 9.6, height = 6.4))
   }
   print(doc, target = PPTX)
   message(sprintf("  %d slides -> %s", length(pngs), PPTX))
