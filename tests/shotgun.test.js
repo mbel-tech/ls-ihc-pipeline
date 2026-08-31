@@ -78,7 +78,22 @@ global.location = { protocol: "file:" };
 chk("file:// -> refused", X.shotWhyNot().includes("cannot read its own images"), true);
 X.shotBtnState();
 chk("button disabled off disk", els["shotBtn"].disabled, true);
+// Opening the page from disk is the NORMAL way this file gets launched, so the
+// disabled state is the one the operator sees most. It was reported as "not
+// visible" twice while being present, enabled-looking in the DOM and greyed to
+// 40% opacity - so the reason has to be on screen, not in a tooltip nobody
+// hovers on a control they have decided is dead.
+chk("...and says why on screen", els["shotStat"].innerHTML.includes("Shotgun off"), true);
+chk("...naming the fix, not just the fault",
+    els["shotStat"].innerHTML.includes("from the app"), true);
 global.location = { protocol: savedProto };
+
+// Re-enabling must NOT wipe the span: shotSay puts the build summary there and
+// shotBtnState runs at the end of that chain.
+els["shotStat"].innerHTML = "wrote 7 slides";
+X.shotBtnState();
+chk("enabling leaves the build summary alone", els["shotStat"].innerHTML, "wrote 7 slides");
+els["shotStat"].innerHTML = "";
 const savedOrder = X.GROUPS.order.splice(0, 2);
 chk("no group key -> refused", X.shotWhyNot().includes("no group key"), true);
 X.GROUPS.order.push(...savedOrder);

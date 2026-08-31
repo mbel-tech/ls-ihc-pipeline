@@ -364,7 +364,15 @@ input[type=range]{width:100%}
    than recording a decision - and the only one that reads the group key. */
 .btn-shot{border-color:#7a5c2e;color:#e8a33d}
 .btn-shot:hover{border-color:#e8a33d;color:#e8a33d}
-.btn-shot:disabled{border-color:#3a3f47;color:#5a6069;cursor:not-allowed}
+/* Disabled, but never FAINT. This button spends most of its life disabled -
+   a page opened from disk cannot build a deck at all, which is the normal way
+   this file gets opened - and under the global button[disabled]{opacity:.4} it
+   went grey at 40% on a dark header and read as absent rather than
+   unavailable. It was reported as "not visible" twice, and both times it was
+   there. It keeps its amber now, one step down, and says why beside itself. */
+.btn-shot:disabled{opacity:1;border-color:#6b5326;color:#c98f31;background:#1a1610;
+                   cursor:not-allowed}
+.btn-shot:disabled:hover{border-color:#6b5326;color:#c98f31}
 label.chk{color:var(--dim);font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer}
 /* The header wraps, and with a dozen counters between them the buttons used to
    break across lines in whatever order the width happened to allow. Filters and
@@ -1850,6 +1858,16 @@ function shotBtnState(){
   el("shotBtn").disabled = !!why;
   el("shotBtn").title = why
     || "favourites with a plate, one slide per plate, split by treatment";
+  // Say it ON SCREEN, not only in a tooltip. A disabled button with no visible
+  // reason is indistinguishable from a broken one, and nobody hovers a control
+  // they have already decided is dead.
+  //
+  // WRITES ONLY WHEN DISABLED, and deliberately does not clear the span
+  // otherwise: shotStat is also where shotSay() puts the build progress and the
+  // final "wrote N slides" summary, and this function runs at the end of that
+  // chain. Clearing here would wipe the result the moment the button
+  // re-enabled itself.
+  if(why) el("shotStat").innerHTML = `<b>Shotgun off</b> - ${why}`;
 }
 const shotSay = m => { el("shotStat").textContent = m; };
 
