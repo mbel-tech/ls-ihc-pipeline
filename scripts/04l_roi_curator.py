@@ -804,7 +804,8 @@ function drawSec(){
   x.drawImage((hasRgb(active) && !dapiOn) ? markerOnly() : secImg, -g.w/2, -g.h/2);
   x.restore();
   const s=st(active), T=transform(s.pairs), u=uiScale(c);
-  const ns=numScale(PLATES[s.plate], c, u), NP=NUM_PX*ns;
+  // NP went with the region labels; mark() sizes its own badge from ns.
+  const ns=numScale(PLATES[s.plate], c, u);
   // ROIs are the ones that were placed. Nothing is positioned by the transform.
   //
   // This used to warp every seed on the plate through the fit and draw them all,
@@ -814,33 +815,12 @@ function drawSec(){
   // the edge of them, which is precisely where the untouched seeds were. They
   // looked like measurements.
   //
-  // The label is still the seed's number and region, because a placed ROI knows
-  // which seed it answers.
-  {
-    const P = PLATES[s.plate];
-    for(const pr of s.pairs){
-      const sd = pr[4] ? P.seeds[pr[4] - 1] : null;
-      if(!sd) continue;                       // a free pair names no region
-      const [X,Y] = img2can(pr[0], pr[1], g);
-      // The name only. mark() puts the number in its badge, and printing it
-      // here too meant twenty numbers on ten overlapping ROIs.
-      const nm = (sd.amb || sd.region) + (sd.unk ? "?" : "");
-      const rad = pairR(pr);
-      x.save();
-      x.textBaseline = "middle";
-      x.font = "bold " + (NP*0.6*u) + "px system-ui";
-      const wr = x.measureText(nm).width;
-      // Clear of the ROI's own circle, and flipped rather than run off the edge.
-      const off = rad + 6*u;
-      const flip = (X + off + wr) > g.D;
-      const lx = flip ? X - off - wr : X + off;
-      x.lineWidth = 3.5*u; x.strokeStyle = "#000"; x.lineJoin = "round";
-      x.strokeText(nm, lx, Y);
-      x.fillStyle = sd.amb ? "#e3b341" : "#fff";
-      x.fillText(nm, lx, Y);
-      x.restore();
-    }
-  }
+  // NO REGION NAME IS DRAWN ON THE SECTION. There was one, next to every ROI,
+  // and on a dense plate it turned the tissue into a wall of text sitting on
+  // exactly the anatomy being judged. The number in mark()'s badge already says
+  // which seed the ROI answers, the plate pane shows that number on the seed
+  // itself, and the legend under the card maps number to region and colour. The
+  // name added a third copy of something already said twice, over the image.
   // Two independent numberings. The index into s.pairs used to serve as the
   // free-mode label, but background discs are interleaved with landmarks, so an
   // index would number the landmarks 1,3,4 the moment one was placed between
