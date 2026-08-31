@@ -373,6 +373,16 @@ label.chk{color:var(--dim);font-size:12px;display:flex;align-items:center;gap:4p
 .filters{display:flex;gap:8px;align-items:center;flex-wrap:wrap;
          padding:3px 8px;border:1px solid var(--line);border-radius:8px;background:#12151a}
 .actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-left:auto}
+/* The two buttons that write a FILE, bound together so they cannot be split.
+   `.actions` wraps, and Shotgun was last in it: at 1280 CSS px - which is what a
+   1920 screen gives at the 150% scaling Windows commonly ships with - it broke
+   onto a new row on its own and landed at the far LEFT, a lone amber button
+   with nothing near it and no longer beside the Export it belongs with. It was
+   on screen and might as well not have been.
+
+   nowrap keeps the pair on one line; the pair still wraps as a unit, which is
+   the same rule .filters and .actions already follow. */
+.deliver{display:flex;gap:6px;align-items:center;flex-wrap:nowrap}
 .cell img{width:100%;aspect-ratio:1;object-fit:contain;display:block;border-radius:3px}
 .cap{font-size:9px;color:var(--dim);text-align:center;line-height:1.15;margin-top:1px}
 footer{flex:0 0 auto;background:var(--bg);border-top:1px solid var(--line);
@@ -418,8 +428,10 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
   <button id="skipBtn" class="btn-guide" onclick="skipSeed()">Skip seed</button>
   <button class="btn-edit" onclick="undoPt()">Undo point</button>
   <button class="btn-edit" onclick="clearPts()">Clear points</button>
-  <button class="primary" onclick="exportCsv()">Export</button>
-  <button id="shotBtn" class="btn-shot" onclick="shotgun()">Shotgun</button>
+  <span class="deliver">
+    <button class="primary" onclick="exportCsv()">Export</button>
+    <button id="shotBtn" class="btn-shot" onclick="shotgun()">Shotgun</button>
+  </span>
   </span>
 </header>
 <div id="panes">
