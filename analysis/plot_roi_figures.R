@@ -2,8 +2,13 @@
 #
 # Writes two series into results/ROI_plots/, one PNG per ROI in each:
 #
-#   treatment/    control vs exercise
-#   environment/  brackish control | brackish exercise, sea control | sea exercise
+#   treatment/         control vs exercise
+#   production_phase/  brackish control | brackish exercise,
+#                      sea control | sea exercise
+#
+# The grouping factor is still called `environment` in the data - renaming that
+# column would ripple through 06b, 06c, 06d and every model formula - but every
+# label a reader sees says PRODUCTION PHASE.
 #
 # ONE measure and ONE level. The y value is `cells_per_mm2` - Abercrombie
 # corrected - and every point is a SLIDE. The raw counts/area layer and the
@@ -44,7 +49,7 @@ library(ggtext)
 results <- if (length(args) >= 1) args[1] else RESULTS_DEFAULT
 outdir <- file.path(results, "ROI_plots")
 dirs <- list(treatment = file.path(outdir, "treatment"),
-             environment = file.path(outdir, "environment"))
+             phase = file.path(outdir, "production_phase"))
 PPTX <- file.path(results, "ROI_figures.pptx")
 
 VALUE <- "cells_per_mm2"          # Abercrombie-corrected density
@@ -54,10 +59,17 @@ VALUE <- "cells_per_mm2"          # Abercrombie-corrected density
 # the FIGURES AND STATISTICS only - the spreadsheets keep it.
 DROP_ROIS <- c("Rm")
 
-# Filled and solid pch only, so the markers stay solid at this size. Eleven
-# animals, eleven shapes; an animal belongs to exactly one group, so shapes
-# never have to be told apart across a boundary.
-SHAPES <- c(21, 22, 23, 24, 25, 15, 16, 17, 18, 19, 20)
+# Eleven animals need eleven marks that can be told apart at a glance, and R
+# only has five filled FORMS - circle, square, diamond, triangle up, triangle
+# down - in two styles each. The first nine are those: 21-25 filled with a
+# border, then 15-18 solid.
+#
+# 19 and 20 used to fill the last two slots and both are plain circles, so
+# LS87, LS136 and LS138 came out as three circles distinguishable only by a
+# border and a couple of pixels of radius. A star and a square-with-triangle
+# are not "full" shapes, but being able to tell two animals apart matters more
+# than the fill.
+SHAPES <- c(21, 22, 23, 24, 25, 15, 16, 17, 18, 8, 14)
 
 # An animal keeps ITS OWN shape in every figure. Assigning shapes per ROI from
 # whichever animals happen to be present looked fine on any single plot and made
@@ -71,7 +83,15 @@ BASE <- 18                        # everything is sized off this
 PT   <- 4.6
 
 message(sprintf("reading %s", results))
-slide <- load_sheet(file.path(results, "roi_dataset_by_slide.xlsx"), "by_slide")
+# SECTIONS, not slides. A slide carries 1 to 9 sections, so keying the points by
+# slide threw most of the data away before it was drawn: Dm's sea-control group
+# was a single point, and half the ROIs had groups of one or two. By section the
+# same ROI is 5, 15, 21 and 33.
+#
+# This does not change the statistical claim. The animal is still the
+# experimental unit and the model still carries (1 | sample); more rows per
+# animal give the random effect more to work with, they do not become more fish.
+slide <- load_sheet(file.path(results, "roi_dataset_by_slide.xlsx"), "by_section")
 
 n0 <- sum(as.character(slide$ROI) %in% DROP_ROIS)
 if (n0) message(sprintf("  dropped %d row%s: %s", n0, if (n0 == 1) "" else "s",
@@ -95,12 +115,18 @@ slide$sample <- factor(slide$sample,
 slide$value <- suppressWarnings(as.numeric(slide[[VALUE]]))
 slide <- slide[is.finite(slide$value), ]
 
-message(sprintf("  %d slides, %d animals, %d ROIs", nrow(slide),
+message(sprintf("  %d sections, %d animals, %d ROIs", nrow(slide),
                 nlevels(droplevels(slide$sample)), nlevels(slide$ROI)))
-report_n(slide, "one point = one slide")
+report_n(slide, "one point = one section")
 
 for (d in dirs) dir.create(d, showWarnings = FALSE, recursive = TRUE)
-old <- unlist(lapply(dirs, list.files, pattern = "\\.png$", full.names = TRUE))
+# Sweep the PARENT too, not just the two series folders. An earlier layout wrote
+# the figures straight into ROI_plots/, and eleven of them - Rm among them - sat
+# there untouched through every rebuild after the subfolders arrived, because
+# the clear only ever looked one level down. Anything stale enough to survive a
+# layout change is exactly what "overwrite the past set" is meant to catch.
+old <- c(list.files(outdir, pattern = "\\.png$", full.names = TRUE),
+         unlist(lapply(dirs, list.files, pattern = "\\.png$", full.names = TRUE)))
 if (length(old)) {
   file.remove(old)
   message(sprintf("\n  cleared %d old figure%s", length(old),
@@ -111,6 +137,29 @@ safe_name <- function(x) gsub("^_+|_+$", "", gsub("[^A-Za-z0-9]+", "_", x))
 
 # The group name, one word per line. Bold comes from the theme.
 axis_labeller <- function(x) gsub(" ", "\n", x)
+
+# A single asterisk on the HIGHER group, when a two-group comparison is
+# significant.
+#
+# With exactly two scatters, compact letters can only ever come back "a" and "b",
+# which is the same information as one mark and costs the reader a legend. The
+# mark goes on the higher group so the direction is readable without comparing
+# the clouds by eye.
+#
+# Returns an empty list rather than NULL when there is nothing to draw: ggplot
+# accepts a list of layers, and NULL in a `+` chain is a silent no-op that is
+# easy to mistake for "the test said nothing".
+star_layer <- function(d, col, p, top, alpha_level = 0.05) {
+  if (!isTRUE(is.finite(p)) || p >= alpha_level) return(list())
+  m <- tapply(d$value, droplevels(d[[col]]), mean, na.rm = TRUE)
+  hi <- names(m)[which.max(m)]
+  list(geom_text(data = data.frame(x = factor(hi, levels = levels(d[[col]])),
+                                   y = top * 1.10),
+                 aes(x = x, y = y), label = "*", inherit.aes = FALSE,
+                 size = BASE * 0.95, fontface = "bold", colour = "black",
+                 vjust = 0.75),
+       expand_limits(y = top * 1.20))
+}
 
 # (N=x) is drawn as an ANNOTATION below the axis line, not folded into the axis
 # label, so it sits above the group name with real padding and the name alone
@@ -165,6 +214,41 @@ for (roi in levels(slide$ROI)) {
   # figures; drop = TRUE on the scale keeps absent animals out of the legend.
   top <- max(d$value, na.rm = TRUE)
 
+  # Mean and SEM, drawn AFTER the points so they read on top of them. The SEM
+  # is over the POINTS SHOWN, which are slides - it describes the scatter, and
+  # is deliberately NOT the standard error the model reports, which accounts for
+  # animal clustering and is what the p values come from. The bar is a
+  # description of the picture; the caption is the test.
+  # ONE crossbar and ONE error bar per scatter.
+  #
+  # `aes(group = ...)` is not decoration here. shape is mapped to the animal, so
+  # without an explicit group stat_summary inherits that grouping and computes a
+  # mean per ANIMAL - which drew three or four stacked horizontal bars inside a
+  # single scatter and looked like a rendering fault. The group has to be the x
+  # variable, which is what "per scatter" means.
+  #
+  # The two must also read as different objects: the mean is a SHORT THICK bar,
+  # the SEM a NARROWER THINNER one.
+  # `shape = NULL` drops the inherited shape aesthetic. Without it the summary
+  # layers still carry shape = sample, and a summary has no single animal, so
+  # the shape resolves to NA - which put a phantom "NA" entry in the animal
+  # legend of every figure. The bars themselves never used shape.
+  #
+  # `middle.linewidth` rather than the deprecated `fatten` (ggplot2 4.0).
+  summary_layers <- function(xvar) list(
+    stat_summary(aes(group = .data[[xvar]], shape = NULL), fun.data = mean_se,
+                 geom = "errorbar", width = 0.10, linewidth = 0.6,
+                 colour = "black"),
+    # The mean is drawn as an errorbar with ymin = ymax = mean, which collapses
+    # to a single horizontal segment. geom_crossbar was the obvious choice and
+    # the wrong one: with a zero-height box it draws its outline AND its middle
+    # line in the same place, so the two thicknesses stack into a heavy black
+    # slab that covered the points behind it.
+    stat_summary(aes(group = .data[[xvar]], shape = NULL),
+                 fun = mean, fun.min = mean, fun.max = mean,
+                 geom = "errorbar", width = 0.28, linewidth = 1.7,
+                 colour = "black"))
+
   common <- list(
     scale_colour_manual(values = TREATMENT_COLOURS, drop = FALSE, name = NULL,
                         guide = guide_legend(order = 1,
@@ -179,17 +263,22 @@ for (roi in levels(slide$ROI)) {
     base_theme)
 
   # ---- series 1: treatment ------------------------------------------------
+  st1 <- stat_treatment(d)
   p1 <- ggplot(d, aes(x = treatment, y = value, colour = treatment,
                       fill = treatment, shape = sample)) +
     geom_jitter(width = 0.16, height = 0, size = PT, stroke = 1.1) +
+    summary_layers("treatment") +
     geom_text(data = n_labels(d, "treatment", top),
               aes(x = x, y = y, label = sprintf("(N=%d)", n)),
               inherit.aes = FALSE, vjust = 1, size = BASE * 0.30,
               colour = "grey25") +
     scale_x_discrete(labels = axis_labeller) +
     common +
-    labs(subtitle = "Abercrombie-corrected; one point per slide, shape = animal",
-         caption = stat_treatment(d))
+    labs(subtitle = "Abercrombie-corrected; one point per section, shape = animal",
+         caption = st1$caption)
+  # Two scatters, so a letter pair would only ever read "a / b" - which says
+  # nothing a single mark does not. The asterisk goes on the HIGHER group.
+  p1 <- p1 + star_layer(d, "treatment", st1$p, top)
   ggsave(file.path(dirs$treatment, paste0(safe_name(roi), ".png")), p1,
          width = 9.5, height = 8.0, dpi = 200, bg = "white")
 
@@ -198,28 +287,33 @@ for (roi in levels(slide$ROI)) {
   p2 <- ggplot(d, aes(x = group4, y = value, colour = treatment,
                       fill = treatment, shape = sample)) +
     geom_jitter(width = 0.16, height = 0, size = PT, stroke = 1.1) +
+    summary_layers("group4") +
     geom_text(data = n_labels(d, "group4", top),
               aes(x = x, y = y, label = sprintf("(N=%d)", n)),
               inherit.aes = FALSE, vjust = 1, size = BASE * 0.30,
               colour = "grey25") +
     scale_x_discrete(drop = FALSE, labels = axis_labeller) +
     common +
-    labs(subtitle = paste("Abercrombie-corrected; one point per slide,",
+    labs(subtitle = paste("Abercrombie-corrected; one point per section,",
                           "shape = animal; letters share = not different (Tukey)"),
          caption = paste(st4$caption,
-                         "environment is confounded with timepoint: brackish = tp1, sea = tp2",
+                         "production phase is confounded with timepoint: brackish = tp1, sea = tp2",
                          sep = "<br>"))
 
+  # Letters when there are three or more groups to separate; a single asterisk
+  # when only two are present, for the same reason as series 1.
   L <- st4$letters
-  if (!is.null(L) && nrow(L)) {
+  if (isTRUE(st4$n_groups == 2)) {
+    p2 <- p2 + star_layer(d, "group4", st4$p, top)
+  } else if (!is.null(L) && nrow(L)) {
     L$group4 <- factor(L$group4, levels = GROUP_LEVELS)
     L$y <- top * 1.10
     p2 <- p2 + geom_text(data = L, aes(x = group4, y = y, label = letter),
                          inherit.aes = FALSE, size = BASE * 0.42,
-                         fontface = "bold", colour = "grey15") +
+                         fontface = "bold", colour = "black") +
       expand_limits(y = top * 1.18)
   }
-  ggsave(file.path(dirs$environment, paste0(safe_name(roi), ".png")), p2,
+  ggsave(file.path(dirs$phase, paste0(safe_name(roi), ".png")), p2,
          width = 12.0, height = 8.4, dpi = 200, bg = "white")
 }
 

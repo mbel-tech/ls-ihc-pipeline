@@ -81,10 +81,13 @@ fmt_p <- function(p) {
 # looking at: it should land near the number of ANIMALS. If it reports the
 # number of SLIDES, the random effect is not doing its job and the result is
 # pseudoreplicated.
+# Returns the formatted line, and carries the p value on it as an attribute so
+# a caller can ask "was this significant?" without re-parsing the sentence it
+# just built.
 term_line <- function(fit, term, label = term) {
   a <- tryCatch(anova(fit), error = function(e) NULL)
   if (is.null(a) || !term %in% rownames(a)) {
-    return(sprintf("%s: not estimable", label))
+    return(structure(sprintf("%s: not estimable", label), p = NA_real_))
   }
   row <- a[term, ]
   # Degrees of freedom go in a SUBSCRIPT with no brackets - F<sub>1,6.0</sub> -
@@ -108,7 +111,7 @@ term_line <- function(fit, term, label = term) {
   # and a small p means almost nothing. Printing it without this reads as a
   # finding.
   if (is.finite(dfd) && dfd < 3) out <- paste(out, "(df too low to interpret)")
-  out
+  structure(out, p = unname(row[["Pr(>F)"]]))
 }
 
 # --------------------------------------------------------------- series 1
@@ -116,16 +119,21 @@ term_line <- function(fit, term, label = term) {
 stat_treatment <- function(d) {
   n_an <- length(unique(d$sample))
   if (n_an < 3 || length(unique(d$treatment)) < 2) {
-    return(sprintf("no test: %d animal%s in %d treatment group%s",
-                   n_an, if (n_an == 1) "" else "s",
-                   length(unique(d$treatment)),
-                   if (length(unique(d$treatment)) == 1) "" else "s"))
+    return(list(caption = sprintf("no test: %d animal%s in %d treatment group%s",
+                                  n_an, if (n_an == 1) "" else "s",
+                                  length(unique(d$treatment)),
+                                  if (length(unique(d$treatment)) == 1) "" else "s"),
+                p = NA_real_))
   }
   m <- fit_model(value ~ treatment, d)
-  if (is.null(m$fit)) return("no test: the model could not be fitted")
-  paste0(term_line(m$fit, "treatment", "treatment"), "<br>",
-         if (m$mixed) "mixed model, animal as a random effect"
-         else "one slide per animal, plain ANOVA")
+  if (is.null(m$fit)) {
+    return(list(caption = "no test: the model could not be fitted", p = NA_real_))
+  }
+  line <- term_line(m$fit, "treatment", "treatment")
+  list(caption = paste0(line, "<br>",
+                        if (m$mixed) "mixed model, animal as a random effect"
+                        else "one slide per animal, plain ANOVA"),
+       p = attr(line, "p"))
 }
 
 # --------------------------------------------------------------- series 2
@@ -140,21 +148,22 @@ stat_group4 <- function(d) {
   if (present < 2 || n_an < 4) {
     return(list(caption = sprintf("no test: %d of 4 groups present, %d animals",
                                   present, n_an),
-                letters = NULL))
+                letters = NULL, n_groups = present, p = NA_real_))
   }
 
   full <- length(unique(d$treatment)) > 1 && length(unique(d$environment)) > 1
   m <- fit_model(if (full) value ~ treatment * environment else value ~ group4, d)
   fit <- m$fit
   if (is.null(fit)) {
-    return(list(caption = "no test: the model could not be fitted", letters = NULL))
+    return(list(caption = "no test: the model could not be fitted",
+                letters = NULL, n_groups = present, p = NA_real_))
   }
 
   # One term per line. Three F tests joined by pipes ran off the right edge of
   # the figure and had to be rescued by widening it; as lines they simply fit.
   cap <- if (full) {
     paste(term_line(fit, "treatment", "treatment"),
-          term_line(fit, "environment", "environment"),
+          term_line(fit, "environment", "production phase"),
           # The first argument is the row name anova() actually uses; only the
           # second is the label shown. Changing the lookup to a prettier string
           # makes every interaction line read "not estimable".
@@ -168,7 +177,18 @@ stat_group4 <- function(d) {
   # because it is the model telling you the design is thin.
   cap <- paste0(cap, "<br>", if (m$mixed) "mixed model, animal as a random effect"
                              else "one slide per animal, plain ANOVA")
-  if (m$mixed && isTRUE(lme4::isSingular(fit))) cap <- paste(cap, "(singular fit)")
+  # A singular fit is not a cosmetic warning. The animal variance has collapsed
+  # to zero, so the random effect stops absorbing anything and the denominator
+  # df run to the SECTION count rather than the animal count - 36 rather than
+  # about 7 for Posterior tuberculum. The p value is then the pseudoreplicated
+  # one, which is the thing this whole model was chosen to avoid, so the caption
+  # says so instead of printing "(singular fit)" and leaving the reader to know
+  # what that implies. Four of the ten ROIs are in this state.
+  if (m$mixed && isTRUE(lme4::isSingular(fit))) {
+    cap <- paste0(cap, "<br>SINGULAR FIT: animal variance collapsed to zero, so ",
+                  "the df above are per section, not per animal - treat this p as ",
+                  "anti-conservative")
+  }
 
   # THE LETTERS COME FROM THE ONE-WAY PARAMETERISATION, and that is not a second
   # analysis. `~ treatment * environment` and `~ group4` span the identical
@@ -196,5 +216,17 @@ stat_group4 <- function(d) {
   }, error = function(e) NULL)
 
   if (is.null(lets)) cap <- paste(cap, "- letters unavailable")
-  list(caption = cap, letters = lets)
+
+  # With only TWO groups present, compact letters carry no information a reader
+  # cannot get from a single mark: "a / b" just means significant. The figure
+  # draws an asterisk on the higher group instead, so it needs the overall p.
+  p_overall <- if (full) {
+    suppressWarnings(min(c(attr(term_line(fit, "treatment"), "p"),
+                           attr(term_line(fit, "environment"), "p"),
+                           attr(term_line(fit, "treatment:environment"), "p")),
+                         na.rm = TRUE))
+  } else attr(term_line(fit, "group4"), "p")
+  if (!is.finite(p_overall)) p_overall <- NA_real_
+
+  list(caption = cap, letters = lets, n_groups = present, p = p_overall)
 }
