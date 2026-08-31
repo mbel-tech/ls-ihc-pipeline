@@ -69,6 +69,37 @@ def disc_area_mm2(b):
     return round(math.pi * float(b["axis_a_um"]) * float(b["axis_b_um"]) / 1e6, 6)
 
 
+def write_workbook(path, sheets):
+    """Write (name, rows) pairs as a workbook, one sheet each.
+
+    Shared with 06d so the two datasets are formatted by the same code - bold
+    header, frozen first row, columns sized to their contents. A second copy of
+    this would be a second thing to keep in step for no benefit.
+    """
+    from openpyxl import Workbook
+    from openpyxl.styles import Font
+    from openpyxl.utils import get_column_letter
+
+    wb = Workbook()
+    for i, (name, data) in enumerate(sheets):
+        ws = wb.active if i == 0 else wb.create_sheet()
+        ws.title = name
+        if not data:
+            continue
+        cols = list(data[0].keys())
+        ws.append(cols)
+        for c in range(1, len(cols) + 1):
+            ws.cell(row=1, column=c).font = Font(bold=True)
+        for row in data:
+            ws.append([row[c] for c in cols])
+        ws.freeze_panes = "A2"
+        for c, col in enumerate(cols, 1):
+            width = max(len(str(col)), *(len(str(r[col])) for r in data)) + 2
+            ws.column_dimensions[get_column_letter(c)].width = min(width, 30)
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    wb.save(path)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default=XLSX)
@@ -190,31 +221,8 @@ def main():
             "percent": round(100 * len(pl & measured) / len(pl), 1) if pl else "",
         })
 
-    from openpyxl import Workbook
-    from openpyxl.styles import Font
-    from openpyxl.utils import get_column_letter
-
-    wb = Workbook()
-    for i, (name, data) in enumerate((
-            ("by_roi", by_roi), ("by_disc", by_disc),
-            ("by_section", by_section), ("coverage", coverage))):
-        ws = wb.active if i == 0 else wb.create_sheet()
-        ws.title = name
-        if not data:
-            continue
-        cols = list(data[0].keys())
-        ws.append(cols)
-        for c in range(1, len(cols) + 1):
-            ws.cell(row=1, column=c).font = Font(bold=True)
-        for row in data:
-            ws.append([row[c] for c in cols])
-        ws.freeze_panes = "A2"
-        for c, name_ in enumerate(cols, 1):
-            width = max(len(str(name_)), *(len(str(r[name_])) for r in data)) + 2
-            ws.column_dimensions[get_column_letter(c)].width = min(width, 30)
-
-    os.makedirs(RESULTS, exist_ok=True)
-    wb.save(args.out)
+    write_workbook(args.out, (("by_roi", by_roi), ("by_disc", by_disc),
+                              ("by_section", by_section), ("coverage", coverage)))
 
     print("=" * 72)
     print(f"{len(by_roi)} rows (one per ROI per sample) -> {args.out}")

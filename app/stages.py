@@ -236,6 +236,26 @@ STAGES = [
                 "blinding note names 06b exactly. Joins LSnn to Fish ID in the "
                 "sampling workbook and asserts the cohort matches the sheet's "
                 "own 'slicing IHC July 2025' column."),
+
+    # Both read whatever nuclei are on disk, so they are useful WHILE 05c runs.
+    # done() is existence-only and will call them finished from the first
+    # partial build; that is the intended behaviour here, since there is no
+    # point at which the spreadsheet stops being worth rebuilding.
+    Stage("excel_sample", "Spreadsheet - per sample", "Quantification",
+          script="06c_excel_dataset.py",
+          outputs=["results/roi_dataset.xlsx"],
+          needs=["detect"],
+          blurb="One row per ROI per sample, plus per-disc, per-section and "
+                "coverage sheets. Buildable mid-run: pair it with 05c's "
+                "balanced ordering and a partial run is still a comparison."),
+
+    Stage("excel_slide", "Spreadsheet - per slide", "Quantification",
+          script="06d_excel_by_slide.py",
+          outputs=["results/roi_dataset_by_slide.xlsx"],
+          needs=["detect"],
+          blurb="The same table one level finer - one row per ROI per slide, so "
+                "within-animal spread is visible instead of averaged away. "
+                "Carries a per-section sheet too."),
 ]
 
 BY_ID = {s.sid: s for s in STAGES}
