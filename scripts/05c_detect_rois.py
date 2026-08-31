@@ -95,6 +95,80 @@ def load_model():
         return StarDist2D(None, name="2D_versatile_fluo_extracted", basedir=base)
 
 
+def balanced_order(uids, done=()):
+    """Alternate treatment and control, one section at a time.
+
+    This is the same idea as `04n_roi_worklist.py` - an order chosen so that ANY
+    PREFIX is a usable dataset - carried one step further. That stage balances
+    across animals; this balances across groups too, so a run stopped half way
+    has both arms measured to about the same depth rather than five control
+    animals finished and every exercise animal untouched.
+
+    Within a group it round-robins the animals, and within an animal it walks
+    the sections in order, so the depth stays even at every level at once.
+
+    **THIS READS THE GROUP KEY, and config.blinding says no stage before 06b
+    may.** The exemption is narrow and worth stating: the group decides only the
+    ORDER sections are measured in. Nothing downstream of it - not the
+    segmentation, not the per-section threshold, not a single number in the
+    output - depends on when a section was processed, and the finished dataset
+    is identical whichever order was used. It is `--order uid` away from being
+    blind again, and the run prints which order it used.
+    """
+    groups = CONFIG.get("groups") or {}
+    by_animal = groups.get("by_animal") or {}
+    if not by_animal:
+        print("  no group key in config - falling back to plain uid order")
+        return uids
+
+    # animal -> its sections, in order
+    per = {}
+    for u in uids:
+        per.setdefault(u.split("_")[0], []).append(u)
+    for v in per.values():
+        v.sort()
+
+    order = [g for g in (groups.get("order") or []) if g] or sorted(
+        {by_animal.get(a, "") for a in per} - {""})
+    arms = {g: [a for a in sorted(per, key=lambda x: int(x[2:]))
+                if by_animal.get(a) == g] for g in order}
+    unknown = [a for a in per if by_animal.get(a) not in order]
+    if unknown:
+        print(f"  animals with no group: {unknown} - appended at the end")
+
+    have = {g: sum(len(per[a]) for a in arms[g]) for g in order}
+
+    # Count what a previous run already measured, so a RESUME corrects an
+    # imbalance rather than preserving it. Strict alternation would only keep
+    # the remainder even; taking from whichever arm is furthest behind keeps the
+    # CUMULATIVE totals even, which is the property that actually matters when
+    # the operator stops half way and looks at the numbers.
+    cum = dict.fromkeys(order, 0)
+    for u in (done or ()):
+        g = by_animal.get(u.split("_")[0])
+        if g in cum:
+            cum[g] += 1
+    if any(cum.values()):
+        print(f"  already measured: " + ", ".join(f"{g} {cum[g]}" for g in order))
+
+    out = []
+    cursor = {g: 0 for g in order}
+    while any(per[a] for g in order for a in arms[g]):
+        live_arms = [g for g in order if any(per[a] for a in arms[g])]
+        g = min(live_arms, key=lambda x: (cum[x], order.index(x)))
+        live = [a for a in arms[g] if per[a]]
+        a = live[cursor[g] % len(live)]        # round-robin the animals within it
+        cursor[g] += 1
+        out.append(per[a].pop(0))
+        cum[g] += 1
+    for a in unknown:
+        out.extend(per[a])
+    print("  order: balanced - "
+          + ", ".join(f"{g} {have[g]} to do ({len(arms[g])} animals)"
+                      for g in order))
+    return out
+
+
 def mask_at(uid, kind):
     """The 256-frame artifact or censor mask, or None."""
     p = os.path.join(REFORMAT_DIR, "sections_AF568", f"{uid}_{kind}.npy")
@@ -106,6 +180,10 @@ def mask_at(uid, kind):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, help="only the first N sections")
+    ap.add_argument("--order", choices=("balanced", "uid"), default="balanced",
+                    help="balanced alternates treatment and control, one section "
+                         "at a time, so a partial run is still a comparison; "
+                         "uid is plain scene_uid order")
     ap.add_argument("--qc", action="store_true", help="write overlay crops")
     ap.add_argument("--force", action="store_true", help="redo finished sections")
     args = ap.parse_args()
@@ -130,6 +208,8 @@ def main():
     for b in boxes:
         by_sec.setdefault(b["scene_uid"], []).append(b)
     todo = [u for u in sorted(by_sec) if u not in done]
+    if args.order == "balanced":
+        todo = balanced_order(todo, done)
     if args.limit:
         todo = todo[: args.limit]
     if not todo:
