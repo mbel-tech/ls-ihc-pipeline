@@ -284,6 +284,21 @@ for (roi in levels(slide$ROI)) {
 
   # ---- series 2: the four groups -----------------------------------------
   st4 <- stat_group4(d)
+
+  # LETTERS ONLY WHEN THEY SEPARATE SOMETHING. If Tukey puts every group in the
+  # same class the display is four identical "a"s, which is a legend, a
+  # subtitle and four glyphs spent saying nothing - and worse, it reads at a
+  # glance like a result.
+  #
+  # But an absent label must not be ambiguous with an untested one, so when they
+  # are suppressed the caption says Tukey ran and separated nothing. Silence
+  # would leave the reader unable to tell "no difference" from "no test".
+  L <- st4$letters
+  letters_shown <- !is.null(L) && nrow(L) > 0 && length(unique(L$letter)) > 1
+  tukey_note <- if (!is.null(L) && nrow(L) && !letters_shown) {
+    "Tukey: no pair of groups differs, so no letters are drawn"
+  } else NULL
+
   p2 <- ggplot(d, aes(x = group4, y = value, colour = treatment,
                       fill = treatment, shape = sample)) +
     geom_jitter(width = 0.16, height = 0, size = PT, stroke = 1.1) +
@@ -294,18 +309,18 @@ for (roi in levels(slide$ROI)) {
               colour = "grey25") +
     scale_x_discrete(drop = FALSE, labels = axis_labeller) +
     common +
-    labs(subtitle = paste("Abercrombie-corrected; one point per section,",
-                          "shape = animal; letters share = not different (Tukey)"),
-         caption = paste(st4$caption,
-                         "production phase is confounded with timepoint: brackish = tp1, sea = tp2",
-                         sep = "<br>"))
+    labs(subtitle = paste0(
+           "Abercrombie-corrected; one point per section, shape = animal",
+           if (letters_shown) "; letters share = not different (Tukey)" else ""),
+         caption = paste(c(st4$caption, tukey_note,
+                           "production phase is confounded with timepoint: brackish = tp1, sea = tp2"),
+                         collapse = "<br>"))
 
-  # Letters when there are three or more groups to separate; a single asterisk
-  # when only two are present, for the same reason as series 1.
-  L <- st4$letters
+  # Letters when they separate something; a single asterisk when only two groups
+  # are present, for the same reason as series 1.
   if (isTRUE(st4$n_groups == 2)) {
     p2 <- p2 + star_layer(d, "group4", st4$p, top)
-  } else if (!is.null(L) && nrow(L)) {
+  } else if (letters_shown) {
     L$group4 <- factor(L$group4, levels = GROUP_LEVELS)
     L$y <- top * 1.10
     p2 <- p2 + geom_text(data = L, aes(x = group4, y = y, label = letter),
