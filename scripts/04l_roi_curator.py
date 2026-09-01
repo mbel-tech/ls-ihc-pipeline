@@ -235,6 +235,70 @@ def analysis_uids(marker):
 PLATE_SET = CONFIG.get("atlas_plate_set", {}).get("dir", "plates")
 PLATE_DIR = os.path.join(OUT_ROOT, "atlas", PLATE_SET)
 CURATOR_HTML = os.path.join(REFORMAT_DIR, "roi_curator.html")
+PROVENANCE_CSV = os.path.join(REFORMAT_DIR, "section_provenance.csv")
+
+# The Review mode needs one row per SCANNED section - 2,572, against the ~1,242
+# the rest of the page carries - so the fields are chosen and the rows are
+# emitted as ARRAYS under a shared header rather than as objects. Per-object
+# keys would repeat 22 field names 2,572 times and roughly double the page for
+# nothing. A separate JSON fetched at load is not an option: `fetch()` is
+# refused under file://, which is how this page is often opened.
+PROV_FIELDS = [
+    "scene_uid", "animal", "marker", "slide", "section_order", "czi_file",
+    "scene_index", "status", "decision", "exclusion_class", "decision_reason",
+    "proposed_excluded", "tissue_area_mm2", "focus_score", "largest_mm2",
+    "n_artifact_objects", "artifact_pct_of_tissue", "in_analysis_set",
+    "censor_reason", "has_overview", "has_section", "has_mask", "n_rois",
+    "n_nuclei",
+]
+
+# Columns whose values repeat across thousands of rows. "manually excluded:
+# tissue too damaged to measure" alone appears 789 times, and there are 222
+# distinct CZI files across 2,572 sections. Each of these becomes an index into
+# a per-column list. Measured: 773 KB -> 393 KB, which on a page that was 378 KB
+# is the difference between a nuisance and a problem.
+PROV_POOLED = ("animal", "marker", "slide", "czi_file", "status", "decision",
+               "exclusion_class", "decision_reason", "censor_reason")
+
+
+def load_provenance():
+    """`04p_section_provenance.py`'s table, compacted for embedding.
+
+    `{"f": fields, "p": {field: [distinct values]}, "r": [[values]...]}` - rows
+    are arrays under a shared header, and pooled columns carry an index into `p`
+    instead of the string. Objects per row would repeat 24 field names 2,572
+    times; see PROV_POOLED for the rest.
+
+    **The three image paths are NOT carried.** They are a fixed function of the
+    uid, animal and marker, and at ~110 bytes each over 2,572 rows they were
+    275 KB - a third of the table - to say something the page can derive. What
+    IS carried is whether each file exists, which is the part that cannot be
+    derived. The naming rule therefore lives in two places, here and in
+    `revSrc()`; it is one line in each and it is stated in both.
+
+    Empty when 04p has not been run: the Review button then explains itself and
+    the rest of the page is unaffected.
+    """
+    if not os.path.exists(PROVENANCE_CSV):
+        return {"f": PROV_FIELDS, "p": {}, "r": []}
+    with open(PROVENANCE_CSV, newline="", encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh))
+
+    for r in rows:
+        r["has_overview"] = 1 if r.get("overview_img") else 0
+        r["has_section"] = 1 if r.get("section_img") else 0
+        r["has_mask"] = 1 if r.get("mask_img") else 0
+
+    pool, index = {}, {}
+    for k in PROV_POOLED:
+        vals = sorted({r.get(k, "") for r in rows})
+        pool[k] = vals
+        index[k] = {v: i for i, v in enumerate(vals)}
+    out = []
+    for r in rows:
+        out.append([index[k][r.get(k, "")] if k in index else r.get(k, "")
+                    for k in PROV_FIELDS])
+    return {"f": PROV_FIELDS, "p": pool, "r": out}
 
 # THE GROUP KEY, and the only place in this pipeline before 06b that reads one.
 # It exists for the Shotgun deck and reaches nothing else - not a count, not a
@@ -409,6 +473,63 @@ footer{flex:0 0 auto;background:var(--bg);border-top:1px solid var(--line);
        padding:6px 14px;font-size:12px;color:var(--dim)}
 kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-radius:4px;
     background:#1c2027;font:600 11px ui-monospace,monospace}
+
+/* ---- Review mode ------------------------------------------------------- */
+/* The cell vocabulary is 04d_rotation_curator's, deliberately unchanged: a
+   DASHED amber border is a proposal the program made, a SOLID red one is a
+   decision a person made. The operator already reads those two borders that
+   way, and inventing a second language for the same distinction would be the
+   worse choice even though this is a different page. */
+#review{flex:1 1 auto;display:none;min-height:0;overflow:hidden}
+#review.on{display:flex}
+#revGrid{flex:1 1 auto;overflow:auto;padding:8px 10px}
+#revSide{flex:0 0 380px;border-left:1px solid var(--line);overflow:auto;padding:10px}
+.revGroup{margin-bottom:14px}
+.revGroup h4{margin:0 0 5px;font:600 11px ui-monospace,monospace;color:var(--dim);
+             letter-spacing:.06em;position:sticky;top:0;background:var(--bg);padding:3px 0;z-index:1}
+.revCells{display:grid;grid-template-columns:repeat(auto-fill,minmax(78px,1fr));gap:5px}
+.rc{position:relative;border:2px solid var(--line);border-radius:4px;overflow:hidden;
+    cursor:pointer;background:#0f1216}
+.rc img{width:100%;aspect-ratio:1;object-fit:contain;display:block}
+.rc .n{position:absolute;left:2px;top:1px;font:600 9px ui-monospace,monospace;
+       color:#c9d1d9;text-shadow:0 0 3px #000}
+.rc.sel{border-color:#7c5cff;box-shadow:0 0 0 2px rgba(124,92,255,.35)}
+.rc.excluded{border-color:#c0392b;background:#1c1010}
+.rc.excluded img{opacity:.32;filter:grayscale(1)}
+.rc.proposed{border-style:dashed;border-color:var(--warn)}
+.rc.measured{border-color:#3fb950}
+.rc.censored{border-color:#e3b341}
+.rc .flag{position:absolute;right:2px;bottom:1px;font:700 8px ui-monospace,monospace;
+          padding:0 3px;border-radius:2px}
+.rc .flag.rs{background:#1f6feb;color:#fff}
+.rc .flag.dr{background:#c0392b;color:#fff}
+.rc .flag.um{background:#8957e5;color:#fff}
+#revImg{width:100%;border:1px solid var(--line);border-radius:4px;background:#000;
+        display:block;aspect-ratio:1;object-fit:contain}
+#revImgWrap{position:relative}
+/* The mask is 0 clean / 1 compact / 2 elongated - VALUES, not 0-255 - so it is
+   very nearly black and shows nothing without amplification. brightness(255)
+   takes 1 to 255 and 2 past it, leaving 0 at 0, which turns it into the stencil
+   the two states below need. Done in CSS rather than by reading the bitmap:
+   getImageData taints on a file:// page, and that is the trap this page was
+   already written to avoid. */
+#revMask{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;
+         pointer-events:none;display:none}
+/* MASKED: invert the amplified stencil - artifact white->black, clean
+   black->white - and multiply. Artifact pixels go black, everything else is
+   untouched. That is what 04a does to the pixels, in the frame they live in. */
+#revImgWrap.masked #revMask{display:block;mix-blend-mode:multiply;
+         filter:brightness(255) invert(1)}
+/* OVERLAY: the same stencil, tinted red and screened on top. */
+#revImgWrap.overlay #revMask{display:block;mix-blend-mode:screen;
+         filter:brightness(255) sepia(1) saturate(14) hue-rotate(-42deg)}
+.revChain{font:11px ui-monospace,monospace;line-height:1.5}
+.revChain .st{display:flex;gap:6px;padding:3px 0;border-bottom:1px solid #1b1f26}
+.revChain .st b{flex:0 0 96px;color:var(--dim);font-weight:600}
+.revChain .st span{flex:1 1 auto;color:#c9d1d9;word-break:break-word}
+.revChain .st.no b,.revChain .st.no span{color:#5b6270}
+.revWhy{width:100%;box-sizing:border-box;margin:6px 0;padding:5px;border-radius:4px;
+        border:1px solid var(--line);background:#0f1216;color:#e6e6e6;font:11px ui-monospace,monospace}
 </style>
 <header>
   <h1>ROI curator</h1>
@@ -449,12 +570,41 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
   <button class="btn-edit" onclick="undoPt()">Undo point</button>
   <button class="btn-edit" onclick="clearPts()">Clear points</button>
   <span class="deliver">
+    <button id="revBtn" class="btn-guide" onclick="toggleReview()">Review</button>
     <button class="primary" onclick="exportCsv()">Export</button>
     <button id="shotBtn" class="btn-shot" onclick="shotgun()">Shotgun</button>
     <button id="shotRegBtn" class="btn-shot" onclick="shotgun('region')">By region</button>
   </span>
   </span>
 </header>
+<div id="review">
+  <div id="revGrid"></div>
+  <div id="revSide">
+    <div class="card"><h3 id="revTitle">SECTION REVIEW</h3>
+      <div class="kv" id="revHint">pick a section on the left</div></div>
+    <div class="card"><h3 id="revImgH">IMAGE</h3>
+      <div id="revImgWrap"><img id="revImg" alt=""><img id="revMask" alt=""></div>
+      <div class="kv" id="revImgNote" style="margin-top:4px"></div>
+      <button class="btn-plate" onclick="cycleRevImg()" style="margin-top:4px">
+        Masked / unmasked / overlay <kbd>m</kbd></button></div>
+    <div class="card"><h3>WHAT EACH STAGE DECIDED</h3>
+      <div class="revChain" id="revChain"></div></div>
+    <div class="card"><h3>YOUR DECISION</h3>
+      <textarea class="revWhy" id="revWhy" rows="2"
+                placeholder="why - recorded with the decision"></textarea>
+      <div class="deliver" style="flex-wrap:wrap">
+        <button id="revRestore" class="btn-plate" onclick="revAct('restore')">Reinstate</button>
+        <button id="revDrop" class="btn-kill" onclick="revAct('drop')">Drop</button>
+        <button id="revUnmask" class="btn-rot" onclick="revAct('unmask')">Reject mask</button>
+        <button class="btn-edit" onclick="revAct('')">Clear</button>
+      </div>
+      <div class="kv" id="revState" style="margin-top:5px"></div></div>
+    <div class="card"><h3>EXPORT</h3>
+      <div class="kv" id="revCount">-</div>
+      <button class="primary" onclick="exportReview()" style="margin-top:5px">
+        Export review decisions</button></div>
+  </div>
+</div>
 <div id="panes">
   <div class="pane"><h2 id="secTitle">SECTION - click to place a point</h2>
     <canvas id="cSec" tabindex="0" onmousedown="secDown(event)"></canvas>
@@ -500,6 +650,9 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
   <kbd>b</kbd> background: mark tissue with NO signal, 2-3 per section - it is
   measured by the same detector, so it reports the false-positive rate here
   (it takes no seed number and does not move the guided cursor) &middot;
+  <kbd>Review</kbd> every scanned section and what each stage decided about it -
+  reinstate one the pipeline excluded, or reject its artifact mask;
+  <kbd>m</kbd> there cycles masked / unmasked / mask in red &middot;
   <kbd>[</kbd><kbd>]</kbd> ROI size (or drag as you place one) &middot;
   3 pairs for an affine, 6 for a spline &middot;
   <span style="color:#7c5cff">purple</span> = registered &middot;
@@ -1682,6 +1835,15 @@ addEventListener("keydown", e=>{
     if(t.type==="range" && e.key.startsWith("Arrow")) return;
     if(t.type==="text" || t.type==="search" || t.type==="number") return;
   }
+  // Review mode has its OWN keys and must not fall through to the ROI ones.
+  // Every letter below is bound: `x` excludes a section from measurement, `b`
+  // starts a background disc. Firing those from a screen that is about the
+  // upstream decisions would be a silent edit to work the operator is not
+  // looking at.
+  if(revOn){
+    if(e.key==="m" || e.key==="M"){ cycleRevImg(); e.preventDefault(); }
+    return;
+  }
   if(!active) return;
   const list=rows(), i=list.findIndex(d=>d.uid===active);
   if(e.key==="ArrowRight"){ stepPlate(1); e.preventDefault(); }
@@ -2457,6 +2619,271 @@ function shotSave(blob, name){
   a.click();
 }
 
+// ===========================================================================
+// REVIEW MODE - the four stages that decided a section's fate before this page
+// ever loaded it.
+//
+// The rest of the curator works on SURVIVORS: it loads reformat_index, which is
+// the list of sections that got through. So 1,066 exclusions and 2,099 artifact
+// masks were decisions nobody could inspect from the tool they spend their time
+// in. This mode carries all 2,572 SCANNED sections, from the CZI scene onward.
+//
+// PROV is emitted as arrays under a shared header, not objects - 22 field names
+// repeated 2,572 times would roughly double the page for nothing.
+const PROV = __PROV__;
+// Pooled columns arrive as an index into PROV.p[field]; everything else is the
+// value. Decoded once, here, so nothing downstream has to know which is which.
+const PROWS = PROV.r.map(r => Object.fromEntries(PROV.f.map((k, i) =>
+  [k, PROV.p[k] ? PROV.p[k][r[i]] : r[i]])));
+const P_BY = Object.fromEntries(PROWS.map(p => [p.scene_uid, p]));
+
+// The three image paths are derived rather than carried - 275 KB of the table
+// was spent restating a fixed rule. 04p records only WHETHER each file exists,
+// which is the part that cannot be derived, and writes the same paths from the
+// same rule; if one of these moves, both move.
+function revSrc(p, what){
+  if(what === "overview")
+    return p.has_overview ? `../overviews/${p.animal}/${p.marker}/${p.scene_uid}_RGB.png` : "";
+  if(what === "section")
+    return p.has_section
+      ? `sections${p.marker === "AF568" ? "_AF568" : ""}/${p.scene_uid}.png` : "";
+  return p.has_mask ? `../artifacts/${p.scene_uid}_artifact.png` : "";
+}
+
+let revOn = false, revSel = null, revImgMode = 0;   // 0 masked, 1 unmasked, 2 overlay
+
+// Everything drawn here comes out of a CSV rather than out of this page, so it
+// is escaped. The rest of the curator interpolates values it generated itself -
+// animal ids, plate names - and does not need this; a recorded exclusion reason
+// is operator-typed free text and does.
+const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g,
+  c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+
+// dl() joins fields with commas and quotes nothing, which is fine for the
+// numbers the other exports write. Exclusion reasons are free text and DO carry
+// commas - "no tissue piece larger than 1.46 mm2 (threshold 2.5)" is tame, but
+// several in excluded_sections.csv are already quoted at source - so anything
+// operator-typed goes through this first.
+const csvq = s => {
+  const v = String(s == null ? "" : s);
+  return /[",\\n\\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+};
+
+// The decision lives in the SAME curation store, on the section's own entry,
+// under a field nothing else reads. It therefore rides the existing autosave,
+// the seeding and the app's file mirror for free, and cannot collide with ROI
+// work on the same section. `st()` creates the entry lazily, so a section that
+// is only looked at never grows one.
+const revOf = uid => (S[uid] || {}).rev || null;
+
+function toggleReview(){
+  if(!PROWS.length){
+    alert("no section_provenance.csv - run:\\n  python scripts/04p_section_provenance.py");
+    return;
+  }
+  revOn = !revOn;
+  el("review").classList.toggle("on", revOn);
+  el("panes").style.display = revOn ? "none" : "";
+  el("strip").style.display = revOn ? "none" : "";
+  el("revBtn").classList.toggle("mode-on", revOn);
+  if(revOn) revRender();
+}
+
+// Grouped animal -> slide, in scan order, because that is the order they came
+// off the scanner and the order damage runs in - a bad slide is usually a run
+// of neighbours, and seeing them adjacent is most of the review.
+function revRender(){
+  const g = el("revGrid");
+  const want = el("animal").value;
+  const rows = PROWS.filter(p => want === "both" || !want || p.animal === want);
+  const groups = new Map();
+  for(const p of rows){
+    const k = p.animal + " " + p.slide + p.marker;
+    if(!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(p);
+  }
+  const parts = [];
+  for(const [k, ps] of groups){
+    ps.sort((a, b) => (+a.section_order || 0) - (+b.section_order || 0));
+    const lab = ps[0].marker === "AF568" ? "pERK" : "PCNA";
+    parts.push(`<div class="revGroup"><h4>${esc(ps[0].animal)} &middot; slide `
+      + `${esc(ps[0].slide)} &middot; ${lab} &middot; ${ps.length} sections `
+      + `&middot; ${esc(ps[0].czi_file)}</h4><div class="revCells">`
+      + ps.map(revCell).join("") + `</div></div>`);
+  }
+  g.innerHTML = parts.join("") || "<div class='kv'>nothing for this animal</div>";
+  revCount();
+}
+
+function revCell(p){
+  const r = revOf(p.scene_uid);
+  const cls = ["rc"];
+  if(p.status === "excluded") cls.push("excluded");
+  else if(p.status === "measured") cls.push("measured");
+  else if(p.status === "censored_out") cls.push("censored");
+  // A proposal the program made, which the operator has not overruled. Dashed,
+  // exactly as 04d draws it.
+  if(p.proposed_excluded === "1" && p.status !== "excluded") cls.push("proposed");
+  if(p.scene_uid === revSel) cls.push("sel");
+  const flag = r ? `<span class="flag ${r.act === "restore" ? "rs"
+                     : r.act === "drop" ? "dr" : "um"}">`
+                 + (r.act === "restore" ? "IN" : r.act === "drop" ? "OUT" : "NOMASK")
+                 + `</span>` : "";
+  // The OVERVIEW, not the reformatted image: it is the one picture that exists
+  // for every section, so the grid never has a hole in it.
+  const src = revSrc(p, "overview") || revSrc(p, "section");
+  return `<div class="${cls.join(" ")}" onclick="revPick('${p.scene_uid}')" `
+       + `title="${esc(p.scene_uid)} - ${esc(p.status)}">`
+       + (src ? `<img loading="lazy" src="${esc(src)}" alt="">`
+              : `<div style="aspect-ratio:1"></div>`)
+       + `<span class="n">${esc(p.section_order)}</span>${flag}</div>`;
+}
+
+function revPick(uid){
+  revSel = uid;
+  revImgMode = 0;
+  revDetail();
+  revRender();
+}
+
+// One line per stage, in the order they ran. A stage that had nothing to say
+// about this section is greyed rather than omitted - "04g found no artifact" and
+// "04g never looked at this section" are different facts, and a missing row
+// would read as the first when it is often the second.
+function revChainRows(p){
+  const out = [];
+  const row = (name, txt, on) =>
+    out.push(`<div class="st${on ? "" : " no"}"><b>${name}</b><span>${esc(txt)}</span></div>`);
+  row("scan", `${p.czi_file} scene ${p.scene_index} - ${p.marker === "AF568" ? "pERK" : "PCNA"}`, true);
+  row("01 overview", p.tissue_area_mm2
+      ? `tissue ${p.tissue_area_mm2} mm2, focus ${p.focus_score}` : "no QC row", !!p.tissue_area_mm2);
+  row("04f propose", p.proposed_excluded === "1"
+      ? `proposed EXCLUDE${p.largest_mm2 ? ` - largest piece ${p.largest_mm2} mm2` : ""}`
+      : p.proposed_excluded === "0" ? "no objection"
+      : "not assessed (only survivors are)", p.proposed_excluded !== "");
+  row("04d decide", p.status === "excluded"
+      ? `EXCLUDED (${p.decision || "?"}) - ${p.decision_reason || "no reason recorded"}`
+      : "kept", true);
+  row("04g mask", p.has_mask
+      ? `${p.n_artifact_objects || 0} objects, ${p.artifact_pct_of_tissue || 0}% of tissue`
+      : "no mask built", !!p.has_mask);
+  row("04a reformat", p.has_section
+      ? "reformatted" + (p.status === "excluded" ? " (image predates the exclusion)" : "")
+      : "not reformatted - original scan only", !!p.has_section);
+  row("04j censor", p.in_analysis_set === "1" ? "in the analysis set"
+      : p.in_analysis_set === "0" ? `CENSORED OUT - ${p.censor_reason || ""}`
+      : "pERK only", p.in_analysis_set !== "");
+  row("05a/05c", +p.n_nuclei ? `${p.n_rois} ROIs, ${p.n_nuclei} nuclei`
+      : +p.n_rois ? `${p.n_rois} ROIs, not yet measured` : "nothing measured", !!+p.n_nuclei);
+  return out.join("");
+}
+
+function revDetail(){
+  const p = P_BY[revSel];
+  if(!p){ el("revHint").textContent = "pick a section on the left"; return; }
+  el("revTitle").textContent = p.scene_uid;
+  el("revHint").innerHTML = `<b>${esc(p.status)}</b> &middot; ${esc(p.animal)} `
+    + `&middot; section ${esc(p.section_order)}`;
+  el("revChain").innerHTML = revChainRows(p);
+  revImg();
+  const r = revOf(revSel);
+  el("revState").innerHTML = r
+    ? `<b style="color:#7c5cff">${esc(r.act)}</b> - ${esc(r.why || "no reason given")}`
+    : "no decision recorded";
+  el("revWhy").value = r ? (r.why || "") : "";
+  // Reinstating something that was never excluded, or rejecting a mask that
+  // does not exist, are both meaningless - say so on the button.
+  el("revRestore").disabled = p.status !== "excluded";
+  el("revDrop").disabled = p.status === "excluded";
+  el("revUnmask").disabled = !p.has_mask;
+}
+
+// ALL THREE STATES ARE THE SAME PICTURE, and that is the point.
+//
+// The obvious build showed the REFORMATTED image for "masked" and the overview
+// for "unmasked". They are not the same frame - 256x256 rotated and cropped to
+// the tissue, against 1404x1632 as scanned - so flicking between them changed
+// the framing, the rotation and the scale, and the one thing it was supposed to
+// isolate was lost in the middle of all that. A comparison whose two halves are
+// not registered is not a comparison.
+//
+// So masking is applied HERE, over the overview, in the frame 04g's mask
+// actually lives in ("the same pixel grid as the DAPI overview - *not* the
+// reformatted frame"). The reformatted image is a different question and the
+// chain says whether one exists.
+function revImg(){
+  const p = P_BY[revSel];
+  if(!p) return;
+  const names = ["masked - what 04a removed", "unmasked - as scanned",
+                 "mask in red"];
+  if(!p.has_mask && revImgMode !== 1) revImgMode = 1;
+  el("revImg").src = revSrc(p, "overview");
+  el("revMask").src = revSrc(p, "mask");
+  const w = el("revImgWrap");
+  w.classList.toggle("masked", revImgMode === 0 && !!p.has_mask);
+  w.classList.toggle("overlay", revImgMode === 2 && !!p.has_mask);
+  el("revImgH").textContent = "IMAGE - " + names[revImgMode];
+  el("revImgNote").textContent =
+    !p.has_mask ? "no mask on this section - nothing was removed"
+    : `${p.n_artifact_objects || 0} objects, ${p.artifact_pct_of_tissue || 0}% `
+      + `of tissue` + (revImgMode === 1 ? " would be removed" : " removed");
+}
+
+function cycleRevImg(){
+  const p = P_BY[revSel];
+  if(!p) return;
+  // With no mask there is only one picture, so cycling would look broken.
+  revImgMode = p.has_mask ? (revImgMode + 1) % 3 : 1;
+  revImg();
+}
+
+function revAct(act){
+  const p = P_BY[revSel];
+  if(!p) return;
+  const e = st(revSel);
+  if(!act){ delete e.rev; }
+  else { e.rev = {act, why: el("revWhy").value.trim(), status: p.status}; }
+  save();
+  revDetail();
+  revRender();
+}
+
+function revCount(){
+  const all = Object.entries(S).filter(([, v]) => v && v.rev);
+  const n = a => all.filter(([, v]) => v.rev.act === a).length;
+  el("revCount").innerHTML = `${n("restore")} reinstate &middot; ${n("drop")} drop `
+    + `&middot; ${n("unmask")} mask rejected`;
+}
+
+// Written in the SAME shape 04a_reformat.load_overrides already reads, one file
+// per marker. `decision="restored"` is not new: 04a already counts how often the
+// 04f proposal was overruled and reports it, so reinstating needs no format
+// change and no change to 04a. `mask_rejected` is the one new column.
+function exportReview(){
+  const all = Object.entries(S).filter(([, v]) => v && v.rev);
+  if(!all.length){ alert("no review decisions to export"); return; }
+  const restores = all.filter(([, v]) => v.rev.act === "restore").length;
+  if(restores && !confirm(
+      `${restores} section(s) would be put back into the pipeline.\\n\\n`
+    + `That changes the analysis set, so 05c_detect_rois.py has to run again for `
+    + `the sections it changes - the nuclei already measured do not cover them. `
+    + `Nothing is applied by this export; it writes the decisions for `
+    + `04a_reformat.py --apply-overrides to act on.\\n\\nExport anyway?`)) return;
+
+  const rows = [["scene_uid", "marker", "extra_rotation", "flip", "excluded",
+                 "decision", "mask_rejected", "reason", "prior_status"]];
+  for(const [uid, v] of all){
+    const p = P_BY[uid] || {};
+    const r = v.rev;
+    rows.push([uid, p.marker || "", "", "",
+               r.act === "drop" ? 1 : 0,
+               r.act === "restore" ? "restored" : r.act === "drop" ? "manual" : "",
+               r.act === "unmask" ? 1 : 0,
+               csvq(r.why || ""), r.status || ""]);
+  }
+  dl(rows, "section_review.csv");
+}
+
 el("roiSize").value = PT_R_CANON;
 el("roiSizeVal").textContent = PT_R_CANON;
 scopeLabel();
@@ -2654,6 +3081,7 @@ def main():
             seed = {}
 
     page = (PAGE.replace("__SEED__", json.dumps(seed))
+                .replace("__PROV__", json.dumps(load_provenance()))
                 .replace("__DATA__", json.dumps(data))
                 .replace("__PLATES__", json.dumps(pl))
                 .replace("__PLATESET__", json.dumps(PLATE_SET))

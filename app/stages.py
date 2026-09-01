@@ -156,6 +156,15 @@ STAGES = [
           blurb="Orders curation so any prefix is a usable dataset: every animal "
                 "advanced to the same fraction, spread across each brain."),
 
+    Stage("provenance", "Trace every scanned section", "Curation",
+          script="04p_section_provenance.py",
+          outputs=["reformatted/section_provenance.csv"],
+          needs=["reformat"],
+          blurb="One row per scanned section - all 2,572, including the 1,066 "
+                "excluded ones no other table carries - joining what 04f "
+                "proposed, what the operator decided, what 04g masked and what "
+                "04j censored. Feeds the ROI curator's Review mode."),
+
     # One stage per channel. The ROI curator carries both, so building only one
     # leaves half its sections falling back to greyscale - and the curator says
     # nothing about why, because a section without a composite is a legitimate

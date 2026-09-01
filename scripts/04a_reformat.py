@@ -402,6 +402,52 @@ def marker_paths(marker):
             "lost": os.path.join(REFORMAT_DIR, f"lost_sections_{marker}.csv")}
 
 
+REVIEW_CSV = os.path.join(REFORMAT_DIR, "section_review.csv")
+
+
+def apply_review(excluded, marker):
+    """Merge `section_review.csv` - the Review mode's decisions - over the
+    exclusion list, and collect the sections whose artifact mask was rejected.
+
+    **A separate file, MERGED, rather than a rewritten override file.** The
+    Review mode runs in a browser and can only download; having it write
+    `perk_overrides.csv` directly would mean a page that knows about the handful
+    of sections someone reviewed overwriting a file that carries hand-entered
+    rotations for 1,134. One bad export would destroy work that cannot be
+    recovered. So it writes only its own decisions and this merges them.
+
+    Reinstating is not a new concept: `load_overrides` already reads and counts
+    `decision="restored"`. This applies the same idea from the other file.
+
+    Returns (excluded, mask_rejected). `excluded` is a new dict; the caller's is
+    not mutated.
+    """
+    if not os.path.exists(REVIEW_CSV):
+        return excluded, set()
+    out, rejected = dict(excluded), set()
+    restored = dropped = 0
+    with open(REVIEW_CSV, newline="", encoding="utf-8") as fh:
+        for r in csv.DictReader(fh):
+            uid = r.get("scene_uid", "")
+            # Rows for the other marker belong to the other run's index and
+            # would never match a section here; skipping them keeps the counts
+            # honest rather than reporting decisions this run did not apply.
+            if not uid or (r.get("marker") and r["marker"] != marker):
+                continue
+            if r.get("mask_rejected") == "1":
+                rejected.add(uid)
+            if (r.get("decision") or "") == "restored":
+                if out.pop(uid, None) is not None:
+                    restored += 1
+            elif r.get("excluded") == "1":
+                out[uid] = ("manual", r.get("reason") or "excluded on review")
+                dropped += 1
+    if restored or dropped or rejected:
+        print(f"section_review.csv: {restored} reinstated, {dropped} dropped, "
+              f"{len(rejected)} mask(s) rejected")
+    return out, rejected
+
+
 def load_overrides(paths=None):
     """Manual rotation corrections from 04d_rotation_curator.py.
 
@@ -466,6 +512,9 @@ def main():
     args = ap.parse_args()
     paths = marker_paths(args.marker)
     overrides, excluded = load_overrides(paths) if args.apply_overrides else ({}, {})
+    mask_rejected = set()
+    if args.apply_overrides:
+        excluded, mask_rejected = apply_review(excluded, args.marker)
 
     sec_dir = paths["sections"]
     plate_dir = os.path.join(REFORMAT_DIR, "plates")
@@ -516,9 +565,17 @@ def main():
             lost.append((r["scene_uid"], "overview PNG missing"))
             continue
         extra, flip = overrides.get(r["scene_uid"], (0.0, False))
-        art = load_artifact(r["scene_uid"], (WORK_SIZE, WORK_SIZE)) if args.mask_artifacts else None
+        # A rejected mask means this section reformats UNMASKED even with
+        # --mask-artifacts on. The mask file is left alone, so the decision is
+        # reversible by deleting one row of section_review.csv.
+        art = (load_artifact(r["scene_uid"], (WORK_SIZE, WORK_SIZE))
+               if args.mask_artifacts and r["scene_uid"] not in mask_rejected
+               else None)
         cen = load_censor(r["scene_uid"], (WORK_SIZE, WORK_SIZE)) if args.censor else None
-        if args.mask_artifacts and art is None:
+        # "no mask was built for this section" and "its mask was rejected on
+        # review" are different facts, and reporting the second as the first
+        # would read as a gap in 04g rather than as a decision someone made.
+        if args.mask_artifacts and art is None and r["scene_uid"] not in mask_rejected:
             no_mask.append(r["scene_uid"])
         out = reformat(src, light_background=False, extra_angle=extra, flip=flip,
                        artifact=art, censor=cen)

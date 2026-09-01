@@ -9,6 +9,92 @@ where things landed, not which plausible-looking route was tried and abandoned, 
 
 ---
 
+## 2026-09-01 - The prior steps, inside the ROI curator
+
+**Changed:** new `scripts/04p_section_provenance.py`; a Review mode in
+`04l_roi_curator.py`; `apply_review()` in `04a_reformat.py`; new
+`tests/review.test.js` and `tests/test_section_review.py`.
+
+**Four stages decide a section's fate before the ROI curator ever loads it, and it
+loads only the survivors.** `reformat_index*.csv` is the list of sections that got
+through, so **1,066 exclusions and 2,099 artifact masks** were decisions nobody could
+inspect from the tool they spend their time in. 04d covers exclusion for the 788 PCNA
+sections it was built for; nothing covered the pERK side, the sections dropped before
+reformat, or masking at all.
+
+`04p` is the join that makes them visible: one row per scanned section, all **2,572**,
+from the CZI scene downstream. It is a join and not a measurement - every number already
+existed - and it imports `04m`'s `classify()` rather than writing a second parser for the
+same reason strings. All 1,066 parse: `tissue_damaged` 789, `no_tissue` 185,
+`out_of_focus` 92.
+
+### The comparison only works if both halves are the same picture
+
+The obvious build showed the **reformatted** image for "masked" and the overview for
+"unmasked". They are not the same frame - 256x256 rotated and cropped to the tissue
+against 1632x1862 as scanned - so flicking between them changed the framing, the rotation
+and the scale, and the one thing it was meant to isolate was lost in the middle of all
+that.
+
+So masking is applied **in the browser, over the overview**, which is the frame 04g's mask
+actually lives in: "the same pixel grid as the DAPI overview - *not* the reformatted
+frame". Three states, one picture.
+
+**The mask is 0 clean / 1 compact / 2 elongated - values, not 0-255.** Drawn raw it is
+indistinguishable from black. `brightness(255)` takes 1 to 255 and leaves 0 at 0, which
+turns it into a stencil: inverted and multiplied it blacks out the artifact pixels, tinted
+and screened it shows them in red. Done in CSS rather than by reading the bitmap, because
+`getImageData` taints on a `file://` page - the trap this page was already written to
+avoid.
+
+### A separate file, merged - not a rewritten override
+
+Export writes `section_review.csv`, and `04a_reformat.apply_review()` merges it over the
+exclusion list. **The plan said to write `perk_overrides.csv` directly and that was
+wrong.** The Review mode runs in a browser and can only download; a page that knows about
+the handful of sections someone reviewed would have overwritten a file carrying
+hand-entered rotations for 1,134 of them. One bad export would have destroyed work that
+cannot be recovered.
+
+Reinstating needed no new format: `load_overrides` already reads and counts
+`decision="restored"` - it reports how often the 04f proposal was overruled. `mask_rejected`
+is the one new column, and it is one condition in 04a; the mask file is untouched, so the
+decision is reversible by deleting a row.
+
+### Page weight, and what was not carried
+
+2,572 rows of provenance is real content, but the first build tripled the page - 378 KB to
+1.19 MB. Two thirds of that was avoidable:
+
+  * **The three image paths are not carried.** They are a fixed function of uid, animal and
+    marker, and at ~110 bytes each over 2,572 rows they were 275 KB spent restating a rule
+    the page can apply. What is carried is whether each file *exists*, which cannot be
+    derived. The rule now lives in two places, `04p` and `revSrc()`, and says so in both.
+  * **Repeated strings are pooled.** "manually excluded: tissue too damaged to measure"
+    appears 789 times and there are 222 distinct CZI files; nine columns became an index
+    into a per-column list.
+
+773 KB of table became 393 KB, and the page 718 KB. A separate JSON fetched at load would
+have been smaller still and is not available: `fetch()` is refused under `file://`.
+
+### Verified
+
+`04p` reconciles against every upstream file: 1,066 excluded = 593 PCNA + 473 pERK,
+1,506 reformatted = 788 + 718, 2,099 with a mask, 130 measured, 264 censored out.
+
+The round trip was run end to end in a browser: place a reinstatement and a mask rejection,
+reload, confirm both survive and that neither leaks into `roi_plates.csv` (still 268 rows),
+export, then feed that exact CSV to `apply_review` - the AF568 run picks up the mask
+rejection and leaves its 473 exclusions alone, the AF488 run picks up the reinstatement and
+goes 593 to 592. Each marker takes only its own rows.
+
+One asymmetry worth knowing, and it is not a bug: **an excluded PCNA section still has its
+reformatted image, an excluded pERK section does not.** PCNA was reformatted and excluded
+afterwards, so all 1,381 have a PNG; pERK exclusions were applied before reformatting. That
+is why 2,099 sections can be shown in the analysis frame and 473 only as the original scan.
+
+---
+
 ## 2026-09-01 - The curator works from disk; only the Shotgun deck needs http
 
 **Changed:** new `scripts/serve_curators.py` and `serve_curators.bat`; corrected

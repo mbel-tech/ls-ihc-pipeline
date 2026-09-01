@@ -84,6 +84,38 @@ Every stage is resumable — re-running skips completed work.
 The 04-series curation chain is not in `run_all.sh`: it needs the operator between the steps —
 assigning plates, placing ROIs — so there is nothing to batch.
 
+### Reviewing the decisions made before the ROI curator
+
+Four stages decide a section's fate before it reaches the ROI curator, which loads only the
+survivors — so **1,066 exclusions and 2,099 artifact masks were invisible from the tool the
+operator works in.**
+
+```bash
+python scripts/04p_section_provenance.py     # one row per SCANNED section: 2,572
+python scripts/04l_roi_curator.py --marker AF568 --analysis-set --rgb --worklist
+```
+
+The curator's **Review** button opens a grid of every scanned section — 1,506 reformatted,
+1,066 excluded — grouped by animal and slide, with the cell vocabulary 04d already uses: a
+dashed amber border is a proposal the program made, a solid red one a decision a person made.
+Clicking one shows the whole chain, from the CZI scene onward: what 04f proposed, what the
+operator decided and why, what 04g masked, whether 04a reformatted it, what 04j censored, and
+what was measured in it.
+
+**`m` cycles masked / unmasked / mask in red.** All three are the same picture in the same
+frame — the section as scanned — so flicking between them isolates the masking and nothing
+else. Masking is applied in the browser rather than shown as a second file, because 04g's mask
+lives in the overview frame while the reformatted image is rotated and cropped; comparing those
+two would change the framing along with the masking.
+
+Three actions, each with a reason: **Reinstate** a section the pipeline excluded, **Drop** one
+it kept, **Reject mask** where 04g is wrong. Export writes `section_review.csv`, and
+`04a_reformat.py --apply-overrides` merges it — see `apply_review()` for why it is a separate
+file rather than a rewritten override.
+
+**Reinstating changes the analysis set**, so 05c has to run again for what it adds; the export
+says so before it writes.
+
 ---
 
 ## Quantification
