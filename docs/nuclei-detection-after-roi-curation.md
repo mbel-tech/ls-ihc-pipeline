@@ -778,7 +778,7 @@ behind reading the affine matrix off three evaluations instead of expanding it b
 
 ---
 
-## 10.8 Running the second marker (PCNA / AF488)
+### 10.8 Running the second marker (PCNA / AF488)
 
 The pERK pass is done; PCNA has not been started. The chain is the same, with `--marker`
 throughout, and the geometry step is the one that used to be dangerous.

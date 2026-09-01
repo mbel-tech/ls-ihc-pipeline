@@ -53,9 +53,7 @@ import argparse
 import collections
 import csv
 import importlib.util
-import json
 import os
-import statistics as st
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _spec = importlib.util.spec_from_file_location("_g5", os.path.join(_HERE, "05a_roi_geometry.py"))
@@ -73,10 +71,6 @@ RESULTS = os.path.join(OUT_ROOT, "results")
 NUCLEI_CSV = os.path.join(RESULTS, "roi_nuclei.csv")
 MEAS_CSV = os.path.join(RESULTS, "roi_measurements.csv")
 XLSX = os.path.join(RESULTS, "roi_dataset.xlsx")
-
-T_UM = CONFIG["section_thickness_um"]
-AB_ON = bool(CONFIG["detection"].get("abercrombie", {}).get("enabled"))
-
 
 def animal_environment():
     """animal -> sea / brackish, read straight from the sampling workbook.
@@ -100,18 +94,6 @@ def animal_environment():
         if fid.isdigit():
             out["LS" + fid] = (r.get(G6B.COL["environment"], "") or "").strip()
     return out
-
-
-def disc_area_mm2(b):
-    """The ellipse the disc became on the slide, in mm^2.
-
-    Rounded HERE, once, and both sheets sum the rounded value - so pivoting
-    `by_disc` reproduces `by_roi` exactly. Summing full precision and rounding
-    the total instead differs in the seventh decimal after seventy-odd discs,
-    which is meaningless as an area and very annoying as a discrepancy.
-    """
-    import math
-    return round(math.pi * float(b["axis_a_um"]) * float(b["axis_b_um"]) / 1e6, 6)
 
 
 def write_workbook(path, sheets):
@@ -318,7 +300,11 @@ def main(argv=None):
             "roi_kind": r["roi_kind"], "ROI": r["region"], "seed_n": r["seed_n"],
             "marker": r["marker"],
             "n_nuclei": int(r["n_nuclei"]),
-            "n_positive": r["n_positive"],
+            # int, not the raw CSV string. This sheet exists so by_roi can be
+            # checked by pivoting it, and a text column will not pivot - the
+            # two columns either side of this one are cast for the same reason.
+            # Blank stays blank: no cut means no number, not zero.
+            "n_positive": num(r["n_positive"], int) if r["n_positive"] != "" else "",
             "tissue_area_mm2": float(r["roi_area_mm2"]),
             "axis_a_um": b.get("axis_a_um", ""),
             "axis_b_um": b.get("axis_b_um", ""),

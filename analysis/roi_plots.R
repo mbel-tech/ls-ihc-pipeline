@@ -50,20 +50,31 @@ marker_label <- function(m = MARKER) {
 # and got it wrong by being a separate read: it is not a sheet, so it did not
 # pass through load_sheet, and the false-positive rate printed on every pERK
 # positivity figure would have had PCNA's sections folded into it.
-filter_marker <- function(df, what) {
+filter_marker <- function(df, what, require_rows = FALSE) {
   if (!"marker" %in% names(df)) {
     # A file written before the marker column existed is all AF568. Saying so
     # is fine when AF568 is what was asked for; handing it back for AF488 would
     # caption a PCNA figure with pERK data, which is the whole failure mode.
     if (MARKER != "AF568") {
-      stop(sprintf("%s has no marker column, so it is all AF568 - cannot serve %s.
-  Rebuild with 06c/06d.",
+      stop(sprintf(paste0("%s has no marker column, so it is all AF568 - ",
+                          "cannot serve %s.\n  Rebuild with 06c/06d."),
                    what, MARKER))
     }
     message(sprintf("  %s has no marker column - treating it as AF568 (pERK)", what))
     return(df)
   }
-  df[!is.na(df$marker) & df$marker == MARKER, , drop = FALSE]
+  have <- sort(unique(df$marker[!is.na(df$marker)]))
+  out <- df[!is.na(df$marker) & df$marker == MARKER, , drop = FALSE]
+  if (require_rows && !nrow(out)) {
+    stop(sprintf("no %s rows in %s (it has: %s).\n  Set LS_MARKER to one of them.",
+                 MARKER, what, paste(have, collapse = ", ")))
+  }
+  if (length(have) > 1) {
+    message(sprintf("  marker %s (%s) - %s also present and excluded",
+                    MARKER, marker_label(),
+                    paste(setdiff(have, MARKER), collapse = ", ")))
+  }
+  out
 }
 
 # Colour-blind safe, and deliberately not red/green.
@@ -77,32 +88,9 @@ load_sheet <- function(path, sheet) {
                  else "06c_excel_dataset.py"))
   }
   df <- as.data.frame(readxl::read_excel(path, sheet = sheet))
-
-  # One marker per figure. A sheet written before the marker column existed has
-  # no column to filter on and is all pERK, so it passes through - but say so,
-  # because silently treating an unlabelled sheet as one marker is the same
-  # assumption that made this necessary.
-  if ("marker" %in% names(df)) {
-    have <- sort(unique(df$marker[!is.na(df$marker)]))
-    df <- df[!is.na(df$marker) & df$marker == MARKER, ]
-    if (!nrow(df)) {
-      stop(sprintf("no %s rows in %s (sheet has: %s).
-  Set LS_MARKER to one of them.",
-                   MARKER, basename(path), paste(have, collapse = ", ")))
-    }
-    if (length(have) > 1) {
-      message(sprintf("  marker %s (%s) - %s also present and excluded",
-                      MARKER, marker_label(),
-                      paste(setdiff(have, MARKER), collapse = ", ")))
-    }
-  } else if (MARKER != "AF568") {
-    stop(sprintf("%s has no marker column, so it is all AF568 - cannot serve %s.
-  Rebuild with 06c/06d.",
-                 basename(path), MARKER))
-  } else {
-    message("  sheet has no marker column - treating it as AF568 (pERK); ",
-            "rebuild with 06c/06d to get it labelled")
-  }
+  # ONE marker per figure, via the shared rule - this used to reimplement it
+  # inline with different messages, which is two versions of one decision.
+  df <- filter_marker(df, basename(path), require_rows = TRUE)
 
   df <- df[!is.na(df$treatment) & df$treatment != "", ]
   df$treatment <- factor(df$treatment, levels = names(TREATMENT_COLOURS))

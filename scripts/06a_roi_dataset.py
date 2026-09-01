@@ -83,7 +83,10 @@ def roi_area_um2(b):
     return np.pi * float(b["axis_a_um"]) * float(b["axis_b_um"])
 
 
-def main():
+def main(argv=None):
+    # argv is accepted and ignored: this stage has no flags, and taking it
+    # lets 06e call every stage the same way instead of branching on a label.
+    del argv
     if not os.path.exists(NUCLEI_CSV):
         print(f"no {NUCLEI_CSV} - run 05c_detect_rois.py first")
         return 1
@@ -240,6 +243,14 @@ def main():
     real = [r for r in rows if r["roi_kind"] == "roi"]
     for path, data in ((MEAS_CSV, rows), (SPEC_CSV, spec)):
         if not data:
+            # An EMPTY result must not leave the previous run's file standing.
+            # detector_specificity.csv is read by plot_roi_figures.R to caption
+            # every positivity figure with a false-positive rate; a stale one
+            # would put a number from an earlier dataset on a new figure and
+            # look entirely current. Skipping the write was the quiet option.
+            if os.path.exists(path):
+                os.remove(path)
+                print(f"  nothing to write - removed the previous {os.path.basename(path)}")
             continue
         with open(path, "w", newline="", encoding="utf-8") as fh:
             w = csv.DictWriter(fh, fieldnames=list(data[0].keys()))

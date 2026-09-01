@@ -169,16 +169,21 @@ def run_06a(tmp):
     G6A.SPEC_CSV = os.path.join(tmp, "detector_specificity.csv")
     G5.BOX_CSV = bpath
     G5.all_boxes = lambda: G5.load_csv(bpath)
+    # A REAL finally. Every check in this file runs in one process against one
+    # shared G6A/G5 pair, so a leaked patch turns every later check into noise -
+    # and the tempdir these paths point into is deleted on the way out, so the
+    # leak would be into paths that no longer exist. The previous version had
+    # `finally: pass` with the restore after it, which looks like this and is
+    # not.
     try:
         rc = G6A.main()
+        meas = G5.load_csv(G6A.MEAS_CSV)
+        spec = (G5.load_csv(G6A.SPEC_CSV)
+                if os.path.exists(G6A.SPEC_CSV) else [])
+        paths = (npath, bpath, G6A.MEAS_CSV)
     finally:
-        pass
-    meas = G5.load_csv(G6A.MEAS_CSV)
-    spec = (G5.load_csv(G6A.SPEC_CSV)
-            if os.path.exists(G6A.SPEC_CSV) else [])
-    paths = (npath, bpath, G6A.MEAS_CSV)
-    (G6A.NUCLEI_CSV, G6A.MEAS_CSV, G6A.SPEC_CSV, G5.BOX_CSV,
-     G5.all_boxes) = keep
+        (G6A.NUCLEI_CSV, G6A.MEAS_CSV, G6A.SPEC_CSV, G5.BOX_CSV,
+         G5.all_boxes) = keep
     return rc, meas, spec, paths
 
 
@@ -235,10 +240,12 @@ def two_marker_check(tmp):
     G6A.MEAS_CSV = os.path.join(tmp, "m_measurements.csv")
     G6A.SPEC_CSV = os.path.join(tmp, "m_specificity.csv")
     G5.all_boxes = lambda: G5.load_csv(bpath)
-    rc = G6A.main()
-    meas = G5.load_csv(G6A.MEAS_CSV)
-    mpath = G6A.MEAS_CSV
-    G6A.NUCLEI_CSV, G6A.MEAS_CSV, G6A.SPEC_CSV, G5.all_boxes = keep
+    try:
+        rc = G6A.main()
+        meas = G5.load_csv(G6A.MEAS_CSV)
+        mpath = G6A.MEAS_CSV
+    finally:
+        G6A.NUCLEI_CSV, G6A.MEAS_CSV, G6A.SPEC_CSV, G5.all_boxes = keep
 
     chk("two-marker: 06a exits 0", rc, 0)
     h = {r["marker"]: r["mean_nucleus_diam_um"]
@@ -321,6 +328,71 @@ def behind_check(tmp, paths):
         G6C.main(["--out", out]), 1)
 
 
+def force_check(tmp):
+    """05c --force must drop only its own marker's rows.
+
+    THE ONLY PATH IN THE PIPELINE THAT DELETES MEASURED DATA. Both markers
+    append to one roi_nuclei.csv, so opening it "w" to redo one would discard
+    the other entirely - and that is hours of detection, not a number that can
+    be recomputed. Exercised here rather than in 05c itself because 05c cannot
+    be imported without StarDist and TensorFlow.
+
+    This mirrors `05c_detect_rois.py`'s rewrite block. It is a copy, and a copy
+    is what a test of an unimportable module can be - so if that block changes,
+    change this with it.
+    """
+    cols = ["scene_uid", "marker", "n"]
+    path = os.path.join(tmp, "force_nuclei.csv")
+
+    def seed():
+        with open(path, "w", newline="", encoding="utf-8") as fh:
+            w = csv.writer(fh)
+            w.writerow(cols)
+            w.writerows([["A1", "AF568", 1], ["A2", "AF568", 2],
+                         ["B1", "AF488", 3]])
+
+    def rewrite(marker):
+        keep = []
+        with open(path, newline="", encoding="utf-8") as rf:
+            rd = csv.reader(rf)
+            header = next(rd, None)
+            mi = header.index("marker") if header and "marker" in header else None
+            for row in rd:
+                if mi is not None and row and row[mi] != marker:
+                    keep.append(row)
+        if keep:
+            t = path + ".tmp"
+            with open(t, "w", newline="", encoding="utf-8") as tf:
+                tw = csv.writer(tf)
+                tw.writerow(cols)
+                tw.writerows(keep)
+            os.replace(t, path)
+        return keep
+
+    seed()
+    rewrite("AF488")
+    rows = list(csv.DictReader(open(path, newline="", encoding="utf-8")))
+    chk("--force AF488 keeps the pERK rows", [r["scene_uid"] for r in rows],
+        "['A1', 'A2']")
+    chk("...and leaves no .tmp behind", os.path.exists(path + ".tmp"), False)
+
+    seed()
+    rewrite("AF568")
+    rows = list(csv.DictReader(open(path, newline="", encoding="utf-8")))
+    chk("--force AF568 keeps the PCNA rows", [r["scene_uid"] for r in rows],
+        "['B1']")
+
+    # One marker only: nothing to keep, so the caller falls through to "w" and
+    # writes its own header. The rewrite must not leave a headerless file.
+    seed()
+    with open(path, "w", newline="", encoding="utf-8") as fh:
+        w = csv.writer(fh)
+        w.writerow(cols)
+        w.writerows([["A1", "AF568", 1]])
+    kept = rewrite("AF568")
+    chk("a single-marker file keeps nothing, so the caller rewrites it", kept, [])
+
+
 def main():
     tmp = tempfile.mkdtemp(prefix="lsroi_")
     try:
@@ -383,6 +455,9 @@ def main():
 
         # ---- a 06a that is behind is normal mid-run, not a failure
         behind_check(tmp, paths)
+
+        # ---- and --force must not take the other marker down with it
+        force_check(tmp)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

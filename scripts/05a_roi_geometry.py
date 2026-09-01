@@ -111,7 +111,11 @@ def box_csv(marker):
 def resolve_paths(marker):
     """The pair to READ for this marker, preferring the suffixed files."""
     g, b = geom_csv(marker), box_csv(marker)
-    if marker == "AF568" and not os.path.exists(b) and os.path.exists(LEGACY_BOX):
+    # Both legacy files or neither. Deciding on the box file alone would hand
+    # back LEGACY_GEOM for a repo that already has roi_geometry_AF568.csv, and
+    # that path may not exist.
+    if (marker == "AF568" and not os.path.exists(b) and not os.path.exists(g)
+            and os.path.exists(LEGACY_BOX) and os.path.exists(LEGACY_GEOM)):
         return LEGACY_GEOM, LEGACY_BOX
     return g, b
 
@@ -137,12 +141,11 @@ def all_boxes():
     the PCNA pass has run, so they need every box rather than one marker's.
     Scene uids are disjoint across markers, so this is a union and not a merge.
     """
-    seen, out, uids = set(), [], {}
+    out, uids = [], {}
     for m in MARKERS:
         p = resolve_paths(m)[1]
-        if p in seen or not os.path.exists(p):
+        if not os.path.exists(p):
             continue
-        seen.add(p)
         rows = load_csv(p)
         # THE DISJOINTNESS IS CHECKED, NOT ASSUMED. 06a joins a nucleus to its
         # disc by (scene_uid, roi_index), where the index is the position of the
@@ -534,7 +537,17 @@ def verify(n_sections=6):
 
     from scipy import ndimage
 
-    uids = [u for u in index if u in focus][:n_sections]
+    # THIS MARKER'S SECTIONS. Both reformat indices are loaded above, so
+    # without the filter the sample is whichever uids happen to come first in a
+    # merged dict - which made `--verify --marker AF488` print AF488 and then
+    # check a mixture. The composed map is the same code for both markers, so
+    # this changes nothing about what is being tested; it changes whether the
+    # heading is true.
+    want = [u for u in index if u in focus
+            and focus[u].get("marker_channel") == MARKER]
+    uids = (want or [u for u in index if u in focus])[:n_sections]
+    if not want:
+        print(f"  (no {MARKER} sections in focus.csv - sampling whatever is there)")
     worst = 0.0
     checked = 0
     for uid in uids:
@@ -624,7 +637,7 @@ def verify_czi(limit=4):
     not the raw read.
     """
     if not os.path.exists(GEOM_CSV):
-        print("  (no roi_geometry.csv yet - run the stage first)")
+        print(f"  (no {os.path.basename(GEOM_CSV)} yet - run the stage first)")
         return None, 0
     rows = load_csv(GEOM_CSV)[:limit]
     worst_drop = 1.0
@@ -675,6 +688,11 @@ def main():
     args = ap.parse_args()
 
     if args.verify:
+        # --verify reads GEOM_CSV, and the marker is normally inferred from the
+        # export - which --verify does not read. Without this it would check the
+        # AF568 geometry and print PASS whatever --marker said.
+        use_marker(args.marker or "AF568")
+        print(f"marker: {MARKER}  ({os.path.basename(GEOM_CSV)})")
         print("grid -> overview  (coordinate planes through the same transform)")
         worst, checked = verify()
         if not checked:

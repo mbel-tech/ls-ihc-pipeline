@@ -68,26 +68,25 @@ PPTX_FOR <- function(m) file.path(
 # no-primary control and no tERK channel in this dataset, so an absolute
 # positivity rate is not a claim these data support - what is supported is the
 # comparison between arms at matched levels, because the non-specific component
-# is shared. The density figures stand unchanged; the existing folder names are
-# kept so nothing already cited moves.
+# is shared. The density figures stand unchanged.
 # Output folders are suffixed for any marker other than the pERK default, so a
 # PCNA run writes beside the pERK figures rather than over them - the same
 # reason 05a's box files are per marker. The existing folder names are kept for
 # AF568 so nothing already cited moves.
 sfx <- if (MARKER == "AF568") "" else paste0("_", MARKER)
-d <- function(name) file.path(outdir, paste0(name, sfx))
+series_dir <- function(name) file.path(outdir, paste0(name, sfx))
 
 MEASURES <- list(
   list(key = "density", value = "cells_per_mm2",
        ylab = expression(density~(cells~per~mm^2)),
-       treatment = d("treatment"),
-       phase = d("production_phase"),
+       treatment = series_dir("treatment"),
+       phase = series_dir("production_phase"),
        note = "Abercrombie-corrected", cap = NULL),
   list(key = "positive", value = "positive_cells_per_mm2",
        # The label names the marker, so a PCNA figure cannot read as a pERK one.
        ylab = bquote(.(marker_label())*"-positive"~(cells~per~mm^2)),
-       treatment = d("positive_treatment"),
-       phase = d("positive_production_phase"),
+       treatment = series_dir("positive_treatment"),
+       phase = series_dir("positive_production_phase"),
        note = "Abercrombie-corrected",
        cap = "positivity cut per section from its own background discs")
 )
@@ -186,7 +185,7 @@ message(sprintf("  %d sections, %d animals, %d ROIs", nrow(slide),
                 nlevels(droplevels(slide$sample)), nlevels(slide$ROI)))
 
 for (d in dirs) dir.create(d, showWarnings = FALSE, recursive = TRUE)
-# Sweep the PARENT too, not just the two series folders. An earlier layout wrote
+# Sweep the PARENT too, not just the series folders. An earlier layout wrote
 # the figures straight into ROI_plots/, and eleven of them - Rm among them - sat
 # there untouched through every rebuild after the subfolders arrived, because
 # the clear only ever looked one level down. Anything stale enough to survive a
@@ -289,147 +288,147 @@ for (M in MEASURES) {
   message(sprintf("  %s: %d sections", M$key, nrow(slide_m)))
   report_n(slide_m, sprintf("one point = one section (%s)", M$key))
 
-for (roi in levels(slide_m$ROI)) {
-  d <- slide_m[slide_m$ROI == roi, ]
-  if (!nrow(d)) next
-  d$environment <- droplevels(d$environment)
-  # sample keeps ALL its levels so the shape scale stays identical across
-  # figures; drop = TRUE on the scale keeps absent animals out of the legend.
-  top <- max(d$value, na.rm = TRUE)
+  for (roi in levels(slide_m$ROI)) {
+    d <- slide_m[slide_m$ROI == roi, ]
+    if (!nrow(d)) next
+    d$environment <- droplevels(d$environment)
+    # sample keeps ALL its levels so the shape scale stays identical across
+    # figures; drop = TRUE on the scale keeps absent animals out of the legend.
+    top <- max(d$value, na.rm = TRUE)
 
-  # Mean and SEM, drawn AFTER the points so they read on top of them. The SEM
-  # is over the POINTS SHOWN, which are slides - it describes the scatter, and
-  # is deliberately NOT the standard error the model reports, which accounts for
-  # animal clustering and is what the p values come from. The bar is a
-  # description of the picture; the caption is the test.
-  # ONE crossbar and ONE error bar per scatter.
-  #
-  # `aes(group = ...)` is not decoration here. shape is mapped to the animal, so
-  # without an explicit group stat_summary inherits that grouping and computes a
-  # mean per ANIMAL - which drew three or four stacked horizontal bars inside a
-  # single scatter and looked like a rendering fault. The group has to be the x
-  # variable, which is what "per scatter" means.
-  #
-  # The two must also read as different objects: the mean is a SHORT THICK bar,
-  # the SEM a NARROWER THINNER one.
-  # `shape = NULL` drops the inherited shape aesthetic. Without it the summary
-  # layers still carry shape = sample, and a summary has no single animal, so
-  # the shape resolves to NA - which put a phantom "NA" entry in the animal
-  # legend of every figure. The bars themselves never used shape.
-  #
-  # `middle.linewidth` rather than the deprecated `fatten` (ggplot2 4.0).
-  summary_layers <- function(xvar) list(
-    stat_summary(aes(group = .data[[xvar]], shape = NULL), fun.data = mean_se,
-                 geom = "errorbar", width = 0.10, linewidth = 0.6,
-                 colour = "black"),
-    # The mean is drawn as an errorbar with ymin = ymax = mean, which collapses
-    # to a single horizontal segment. geom_crossbar was the obvious choice and
-    # the wrong one: with a zero-height box it draws its outline AND its middle
-    # line in the same place, so the two thicknesses stack into a heavy black
-    # slab that covered the points behind it.
-    stat_summary(aes(group = .data[[xvar]], shape = NULL),
-                 fun = mean, fun.min = mean, fun.max = mean,
-                 geom = "errorbar", width = 0.28, linewidth = 1.7,
-                 colour = "black"))
+    # Mean and SEM, drawn AFTER the points so they read on top of them. The SEM
+    # is over the POINTS SHOWN, which are slides - it describes the scatter, and
+    # is deliberately NOT the standard error the model reports, which accounts for
+    # animal clustering and is what the p values come from. The bar is a
+    # description of the picture; the caption is the test.
+    # ONE crossbar and ONE error bar per scatter.
+    #
+    # `aes(group = ...)` is not decoration here. shape is mapped to the animal, so
+    # without an explicit group stat_summary inherits that grouping and computes a
+    # mean per ANIMAL - which drew three or four stacked horizontal bars inside a
+    # single scatter and looked like a rendering fault. The group has to be the x
+    # variable, which is what "per scatter" means.
+    #
+    # The two must also read as different objects: the mean is a SHORT THICK bar,
+    # the SEM a NARROWER THINNER one.
+    # `shape = NULL` drops the inherited shape aesthetic. Without it the summary
+    # layers still carry shape = sample, and a summary has no single animal, so
+    # the shape resolves to NA - which put a phantom "NA" entry in the animal
+    # legend of every figure. The bars themselves never used shape.
+    #
+    # `middle.linewidth` rather than the deprecated `fatten` (ggplot2 4.0).
+    summary_layers <- function(xvar) list(
+      stat_summary(aes(group = .data[[xvar]], shape = NULL), fun.data = mean_se,
+                   geom = "errorbar", width = 0.10, linewidth = 0.6,
+                   colour = "black"),
+      # The mean is drawn as an errorbar with ymin = ymax = mean, which collapses
+      # to a single horizontal segment. geom_crossbar was the obvious choice and
+      # the wrong one: with a zero-height box it draws its outline AND its middle
+      # line in the same place, so the two thicknesses stack into a heavy black
+      # slab that covered the points behind it.
+      stat_summary(aes(group = .data[[xvar]], shape = NULL),
+                   fun = mean, fun.min = mean, fun.max = mean,
+                   geom = "errorbar", width = 0.28, linewidth = 1.7,
+                   colour = "black"))
 
-  common <- list(
-    scale_colour_manual(values = TREATMENT_COLOURS, drop = FALSE, name = NULL,
-                        guide = guide_legend(order = 1,
-                                             override.aes = list(size = 4.4, shape = 16))),
-    scale_fill_manual(values = TREATMENT_COLOURS, drop = FALSE, guide = "none"),
-    shape_scale,
-    expand_limits(y = 0),
-    # clip="off" lets the (N=x) annotation sit outside the panel, between the
-    # axis line and the group name.
-    coord_cartesian(clip = "off"),
-    labs(x = NULL, y = M$ylab,
-         title = if (MARKER == "AF568") roi
-                 else sprintf("%s - %s", roi, marker_label())),
-    base_theme)
+    common <- list(
+      scale_colour_manual(values = TREATMENT_COLOURS, drop = FALSE, name = NULL,
+                          guide = guide_legend(order = 1,
+                                               override.aes = list(size = 4.4, shape = 16))),
+      scale_fill_manual(values = TREATMENT_COLOURS, drop = FALSE, guide = "none"),
+      shape_scale,
+      expand_limits(y = 0),
+      # clip="off" lets the (N=x) annotation sit outside the panel, between the
+      # axis line and the group name.
+      coord_cartesian(clip = "off"),
+      labs(x = NULL, y = M$ylab,
+           title = if (MARKER == "AF568") roi
+                   else sprintf("%s - %s", roi, marker_label())),
+      base_theme)
 
-  # The false-positive rate belongs on the positivity figures and nowhere else.
-  # The subtitle is ONE unwrapped line and ggplot will not break it - a long
-  # one is silently clipped at the panel edge, which is how the false-positive
-  # rate disappeared off the right of every positivity figure the first time.
-  # Anything longer than a clause goes in the caption, which is markdown and
-  # breaks on <br>.
-  sub_note <- paste0(M$note, "; one point per section, shape = animal")
-  # Two SEPARATE caption lines, not one joined string. element_markdown wraps
-  # on <br> and on nothing else, so a single line carrying both notes came to
-  # ~96 characters and ran off the right of the panel - the same clipping that
-  # hid this note when it lived in the subtitle. Each line stays under ~90.
-  cap_note <- if (is.null(M$cap)) NULL else c(M$cap, fp_note)
+    # The false-positive rate belongs on the positivity figures and nowhere else.
+    # The subtitle is ONE unwrapped line and ggplot will not break it - a long
+    # one is silently clipped at the panel edge, which is how the false-positive
+    # rate disappeared off the right of every positivity figure the first time.
+    # Anything longer than a clause goes in the caption, which is markdown and
+    # breaks on <br>.
+    sub_note <- paste0(M$note, "; one point per section, shape = animal")
+    # Two SEPARATE caption lines, not one joined string. element_markdown wraps
+    # on <br> and on nothing else, so a single line carrying both notes came to
+    # ~96 characters and ran off the right of the panel - the same clipping that
+    # hid this note when it lived in the subtitle. Each line stays under ~90.
+    cap_note <- if (is.null(M$cap)) NULL else c(M$cap, fp_note)
 
-  # ---- series 1: treatment ------------------------------------------------
-  st1 <- stat_treatment(d)
-  p1 <- ggplot(d, aes(x = treatment, y = value, colour = treatment,
-                      fill = treatment, shape = sample)) +
-    geom_jitter(width = 0.16, height = 0, size = PT, stroke = 1.1) +
-    summary_layers("treatment") +
-    geom_text(data = n_labels(d, "treatment", top),
-              aes(x = x, y = y, label = sprintf("(N=%d)", n)),
-              inherit.aes = FALSE, vjust = 1, size = BASE * 0.30,
-              colour = "grey25") +
-    scale_x_discrete(labels = axis_labeller) +
-    common +
-    labs(subtitle = sub_note,
-         caption = paste(c(st1$caption, cap_note), collapse = "<br>"))
-  # Two scatters, so a letter pair would only ever read "a / b" - which says
-  # nothing a single mark does not. The asterisk goes on the HIGHER group.
-  p1 <- p1 + star_layer(d, "treatment", st1$p, top)
-  ggsave(file.path(M$treatment, paste0(safe_name(roi), ".png")), p1,
-         width = 9.5, height = 8.0, dpi = 200, bg = "white")
+    # ---- series 1: treatment ------------------------------------------------
+    st1 <- stat_treatment(d)
+    p1 <- ggplot(d, aes(x = treatment, y = value, colour = treatment,
+                        fill = treatment, shape = sample)) +
+      geom_jitter(width = 0.16, height = 0, size = PT, stroke = 1.1) +
+      summary_layers("treatment") +
+      geom_text(data = n_labels(d, "treatment", top),
+                aes(x = x, y = y, label = sprintf("(N=%d)", n)),
+                inherit.aes = FALSE, vjust = 1, size = BASE * 0.30,
+                colour = "grey25") +
+      scale_x_discrete(labels = axis_labeller) +
+      common +
+      labs(subtitle = sub_note,
+           caption = paste(c(st1$caption, cap_note), collapse = "<br>"))
+    # Two scatters, so a letter pair would only ever read "a / b" - which says
+    # nothing a single mark does not. The asterisk goes on the HIGHER group.
+    p1 <- p1 + star_layer(d, "treatment", st1$p, top)
+    ggsave(file.path(M$treatment, paste0(safe_name(roi), ".png")), p1,
+           width = 9.5, height = 8.0, dpi = 200, bg = "white")
 
-  # ---- series 2: the four groups -----------------------------------------
-  st4 <- stat_group4(d)
+    # ---- series 2: the four groups -----------------------------------------
+    st4 <- stat_group4(d)
 
-  # LETTERS ONLY WHEN THEY SEPARATE SOMETHING. If Tukey puts every group in the
-  # same class the display is four identical "a"s, which is a legend, a
-  # subtitle and four glyphs spent saying nothing - and worse, it reads at a
-  # glance like a result.
-  #
-  # But an absent label must not be ambiguous with an untested one, so when they
-  # are suppressed the caption says Tukey ran and separated nothing. Silence
-  # would leave the reader unable to tell "no difference" from "no test".
-  L <- st4$letters
-  letters_shown <- !is.null(L) && nrow(L) > 0 && length(unique(L$letter)) > 1
-  tukey_note <- if (!is.null(L) && nrow(L) && !letters_shown) {
-    "Tukey: no pair of groups differs, so no letters are drawn"
-  } else NULL
+    # LETTERS ONLY WHEN THEY SEPARATE SOMETHING. If Tukey puts every group in the
+    # same class the display is four identical "a"s, which is a legend, a
+    # subtitle and four glyphs spent saying nothing - and worse, it reads at a
+    # glance like a result.
+    #
+    # But an absent label must not be ambiguous with an untested one, so when they
+    # are suppressed the caption says Tukey ran and separated nothing. Silence
+    # would leave the reader unable to tell "no difference" from "no test".
+    L <- st4$letters
+    letters_shown <- !is.null(L) && nrow(L) > 0 && length(unique(L$letter)) > 1
+    tukey_note <- if (!is.null(L) && nrow(L) && !letters_shown) {
+      "Tukey: no pair of groups differs, so no letters are drawn"
+    } else NULL
 
-  p2 <- ggplot(d, aes(x = group4, y = value, colour = treatment,
-                      fill = treatment, shape = sample)) +
-    geom_jitter(width = 0.16, height = 0, size = PT, stroke = 1.1) +
-    summary_layers("group4") +
-    geom_text(data = n_labels(d, "group4", top),
-              aes(x = x, y = y, label = sprintf("(N=%d)", n)),
-              inherit.aes = FALSE, vjust = 1, size = BASE * 0.30,
-              colour = "grey25") +
-    scale_x_discrete(drop = FALSE, labels = axis_labeller) +
-    common +
-    labs(subtitle = paste0(
-           sub_note,
-           if (letters_shown) "; letters share = not different (Tukey)" else ""),
-         caption = paste(c(st4$caption, tukey_note, cap_note,
-                           "production phase is confounded with timepoint: brackish = tp1, sea = tp2"),
-                         collapse = "<br>"))
+    p2 <- ggplot(d, aes(x = group4, y = value, colour = treatment,
+                        fill = treatment, shape = sample)) +
+      geom_jitter(width = 0.16, height = 0, size = PT, stroke = 1.1) +
+      summary_layers("group4") +
+      geom_text(data = n_labels(d, "group4", top),
+                aes(x = x, y = y, label = sprintf("(N=%d)", n)),
+                inherit.aes = FALSE, vjust = 1, size = BASE * 0.30,
+                colour = "grey25") +
+      scale_x_discrete(drop = FALSE, labels = axis_labeller) +
+      common +
+      labs(subtitle = paste0(
+             sub_note,
+             if (letters_shown) "; letters share = not different (Tukey)" else ""),
+           caption = paste(c(st4$caption, tukey_note, cap_note,
+                             "production phase is confounded with timepoint: brackish = tp1, sea = tp2"),
+                           collapse = "<br>"))
 
-  # Letters when they separate something; a single asterisk when only two groups
-  # are present, for the same reason as series 1.
-  if (isTRUE(st4$n_groups == 2)) {
-    p2 <- p2 + star_layer(d, "group4", st4$p, top)
-  } else if (letters_shown) {
-    L$group4 <- factor(L$group4, levels = GROUP_LEVELS)
-    L$y <- top * 1.10
-    p2 <- p2 + geom_text(data = L, aes(x = group4, y = y, label = letter),
-                         inherit.aes = FALSE, size = BASE * 0.42,
-                         fontface = "bold", colour = "black") +
-      expand_limits(y = top * 1.18)
-  }
-  ggsave(file.path(M$phase, paste0(safe_name(roi), ".png")), p2,
-         width = 12.0, height = 8.4, dpi = 200, bg = "white")
-}
-}
+    # Letters when they separate something; a single asterisk when only two groups
+    # are present, for the same reason as series 1.
+    if (isTRUE(st4$n_groups == 2)) {
+      p2 <- p2 + star_layer(d, "group4", st4$p, top)
+    } else if (letters_shown) {
+      L$group4 <- factor(L$group4, levels = GROUP_LEVELS)
+      L$y <- top * 1.10
+      p2 <- p2 + geom_text(data = L, aes(x = group4, y = y, label = letter),
+                           inherit.aes = FALSE, size = BASE * 0.42,
+                           fontface = "bold", colour = "black") +
+        expand_limits(y = top * 1.18)
+    }
+    ggsave(file.path(M$phase, paste0(safe_name(roi), ".png")), p2,
+           width = 12.0, height = 8.4, dpi = 200, bg = "white")
+  }   # per ROI
+}   # per measure
 
 pngs <- unlist(lapply(dirs, list.files, pattern = "\\.png$", full.names = TRUE))
 message(sprintf("  %d PNGs written", length(pngs)))

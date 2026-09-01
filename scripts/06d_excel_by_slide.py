@@ -27,7 +27,6 @@ import collections
 import importlib.util
 import os
 import re
-import statistics as st
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _spec = importlib.util.spec_from_file_location(
@@ -38,8 +37,6 @@ _spec.loader.exec_module(G6C)
 G5 = G6C.G5
 CONFIG = G6C.CONFIG
 RESULTS = G6C.RESULTS
-T_UM = G6C.T_UM
-AB_ON = G6C.AB_ON
 XLSX = os.path.join(RESULTS, "roi_dataset_by_slide.xlsx")
 
 # LS22_s01a_sc06 -> animal LS22, slide LS22_s01a, scene 06

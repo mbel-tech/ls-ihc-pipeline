@@ -132,11 +132,12 @@ def refresh(rscript, quiet=True):
 
     `main([])` rather than `main()`: these parse their own argv, and this
     process's argv carries 06e's flags - so `--interval 1800` would reach 06c's
-    parser and abort the cycle with exit 2.
+    parser and abort the cycle with exit 2. 06a has no flags and ignores the
+    list, so all three are called the same way.
     """
     for label, mod in (("measurements", G6A), ("per sample", G6C),
                        ("per slide", G6D)):
-        rc = mod.main([]) if label != "measurements" else mod.main()
+        rc = mod.main([])
         if rc:
             print(f"  {label} FAILED (exit {rc})")
             return False
