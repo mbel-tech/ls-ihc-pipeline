@@ -170,6 +170,24 @@ that case offers a copy and states the size first. The screen flags any filename
 that does not match the manifest's grammar, because such a file is invisible to
 every stage and is otherwise dropped in silence.
 
+### Curators in a plain browser
+
+```bash
+serve_curators.bat                       # or: python scripts/serve_curators.py
+```
+
+Opening `roi_curator.html` by double-clicking it loads it as `file://`, and a
+`file://` page cannot read its own images back - every local image taints the
+canvas, so `toBlob()` throws and `fetch()` is refused. The curator is written not
+to need either, so landmarking, ROI placement, rotation, the filters and all
+three CSV exports work from disk. The exception is the **Shotgun deck**, which
+has to read bitmaps back to build a .pptx; it disables itself with a reason
+rather than failing at the click.
+
+`serve_curators.py` is the app's own loopback server without the app, so a
+browser gets the same terms - Shotgun included. It imports no PySide6, which also
+makes it the way in if the app will not start.
+
 **Curation state.** Decisions made in the app are written to
 `<out_root>/curation/<key>.json`, one file per curator, atomically. The app seeds
 the page's `localStorage` from those files before the page's own script runs, and

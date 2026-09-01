@@ -9,6 +9,45 @@ where things landed, not which plausible-looking route was tried and abandoned, 
 
 ---
 
+## 2026-09-01 - The curator works from disk; only the Shotgun deck needs http
+
+**Changed:** new `scripts/serve_curators.py` and `serve_curators.bat`; corrected
+`app/curator_view.py`'s rationale and the in-page message.
+
+**The reason recorded in `curator_view.py` was stale, and it was overstating the
+problem.** It said a `file://` page "throws SecurityError from `getImageData`",
+which was true of an early version and has not been true for some time - the page
+was changed to toggle DAPI by compositing rather than by reading pixels back, and
+`getImageData` now appears in it only inside the comment explaining its absence.
+Read literally, the note implied the curators do not work in a browser at all.
+They do: landmarking, ROI placement, rotation, the filters and all three CSV
+exports are fine from disk.
+
+**What genuinely still needs http is the Shotgun deck**, because building a .pptx
+means reading the plate and section bitmaps back - `toBlob()` on a canvas tainted
+by a local image, and `fetch()`, both refused under `file://`. The page already
+handles that well: it checks `location.protocol` and disables the button with a
+reason instead of failing at the click.
+
+**Fixed by serving, not by embedding.** Inlining the images as data URIs would
+remove the taint, and is not viable at this size: 240 MB of atlas plates and
+242 MB of pERK composites before base64's 33%, against a 378 KB page that loads
+instantly - and the deck draws on the favourites, which are chosen after the page
+is built, so there is no subset to embed. `serve_curators.py` is instead the
+app's own `LocalServer` without the app: `out_root` as document root, an
+ephemeral port, **127.0.0.1 and never 0.0.0.0** - it serves every overview and
+the whole atlas, and has no business being reachable off this machine.
+
+That also makes it the way in when the app will not start, since it imports no
+PySide6. Verified end to end on a fixed port: the page, an `../atlas/` plate and
+a section composite all 200.
+
+The in-page message now names the script rather than only the app, and says that
+everything else on the page works either way - the previous wording read as though
+opening from disk were broadly unsupported.
+
+---
+
 ## 2026-09-01 - Stage 06a had never been run, so every figure was DAPI density
 
 **Changed:** `06a_roi_dataset.py` rewritten to a single pass and run for the first time;

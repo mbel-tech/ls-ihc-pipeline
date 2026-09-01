@@ -1917,8 +1917,10 @@ const INK = "1A1A1A", DIM = "6E7681", RULE = "C9D1D9";
 // button instead of failing at the click.
 function shotWhyNot(){
   if(location.protocol === "file:")
-    return "open the curator from the app, or its Open in browser button - a page "
-         + "loaded from disk cannot read its own images back, so no deck can be built";
+    return "this page was opened from disk, and a file:// page cannot read its own "
+         + "images back, so no deck can be built. Serve it instead: run "
+         + "serve_curators.bat (or python scripts/serve_curators.py), or open the "
+         + "curator from the app - everything else on this page works either way";
   if(!(GROUPS && GROUPS.order && GROUPS.order.length
        && GROUPS.by_animal && Object.keys(GROUPS.by_animal).length))
     return "no group key declared - fill in groups.order and groups.by_animal in "
