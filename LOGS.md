@@ -71,9 +71,16 @@ Worth stating plainly: **the physically more specific h is arguably the per-grou
 1.50 um is real biology rather than segmentation noise. That is a scientific call, not a coding
 one. The declared convention is what shipped; changing it is one line in 06a.
 
-`n_nuclei` and `total_tissue_area_mm2` are byte-identical across the refactor on all 67 by_roi
+`n_nuclei` and `total_tissue_area_mm2` were byte-identical across the refactor on all 67 by_roi
 and 96 by_slide rows - checked against the pre-refactor workbooks, which is why they were copied
 aside first.
+
+**That was true when it was measured and is not true of the files on disk, so state it
+properly.** Measuring the refactor came before the two late sections were found and detected;
+afterwards **5 of 67 by_roi rows and 5 of 96 by_slide rows differ**, and every one is LS120 or
+LS22 - exactly the two animals those sections belong to. So the refactor changed nothing and the
+extra data changed five cells; the two are separate events that a single "unchanged" claim runs
+together.
 
 ### What the background discs actually measured
 
@@ -137,6 +144,33 @@ Boundaries rather than filled labels, because a fill hides the thing being judge
 rejects is the point - a box that is mostly red means the disc is small or misplaced relative to
 what was segmented, and no table shows that. Boundaries are computed with array shifts rather
 than `skimage.find_boundaries`, so the frozen build carries no new import.
+
+### Five things an independent spec review caught afterwards
+
+Worth recording because three of them were latent rather than visible, and one was a claim
+rather than a defect.
+
+  * **06c and 06d keyed their aggregation on (animal, region), with no marker.** Invisible while
+    only pERK existed, and guaranteed wrong the moment PCNA is measured: one row would have
+    carried AF568 + AF488 summed under a single `n_nuclei`, with whichever marker's Abercrombie
+    factor was written last. Making 06a read both markers' boxes is what turned this from
+    unreachable into certain. The marker is now part of the key and a column in every sheet, and
+    a two-marker fixture in the tests fails if they are ever pooled again. Today it changes
+    nothing: still 67 and 96 rows, one marker.
+  * **06c's staleness check would have killed the refresh loop.** It required
+    `measured == nuc_secs` exactly. But 06a runs at the head of each 06e cycle and 05c keeps
+    appending throughout, so any section finishing in between leaves 06a legitimately behind -
+    and 06e escalates a failed refresh into ENDING the loop. The check would have killed the
+    scenario it was written for. A subset is now a warning; the reverse - 06a naming sections the
+    nuclei file lacks - is still a failure, because that means the two files are not from the
+    same run. Both directions are tested.
+  * **The byte-identity claim above** - corrected in place.
+  * **The guide contradicted itself on `--qc`**, listing it as writing nothing in the flag table
+    while §8.1 described the PNGs, and §5.4 still carried the 128-section / 883,077-row counts.
+  * **§5.4 described 06a's censoring rule as "keep them in the count, drop them from the
+    intensity statistics"** - which is two thirds of it. The missing third is that a censored
+    nucleus is counted POSITIVE without consulting the cut, and that is the part that looks like
+    a bug in the code. Now stated outright, with 04j quoted.
 
 ### Smaller things
 

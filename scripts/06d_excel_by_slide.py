@@ -71,10 +71,14 @@ def group_rows(meas, keyfn, keyname, groups, envs):
     p_by, pos_known = collections.Counter(), collections.Counter()
     sec_by = collections.defaultdict(set)
     h_by, ab_by, animal_of = {}, {}, {}
+    # The marker is part of the key for the same reason it is in 06c: without it
+    # a row would be AF568 + AF488 summed under one n_nuclei, and the single
+    # (h, factor) pair stored per key would be whichever marker happened to come
+    # last. Harmless while only pERK is measured; wrong the moment PCNA is.
     for r in meas:
         if r["roi_kind"] != "roi":
             continue
-        k = (keyfn(r["scene_uid"]), r["region"])
+        k = (keyfn(r["scene_uid"]), r["marker"], r["region"])
         n_by[k] += int(r["n_nuclei"])
         a_by[k] += float(r["roi_area_mm2"])
         d_by[k] += 1
@@ -88,7 +92,7 @@ def group_rows(meas, keyfn, keyname, groups, envs):
 
     out = []
     for key in sorted(a_by):
-        k, rg = key
+        k, mk, rg = key
         n = n_by.get(key, 0)
         area = a_by[key]
         h = h_by.get(key)
@@ -103,6 +107,7 @@ def group_rows(meas, keyfn, keyname, groups, envs):
             "ROI": rg,
             keyname: k,
             "sample": an,
+            "marker": mk,
             "treatment": groups.get(an, ""),
             "environment": envs.get(an, ""),
             "total_tissue_area_mm2": round(area, 6),

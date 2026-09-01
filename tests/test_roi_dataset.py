@@ -1,6 +1,6 @@
 """Stage 6a's three decisions, and the 06a/06c agreement that used to be absent.
 
-06a turns 883,000 nuclei into 2,036 numbers, and every one of its decisions
+06a turns ~895,000 nuclei into ~2,069 numbers, and every one of its decisions
 fails quietly if it is wrong - a cut in the wrong place, an h from the wrong
 grouping and a dropped artifact all still produce a plausible density. The
 properties pinned here are the ones whose violation looks like a result:
@@ -17,6 +17,12 @@ properties pinned here are the ones whose violation looks like a result:
     excluded from the intensity median. Reversing either is 04j's stated error.
   * 06c reports the same n_nuclei and the same area as 06a. The two used to
     aggregate independently and had drifted; nothing compared them.
+  * the two MARKERS stay apart. 06c and 06d keyed on (animal, region) with no
+    marker, which was invisible while only pERK existed and would have summed
+    AF568 + AF488 into one row the moment PCNA was measured.
+  * a 06a that is one section BEHIND roi_nuclei.csv is a warning, not a
+    failure - that is the ordinary state while 05c is still appending, and
+    06e turns a failed refresh into ending the loop.
 
 Synthetic input throughout, so this runs on a machine with no imaging data.
 
@@ -176,6 +182,145 @@ def run_06a(tmp):
     return rc, meas, spec, paths
 
 
+def two_marker_fixture(tmp):
+    """One animal, one region, BOTH markers - which must not become one row.
+
+    Its own fixture rather than three more sections in the main one, so the
+    numbers the other assertions are built on stay where they are.
+    """
+    nuc, boxes = [], []
+    nid = 0
+    for uid, mk in (("M1", "AF568"), ("M2", "AF488")):
+        boxes.append(dict(box(uid, "roi", "Dm"), marker=mk))
+        boxes.append(dict(box(uid, "background", "__background__"), marker=mk))
+        # AF488 nuclei are deliberately a different size, so a pooled h would
+        # land between the two and match neither.
+        diam = 10.0 if mk == "AF568" else 6.0
+        for v in (100.0, 200.0, 150.0):
+            nid += 1
+            nuc.append(dict(nucleus(uid, "roi", "Dm", 1, nid, v, diam=diam),
+                            marker=mk))
+        for v in BG_S1:
+            nid += 1
+            nuc.append(dict(nucleus(uid, "background", "__background__", 2, nid, v),
+                            marker=mk))
+
+    # DISTINCT filenames. Sharing "roi_nuclei.csv" with build() silently
+    # replaced the main fixture's nuclei file, and the next check then read S1
+    # measurements against M1/M2 nuclei and reported them as orphaned - a
+    # failure in the check that was really a failure in the fixture.
+    npath = os.path.join(tmp, "m_nuclei.csv")
+    bpath = os.path.join(tmp, "m_boxes.csv")
+    for path, cols, rows in ((npath, NUC_COLS, nuc), (bpath, BOX_COLS, boxes)):
+        with open(path, "w", newline="", encoding="utf-8") as fh:
+            w = csv.DictWriter(fh, fieldnames=cols)
+            w.writeheader()
+            w.writerows(rows)
+    return npath, bpath
+
+
+def two_marker_check(tmp):
+    """06a and 06c must keep AF568 and AF488 apart.
+
+    This is a REGRESSION TEST, not a hypothetical. 06c and 06d keyed their
+    aggregation on (animal, region) with no marker. That was invisible while
+    only pERK had been measured and 06a read a single marker's box file, and it
+    became certain once 06a started reading both: one row would have carried
+    AF568 + AF488 summed into a single n_nuclei, under whichever marker's
+    Abercrombie factor happened to be written last.
+    """
+    keep = (G6A.NUCLEI_CSV, G6A.MEAS_CSV, G6A.SPEC_CSV, G5.all_boxes)
+    npath, bpath = two_marker_fixture(tmp)
+    G6A.NUCLEI_CSV = npath
+    G6A.MEAS_CSV = os.path.join(tmp, "m_measurements.csv")
+    G6A.SPEC_CSV = os.path.join(tmp, "m_specificity.csv")
+    G5.all_boxes = lambda: G5.load_csv(bpath)
+    rc = G6A.main()
+    meas = G5.load_csv(G6A.MEAS_CSV)
+    mpath = G6A.MEAS_CSV
+    G6A.NUCLEI_CSV, G6A.MEAS_CSV, G6A.SPEC_CSV, G5.all_boxes = keep
+
+    chk("two-marker: 06a exits 0", rc, 0)
+    h = {r["marker"]: r["mean_nucleus_diam_um"]
+         for r in meas if r["roi_kind"] == "roi"}
+    chk("two-marker: 06a measures h PER MARKER", h.get("AF568") != h.get("AF488"), True)
+    close("two-marker: AF568 h", float(h["AF568"]), 10.0, 0.005)
+    close("two-marker: AF488 h", float(h["AF488"]), 6.0, 0.005)
+
+    try:
+        G6C = load("g6c2", "06c_excel_dataset.py")
+        from openpyxl import load_workbook
+    except Exception as exc:                                   # noqa: BLE001
+        print(f"skip  two-marker 06c ({exc})")
+        return
+    G6C.NUCLEI_CSV, G6C.MEAS_CSV = npath, mpath
+    G6C.G5.all_boxes = lambda: G6C.G5.load_csv(bpath)
+    G6C.animal_environment = lambda: {}
+    out = os.path.join(tmp, "m_dataset.xlsx")
+    chk("two-marker: 06c exits 0", G6C.main(["--out", out]), 0)
+
+    rows = list(load_workbook(out)["by_roi"].values)
+    cols = list(rows[0])
+    recs = [dict(zip(cols, r)) for r in rows[1:]]
+    chk("two-marker: by_roi has a marker column", "marker" in cols, True)
+    chk("two-marker: ONE ROW PER MARKER, not one pooled row", len(recs), 2)
+    by_mk = {r["marker"]: r for r in recs}
+    chk("two-marker: both markers present", sorted(by_mk), "['AF488', 'AF568']")
+    for mk in ("AF568", "AF488"):
+        # 3 ROI nuclei each; a pooled row would say 6.
+        chk(f"two-marker: {mk} n_nuclei is its own", by_mk[mk]["n_nuclei"], 3)
+    chk("two-marker: the two factors differ, so neither was overwritten",
+        by_mk["AF568"]["abercrombie_factor"] != by_mk["AF488"]["abercrombie_factor"],
+        True)
+
+
+def behind_check(tmp, paths):
+    """06c must tolerate a 06a that is one section behind, and refuse the reverse.
+
+    06c is meant to be runnable while 05c is still appending, and 06e runs 06a
+    at the head of each cycle - so any section finishing between 06a's read and
+    06c's read leaves 06a legitimately behind. An equality check turned that
+    ordinary race into a hard failure, and 06e escalates a failed refresh into
+    ENDING the loop, so it would have killed the scenario it exists for.
+
+    The other direction is a real error: 06a referencing sections the nuclei
+    file does not have means the two are not from the same run at all.
+    """
+    npath, bpath, mpath = paths
+    try:
+        G6C = load("g6c3", "06c_excel_dataset.py")
+    except Exception as exc:                                   # noqa: BLE001
+        print(f"skip  behind-check ({exc})")
+        return
+    G6C.G5.all_boxes = lambda: G6C.G5.load_csv(bpath)
+    G6C.animal_environment = lambda: {}
+    out = os.path.join(tmp, "behind.xlsx")
+
+    # 06a covers S1 only; the nuclei file still has S1 and S2. That is "behind".
+    rows = [r for r in G6C.G5.load_csv(mpath) if r["scene_uid"] == "S1"]
+    short = os.path.join(tmp, "behind_measurements.csv")
+    with open(short, "w", newline="", encoding="utf-8") as fh:
+        w = csv.DictWriter(fh, fieldnames=list(rows[0].keys()))
+        w.writeheader()
+        w.writerows(rows)
+    G6C.NUCLEI_CSV, G6C.MEAS_CSV = npath, short
+    chk("06a behind roi_nuclei is a WARNING, not a failure",
+        G6C.main(["--out", out]), 0)
+
+    # The reverse: 06a naming a section the nuclei file has never heard of.
+    rows2 = G6C.G5.load_csv(mpath)
+    for r in rows2:
+        r["scene_uid"] = "GHOST"
+    orphan = os.path.join(tmp, "orphan_measurements.csv")
+    with open(orphan, "w", newline="", encoding="utf-8") as fh:
+        w = csv.DictWriter(fh, fieldnames=list(rows2[0].keys()))
+        w.writeheader()
+        w.writerows(rows2)
+    G6C.MEAS_CSV = orphan
+    chk("06a naming sections roi_nuclei lacks IS a failure",
+        G6C.main(["--out", out]), 1)
+
+
 def main():
     tmp = tempfile.mkdtemp(prefix="lsroi_")
     try:
@@ -232,6 +377,12 @@ def main():
 
         # ---- 06c must agree with 06a rather than re-deriving
         cross_check(tmp, paths, meas)
+
+        # ---- and must keep the two markers apart
+        two_marker_check(tmp)
+
+        # ---- a 06a that is behind is normal mid-run, not a failure
+        behind_check(tmp, paths)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

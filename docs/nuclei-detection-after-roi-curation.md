@@ -221,7 +221,7 @@ work/appenv/Scripts/python.exe scripts/05c_detect_rois.py --force
 | `--limit N` | only the first N sections — use it for a smoke test |
 | `--order balanced` \| `uid` | processing order; `balanced` is the default, see §4.3 |
 | `--force` | redo sections already in `roi_nuclei.csv` instead of resuming |
-| `--qc` | *documented as writing overlay crops; see §8.1 — it currently only creates the directory* |
+| `--qc` | write one overlay PNG per ROI to `qc/roi_detections/` — DAPI with nucleus boundaries, green counted, red found but outside the disc. See §8.1 |
 
 The run is **resumable per section** and safe to interrupt. A section is the unit that
 costs something: one CZI open, plus one model call per ROI in it. On restart, sections
@@ -436,16 +436,35 @@ Two things that measurement is *not*:
 
 ### 5.4 Clipping does not reach the curated ROIs
 
-Every one of the 128 measured sections has a censor mask on disk, and 27 of them contain
-censored pixels — but **no nucleus in the entire 883,077-row file is flagged `censored`.**
+Every one of the measured sections has a censor mask on disk, and 27 of them contain censored
+pixels — but **no nucleus in the entire file is flagged `censored`**: 0 of 895,548 rows over 130
+sections. (Measured at 128 sections and 883,077 rows when this was written; re-checked after the
+two late sections were added, and still 0.)
 
 That is a real result, not a broken lookup. Of the 346 discs placed on those 27 sections,
 exactly **one** overlaps a censored pixel at all, and no nucleus centroid rounds onto it.
 The operator placed discs away from the clipped tissue.
 
-The practical consequence: 06a's right-censoring logic — keep censored nuclei in the count,
-drop them from the intensity statistics — is inert for this dataset. Worth knowing before
-citing it as a safeguard that did something here. It did not need to.
+**What 06a's right-censoring logic actually does, stated precisely**, because "keep them in the
+count, drop them from the intensity statistics" is only two thirds of it and the missing third
+is the part that looks like a bug in the code:
+
+- a censored nucleus is **counted** (it is in `n_nuclei`);
+- it is **excluded** from `marker_median_of_roi`, because a ceiling value drags a median down;
+- it is **counted as POSITIVE**, unconditionally and without consulting the cut.
+
+The third follows from what censoring means. `04j_censor_clipped.py` defines a censored pixel as
+right-censored *at the 16-bit ceiling* — its true value is unknown but at least 65,535 — so it is
+above any cut by construction. 04j states both halves outright: censoring "MUST be excluded from
+any intensity statistic" and "MUST NOT be excluded from detection or from positivity, because a
+pixel at the ceiling is unambiguously positive. Dropping it would bias positive counts *down* in
+exactly the animals with the brightest staining."
+
+So `n_pos = sum(1 for r in here if r["_cen"] or r["_v"] > cut)` in `06a_roi_dataset.py` is
+correct and deliberate, and there is a comment there saying so. Do not "fix" it.
+
+The practical consequence for THIS dataset: all of it is inert, because nothing is censored.
+Worth knowing before citing it as a safeguard that did something here. It did not need to.
 
 ---
 

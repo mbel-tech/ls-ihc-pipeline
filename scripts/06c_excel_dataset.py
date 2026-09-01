@@ -180,12 +180,31 @@ def main(argv=None):
         for row in rd:
             if row:
                 nuc_secs.add(row[0])
-    if measured != nuc_secs:
-        print(f"  STALE 06a: {len(nuc_secs)} sections in roi_nuclei.csv but "
-              f"{len(measured)} in roi_measurements.csv "
-              f"({len(nuc_secs - measured)} unmeasured by 06a). "
-              f"Re-run 06a_roi_dataset.py.")
+    # A SUBSET IS NORMAL MID-RUN, AND MUST NOT FAIL.
+    #
+    # This stage is meant to be runnable while 05c is still appending. 06a runs
+    # first in each 06e cycle and takes seconds to minutes, and 05c keeps
+    # writing throughout - so any section that finishes in between leaves 06a
+    # legitimately one or more sections behind. Requiring exact equality turned
+    # that ordinary race into a hard failure, and 06e escalates a failed refresh
+    # into ending the loop, so the check would have killed the very scenario it
+    # was written to protect. It says so and carries on instead.
+    #
+    # The genuine error is the other direction: 06a referencing sections the
+    # nuclei file does not contain means the two files are not from the same
+    # data at all, and every count would be joined against the wrong geometry.
+    orphaned = measured - nuc_secs
+    if orphaned:
+        print(f"  INCONSISTENT: roi_measurements.csv has {len(orphaned)} "
+              f"sections that are not in roi_nuclei.csv "
+              f"(e.g. {sorted(orphaned)[0]}). The two files are not from the "
+              f"same run. Re-run 06a_roi_dataset.py.")
         return 1
+    behind = nuc_secs - measured
+    if behind:
+        print(f"  06a is {len(behind)} section(s) behind roi_nuclei.csv - "
+              f"reporting the {len(measured)} it covers. Normal while "
+              f"05c_detect_rois.py is still running; re-run 06a for the rest.")
 
     planned = {b["scene_uid"] for b in boxes}
     n_nuclei_total = sum(int(r["n_nuclei"]) for r in meas)
@@ -215,12 +234,19 @@ def main(argv=None):
     n_by = collections.Counter()               # (animal, region) -> nuclei
     p_by = collections.Counter()               # (animal, region) -> positives
     a_by = collections.Counter()               # (animal, region) -> area mm2
-    d_by = collections.Counter()               # (animal, region) -> discs
-    sec_by = collections.defaultdict(set)      # (animal, region) -> scene_uids
+    d_by = collections.Counter()               # key -> discs
+    sec_by = collections.defaultdict(set)      # key -> scene_uids
     h_by, ab_by = {}, {}
     pos_known = collections.Counter()          # discs whose section had a cut
+
+    # THE MARKER IS PART OF THE KEY. Without it a row is AF568 + AF488 summed:
+    # different antibodies, different acquisitions, one n_nuclei. It was
+    # invisible while only pERK had been measured and 06a read a single marker's
+    # boxes, and it became certain the moment 06a started reading both. It also
+    # made the h note below false, because two markers under one key carry two
+    # different (h, factor) pairs and "the last one" would win arbitrarily.
     for r in roi_rows:
-        key = (r["animal"], r["region"])
+        key = (r["animal"], r["marker"], r["region"])
         n_by[key] += int(r["n_nuclei"])
         a_by[key] += float(r["roi_area_mm2"])
         d_by[key] += 1
@@ -229,15 +255,15 @@ def main(argv=None):
         if npos is not None:
             p_by[key] += npos
             pos_known[key] += 1
-        # h and the factor are properties of (marker, region) in 06a, so every
-        # row under a key carries the same pair - taking the last is taking the
-        # only one.
+        # h and the factor are properties of (marker, region) in 06a, and the
+        # marker is in the key here, so every row under a key really does carry
+        # the same pair - taking the last is taking the only one.
         h_by[key] = num(r["mean_nucleus_diam_um"])
         ab_by[key] = num(r["abercrombie_factor"]) or 1.0
 
     by_roi = []
-    for key in sorted(a_by, key=lambda k: (k[0], k[1])):
-        an, rg = key
+    for key in sorted(a_by):
+        an, mk, rg = key
         n, area = n_by[key], a_by[key]
         ab = ab_by.get(key) or 1.0
         h = h_by.get(key)
@@ -250,6 +276,7 @@ def main(argv=None):
             "n_nuclei": n,
             "ROI": rg,
             "sample": an,
+            "marker": mk,
             "treatment": groups.get(an, ""),
             "environment": envs.get(an, ""),
             "total_tissue_area_mm2": round(area, 6),
@@ -289,6 +316,7 @@ def main(argv=None):
             "environment": envs.get(r["animal"], ""),
             "scene_uid": r["scene_uid"], "roi_index": int(r["roi_index"]),
             "roi_kind": r["roi_kind"], "ROI": r["region"], "seed_n": r["seed_n"],
+            "marker": r["marker"],
             "n_nuclei": int(r["n_nuclei"]),
             "n_positive": r["n_positive"],
             "tissue_area_mm2": float(r["roi_area_mm2"]),
@@ -297,11 +325,12 @@ def main(argv=None):
         })
 
     per_sec = collections.defaultdict(lambda: [0, 0, set(), 0, 0])
-    cut_by, animal_by = {}, {}
+    cut_by, animal_by, marker_by = {}, {}, {}
     for r in meas:
         s = per_sec[r["scene_uid"]]
         cut_by[r["scene_uid"]] = r["section_positivity_cut"]
         animal_by[r["scene_uid"]] = r["animal"]
+        marker_by[r["scene_uid"]] = r["marker"]
         if r["roi_kind"] == "roi":
             s[0] += int(r["n_nuclei"])
             s[2].add(r["region"])
@@ -317,6 +346,7 @@ def main(argv=None):
         by_section.append({
             "sample": an, "treatment": groups.get(an, ""),
             "environment": envs.get(an, ""), "scene_uid": uid,
+            "marker": marker_by.get(uid, ""),
             "n_roi_nuclei": n_roi, "n_background_nuclei": n_bg,
             "n_roi_discs": d_roi,
             "n_background_discs": d_bg,
