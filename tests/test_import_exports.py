@@ -77,6 +77,53 @@ def write(d, name, text):
     return p
 
 
+def replace_guard(d, plates):
+    """main() must refuse to drop curation the export does not mention.
+
+    THIS SUITE ONLY EVER CALLED rebuild(), which is why a docstring promising
+    this refusal shipped without the code behind it. The hazard is real: one
+    curation store holds both markers - scene uids never collide - so a
+    PCNA-only export replacing it wholesale drops every pERK placement, and the
+    live store already holds 180 pERK sections against 85 PCNA ones.
+    """
+    import json
+
+    out_root = os.path.join(d, "out")
+    os.makedirs(os.path.join(out_root, "curation"), exist_ok=True)
+    store = IE.ST.CurationStore(out_root)
+    # One section the export mentions, one it does not - the other marker's.
+    store.write(IE.ROI_KEY, json.dumps({
+        "LS22_s01a_sc00": {"plate": 1, "pairs": [], "assigned": True,
+                           "noroi": False, "fav": False, "rot": 0, "excl": False},
+        "LS22_s01b_sc00": {"plate": 2, "pairs": [], "assigned": True,
+                           "noroi": False, "fav": False, "rot": 0, "excl": False},
+    }))
+
+    # main() reads out_root from config.json, so the store is redirected here
+    # rather than pointed at the real one - this test must never touch
+    # D:/LS-analysis/curation.
+    argv, real_store = sys.argv[:], IE.ST.CurationStore
+
+    def run(*flags):
+        sys.argv = ["import_exports", plates, *flags]
+        IE.ST.CurationStore = lambda _root: real_store(out_root)
+        try:
+            return IE.main()
+        finally:
+            sys.argv = argv
+            IE.ST.CurationStore = real_store
+
+    print("\nrefusing a replace that would drop another marker's work:\n")
+    rc = run()
+    chk("plain import REFUSES", rc, 1)
+    after = json.loads(store.read(IE.ROI_KEY))
+    chk("...and wrote nothing", sorted(after), "['LS22_s01a_sc00', 'LS22_s01b_sc00']")
+
+    chk("--merge is allowed", run("--merge"), 0)
+    kept = json.loads(store.read(IE.ROI_KEY))
+    chk("...and keeps the unmentioned section", "LS22_s01b_sc00" in kept, True)
+
+
 def main():
     with tempfile.TemporaryDirectory() as d:
         pl = write(d, "roi_plates.csv", PLATES)
@@ -123,6 +170,8 @@ def main():
         S3, n3, nbg3 = IE.rebuild(pl, lm, regions_csv=os.path.join(d, "nope.csv"))
         chk("the rebuild still works", n3, 3)
         chk("and says it found none", nbg3, 0)
+
+        replace_guard(d, pl)
 
     print("\n" + (f"{fails} FAILED" if fails else "ALL PASS"))
     return 1 if fails else 0

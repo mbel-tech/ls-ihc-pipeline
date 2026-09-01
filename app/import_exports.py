@@ -151,6 +151,9 @@ def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     dry = "--dry-run" in sys.argv
     merge = "--merge" in sys.argv
+    # Only needed to override the refusal below - replacing is still the
+    # default, it just stops when it would drop another marker's work.
+    replace = "--replace" in sys.argv
     if not args:
         print(__doc__)
         return 2
@@ -203,9 +206,32 @@ def main():
     existing = None if merge else store.read(ROI_KEY)
     if existing:
         try:
-            had = len(json.loads(existing))
+            prior_all = json.loads(existing)
         except ValueError:
-            had = "?"
+            prior_all = {}
+        had = len(prior_all) if prior_all else "?"
+
+        # REPLACING NOW DESTROYS THE OTHER MARKER'S CURATION.
+        #
+        # One store holds both markers - scene uids never collide, which is what
+        # lets the curator page carry pERK and PCNA at once - so a PCNA-only
+        # export replacing it wholesale drops every pERK placement, and the
+        # reverse. Harmless while only one marker had ever been curated; the
+        # store here already holds 180 pERK sections and 85 PCNA ones.
+        #
+        # Sections the export does not mention are the signal. A normal
+        # re-import of the same marker mentions its own sections, so whatever is
+        # left over belongs to another marker - or the wrong export was picked.
+        # Either way it is not a default, and it is not reversible.
+        orphans = sorted(u for u in (prior_all or {}) if u not in S)
+        if orphans and not replace:
+            print(f"\n  REFUSING: {ROI_KEY} holds {had} sections and this "
+                  f"export mentions {len(S)}, so replacing it would DROP "
+                  f"{len(orphans)} - e.g. {', '.join(orphans[:3])}.")
+            print(f"  One store holds both markers. Curating one cannot disturb "
+                  f"the other, but REPLACING the store can.")
+            print(f"  --merge keeps them; --replace drops them anyway.")
+            return 1
         print(f"\n  NOTE: {ROI_KEY} already holds {had} sections and will be replaced.")
 
     if dry:
