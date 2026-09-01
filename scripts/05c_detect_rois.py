@@ -284,7 +284,42 @@ def main():
     from pylibCZIrw import czi as pyczi
     from skimage.measure import regionprops
 
+    # --force MUST NOT TRUNCATE THE OTHER MARKER'S ROWS.
+    #
+    # roi_nuclei.csv is shared: the two markers have disjoint sections and
+    # append to one file. Opening it "w" to redo one marker would discard the
+    # other's entirely - `--marker AF488 --force` deleting ~895,000 pERK rows,
+    # or a forced pERK re-run deleting the PCNA ones. Nothing would error; 06a
+    # and 06c would just report the missing marker at 0 coverage. That is the
+    # same hazard Phase 3.1 removed from 05a's box files, one stage later, and
+    # here the cost is hours of irrecoverable detection.
+    #
+    # So a forced run REWRITES the file keeping every other marker's rows and
+    # dropping only this marker's. The rewrite goes through a temp file and one
+    # atomic replace, because this stage runs against a drive that has dropped
+    # writes and a half-written roi_nuclei.csv is the whole dataset.
+    keep_rows = []
+    if os.path.exists(NUCLEI_CSV) and args.force:
+        with open(NUCLEI_CSV, newline="", encoding="utf-8") as rf:
+            rd = csv.reader(rf)
+            header = next(rd, None)
+            mi = header.index("marker") if header and "marker" in header else None
+            for row in rd:
+                if mi is not None and row and row[mi] != args.marker:
+                    keep_rows.append(row)
+        dropped = "all" if mi is None else f"{args.marker}"
+        print(f"  --force: rewriting roi_nuclei.csv, dropping {dropped} rows and "
+              f"keeping {len(keep_rows)} from other markers")
+
     new = not os.path.exists(NUCLEI_CSV) or args.force
+    if new and keep_rows:
+        tmp = NUCLEI_CSV + ".tmp"
+        with open(tmp, "w", newline="", encoding="utf-8") as tf:
+            tw = csv.writer(tf)
+            tw.writerow(COLUMNS)
+            tw.writerows(keep_rows)
+        os.replace(tmp, NUCLEI_CSV)
+        new = False                      # header and the kept rows are in place
     fh = open(NUCLEI_CSV, "w" if new else "a", newline="", encoding="utf-8")
     w = csv.writer(fh)
     if new:

@@ -865,6 +865,21 @@ marker per figure is the only version of this that means anything.
 
 **Expect it to be slow.** PCNA is roughly six times the pERK volume.
 
+### Two things about PCNA that are not symmetric with pERK
+
+**There are no censor masks for AF488, and there will not be.** Counted on disk:
+`reformatted/sections_AF568/` holds 718 `_censor.npy`, `reformatted/sections/` holds **0**.
+`04j_censor_clipped.py` is about AF568 clipping specifically — the pERK exposure is 1000 ms
+against PCNA's 300 ms, and it is the pERK channel whose pixels pin at the 16-bit ceiling. So
+every PCNA nucleus will carry `censored = 0`, and 06a's deliberate "a censored nucleus is
+positive by construction" rule is inert for PCNA — as it happens it is inert for pERK too
+(§5.4), but for a different reason: there it was measured and found to be zero, here it was never
+measured at all. If PCNA turns out to clip, 04j has to be run for it before that rule means
+anything.
+
+**Artifact masks DO exist for both** — 718 for AF568, 831 for AF488 — so artifact exclusion works
+for PCNA exactly as it does for pERK.
+
 ---
 
 ## 11. Command summary

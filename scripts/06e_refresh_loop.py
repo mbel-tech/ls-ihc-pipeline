@@ -87,8 +87,14 @@ def marker_list():
     if not os.path.exists(path):
         return ["AF568"]
     rows = G5.load_csv(path)
-    seen = [r.get("marker") for r in rows if r.get("marker")]
-    return sorted(set(seen)) or ["AF568"]
+    seen = sorted({r.get("marker") for r in rows if r.get("marker")})
+    if not seen:
+        return ["AF568"]
+    # AF568 FIRST. A plotting failure ends the loop, and plain sorted() puts
+    # AF488 in front - so an untested marker on the thinnest data would take the
+    # loop down before the pERK figures had been redrawn even once.
+    return ([m for m in seen if m == "AF568"]
+            + [m for m in seen if m != "AF568"])
 
 
 def progress():

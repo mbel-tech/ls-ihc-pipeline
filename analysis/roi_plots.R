@@ -52,6 +52,14 @@ marker_label <- function(m = MARKER) {
 # positivity figure would have had PCNA's sections folded into it.
 filter_marker <- function(df, what) {
   if (!"marker" %in% names(df)) {
+    # A file written before the marker column existed is all AF568. Saying so
+    # is fine when AF568 is what was asked for; handing it back for AF488 would
+    # caption a PCNA figure with pERK data, which is the whole failure mode.
+    if (MARKER != "AF568") {
+      stop(sprintf("%s has no marker column, so it is all AF568 - cannot serve %s.
+  Rebuild with 06c/06d.",
+                   what, MARKER))
+    }
     message(sprintf("  %s has no marker column - treating it as AF568 (pERK)", what))
     return(df)
   }
@@ -87,6 +95,10 @@ load_sheet <- function(path, sheet) {
                       MARKER, marker_label(),
                       paste(setdiff(have, MARKER), collapse = ", ")))
     }
+  } else if (MARKER != "AF568") {
+    stop(sprintf("%s has no marker column, so it is all AF568 - cannot serve %s.
+  Rebuild with 06c/06d.",
+                 basename(path), MARKER))
   } else {
     message("  sheet has no marker column - treating it as AF568 (pERK); ",
             "rebuild with 06c/06d to get it labelled")

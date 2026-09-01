@@ -206,7 +206,24 @@ mention of a marker at all. Round 3 found the last two:
     PCNA run - the long one it exists to babysit - redrawing unchanged pERK figures and reporting
     success. It now reads which markers 06a has measured and runs the script once per marker.
 
-Two smaller ones from the same round: 06c's printed summary still totalled by sample alone, so
+And a fourth round found two more, one of them the worst of the set:
+
+  * **`05c --force` opened the shared `roi_nuclei.csv` in `"w"`.** The two markers append to one
+    file, so `--marker AF488 --force` would have discarded every pERK row - ~895,000 of them,
+    hours of irrecoverable detection - and a forced pERK re-run would have deleted the PCNA ones.
+    Nothing errors; 06a and 06c would simply report the missing marker at 0 of 130. This is the
+    same hazard Phase 3.1 removed from 05a's box files, one stage later, and the previous commit
+    had scoped 05c's *reads* to the marker while leaving the write mode alone. A forced run now
+    rewrites the file keeping every other marker's rows, through a temp file and one atomic
+    replace, because a half-written `roi_nuclei.csv` is the whole dataset.
+  * **06a's own printed summary pooled the markers** - the one place round 3 did not reach after
+    fixing the same thing in 06c's summary and in the R caption. An h range spanning two markers
+    is not a range of anything: pERK 9.4 and PCNA 6.0 would print as "6.0-9.4" and destroy the
+    check that a large deviation means the h grouping changed. And the false-positive rate is the
+    number the operator is told to stop and read before building any figure on the cut - filtered
+    on the figure, pooled in the console.
+
+Two smaller ones from round three: 06c's printed summary still totalled by sample alone, so
 each animal appeared twice with identical pooled figures against per-marker section counts; and
 `marker_label()`'s fallback was unreachable, because `[[` on a named character vector throws for
 an unknown name rather than returning NULL, so an unrecognised marker would have died with

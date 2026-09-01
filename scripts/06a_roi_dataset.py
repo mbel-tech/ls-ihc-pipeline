@@ -236,17 +236,34 @@ def main():
     print("=" * 72)
     print(f"{len(real)} ROIs and {len(rows) - len(real)} background discs -> {MEAS_CSV}")
     print(f"{len(spec)} sections -> {SPEC_CSV}")
-    print(f"  sections with a cut : {len(cuts)} of {len({r['scene_uid'] for r in nuc})}"
-          f"   (needs >=5 background nuclei)")
-    if AB_ON:
-        print(f"  Abercrombie         : T={T_UM} um, measured h "
-              f"{min(hs.values()):.1f}-{max(hs.values()):.1f} um -> factor "
-              f"{T_UM/(T_UM+max(hs.values())):.3f}-{T_UM/(T_UM+min(hs.values())):.3f}")
-    if spec:
-        fp = [s["false_positive_rate"] for s in spec if s["false_positive_rate"] != ""]
-        print(f"  false-positive rate : median {st.median(fp)*100:.1f}%, "
-              f"range {min(fp)*100:.1f}-{max(fp)*100:.1f}%   "
-              f"(measured on {sum(s['bg_nuclei'] for s in spec)} background nuclei)")
+    # ONE BLOCK PER MARKER. This stage runs once for both, and all three of
+    # these numbers are per marker. An h RANGE spanning two markers is not a
+    # range of anything - pERK 9.4 and PCNA 6.0 would print as "6.0-9.4" and
+    # destroy the check that a large deviation means the h grouping changed -
+    # and the false-positive rate is the number the operator is told to stop and
+    # read before building any figure on the cut. It is filtered on the figure;
+    # pooling it in the console would put the two in disagreement.
+    markers = sorted({r["marker"] for r in rows}) or [""]
+    for mk in markers:
+        m_uids = {r["scene_uid"] for r in nuc if r["marker"] == mk}
+        m_cuts = [u for u in cuts if u in m_uids]
+        m_hs = {k: v for k, v in hs.items() if k[0] == mk}
+        m_spec = [s for s in spec if s["marker"] == mk]
+        head = f"  [{mk}] " if len(markers) > 1 else "  "
+        print(f"{head}sections with a cut : {len(m_cuts)} of {len(m_uids)}"
+              f"   (needs >=5 background nuclei)")
+        if AB_ON and m_hs:
+            lo, hi = min(m_hs.values()), max(m_hs.values())
+            print(f"{head}Abercrombie         : T={T_UM} um, measured h "
+                  f"{lo:.1f}-{hi:.1f} um -> factor "
+                  f"{T_UM/(T_UM+hi):.3f}-{T_UM/(T_UM+lo):.3f}")
+        fp = [s["false_positive_rate"] for s in m_spec
+              if s["false_positive_rate"] != ""]
+        if fp:
+            print(f"{head}false-positive rate : median {st.median(fp)*100:.1f}%, "
+                  f"range {min(fp)*100:.1f}-{max(fp)*100:.1f}%   "
+                  f"(measured on {sum(s['bg_nuclei'] for s in m_spec)} "
+                  f"background nuclei)")
     print("=" * 72)
     return 0
 

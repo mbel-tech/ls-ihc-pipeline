@@ -106,6 +106,7 @@ python scripts/05a_roi_geometry.py
 work/appenv/Scripts/python.exe scripts/05c_detect_rois.py     # hours; resumable
 python scripts/06a_roi_dataset.py
 python scripts/06c_excel_dataset.py
+python scripts/06d_excel_by_slide.py     # the figures read THIS workbook
 Rscript analysis/plot_roi_figures.R                           # LS_MARKER=AF488 for PCNA
 ```
 
