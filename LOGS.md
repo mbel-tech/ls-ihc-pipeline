@@ -9,6 +9,78 @@ where things landed, not which plausible-looking route was tried and abandoned, 
 
 ---
 
+## 2026-09-01 - The pen stroke nothing masks, and the 473 that had no picture
+
+**Changed:** `--render-excluded` in `04a_reformat.py`; the pen stroke measured and
+written into the stage 5-6 guide. Prompted by two operator questions: *is the pen
+stroke masked*, and *why are the two channels not treated the same*.
+
+### The pen stroke is not masked, and the thing that saves you is not a mask
+
+The marker channel carries a PAP pen stroke around the tissue in **54 of 60 sampled
+pERK sections and 0 of 60 PCNA** - median 7.5% of the frame, up to 28%. It
+autofluoresces into AF568 and not AF488, and on many sections it is brighter than
+the tissue.
+
+**Two independent things guarantee 04g cannot see it.** It detects on DAPI only,
+deliberately - a per-channel mask "would break the blinding" - and the stroke has no
+DAPI signal. And 04g protects the rim: 6 px erosion before seeding, and growth that
+escapes "along the bright tissue rim" is aborted. That is exactly where the stroke is.
+
+**What removes it is the reformat.** 04a crops to the DAPI tissue bounding box and
+zeroes outside the silhouette, and the stroke is outside the tissue in the channel
+that defines both. Measured on 40 reformatted pERK sections: outside the tissue mask
+the mean is **0.51 against 74.0 inside**, 144x dimmer, and **not one pixel** exceeds
+half-scale. Saturated in the overview, absent from the analysis frame.
+
+Every geometric decision is safe by the same mechanism - tissue mask, crop, 04i's
+silhouette rotation, the frozen display range, and 05c's segmentation are all computed
+on DAPI. **This is a safeguard nobody designed**, and it would stop holding the moment
+any geometry was computed on the marker channel.
+
+**The one place it could have leaked, and did not.** 04j censors on
+`censored_fraction` - the whole FRAME - not `censored_fraction_in_tissue`, which it
+records and does not use. A bright stroke could therefore have thrown away sections
+whose tissue was clean. It did not: of the 264 censored out, **263 are also over the
+1% tolerance inside the tissue**. One section, `LS45_s01a_sc09`, went at 15.5% frame
+against 0.78% tissue. Worth knowing if that decision is ever revisited.
+
+### 473 pERK sections had no reformatted image, for no reason
+
+The operator's point that the two channels should be treated alike is right, and most
+of the asymmetries turn out to be principled. Three are:
+
+  * **Exclusion is decided on PCNA and propagated to pERK.** Correct: 02 pairs the two
+    passes "onto the same physical sections via stage coordinates", so `a` and `b` are
+    two scans of ONE piece of tissue and damage is shared.
+  * **Censoring is pERK-only.** AF488's display high is 37,263, below the 16-bit
+    ceiling; 04j says outright that its 8-bit test "does not generalise". AF488 cannot
+    clip, so there is nothing to censor.
+  * **Rotation is manual for PCNA, re-derived for pERK**, because the pERK scan box was
+    redrawn and "rotations must be re-derived, not copied".
+
+One was not. **All 593 excluded PCNA sections had a reformatted image and none of the
+473 excluded pERK ones did** - purely because PCNA was reformatted and then excluded
+while pERK was excluded first. Nothing depended on it until the Review mode, which
+could then show an excluded PCNA section in the analysis frame and an excluded pERK
+one only as the original scan. The asymmetry fell entirely on one channel.
+
+`--render-excluded` renders them and **never writes an index row**, because being in
+`reformatted/` has never been what puts a section into the analysis - the index is.
+Verified: all 718 section rows byte-identical afterwards, a previously-kept image
+byte-identical, 0 excluded sections in the index, and 473 excluded sections now with
+one. `section_provenance.csv` goes from "2,099 in the analysis frame, 473 as the
+original scan only" to **2,572 and 0**.
+
+Two things noticed in passing and not acted on: the 473 have no 04g mask, since 04g
+runs off the index (their Review view is therefore unmasked-only, which is honest -
+there is no mask to reject); and 04a's `PLATE_DIR` is hardcoded to `atlas/plates`
+while `config.atlas_plate_set.dir` is `plates_final`, so the plate rows it rewrites in
+`reformat_index` describe a set nothing else uses. That is why those 101 rows moved in
+the 4th decimal on this run while every section row held.
+
+---
+
 ## 2026-09-01 - The prior steps, inside the ROI curator
 
 **Changed:** new `scripts/04p_section_provenance.py`; a Review mode in

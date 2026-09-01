@@ -596,6 +596,47 @@ cannot import pylibCZIrw at all.
 
 ---
 
+### 8.8 The pen stroke, and why it does not reach a number
+
+**The marker channel carries a PAP pen stroke around the tissue in ~90% of pERK sections and
+essentially never in PCNA** — measured on 60 of each: 54/60 AF568, 0/60 AF488, covering a median
+7.5% of the frame and up to 28%. It autofluoresces into AF568 and not AF488. On many sections it
+is brighter than the tissue.
+
+**Nothing masks it, and two things guarantee that.** `04g_artifact_mask.py` detects on DAPI
+only — deliberately, since a per-channel mask "would break the blinding" — and the stroke has no
+DAPI signal at all. Even if it did, 04g erodes the tissue rim by 6 px before seeding and aborts
+growth that escapes "along the bright tissue rim", which is exactly where the stroke sits.
+
+**What removes it is the reformat**, not a mask. `04a` crops to the DAPI tissue bounding box and
+zeroes outside the silhouette, and the stroke is outside the tissue in the channel that defines
+both. Measured on 40 reformatted pERK sections: outside the tissue mask the mean is **0.51
+against 74.0 inside** — 144x dimmer — and **not one pixel** exceeds half-scale. The stroke is at
+saturation in the overview and absent from the analysis frame.
+
+So every geometric decision is safe by the same mechanism: the tissue mask, the crop, the
+rotation `04i` derives from silhouette alignment, and the frozen display range are all computed
+on DAPI, where the stroke does not exist. Nuclei are segmented on DAPI too, and ROIs sit inside
+tissue, so it cannot reach `roi_nuclei.csv`.
+
+**The one place it could leak, and did not.** `04j_censor_clipped.py` decides on
+`censored_fraction` — clipped pixels over the WHOLE FRAME — not `censored_fraction_in_tissue`,
+which it records but does not use:
+
+```python
+"in_analysis_set": int(frac_frame < args.tolerance),
+```
+
+A bright stroke could therefore have censored sections whose tissue was clean. Checked: of the
+264 sections censored out, **263 are also above the 1% tolerance inside the tissue**. Only
+`LS45_s01a_sc09` was dropped at 15.5% frame against 0.78% tissue. One section, not a pattern —
+but if that decision is ever revisited, `censored_fraction_in_tissue` is the column to use.
+
+**This is a safeguard nobody designed.** It holds because the pipeline decides everything on
+DAPI, and it would stop holding the moment any geometry was computed on the marker channel.
+
+---
+
 ## 9. Limits to state when reporting these numbers
 
 - **What is counted is nuclear *profiles*, not nuclei.** Sections are 14 µm and imaged in

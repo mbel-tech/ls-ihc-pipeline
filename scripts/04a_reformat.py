@@ -509,6 +509,10 @@ def main():
                     help="blank 04g artifact pixels in the reformatted output")
     ap.add_argument("--apply-overrides", action="store_true",
                     help="apply manual rotations from rotation_overrides.csv")
+    ap.add_argument("--render-excluded", action="store_true",
+                    help="also render excluded sections, so they can be LOOKED at "
+                         "in the ROI curator's Review mode. They are never added "
+                         "to the index, so nothing downstream can pick them up.")
     args = ap.parse_args()
     paths = marker_paths(args.marker)
     overrides, excluded = load_overrides(paths) if args.apply_overrides else ({}, {})
@@ -546,15 +550,30 @@ def main():
         secs = [r for r in csv.DictReader(fh) if r["marker_channel"] == args.marker]
     ok = 0
     n_excluded = 0
+    n_rendered = 0
     lost = []
     no_mask = []
     for i, r in enumerate(secs):
-        # Excluded sections are dropped here rather than filtered later, so
-        # nothing downstream can accidentally pick them up: they simply do not
-        # appear in reformatted/ or in the index.
-        if r["scene_uid"] in excluded:
+        # Excluded sections are kept out of the INDEX rather than filtered
+        # later, so nothing downstream can accidentally pick them up.
+        #
+        # Whether their image is rendered at all is a separate question, and it
+        # used to be answered by accident. PCNA was reformatted and excluded
+        # afterwards, so all 1,381 have a PNG; pERK exclusions were applied
+        # first, so 473 have none - which left the Review mode able to show an
+        # excluded PCNA section in the analysis frame and an excluded pERK one
+        # only as the original scan. Same pipeline, different order, and the
+        # asymmetry fell entirely on one channel.
+        #
+        # --render-excluded renders them too. It never adds an index row, so
+        # nothing downstream can pick them up either way: the image exists to be
+        # LOOKED AT, and being in reformatted/ has never been what puts a
+        # section into the analysis.
+        is_excl = r["scene_uid"] in excluded
+        if is_excl:
             n_excluded += 1
-            continue
+            if not args.render_excluded:
+                continue
         src = os.path.join(OVERVIEW_DIR, r["animal"], r["marker_channel"],
                            r["scene_uid"] + "_DAPI.png")
         # A section that was NOT excluded must survive, or it must be reported.
@@ -589,6 +608,11 @@ def main():
             np.save(os.path.join(sec_dir, r["scene_uid"] + "_artifact.npy"), amask)
         if args.censor:
             np.save(os.path.join(sec_dir, r["scene_uid"] + "_censor.npy"), cmask)
+        # THE INDEX IS WHAT PUTS A SECTION INTO THE ANALYSIS, and an excluded
+        # one must never enter it - however good its picture looks.
+        if is_excl:
+            n_rendered += 1
+            continue
         rows.append({"kind": "section", "id": r["scene_uid"], "angle": round(angle, 1),
                      "fill": round(float(mask.mean()), 4),
                      "animal": r["animal"], "section_order": r["section_order"],

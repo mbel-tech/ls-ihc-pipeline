@@ -95,8 +95,8 @@ python scripts/04p_section_provenance.py     # one row per SCANNED section: 2,57
 python scripts/04l_roi_curator.py --marker AF568 --analysis-set --rgb --worklist
 ```
 
-The curator's **Review** button opens a grid of every scanned section — 1,506 reformatted,
-1,066 excluded — grouped by animal and slide, with the cell vocabulary 04d already uses: a
+The curator's **Review** button opens a grid of every scanned section — 1,506 in the analysis,
+1,066 excluded, all 2,572 renderable — grouped by animal and slide, with the cell vocabulary 04d already uses: a
 dashed amber border is a proposal the program made, a solid red one a decision a person made.
 Clicking one shows the whole chain, from the CZI scene onward: what 04f proposed, what the
 operator decided and why, what 04g masked, whether 04a reformatted it, what 04j censored, and
@@ -115,6 +115,11 @@ file rather than a rewritten override.
 
 **Reinstating changes the analysis set**, so 05c has to run again for what it adds; the export
 says so before it writes.
+
+`04a_reformat.py --render-excluded` renders excluded sections so they can be *looked* at. It
+never writes an index row — the index, not the presence of a file in `reformatted/`, is what puts
+a section into the analysis. Run once for pERK, whose 473 exclusions were applied before
+reformatting and so had no image, while all 593 PCNA ones did.
 
 ---
 
