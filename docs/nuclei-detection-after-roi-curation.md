@@ -765,12 +765,27 @@ The pERK pass is done; PCNA has not been started. The chain is the same, with `-
 throughout, and the geometry step is the one that used to be dangerous.
 
 ```bash
-python scripts/04l_roi_curator.py --marker AF488 --analysis-set
+python scripts/04l_roi_curator.py --marker AF488 --rgb --worklist
 ```
 
-Curate and export as for pERK. Note the count: the 454 are **pERK** uids and 30 of them have no
-PCNA partner in `perk_overrides.csv`, so this loads **424, not 454** — the shortfall prints
-rather than being rounded away.
+**`--analysis-set` is a pERK subset and 04l refuses it here**, deliberately: clipped-pixel
+censoring is measured on the pERK scans, so it does not define a PCNA one. (`LOGS.md`
+2026-08-19 says this pairing yields 424; that describes older behaviour and no longer applies.)
+
+**So the PCNA scope is all 788 sections, not the ~424 pERK partners** — roughly 1.9x the
+curation. If matched markers are what you want, that is a narrowing you have to decide on and
+apply yourself; nothing in the pipeline assumes it.
+
+The page carries **both** markers — 454 pERK plus 788 PCNA — and `--marker` only sets which one
+opens by default; there is a selector in the header. One page, one curation store: scene uids
+never collide (`_s01a_` is pERK, `_s01b_` is PCNA), which is what lets a single
+`curation/ls_roi_curator_v1.json` hold both without keying on the channel, and why curating PCNA
+cannot disturb the pERK placements.
+
+Note that `bash tests/run.sh` regenerates the page with `--marker AF568` when it finishes, so
+running the suite flips the default back to pERK.
+
+Export as for pERK.
 
 ```bash
 python scripts/05a_roi_geometry.py "C:/Users/you/Downloads/roi_regions.csv"
