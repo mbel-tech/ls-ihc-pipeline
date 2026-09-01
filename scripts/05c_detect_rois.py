@@ -32,7 +32,9 @@ decision about a table rather than a reason to re-read 128 CZI scenes.
 
 Run:  python 05c_detect_rois.py
       python 05c_detect_rois.py --limit 5
-      python 05c_detect_rois.py --qc            # also write overlay crops
+      python 05c_detect_rois.py --qc            # also write overlay crops to
+                                                # qc/roi_detections/ - green =
+                                                # counted, red = outside the disc
 """
 
 import argparse
@@ -177,6 +179,51 @@ def mask_at(uid, kind):
     return np.load(p) if os.path.exists(p) else None
 
 
+def write_overlay(uid, bi, b, dapi, labels, kept):
+    """One PNG per ROI: the DAPI crop with the segmentation drawn on it.
+
+    What this is for. The nucleus-diameter check in the docs says the
+    segmentation is finding objects of about the right SIZE; it cannot say they
+    are in the right PLACES, that touching nuclei were split rather than merged,
+    or that a disc landed where the operator meant it to. Those are visual
+    facts, and until now the only way to see one was to re-read the box in a
+    notebook - so in practice nobody looked.
+
+    Boundaries, not filled labels: a filled overlay hides the very thing being
+    judged, which is whether the outline follows the nucleus.
+
+    GREEN is a nucleus that was COUNTED. RED is one StarDist found inside the
+    bounding box but outside the disc, so it was dropped. Drawing the rejects is
+    the point - a box that is mostly red means the disc is small or misplaced
+    relative to what was segmented, and that is invisible in any table.
+    """
+    from PIL import Image
+
+    lo, hi = np.percentile(dapi, (1, 99.8))
+    g = np.clip((dapi - lo) / max(hi - lo, 1e-6), 0, 1)
+    rgb = np.repeat((g * 255).astype(np.uint8)[:, :, None], 3, axis=2)
+
+    # A boundary pixel is one whose label differs from a neighbour. Computed
+    # with shifts rather than skimage.find_boundaries so this adds no import
+    # that the frozen build would have to carry.
+    lab = labels
+    edge = np.zeros(lab.shape, bool)
+    edge[:-1, :] |= lab[:-1, :] != lab[1:, :]
+    edge[1:, :] |= lab[1:, :] != lab[:-1, :]
+    edge[:, :-1] |= lab[:, :-1] != lab[:, 1:]
+    edge[:, 1:] |= lab[:, 1:] != lab[:, :-1]
+    edge &= lab > 0
+
+    keep_mask = np.isin(lab, list(kept)) if kept else np.zeros(lab.shape, bool)
+    rgb[edge & keep_mask] = (0, 255, 0)
+    rgb[edge & ~keep_mask] = (255, 0, 0)
+
+    os.makedirs(QC_DIR, exist_ok=True)
+    name = f"{uid}_roi{bi:02d}_{b['roi_kind']}_{b['region'] or 'na'}.png"
+    name = name.replace(" ", "_").replace("/", "_")
+    Image.fromarray(rgb).save(os.path.join(QC_DIR, name))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, help="only the first N sections")
@@ -184,7 +231,10 @@ def main():
                     help="balanced alternates treatment and control, one section "
                          "at a time, so a partial run is still a comparison; "
                          "uid is plain scene_uid order")
-    ap.add_argument("--qc", action="store_true", help="write overlay crops")
+    ap.add_argument("--qc", action="store_true",
+                    help="write one overlay PNG per ROI to qc/roi_detections: "
+                         "DAPI with nucleus boundaries, green counted, red "
+                         "found but outside the disc")
     ap.add_argument("--force", action="store_true", help="redo finished sections")
     args = ap.parse_args()
 
@@ -273,11 +323,13 @@ def main():
                 sx, sy, sr = float(b["sec_x"]), float(b["sec_y"]), float(b["sec_r"])
                 props = regionprops(labels, intensity_image=mark)
                 dprops = {p.label: p for p in regionprops(labels, intensity_image=dapi)}
+                kept = set()
                 for p in props:
                     cy, cx = p.centroid
                     gx, gy = G5.apply_affine(Minv, x0 + cx, y0 + cy)
                     if (gx - sx) ** 2 + (gy - sy) ** 2 > sr * sr:
                         continue
+                    kept.add(p.label)
                     vals = p.image_intensity[p.image]
                     ix, iy = int(round(gx)), int(round(gy))
                     inb = lambda m: (m is not None and 0 <= iy < m.shape[0]
@@ -295,6 +347,8 @@ def main():
                         round(float(np.median(vals)), 1),
                         round(float(np.percentile(vals, 90)), 1),
                         int(inb(cen)), int(inb(art))])
+                if args.qc:
+                    write_overlay(uid, bi, b, dapi, labels, kept)
         w.writerows(rows)
         fh.flush()
         total_nuc += len(rows)

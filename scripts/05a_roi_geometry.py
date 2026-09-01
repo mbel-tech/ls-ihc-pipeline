@@ -52,10 +52,12 @@ Run:  python 05a_roi_geometry.py
 
 import argparse
 import csv
+import datetime
 import glob
 import importlib.util
 import json
 import os
+import shutil
 
 import numpy as np
 from PIL import Image
@@ -637,6 +639,36 @@ def main():
             w = csv.DictWriter(fh, fieldnames=list(rows[0].keys()))
             w.writeheader()
             w.writerows(rows)
+
+    # Keep the export these boxes were built from, beside them.
+    #
+    # The default input is the newest ~/Downloads/roi_regions*.csv, which is
+    # convenient and is not a record: the operator's download folder is not part
+    # of the dataset, the file is one Ctrl+A away from being cleared, and
+    # `roi_regions(7).csv` says nothing about which run consumed it. Every
+    # number downstream traces back to this one file, so a copy of it lands in
+    # out_root with a note saying where it came from and when.
+    #
+    # Copied, not moved: the browser may still be pointed at the original, and
+    # taking it away would be a surprise. Overwritten each run, because the
+    # boxes are too - the pair has to stay consistent, and a stale source
+    # alongside fresh boxes would be worse than none.
+    try:
+        used = os.path.join(REFORMAT_DIR, "roi_regions_used.csv")
+        if os.path.abspath(regions) != os.path.abspath(used):
+            shutil.copyfile(regions, used)
+        with open(os.path.join(REFORMAT_DIR, "roi_regions_used.txt"), "w",
+                  encoding="utf-8") as fh:
+            fh.write(
+                f"source   : {os.path.abspath(regions)}\n"
+                f"modified : {datetime.datetime.fromtimestamp(os.path.getmtime(regions)):%Y-%m-%d %H:%M:%S}\n"
+                f"consumed : {datetime.datetime.now():%Y-%m-%d %H:%M:%S}\n"
+                f"produced : {len(boxes)} boxes over {len(geom)} sections\n")
+        print(f"  source     : {regions}")
+        print(f"               copied to {used}")
+    except OSError as exc:                                   # noqa: BLE001
+        # Provenance is worth having and is not worth losing the run over.
+        print(f"  (could not archive the source export: {exc})")
 
     kinds = {}
     for b in boxes:
