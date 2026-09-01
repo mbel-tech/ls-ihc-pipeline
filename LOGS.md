@@ -242,6 +242,19 @@ A fifth round found three more, and the shape held to the last one:
     disjoint uids - but not of the documented recovery path: a PCNA-only export imported without
     `--merge` drops every pERK placement. It now refuses when replacing would drop sections the
     export does not mention, names them, and points at `--merge` or `--replace`.
+
+    **This shipped once as documentation with no code behind it, and that is worth recording as
+    its own failure.** The patch that wrote it applied its docstring hunk and silently failed to
+    match the code block - the script printed one "changed: True" for the whole file, and what
+    was checked afterwards was a syntax parse and a grep for an import, neither of which touches
+    the thing that was meant to change. So the docstring promised a refusal, an operator would
+    have omitted `--replace` expecting one, and got the wholesale replacement: strictly worse
+    than before it was written. `tests/test_import_exports.py` only ever called `rebuild()`,
+    never `main()`, which is why nothing caught it. It now calls `main()`.
+
+    The general lesson, since the same escaping fault bit three separate patches in this branch:
+    a bulk string-replace that reports one boolean for a whole file cannot tell a partial match
+    from a complete one, and a syntax check will not either. Verify the specific line.
   * **`plot_by_sample.R` and `plot_by_slide.R` were referenced nowhere** - not the README, not
     the guide, not 06e, not `app/stages.py` - while writing four of the shipped figures. That is
     why they sat for a day drawn from the old h. 06e now runs all three R scripts, per marker.
