@@ -19,7 +19,7 @@ const { els, concat } = env;
 
 const X = load(`{DATA, PLATES, MARKERS, S, GROUPS, st, roiPairs,
   shotPick, shotSlides, shotWhyNot, shotBtnState, shotBuild, zipStore, crc32,
-  markerOnly}`);
+  markerOnly, secRegions}`);
 
 // ---- a curation state of our own -------------------------------------------
 // Cleared first: the page may have been generated with the operator's curation
@@ -63,7 +63,7 @@ const twelve = byAnimal("LS45").slice(0, 12);
 twelve.forEach(d => fav(d, 12));
 fav(byAnimal("LS85")[0], 12);
 // plate 9 again, other channel: a separate slide, never mixed in with the pERK one.
-fav(pcna.filter(d => d.animal === "LS22")[0], 9);
+const pcna9 = fav(pcna.filter(d => d.animal === "LS22")[0], 9);
 // the ones that must NOT come through
 const noPlate = X.st(byAnimal("LS61")[0].uid);   noPlate.fav = true;
 const dropped = fav(byAnimal("LS61")[1], 9, {excl: true});
@@ -229,5 +229,79 @@ X.shotBuild().then(res => {
   fs.mkdirSync(path.dirname(out), {recursive: true});
   fs.writeFileSync(out, buf);
   note(`\nwrote ${out} (${buf.length} bytes) for test_shotgun_pptx.py`);
-  done();
-}).catch(e => { console.error("BUILD ERROR:", e && e.stack || e); process.exit(1); });
+
+  return region();
+}).then(done)
+  .catch(e => { console.error("BUILD ERROR:", e && e.stack || e); process.exit(1); });
+
+// ---- the other cut: one slide per region -------------------------------------
+//
+// Runs AFTER the plate build, deliberately. It adds ROIs to sections the plate
+// assertions above have already counted, and doing that first would move every
+// number in them.
+//
+// Seeds are synthesised rather than read from the atlas. Which plates carry
+// region seeds is data on disk that a re-extraction can change, and five
+// assertions that quietly depend on it is the trap the GROUPS block at the top
+// of this file already documents.
+function region() {
+  note("");
+  X.PLATES[9].seeds = [{region: "Dm"}, {region: "Dl"}];
+  X.PLATES[12].seeds = [{region: "Dm"}, {region: "Vv"}];
+  const seed = (d, n) => X.st(d.uid).pairs.push([10, 10, 20, 20, n, 5]);
+  seed(a9, 1); seed(a9, 2);              // one control section in two regions
+  seed(b9, 1);                           // its exercise counterpart, in one
+  twelve.forEach(d => seed(d, 2));       // twelve control sections in Vv
+  // pcna9 is left with no ROI at all, and must therefore reach no region slide.
+
+  chk("regions come from the seeds the ROIs answer",
+      X.secRegions(X.st(a9.uid)).join(","), "Dm,Dl");
+  chk("a free-clicked ROI has no region",
+      X.secRegions({plate: 9, pairs: [[1, 1, 2, 2]]}).length, 0);
+  chk("no seeded ROI -> no region", X.secRegions(X.st(pcna9.uid)).length, 0);
+
+  const pick = X.shotPick();
+  const rs = X.shotSlides(pick.take, "region");
+  chk("one slide per region, rostral first", rs.map(s => s.region).join(" "),
+      "Dl Dm Vv");
+  chk("...and no plate on any of them", rs.some(s => s.plate !== undefined), false);
+  chk("a section lands on every region it carries",
+      rs.filter(s => s.halves.flat().some(it => it.d.uid === a9.uid)).length, 2);
+  chk("a favourite with no seeded ROI lands on none",
+      rs.filter(s => s.halves.flat().some(it => it.d.uid === pcna9.uid)).length, 0);
+  // The plate deck splits twelve over two pages at ten a half. The region deck
+  // has the plate band back, so they fit on one.
+  const vv = rs.filter(s => s.region === "Vv");
+  chk("a region half holds twenty, so twelve fit on one page", vv.length, 1);
+  chk("...all twelve of them", vv[0].halves[0].length, 12);
+  chk("the empty half is still drawn", vv[0].halves.length, X.GROUPS.order.length);
+
+  const before = fetched;
+  return X.shotBuild("region").then(res => {
+    chk("built every region slide", res.slides, 3);
+    const names = res.files.map(f => f.name);
+    chk("one slide part per region slide",
+        names.filter(n => /ppt.slides.slide\d+\.xml$/.test(n)).length, 3);
+    // 14 distinct sections carry a region; a section on two slides is one image.
+    chk("media = one per section, none per plate",
+        names.filter(n => n.startsWith("ppt/media/")).length, 14);
+    chk("no plate is fetched for a region slide", fetched - before, 0);
+
+    const text = f => Buffer.from(f.bytes).toString("utf8");
+    const s1 = text(res.files.find(f => f.name === "ppt/slides/slide1.xml"));
+    chk("the slide names its region", s1.includes("Dl"), true);
+    chk("...and not a plate it does not have", s1.includes(X.PLATES[9].id), false);
+    // The level moved from the title to the captions; it must not just vanish.
+    chk("every cell carries its own plate",
+        s1.includes(X.PLATES[9].id.replace("plate_", "p")), true);
+
+    let unresolved = 0;
+    for (let i = 1; i <= 3; i++) {
+      const sl = text(res.files.find(f => f.name === `ppt/slides/slide${i}.xml`));
+      const rl = text(res.files.find(f => f.name === `ppt/slides/_rels/slide${i}.xml.rels`));
+      const ids = new Set([...rl.matchAll(/Id="([^"]+)"/g)].map(m => m[1]));
+      for (const m of sl.matchAll(/r:embed="([^"]+)"/g)) if (!ids.has(m[1])) unresolved++;
+    }
+    chk("every picture reference resolves", unresolved, 0);
+  });
+}

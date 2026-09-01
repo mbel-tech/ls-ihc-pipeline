@@ -60,6 +60,13 @@ Interaction
   foot of the page script for why that is a declared exception to blinding. With
   no `groups` block in `config.json` it is disabled and says so.
 
+  **`By region` writes the same deck cut the other way** - one slide per atlas
+  REGION rather than per plate. A section appears on every region it carries an
+  ROI for, so it appears more than once, and a favourite carrying no seeded ROI
+  does not appear at all: the grouping comes from the seeds the ROIs answer,
+  which is the same thing `roi_regions.csv` reports. Use it to compare one region
+  across animals; use `Shotgun` to compare one level.
+
   **`f` marks a section favourite** - the subset worth carrying into actual
   quantification. It is orthogonal to the plate assignment, because a section can
   be worth quantifying before anyone has landmarked it, so it sets no other flag
@@ -444,6 +451,7 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
   <span class="deliver">
     <button class="primary" onclick="exportCsv()">Export</button>
     <button id="shotBtn" class="btn-shot" onclick="shotgun()">Shotgun</button>
+    <button id="shotRegBtn" class="btn-shot" onclick="shotgun('region')">By region</button>
   </span>
   </span>
 </header>
@@ -1872,8 +1880,13 @@ function adoptSeed(){
 // dependency), and the deck uses real picture and text-box shapes so everything
 // on the slide can still be moved, resized and edited in PowerPoint.
 
-const SHOT_COLS = 5, SHOT_ROWS = 2;
+const SHOT_COLS = 5, SHOT_ROWS = 2, SHOT_ROWS_REGION = 4;
 const SHOT_PER_HALF = SHOT_COLS * SHOT_ROWS;
+// A region slide has no plate picture to make room for - a region spans several
+// plates, and drawing any one of them would assert a level the slide does not
+// have - so the band the plate occupied goes back to the grid: four rows a side
+// rather than two.
+const perHalf = by => SHOT_COLS * (by === "region" ? SHOT_ROWS_REGION : SHOT_ROWS);
 const EMU = 914400;                             // EMU per inch, the OOXML unit
 const SLIDE_W = 12192000, SLIDE_H = 6858000;    // 13.333 x 7.5 in, 16:9
 const inch = v => Math.round(v * EMU);
@@ -1890,6 +1903,12 @@ const SHOT_L = {
   gridY: 2.58, cell: 1.15, gapX: 0.08, gapY: 0.10, capH: 0.20, capSz: 800,
   divTop: 0.58, divBot: 7.20,
 };
+// The same block with the plate band reclaimed. Cell size, gaps and type sizes
+// are deliberately shared, so a region slide and a plate slide are comparable
+// side by side rather than merely similar.
+const SHOT_L_REGION = Object.assign({}, SHOT_L,
+  {headY: 0.66, gridY: 1.14, divTop: 0.58, divBot: 6.98});
+
 const INK = "1A1A1A", DIM = "6E7681", RULE = "C9D1D9";
 
 // Served over http the canvas is clean and fetch works; opened straight off
@@ -1912,6 +1931,12 @@ function shotBtnState(){
   el("shotBtn").disabled = !!why;
   el("shotBtn").title = why
     || "favourites with a plate, one slide per plate, split by treatment";
+  // Same gate, both decks: neither can read a tainted canvas, and neither can be
+  // laid out without the key.
+  el("shotRegBtn").disabled = !!why;
+  el("shotRegBtn").title = why
+    || "the same favourites, one slide per atlas region - a section appears on "
+     + "every region it carries an ROI for";
   // Say it ON SCREEN, not only in a tooltip. A disabled button with no visible
   // reason is indistinguishable from a broken one, and nobody hovers a control
   // they have already decided is dead.
@@ -1944,31 +1969,65 @@ function shotPick(){
   return {take, noPlate, noGroup, excluded};
 }
 
-// Slides are (plate x marker), in plate order, pERK before PCNA. A half holding
-// more than SHOT_PER_HALF runs on to a continuation slide rather than being cut
-// short - both halves advance together, so a row always faces its counterpart.
-function shotSlides(take){
+// Which regions a section carries, read from the seeds its ROIs answer. A
+// free-clicked ROI has no seed and therefore no region - exactly how exportCsv
+// treats it - so the region deck can say nothing roi_regions.csv does not.
+function secRegions(s){
+  const P = PLATES[s.plate], out = [];
+  if(!P || !P.seeds) return out;
+  for(const p of roiPairs(s)){
+    const sd = p[4] ? P.seeds[p[4] - 1] : null;
+    if(sd && out.indexOf(sd.region) < 0) out.push(sd.region);
+  }
+  return out;
+}
+
+// Slides are (plate x marker), in plate order, pERK before PCNA - or
+// (region x marker) when `by` is "region", where a section lands on every region
+// slide it carries an ROI for, and on none at all if it carries no seeded ROI.
+//
+// Regions run in the order of the FIRST plate they appear on rather than by
+// name, so the deck still reads rostral to caudal: alphabetical would open on
+// the anterior tuberal nucleus and interleave telencephalon with diencephalon.
+//
+// A half holding more than perHalf(by) runs on to a continuation slide rather
+// than being cut short - both halves advance together, so a row always faces its
+// counterpart.
+function shotSlides(take, by){
   const order = MARKERS.map(m => m.id);
-  const by = new Map();
+  const per = perHalf(by);
+  const groups = new Map();
+  const add = (key, meta, it) => {
+    if(!groups.has(key)) groups.set(key, Object.assign({items: []}, meta));
+    const g = groups.get(key);
+    g.items.push(it);
+    g.at = Math.min(g.at, it.s.plate);
+  };
   for(const it of take){
-    const k = it.s.plate + "|" + it.d.m;
-    if(!by.has(k)) by.set(k, []);
-    by.get(k).push(it);
+    if(by === "region")
+      for(const r of secRegions(it.s))
+        add(r + "|" + it.d.m, {region: r, marker: it.d.m, at: it.s.plate}, it);
+    else
+      add(it.s.plate + "|" + it.d.m,
+          {plate: it.s.plate, marker: it.d.m, at: it.s.plate}, it);
   }
   const anim = a => +a.slice(2);
   const out = [];
-  const keys = [...by.keys()].sort((a, b) => {
-    const pa = a.split("|"), pb = b.split("|");
-    return (+pa[0]) - (+pb[0]) || order.indexOf(pa[1]) - order.indexOf(pb[1]);
+  const keys = [...groups.keys()].sort((a, b) => {
+    const A = groups.get(a), B = groups.get(b);
+    return A.at - B.at
+        || String(A.region || "").localeCompare(String(B.region || ""))
+        || order.indexOf(A.marker) - order.indexOf(B.marker);
   });
   for(const k of keys){
-    const items = by.get(k), plate = +k.split("|")[0], marker = k.split("|")[1];
-    const halves = GROUPS.order.map(g => items.filter(it => it.g === g)
+    const g = groups.get(k), items = g.items;
+    const halves = GROUPS.order.map(gr => items.filter(it => it.g === gr)
       .sort((a, b) => anim(a.d.animal) - anim(b.d.animal) || a.d.order - b.d.order));
-    const pages = Math.max(1, ...halves.map(h => Math.ceil(h.length / SHOT_PER_HALF)));
+    const pages = Math.max(1, ...halves.map(h => Math.ceil(h.length / per)));
     for(let p = 0; p < pages; p++)
-      out.push({plate, marker, page: p + 1, pages, n: items.length,
-                halves: halves.map(h => h.slice(p * SHOT_PER_HALF, (p + 1) * SHOT_PER_HALF))});
+      out.push({plate: g.plate, region: g.region, marker: g.marker,
+                page: p + 1, pages, n: items.length,
+                halves: halves.map(h => h.slice(p * per, (p + 1) * per))});
   }
   return out;
 }
@@ -2172,16 +2231,21 @@ const PRESPROPS = XML_HEAD + `<p:presentationPr ${NS_A} ${NS_R} ${NS_P}/>`;
 
 // ---- the deck --------------------------------------------------------------
 
-function shotgun(){
+function shotgun(by){
   const why = shotWhyNot();
   if(why){ shotSay(why); return; }
   el("shotBtn").disabled = true;
-  return shotBuild()
+  el("shotRegBtn").disabled = true;
+  return shotBuild(by)
     .catch(err => { shotSay("shotgun failed: " + ((err && err.message) || err)); throw err; })
     .then(() => shotBtnState(), () => shotBtnState());
 }
 
-async function shotBuild(){
+async function shotBuild(by){
+  // Normalised once, here, rather than trusted from the caller: everything below
+  // branches on it, and a stray truthy value would half-build a region deck.
+  const mode = by === "region" ? "region" : "plate";
+  const L = mode === "region" ? SHOT_L_REGION : SHOT_L;
   const got = shotPick();
   const take = got.take;
   if(!take.length){
@@ -2190,7 +2254,15 @@ async function shotBuild(){
           + (got.noPlate.length > 1 ? "s" : "") + " with no plate)" : ""));
     return;
   }
-  const slides = shotSlides(take);
+  const slides = shotSlides(take, mode);
+  // Reachable only in region mode, and worth its own message: every favourite
+  // can have a plate and still produce no region slide, because the regions come
+  // from seeded ROIs and a section can be landmarked with none.
+  if(!slides.length){
+    shotSay("nothing to build: no favourite carries an ROI placed on a numbered "
+      + "atlas seed, so there is no region to group by");
+    return;
+  }
   shotSay("building " + slides.length + " slide" + (slides.length > 1 ? "s" : "") + "...");
 
   shotId = 1;
@@ -2205,15 +2277,27 @@ async function shotBuild(){
     return i;
   }
 
-  const half = (SLIDE_W / 2) - inch(SHOT_L.margin) - inch(SHOT_L.gutter);
-  const gridW = SHOT_COLS * inch(SHOT_L.cell) + (SHOT_COLS - 1) * inch(SHOT_L.gapX);
-  const rowH = inch(SHOT_L.cell) + inch(SHOT_L.capH) + inch(SHOT_L.gapY);
-  const manifest = [["slide", "plate_set", "plate_id", "marker", "treatment", "half",
-                     "scene_uid", "animal", "section_order", "view_rotation_deg"]];
+  const half = (SLIDE_W / 2) - inch(L.margin) - inch(L.gutter);
+  const gridW = SHOT_COLS * inch(L.cell) + (SHOT_COLS - 1) * inch(L.gapX);
+  const rowH = inch(L.cell) + inch(L.capH) + inch(L.gapY);
+  // The region column exists only on a region deck. Adding it unconditionally
+  // would put an always-blank column in a file that is already read elsewhere.
+  const manifest = [mode === "region"
+    ? ["slide", "plate_set", "region", "plate_id", "marker", "treatment", "half",
+       "scene_uid", "animal", "section_order", "view_rotation_deg"]
+    : ["slide", "plate_set", "plate_id", "marker", "treatment", "half",
+       "scene_uid", "animal", "section_order", "view_rotation_deg"]];
+  // plate_012 -> p012, because the caption has 1.15 inches and the full id does
+  // not fit beside the animal and the section number.
+  const shortPlate = i => (PLATES[i] ? PLATES[i].id : "").replace("plate_", "p");
 
   const slideXmls = [], slideRels = [];
   for(let si = 0; si < slides.length; si++){
-    const sl = slides[si], P = PLATES[sl.plate];
+    const sl = slides[si];
+    // Undefined rather than a plate in region mode - a region has no single one,
+    // and picking any would assert a level the slide does not have.
+    const P = sl.plate === undefined ? null : PLATES[sl.plate];
+    const head = mode === "region" ? sl.region : P.id;
     const mk = MARKERS.find(m => m.id === sl.marker);
     const rel = [{id: "rId1", type: REL + "/slideLayout",
                   target: "../slideLayouts/slideLayout1.xml"}];
@@ -2225,47 +2309,62 @@ async function shotBuild(){
     };
 
     let body = "";
-    body += tbox(inch(SHOT_L.margin), inch(SHOT_L.titleY),
-                 SLIDE_W - 2 * inch(SHOT_L.margin), inch(SHOT_L.titleH),
-                 P.id + "   " + (mk ? mk.label : sl.marker) + "   " + sl.n + " section"
+    body += tbox(inch(L.margin), inch(L.titleY),
+                 SLIDE_W - 2 * inch(L.margin), inch(L.titleH),
+                 head + "   " + (mk ? mk.label : sl.marker) + "   " + sl.n + " section"
                    + (sl.n > 1 ? "s" : "")
                    + (sl.pages > 1 ? "   (" + sl.page + " of " + sl.pages + ")" : ""),
-                 SHOT_L.titleSz, true, INK, "l");
-    body += tbox(inch(SHOT_L.margin), inch(SHOT_L.titleY),
-                 SLIDE_W - 2 * inch(SHOT_L.margin), inch(SHOT_L.titleH),
-                 PLATE_SET, SHOT_L.capSz + 100, false, DIM, "r");
+                 L.titleSz, true, INK, "l");
+    body += tbox(inch(L.margin), inch(L.titleY),
+                 SLIDE_W - 2 * inch(L.margin), inch(L.titleH),
+                 PLATE_SET, L.capSz + 100, false, DIM, "r");
 
     // The plate the sections were matched to, at its own aspect and its own
     // resolution: fetched as bytes rather than redrawn, so nothing is resampled.
-    const pw = Math.round(inch(SHOT_L.plateH) * (P.w / P.h));
-    const prid = await addPic(P.img, () => fetch(P.img).then(r => {
-      if(!r.ok) throw new Error("plate " + P.id + ": HTTP " + r.status);
-      return r.arrayBuffer();
-    }).then(b => new Uint8Array(b)));
-    body += pic(Math.round(SLIDE_W / 2 - pw / 2), inch(SHOT_L.plateY),
-                pw, inch(SHOT_L.plateH), prid, P.id);
-    body += vline(Math.round(SLIDE_W / 2), inch(SHOT_L.divTop), inch(SHOT_L.divBot));
+    if(P){
+      const pw = Math.round(inch(L.plateH) * (P.w / P.h));
+      const prid = await addPic(P.img, () => fetch(P.img).then(r => {
+        if(!r.ok) throw new Error("plate " + P.id + ": HTTP " + r.status);
+        return r.arrayBuffer();
+      }).then(b => new Uint8Array(b)));
+      body += pic(Math.round(SLIDE_W / 2 - pw / 2), inch(L.plateY),
+                  pw, inch(L.plateH), prid, P.id);
+    }
+    // Drawn in both modes: the split down the middle is the point of the slide,
+    // not decoration around the plate.
+    body += vline(Math.round(SLIDE_W / 2), inch(L.divTop), inch(L.divBot));
 
     for(let h = 0; h < GROUPS.order.length; h++){
-      const x0 = h === 0 ? inch(SHOT_L.margin)
-                         : Math.round(SLIDE_W / 2) + inch(SHOT_L.gutter);
-      body += tbox(x0, inch(SHOT_L.headY), half, inch(SHOT_L.headH),
-                   String(GROUPS.order[h]).toUpperCase(), SHOT_L.headSz, true, INK, "ctr");
+      const x0 = h === 0 ? inch(L.margin)
+                         : Math.round(SLIDE_W / 2) + inch(L.gutter);
+      body += tbox(x0, inch(L.headY), half, inch(L.headH),
+                   String(GROUPS.order[h]).toUpperCase(), L.headSz, true, INK, "ctr");
       const gx = x0 + Math.round((half - gridW) / 2);
       const cells = sl.halves[h];
       for(let i = 0; i < cells.length; i++){
         const it = cells[i];
-        const cx = gx + (i % SHOT_COLS) * (inch(SHOT_L.cell) + inch(SHOT_L.gapX));
-        const cy = inch(SHOT_L.gridY) + Math.floor(i / SHOT_COLS) * rowH;
+        const cx = gx + (i % SHOT_COLS) * (inch(L.cell) + inch(L.gapX));
+        const cy = inch(L.gridY) + Math.floor(i / SHOT_COLS) * rowH;
         const rid = await addPic(it.d.uid, async () => {
           const img = await shotLoad(it.d.img);
           return shotBytes(await shotPng(shotTile(img, it.d.rgb, it.s.rot || 0)));
         });
-        body += pic(cx, cy, inch(SHOT_L.cell), inch(SHOT_L.cell), rid, it.d.uid);
-        body += tbox(cx, cy + inch(SHOT_L.cell), inch(SHOT_L.cell), inch(SHOT_L.capH),
-                     it.d.animal + " " + it.d.order, SHOT_L.capSz, false, DIM, "ctr");
-        manifest.push([si + 1, PLATE_SET, P.id, it.d.m, it.g, h + 1,
-                       it.d.uid, it.d.animal, it.d.order, (it.s.rot || 0).toFixed(1)]);
+        body += pic(cx, cy, inch(L.cell), inch(L.cell), rid, it.d.uid);
+        // On a region slide the plate has left the title, so each cell carries
+        // its own. The level is what makes two tiles comparable; without it the
+        // grid is only sections that share a region name.
+        body += tbox(cx, cy + inch(L.cell), inch(L.cell), inch(L.capH),
+                     it.d.animal + " " + it.d.order
+                       + (mode === "region" ? "  " + shortPlate(it.s.plate) : ""),
+                     L.capSz, false, DIM, "ctr");
+        // plate_id is the SECTION's plate on a region deck - each cell has its
+        // own - and the slide's plate on a plate deck, where by construction
+        // they are the same thing.
+        manifest.push(mode === "region"
+          ? [si + 1, PLATE_SET, sl.region, shortPlate(it.s.plate), it.d.m, it.g, h + 1,
+             it.d.uid, it.d.animal, it.d.order, (it.s.rot || 0).toFixed(1)]
+          : [si + 1, PLATE_SET, P.id, it.d.m, it.g, h + 1,
+             it.d.uid, it.d.animal, it.d.order, (it.s.rot || 0).toFixed(1)]);
       }
     }
     slideXmls.push(slideXml(body));
@@ -2330,8 +2429,11 @@ async function shotBuild(){
               + "_" + pad2(now.getHours()) + pad2(now.getMinutes());
   const blob = new Blob(zipStore(files, now),
     {type: "application/vnd.openxmlformats-officedocument.presentationml.presentation"});
-  shotSave(blob, "shotgun_" + PLATE_SET + "_" + stamp + ".pptx");
-  dl(manifest, "shotgun_manifest.csv");
+  // Named apart so a region deck cannot silently overwrite a plate one, and so
+  // the pair of files that belong together stay recognisable as a pair.
+  const tag = mode === "region" ? "by-region_" : "";
+  shotSave(blob, "shotgun_" + tag + PLATE_SET + "_" + stamp + ".pptx");
+  dl(manifest, "shotgun_manifest" + (mode === "region" ? "_by-region" : "") + ".csv");
 
   const bits = [slides.length + " slides", take.length + " sections",
                 media.length + " images"];
