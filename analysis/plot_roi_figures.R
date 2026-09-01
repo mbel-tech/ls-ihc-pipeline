@@ -57,7 +57,9 @@ library(ggtext)
 
 results <- if (length(args) >= 1) args[1] else RESULTS_DEFAULT
 outdir <- file.path(results, "ROI_plots")
-PPTX <- file.path(results, "ROI_figures.pptx")
+PPTX_FOR <- function(m) file.path(
+  results, if (m == "AF568") "ROI_figures.pptx"
+           else sprintf("ROI_figures_%s.pptx", m))
 
 # TWO MEASURES, each drawn as the same two series. Density is every DAPI
 # nucleus; positivity is the subset over that section's own cut.
@@ -68,16 +70,24 @@ PPTX <- file.path(results, "ROI_figures.pptx")
 # comparison between arms at matched levels, because the non-specific component
 # is shared. The density figures stand unchanged; the existing folder names are
 # kept so nothing already cited moves.
+# Output folders are suffixed for any marker other than the pERK default, so a
+# PCNA run writes beside the pERK figures rather than over them - the same
+# reason 05a's box files are per marker. The existing folder names are kept for
+# AF568 so nothing already cited moves.
+sfx <- if (MARKER == "AF568") "" else paste0("_", MARKER)
+d <- function(name) file.path(outdir, paste0(name, sfx))
+
 MEASURES <- list(
   list(key = "density", value = "cells_per_mm2",
        ylab = expression(density~(cells~per~mm^2)),
-       treatment = file.path(outdir, "treatment"),
-       phase = file.path(outdir, "production_phase"),
+       treatment = d("treatment"),
+       phase = d("production_phase"),
        note = "Abercrombie-corrected", cap = NULL),
   list(key = "positive", value = "positive_cells_per_mm2",
-       ylab = expression(pERK*"-positive"~(cells~per~mm^2)),
-       treatment = file.path(outdir, "positive_treatment"),
-       phase = file.path(outdir, "positive_production_phase"),
+       # The label names the marker, so a PCNA figure cannot read as a pERK one.
+       ylab = bquote(.(marker_label())*"-positive"~(cells~per~mm^2)),
+       treatment = d("positive_treatment"),
+       phase = d("positive_production_phase"),
        note = "Abercrombie-corrected",
        cap = "positivity cut per section from its own background discs")
 )
@@ -326,7 +336,9 @@ for (roi in levels(slide_m$ROI)) {
     # clip="off" lets the (N=x) annotation sit outside the panel, between the
     # axis line and the group name.
     coord_cartesian(clip = "off"),
-    labs(x = NULL, y = M$ylab, title = roi),
+    labs(x = NULL, y = M$ylab,
+         title = if (MARKER == "AF568") roi
+                 else sprintf("%s - %s", roi, marker_label())),
     base_theme)
 
   # The false-positive rate belongs on the positivity figures and nowhere else.
@@ -433,6 +445,7 @@ if (!requireNamespace("officer", quietly = TRUE)) {
                    location = ph_location(left = 0.2, top = 1.2,
                                           width = 9.6, height = 6.4))
   }
-  print(doc, target = PPTX)
-  message(sprintf("  %d slides -> %s", length(pngs), PPTX))
+  pptx <- PPTX_FOR(MARKER)
+  print(doc, target = pptx)
+  message(sprintf("  %d slides -> %s", length(pngs), pptx))
 }

@@ -19,6 +19,27 @@ library(ggplot2)
 
 RESULTS_DEFAULT <- "D:/LS-analysis/results"
 
+# WHICH MARKER THESE FIGURES ARE ABOUT.
+#
+# The sheets carry one row per (sample|slide, MARKER, ROI). A figure that does
+# not filter would draw AF568 and AF488 points into the same panel as if they
+# were replicates of one measure - two different antibodies sharing a mean bar,
+# an SEM bar and a significance test - and roi_stats.R would silently flip from
+# lm to lmer for the ROIs that currently have one row per animal, because a
+# second marker looks exactly like a second slide to `needs_mixed()`.
+#
+# Nothing would error. So the filter is applied centrally, in load_sheet, where
+# all three entry points pass through, rather than left to each of them.
+#
+# Override with LS_MARKER=AF488 in the environment.
+MARKER <- Sys.getenv("LS_MARKER", "AF568")
+MARKER_LABEL <- c(AF568 = "pERK", AF488 = "PCNA")
+
+marker_label <- function(m = MARKER) {
+  lbl <- MARKER_LABEL[[m]]
+  if (is.null(lbl)) m else lbl
+}
+
 # Colour-blind safe, and deliberately not red/green.
 TREATMENT_COLOURS <- c(control = "#4C72B0", exercise = "#DD8452")
 
@@ -30,6 +51,29 @@ load_sheet <- function(path, sheet) {
                  else "06c_excel_dataset.py"))
   }
   df <- as.data.frame(readxl::read_excel(path, sheet = sheet))
+
+  # One marker per figure. A sheet written before the marker column existed has
+  # no column to filter on and is all pERK, so it passes through - but say so,
+  # because silently treating an unlabelled sheet as one marker is the same
+  # assumption that made this necessary.
+  if ("marker" %in% names(df)) {
+    have <- sort(unique(df$marker[!is.na(df$marker)]))
+    df <- df[!is.na(df$marker) & df$marker == MARKER, ]
+    if (!nrow(df)) {
+      stop(sprintf("no %s rows in %s (sheet has: %s).
+  Set LS_MARKER to one of them.",
+                   MARKER, basename(path), paste(have, collapse = ", ")))
+    }
+    if (length(have) > 1) {
+      message(sprintf("  marker %s (%s) - %s also present and excluded",
+                      MARKER, marker_label(),
+                      paste(setdiff(have, MARKER), collapse = ", ")))
+    }
+  } else {
+    message("  sheet has no marker column - treating it as AF568 (pERK); ",
+            "rebuild with 06c/06d to get it labelled")
+  }
+
   df <- df[!is.na(df$treatment) & df$treatment != "", ]
   df$treatment <- factor(df$treatment, levels = names(TREATMENT_COLOURS))
   # Longest region names first would reorder the panels arbitrarily; sort by how

@@ -153,12 +153,16 @@ def main(argv=None):
     by_slide = group_rows(meas, slide_of, "slide", groups, envs)
     by_section = group_rows(meas, lambda u: u, "scene_uid", groups, envs)
 
+    # Per (slide, MARKER), for the same reason as 06c's.
     coverage = []
-    for sl in sorted({slide_of(b["scene_uid"]) for b in boxes}):
-        pl = {b["scene_uid"] for b in boxes if slide_of(b["scene_uid"]) == sl}
-        an = next(b["animal"] for b in boxes if slide_of(b["scene_uid"]) == sl)
+    for sl, mk in sorted({(slide_of(b["scene_uid"]), b["marker"]) for b in boxes}):
+        pl = {b["scene_uid"] for b in boxes
+              if slide_of(b["scene_uid"]) == sl and b["marker"] == mk}
+        an = next(b["animal"] for b in boxes
+                  if slide_of(b["scene_uid"]) == sl and b["marker"] == mk)
         coverage.append({
-            "slide": sl, "sample": an, "treatment": groups.get(an, ""),
+            "slide": sl, "marker": mk, "sample": an,
+            "treatment": groups.get(an, ""),
             "environment": envs.get(an, ""),
             "sections_measured": len(pl & measured), "sections_planned": len(pl),
             "percent": round(100 * len(pl & measured) / len(pl), 1) if pl else "",

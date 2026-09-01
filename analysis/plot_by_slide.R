@@ -29,12 +29,19 @@ message(sprintf("  %d rows, %d ROIs, %d slides from %d samples",
                 length(unique(df$slide)), length(unique(df$sample))))
 report_n(df, "one point = one slide")
 
+# Output names are suffixed for any marker other than the pERK default, so a
+# PCNA run writes beside these rather than over them. load_sheet has already
+# filtered the sheet to MARKER.
+out <- function(name) file.path(
+  results, if (MARKER == "AF568") name else paste0(name, "_", MARKER))
+
+
 plot_by_roi(df, "n_nuclei", "nuclei counted",
             paste("Nuclei per ROI by treatment - one point per slide.",
                   "\nRaw counts: not corrected for how much tissue was measured."),
-            file.path(results, "plot_nuclei_by_slide"), point_size = 2.1)
+            out("plot_nuclei_by_slide"), point_size = 2.1)
 
 plot_by_roi(df, "cells_per_mm2", expression(cells~per~mm^2),
             paste("Density per ROI by treatment - one point per slide.",
                   "\nAbercrombie-corrected, area-normalised: the comparable one."),
-            file.path(results, "plot_density_by_slide"), point_size = 2.1)
+            out("plot_density_by_slide"), point_size = 2.1)

@@ -17,7 +17,8 @@ re-deriving it; `plot_roi_figures.R` gains a positivity series; `05a_roi_geometr
 the export it consumed; `05c_detect_rois.py` `--qc` implemented; new `tests/test_roi_dataset.py`.
 
 **The pipeline stopped one stage short of the thing the study is about.** `05c` had finished -
-883,077 nuclei over 128 sections - and `results/roi_measurements.csv` and
+883,077 nuclei over 128 sections, which later turned out to be 128 of 130; see the stale box set
+below - and `results/roi_measurements.csv` and
 `detector_specificity.csv` did not exist. 06a is the only stage that applies the positivity
 cut, measures the detector against the background discs and computes Abercrombie. It had never
 been run.
@@ -51,7 +52,8 @@ positive while excluding it from the intensity median, and that reads as an inco
 ceiling*, so it is unambiguously above any cut, and including a ceiling value in a median biases
 the statistic down. 04j also says why it matters - dropping them "would bias positive counts
 down in exactly the animals with the brightest staining". Left alone, with a comment naming 04j
-so the next reader does not fix it. Inert here in any case: **0 of 883,077 rows are censored.**
+so the next reader does not fix it. Inert here in any case: **0 rows are censored** - 0 of
+883,077 when this was written, 0 of 895,548 after the two late sections were added.
 
 ### The two aggregations had drifted on h, and nothing compared them
 
@@ -157,6 +159,18 @@ rather than a defect.
     unreachable into certain. The marker is now part of the key and a column in every sheet, and
     a two-marker fixture in the tests fails if they are ever pooled again. Today it changes
     nothing: still 67 and 96 rows, one marker.
+
+    **And the same defect was sitting one layer downstream, which the first fix did not
+    reach.** Nothing in `analysis/` mentioned a marker at all. The R figures read those sheets
+    and would have drawn AF568 and AF488 points into one panel as replicates of a single
+    measure - sharing a mean bar, an SEM bar and a significance test, under a y-axis reading
+    "pERK-positive" - and `roi_stats.R`'s `needs_mixed()` switches on whether an animal has more
+    than one row, so the five ROIs that currently have one row per animal would have flipped
+    silently from `lm` to `lmer` with a second antibody standing in for a second slide. Nothing
+    would have errored. `load_sheet` now filters to one marker, centrally, because it is the one
+    point all three entry points pass through; `LS_MARKER` selects it; output folders, filenames
+    and the pptx are suffixed for anything other than the pERK default; and the axis label names
+    the marker. A marker with no rows stops with a message naming what the sheet does hold.
   * **06c's staleness check would have killed the refresh loop.** It required
     `measured == nuc_secs` exactly. But 06a runs at the head of each 06e cycle and 05c keeps
     appending throughout, so any section finishing in between leaves 06a legitimately behind -

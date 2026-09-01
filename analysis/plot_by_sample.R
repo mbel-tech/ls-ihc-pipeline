@@ -25,11 +25,18 @@ message(sprintf("  %d rows, %d ROIs, %d samples",
                 nrow(df), nlevels(droplevels(df$ROI)), length(unique(df$sample))))
 report_n(df, "one point = one sample")
 
+# Output names are suffixed for any marker other than the pERK default, so a
+# PCNA run writes beside these rather than over them. load_sheet has already
+# filtered the sheet to MARKER.
+out <- function(name) file.path(
+  results, if (MARKER == "AF568") name else paste0(name, "_", MARKER))
+
+
 # The requested figure: raw counts.
 plot_by_roi(df, "n_nuclei", "nuclei counted",
             paste("Nuclei per ROI by treatment - one point per sample.",
                   "\nRaw counts: not corrected for how much tissue was measured."),
-            file.path(results, "plot_nuclei_by_sample"))
+            out("plot_nuclei_by_sample"))
 
 # The same figure on a comparable scale. A raw count rises with the number of
 # discs and sections that happen to have been measured for that animal, and
@@ -38,4 +45,4 @@ plot_by_roi(df, "n_nuclei", "nuclei counted",
 plot_by_roi(df, "cells_per_mm2", expression(cells~per~mm^2),
             paste("Density per ROI by treatment - one point per sample.",
                   "\nAbercrombie-corrected, area-normalised: the comparable one."),
-            file.path(results, "plot_density_by_sample"))
+            out("plot_density_by_sample"))

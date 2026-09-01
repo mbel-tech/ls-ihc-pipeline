@@ -45,7 +45,7 @@ written to again.
 
 `roi_nuclei.csv` is the artefact that matters. Everything after it is arithmetic on a
 table — including where the positivity cut falls. Changing your mind about positivity
-costs a re-run of 06a, not a re-read of 128 CZI scenes.
+costs a re-run of 06a, not a re-read of 130 CZI scenes.
 
 ---
 

@@ -356,12 +356,17 @@ def main(argv=None):
             "regions": ", ".join(sorted(regions)),
         })
 
+    # Coverage is per (animal, MARKER): pooling the two would report one
+    # percentage for a pERK pass that is finished and a PCNA one that has not
+    # started, which is the one question this sheet exists to answer.
     coverage = []
-    for an in sorted({b["animal"] for b in boxes},
-                     key=lambda a: int(a[2:]) if a[2:].isdigit() else 0):
-        pl = {b["scene_uid"] for b in boxes if b["animal"] == an}
+    for an, mk in sorted({(b["animal"], b["marker"]) for b in boxes},
+                         key=lambda t: (int(t[0][2:]) if t[0][2:].isdigit() else 0,
+                                        t[1])):
+        pl = {b["scene_uid"] for b in boxes
+              if b["animal"] == an and b["marker"] == mk}
         coverage.append({
-            "sample": an, "treatment": groups.get(an, ""),
+            "sample": an, "marker": mk, "treatment": groups.get(an, ""),
             "environment": envs.get(an, ""),
             "sections_measured": len(pl & measured),
             "sections_planned": len(pl),
