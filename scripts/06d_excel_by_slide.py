@@ -8,10 +8,10 @@ otherwise.
 **What a slide is here.** `LS22_s01a_sc06` is animal LS22, slide 01, variant a,
 scene 06 - so the slide is `LS22_s01a`, and it holds between 1 and 9 of these
 sections. Checked against `manifest_scenes.csv`'s own slide and variant columns
-on all 128 sections, no disagreements. One slide is also exactly one CZI file.
+on all sections, no disagreements. One slide is also exactly one CZI file.
 
 "Slide" and "section" are easy to mean interchangeably and they are not the same
-level here: 128 sections sit on 33 slides. Both are written - `by_slide` is the
+level here: the 130 curated pERK sections sit on 33 slides. Both are written - `by_slide` is the
 requested sheet, `by_section` is the same table one level down - so whichever
 was meant is present rather than guessed at.
 

@@ -14,11 +14,16 @@ read - is the more reliable of the two.
 
 Run:  python -m app.import_exports C:\\path\\to\\downloads
       python -m app.import_exports <dir> --merge
+      python -m app.import_exports <dir> --replace   # drop what it omits
       python -m app.import_exports "C:/.../roi_plates(1).csv" --merge
       python -m app.import_exports <dir> --dry-run
 
 A path to a plates CSV works as well as a directory, because a second export
 lands as `roi_plates(1).csv` and that is exactly when it is needed.
+
+Without --merge the store is REPLACED, and one store holds both markers - so a
+PCNA-only export would drop every pERK placement. That is refused rather than
+warned about: pass --merge to keep them, or --replace if the loss is intended.
 
 --merge keeps sections the export does not mention. A session spent on one animal
 exports only that animal, so a plain import would silently drop every decision

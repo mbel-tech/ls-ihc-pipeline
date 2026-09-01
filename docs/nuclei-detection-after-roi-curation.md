@@ -787,9 +787,12 @@ throughout, and the geometry step is the one that used to be dangerous.
 python scripts/04l_roi_curator.py --marker AF488 --rgb --worklist
 ```
 
-**`--analysis-set` is a pERK subset and 04l refuses it here**, deliberately: clipped-pixel
-censoring is measured on the pERK scans, so it does not define a PCNA one. (`LOGS.md`
-2026-08-19 says this pairing yields 424; that describes older behaviour and no longer applies.)
+**`--analysis-set` narrows only the pERK side.** Clipped-pixel censoring is measured on the pERK
+scans, so it does not define a PCNA subset — `04l_roi_curator.py:2506` applies it only when the
+marker is AF568. Passing it with `--marker AF488` is therefore not an error and not a refusal: it
+runs, narrows pERK to 454, and leaves PCNA at its full 788. (`analysis_uids()` carries a
+`SystemExit` for the wrong marker, but its only caller is already inside that guard, so it never
+fires. `LOGS.md` 2026-08-19 says this pairing yields 424; that describes older behaviour.)
 
 **So the PCNA scope is all 788 sections, not the ~424 pERK partners** — roughly 1.9x the
 curation. If matched markers are what you want, that is a narrowing you have to decide on and

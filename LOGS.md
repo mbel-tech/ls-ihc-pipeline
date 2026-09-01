@@ -229,6 +229,29 @@ each animal appeared twice with identical pooled figures against per-marker sect
 an unknown name rather than returning NULL, so an unrecognised marker would have died with
 "subscript out of bounds" instead of printing its own id.
 
+A fifth round found three more, and the shape held to the last one:
+
+  * **06a's Abercrombie fallback `h_all` was a single mean over both markers**, and it is not an
+    edge case: background discs carry region `__background__`, which is never a key in the
+    per-(marker, region) table, so **every background row takes the fallback** - 586 of 2,069.
+    With PCNA at roughly six times the volume it would have set the correction factor on pERK's
+    background rows, changing a published number with the other antibody's nuclei. The per-marker
+    table was right; the line below it was not.
+  * **`app/import_exports.py` replaced the curation store wholesale.** The guide says curating
+    PCNA cannot disturb the pERK placements, and that is true of the curator page - one store,
+    disjoint uids - but not of the documented recovery path: a PCNA-only export imported without
+    `--merge` drops every pERK placement. It now refuses when replacing would drop sections the
+    export does not mention, names them, and points at `--merge` or `--replace`.
+  * **`plot_by_sample.R` and `plot_by_slide.R` were referenced nowhere** - not the README, not
+    the guide, not 06e, not `app/stages.py` - while writing four of the shipped figures. That is
+    why they sat for a day drawn from the old h. 06e now runs all three R scripts, per marker.
+
+Three smaller ones from the same round: the guide claimed 04l *refuses* `--analysis-set` for
+AF488 when the `SystemExit` is unreachable behind its own caller's guard, so it quietly narrows
+only the pERK side; 06d's docstring still said 128 sections; and 05c's resume built a dict per
+row of `roi_nuclei.csv` to collect one column - about five million of them once PCNA is in the
+file, on the resume of the run this stage exists to make resumable.
+
 **`all_boxes()` now checks the invariant instead of asserting it in a comment.** Scene uids being
 disjoint across markers is what makes 06a's `(scene_uid, roi_index)` join correct - the index is
 a position in the per-uid box list - so a collision would pair every nucleus on that section with

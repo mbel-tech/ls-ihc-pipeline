@@ -148,6 +148,18 @@ def main():
 
     # ---- h for Abercrombie, measured per region and marker
     hs = {k: st.mean(v) for k, v in diam_by.items() if v}
+
+    # THE FALLBACK IS PER MARKER TOO, and it is not an edge case: background
+    # discs carry region "__background__", which is never a key in diam_by, so
+    # EVERY background row takes it - 586 of 2,069 today. A single pooled mean
+    # would let PCNA, at roughly six times the pERK volume, set the Abercrombie
+    # factor on pERK's background rows. The number would change, driven entirely
+    # by the other antibody, and nothing would error.
+    h_by_marker = {}
+    for mk in {r["marker"] for r in nuc}:
+        d = [r["_d"] for r in nuc if r["marker"] == mk]
+        if d:
+            h_by_marker[mk] = st.mean(d)
     h_all = st.mean(d_all) if d_all else 0.0
 
     rows, spec = [], []
@@ -168,7 +180,8 @@ def main():
             # intensity statistic. Do not "fix" this to drop them.
             n_pos = (sum(1 for r in here if r["_cen"] or r["_v"] > cut)
                      if cut is not None else "")
-            h = hs.get((b["marker"], b["region"]), h_all)
+            h = hs.get((b["marker"], b["region"]),
+                       h_by_marker.get(b["marker"], h_all))
             ab = T_UM / (T_UM + h) if (AB_ON and h) else 1.0
             row = {
                 "scene_uid": uid, "animal": b["animal"], "marker": b["marker"],

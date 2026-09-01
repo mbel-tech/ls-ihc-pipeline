@@ -28,7 +28,7 @@ autofluorescence, not zero.
 
 Writes `results/roi_nuclei.csv`, one row per nucleus. That is the artefact that
 matters - with per-nucleus intensities on disk the positivity cut becomes a
-decision about a table rather than a reason to re-read 128 CZI scenes.
+decision about a table rather than a reason to re-read 130 CZI scenes.
 
 Run:  python 05c_detect_rois.py
       python 05c_detect_rois.py --limit 5
@@ -266,8 +266,17 @@ def main():
     # marker's sections would inflate both arms and misdirect the ordering.
     done = set()
     if os.path.exists(NUCLEI_CSV) and not args.force:
-        done = {r["scene_uid"] for r in G5.load_csv(NUCLEI_CSV)
-                if r["scene_uid"] in by_sec}
+        # Streamed with csv.reader, not load_csv: this needs one column and
+        # load_csv would build a dict per row - about five million of them once
+        # PCNA is in the file, on the resume of the run this stage exists to
+        # make resumable. 06c reads the same file the same way for the same
+        # reason.
+        with open(NUCLEI_CSV, newline="", encoding="utf-8") as rf:
+            rd = csv.reader(rf)
+            next(rd, None)
+            for row in rd:
+                if row and row[0] in by_sec:
+                    done.add(row[0])
         print(f"resuming: {len(done)} {args.marker} sections already measured")
     todo = [u for u in sorted(by_sec) if u not in done]
     if args.order == "balanced":

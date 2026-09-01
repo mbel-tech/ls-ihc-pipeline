@@ -98,7 +98,11 @@ the full guide; this is the shape of it.
 | 6a | `06a_roi_dataset.py` | The positivity cut, the detector's false-positive rate, and Abercrombie. **Still blind** |
 | 6b | `06b_join_sampling.py` | Joins the sampling workbook — **the unblinding step** |
 | 6c / 6d | `06c_excel_dataset.py`, `06d_excel_by_slide.py` | The spreadsheets, per sample and per slide |
-| 6e | `06e_refresh_loop.py` | Rebuilds 6a→6d and the figures hourly while 5c is still running |
+| 6e | `06e_refresh_loop.py` | Rebuilds 6a→6d and every figure hourly while 5c is still running, once per measured marker |
+
+Figures come from `analysis/`: `plot_roi_figures.R` (per-ROI, with statistics, plus the pptx) and
+`plot_by_sample.R` / `plot_by_slide.R` (the two overview panels). 6e runs all three, so running it
+is how they stay in step with the workbooks.
 
 ```bash
 python scripts/05a_roi_geometry.py --verify     # check the map first: 0.04-0.15 px

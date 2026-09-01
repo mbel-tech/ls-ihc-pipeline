@@ -45,7 +45,18 @@ G6A = _load("_g6a", "06a_roi_dataset.py")
 G6C = _load("_g6c", "06c_excel_dataset.py")
 G6D = _load("_g6d", "06d_excel_by_slide.py")
 
-R_SCRIPT = os.path.join(_REPO, "analysis", "plot_roi_figures.R")
+# Every R script that draws from the workbooks this loop rebuilds.
+#
+# plot_by_sample and plot_by_slide used to be in no runbook, no doc and no
+# stage - so their four figures sat in results/ for a day drawn from the
+# pre-refactor Abercrombie h while everything around them was rebuilt. Nothing
+# structural stopped that recurring, and no PCNA version of them would ever have
+# been produced. Listing them here is what makes them part of the pipeline
+# rather than something someone remembers to run.
+#
+# plot_roi_figures goes first: it is the one the operator is actually watching.
+R_SCRIPTS = [os.path.join(_REPO, "analysis", n) for n in
+             ("plot_roi_figures.R", "plot_by_sample.R", "plot_by_slide.R")]
 
 
 def find_rscript(explicit=None):
@@ -143,16 +154,18 @@ def refresh(rscript, quiet=True):
     markers = marker_list()
     for mk in markers:
         env = dict(os.environ, LS_MARKER=mk)
-        r = subprocess.run([rscript, R_SCRIPT], cwd=_REPO, env=env,
-                           capture_output=quiet, text=True)
-        if r.returncode:
-            print(f"  plotting FAILED for {mk}:")
-            print((r.stderr or r.stdout or "").strip()[-2000:])
-            return False
-        if quiet and r.stderr:
-            # Rscript writes message() to stderr; it is progress, not failure.
-            for line in r.stderr.strip().splitlines()[-4:]:
-                print(f"  [{mk}] " + line)
+        for script in R_SCRIPTS:
+            name = os.path.basename(script)
+            r = subprocess.run([rscript, script], cwd=_REPO, env=env,
+                               capture_output=quiet, text=True)
+            if r.returncode:
+                print(f"  {name} FAILED for {mk}:")
+                print((r.stderr or r.stdout or "").strip()[-2000:])
+                return False
+            if quiet and r.stderr:
+                # Rscript writes message() to stderr; progress, not failure.
+                for line in r.stderr.strip().splitlines()[-3:]:
+                    print(f"  [{mk} {name}] " + line)
     return True
 
 
@@ -167,7 +180,7 @@ def main():
 
     rscript = find_rscript(args.rscript)
     print(f"Rscript: {rscript}")
-    print(f"figures: {R_SCRIPT}")
+    print("figures: " + ", ".join(os.path.basename(x) for x in R_SCRIPTS))
 
     last, stalled, n = None, 0, 0
     while True:
