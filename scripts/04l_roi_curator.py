@@ -2729,9 +2729,18 @@ function revCell(p){
                      : r.act === "drop" ? "dr" : "um"}">`
                  + (r.act === "restore" ? "IN" : r.act === "drop" ? "OUT" : "NOMASK")
                  + `</span>` : "";
-  // The OVERVIEW, not the reformatted image: it is the one picture that exists
-  // for every section, so the grid never has a hole in it.
-  const src = revSrc(p, "overview") || revSrc(p, "section");
+  // THE REFORMATTED IMAGE, at 18 KB, not the overview at 556 KB.
+  //
+  // The grid draws a few hundred cells at 78 px, and the overview is
+  // 1632x1862 - LS61's pERK sections alone are 98 MB of PNG against 2.3 MB
+  // reformatted. Loading the big ones left most cells blank behind `loading
+  // ="lazy"` and the grid looked broken rather than slow.
+  //
+  // The overview was chosen originally because it was the only picture EVERY
+  // section had; that stopped being true once 04a --render-excluded gave the
+  // excluded ones an image too. The fallback stays for a section that somehow
+  // has neither.
+  const src = revSrc(p, "section") || revSrc(p, "overview");
   return `<div class="${cls.join(" ")}" onclick="revPick('${p.scene_uid}')" `
        + `title="${esc(p.scene_uid)} - ${esc(p.status)}">`
        + (src ? `<img loading="lazy" src="${esc(src)}" alt="">`
