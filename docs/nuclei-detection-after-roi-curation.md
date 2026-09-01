@@ -22,14 +22,26 @@ Nothing in between is manual. Once 05a has run, 05c can be started and left alon
 04l_roi_curator.py   →   roi_regions.csv     (you place the discs)
                          roi_plates.csv
                                  ↓
-05a_roi_geometry.py  →   roi_geometry.csv    (one affine matrix per section)
-                         roi_boxes.csv       (one CZI pixel box per ROI)
+05a_roi_geometry.py  →   roi_geometry_<MARKER>.csv  (one affine matrix per section)
+                         roi_boxes_<MARKER>.csv     (one CZI pixel box per ROI)
                                  ↓
-05c_detect_rois.py   →   roi_nuclei.csv      (ONE ROW PER NUCLEUS)
+05c_detect_rois.py   →   roi_nuclei.csv      (ONE ROW PER NUCLEUS, both markers)
                                  ↓
-06a / 06c / 06d      →   counts, positivity, spreadsheets
-06b                  →   the unblinding join
+06a                  →   roi_measurements.csv, detector_specificity.csv
+                                 ↓
+06c / 06d            →   the spreadsheets      06b → the unblinding join
 ```
+
+**The 05a outputs are per marker, and that is load-bearing.** 05a writes with mode `w` from one
+export. While both markers shared `roi_boxes.csv`, running it against a PCNA export would have
+replaced the pERK boxes outright — and `roi_nuclei.csv` joins to that file by
+`(scene_uid, roi_index)` in both 06a and 06c, so ~883,000 measured rows would have quietly lost
+the geometry they were measured against, with nothing raising an error. Since 2026-09-01 each
+marker has its own pair, and 06a/06c/06d read the **union** of both, which is safe because
+AF568 and AF488 sections are separate acquisitions with disjoint `scene_uid`s.
+
+Files written before that date have no suffix and are read as an AF568 fallback; they are never
+written to again.
 
 `roi_nuclei.csv` is the artefact that matters. Everything after it is arithmetic on a
 table — including where the positivity cut falls. Changing your mind about positivity
@@ -538,9 +550,10 @@ That folder exists on this machine, which means the fallback path is the one in 
 The pretrained model is downloaded on first use into `~/.keras/models/StarDist2D/`.
 Once it is there, later runs are offline.
 
-### 8.4 `no reformatted/roi_boxes.csv - run 05a_roi_geometry.py first`
+### 8.4 `no reformatted/roi_boxes_<marker>.csv - run 05a_roi_geometry.py first`
 
-Exactly what it says. 05c will not proceed without 05a's output.
+Exactly what it says. 05c will not proceed without 05a's output *for the marker it was asked
+for* — `--marker AF488` needs `roi_boxes_AF488.csv`, which needs a PCNA curation export.
 
 ### 8.5 A section keeps getting skipped by 05a
 
@@ -743,6 +756,54 @@ So 05c inherits `CONFIG`, the output paths, `load_csv`, `invert_affine` and `app
 from 05a, and 05a inherits the reformat itself from 04a. One definition of the geometry,
 used by the code that builds it and the code that inverts it — which is the same reasoning
 behind reading the affine matrix off three evaluations instead of expanding it by hand.
+
+---
+
+## 10.8 Running the second marker (PCNA / AF488)
+
+The pERK pass is done; PCNA has not been started. The chain is the same, with `--marker`
+throughout, and the geometry step is the one that used to be dangerous.
+
+```bash
+python scripts/04l_roi_curator.py --marker AF488 --analysis-set
+```
+
+Curate and export as for pERK. Note the count: the 454 are **pERK** uids and 30 of them have no
+PCNA partner in `perk_overrides.csv`, so this loads **424, not 454** — the shortfall prints
+rather than being rounded away.
+
+```bash
+python scripts/05a_roi_geometry.py "C:/Users/you/Downloads/roi_regions.csv"
+```
+
+No `--marker` needed: 05a reads it from the export's own `marker` column and writes
+`roi_boxes_AF488.csv`. `--marker` exists as an assertion — pass it and a mismatch is refused
+rather than written to the wrong file. An export that mixes markers is refused outright.
+
+```bash
+work/appenv/Scripts/python.exe scripts/05c_detect_rois.py --marker AF488 --limit 2 --qc
+work/appenv/Scripts/python.exe scripts/05c_detect_rois.py --marker AF488
+```
+
+Smoke-test first and check `equiv_diam_um` lands near 7–8.5 µm as it did for pERK (§5.2), and
+look at a couple of the `--qc` overlays (§8.1). A distribution far from that means the wrong
+channel or the wrong resolution.
+
+`channels.marker_index = 1` holds for both markers: each CZI is one marker plus DAPI, and the
+`a`/`b`/`c` filename suffixes distinguish marker passes rather than rescans.
+
+Rows append to the **same** `roi_nuclei.csv`. The resume set and the balanced-order counter are
+scoped to the marker being run, so a PCNA run does not read the pERK sections as already-measured
+work when deciding which arm is behind.
+
+```bash
+python scripts/06a_roi_dataset.py        # covers both markers in one pass
+```
+
+Nothing downstream needs a flag: 06a takes the union of the box files, the cut is per section,
+and `h` is per (marker, region) — so the two markers are never pooled.
+
+**Expect it to be slow.** PCNA is roughly six times the pERK volume.
 
 ---
 

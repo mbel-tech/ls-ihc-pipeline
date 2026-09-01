@@ -40,10 +40,16 @@ decided per pixel by mapping back, which is exact and needs no ellipse algebra.
 Reads the ROIs from a `roi_regions.csv` export, which already carries them in
 canonical 256 coordinates with their region, seed number and kind.
 
-Writes:
-    reformatted/roi_geometry.csv   one row per section: the six parameters, the
-                                   CZI scene rectangle, and the composed matrix
-    reformatted/roi_boxes.csv      one row per ROI: its CZI pixel bounding box
+Writes, PER MARKER - see the note on the paths below, which is the whole
+reason the suffix exists:
+    reformatted/roi_geometry_<MARKER>.csv   one row per section: the six
+                                   parameters, the CZI scene rectangle, and the
+                                   composed matrix
+    reformatted/roi_boxes_<MARKER>.csv      one row per ROI: its CZI pixel
+                                   bounding box
+    reformatted/roi_regions_used_<MARKER>.csv  the export these came from
+
+The marker is read from the export's own `marker` column, not passed in.
 
 Run:  python 05a_roi_geometry.py
       python 05a_roi_geometry.py path/to/roi_regions.csv
@@ -74,8 +80,71 @@ OVERVIEW_DIR = RF.OVERVIEW_DIR
 FOCUS_CSV = os.path.join(OUT_ROOT, "qc", "focus.csv")
 MANIFEST_CSV = os.path.join(OUT_ROOT, "manifest", "manifest_scenes.csv")
 
-GEOM_CSV = os.path.join(REFORMAT_DIR, "roi_geometry.csv")
-BOX_CSV = os.path.join(REFORMAT_DIR, "roi_boxes.csv")
+# ---- output paths are PER MARKER, and that is not cosmetic ------------------
+#
+# This stage writes its outputs with mode "w" from ONE roi_regions.csv export.
+# While both markers shared `roi_boxes.csv`, running it against a PCNA export
+# would have replaced the pERK boxes outright - and roi_nuclei.csv joins to that
+# file by (scene_uid, roi_index) in 06a and 06c, so 883,000 measured rows would
+# have quietly lost the geometry they were measured against. Nothing would have
+# errored.
+#
+# AF568 and AF488 sections have DISJOINT scene_uids - they are separate
+# acquisitions - so the two files never overlap and downstream stages that want
+# everything can simply read both.
+MARKERS = ("AF568", "AF488")
+
+# Everything written before 2026-09-01 is AF568 and has no suffix. Read as a
+# fallback so an existing out_root keeps working; never written to again.
+LEGACY_GEOM = os.path.join(REFORMAT_DIR, "roi_geometry.csv")
+LEGACY_BOX = os.path.join(REFORMAT_DIR, "roi_boxes.csv")
+
+
+def geom_csv(marker):
+    return os.path.join(REFORMAT_DIR, f"roi_geometry_{marker}.csv")
+
+
+def box_csv(marker):
+    return os.path.join(REFORMAT_DIR, f"roi_boxes_{marker}.csv")
+
+
+def resolve_paths(marker):
+    """The pair to READ for this marker, preferring the suffixed files."""
+    g, b = geom_csv(marker), box_csv(marker)
+    if marker == "AF568" and not os.path.exists(b) and os.path.exists(LEGACY_BOX):
+        return LEGACY_GEOM, LEGACY_BOX
+    return g, b
+
+
+MARKER = "AF568"
+GEOM_CSV, BOX_CSV = resolve_paths(MARKER)
+
+
+def use_marker(marker):
+    """Point the module-level paths at one marker. Importers call this."""
+    global MARKER, GEOM_CSV, BOX_CSV
+    if marker not in MARKERS:
+        raise ValueError(f"unknown marker {marker!r}; expected one of {MARKERS}")
+    MARKER = marker
+    GEOM_CSV, BOX_CSV = resolve_paths(marker)
+    return MARKER
+
+
+def all_boxes():
+    """Every marker's boxes, concatenated, for stages that span both.
+
+    06a, 06c and 06d work off `roi_nuclei.csv`, which holds both markers once
+    the PCNA pass has run, so they need every box rather than one marker's.
+    Scene uids are disjoint across markers, so this is a union and not a merge.
+    """
+    seen, out = set(), []
+    for m in MARKERS:
+        p = resolve_paths(m)[1]
+        if p in seen or not os.path.exists(p):
+            continue
+        seen.add(p)
+        out.extend(load_csv(p))
+    return out
 
 BASE_PX_UM = CONFIG["pixel_size_um"]
 
@@ -585,6 +654,9 @@ def main():
     ap.add_argument("--verify", action="store_true",
                     help="check the composed map against the real reformat")
     ap.add_argument("--limit", type=int, help="only the first N sections")
+    ap.add_argument("--marker", choices=MARKERS, default=None,
+                    help="which marker this export is for; inferred from the "
+                         "export's own marker column when omitted")
     args = ap.parse_args()
 
     if args.verify:
@@ -617,6 +689,29 @@ def main():
               "Export from the ROI curator, then pass the path:\n"
               "    python 05a_roi_geometry.py \"C:/Users/you/Downloads/roi_regions.csv\"")
         return 1
+    # THE MARKER COMES FROM THE EXPORT. The curator stamps it into every row
+    # (04l --marker), so asking the operator to repeat it here is one more thing
+    # to get wrong - and getting it wrong would write one marker's boxes to the
+    # other's file, which is the exact failure the per-marker paths exist to
+    # prevent. --marker is kept as an assertion, not as the source of truth.
+    seen_markers = sorted({(r.get("marker") or "").strip()
+                           for r in load_csv(regions)} - {""})
+    if len(seen_markers) > 1:
+        print(f"the export mixes markers {seen_markers} - it must carry exactly "
+              f"one, since the two are separate acquisitions with their own "
+              f"sections. Re-export from 04l with a single --marker.")
+        return 1
+    marker = seen_markers[0] if seen_markers else (args.marker or "AF568")
+    if args.marker and args.marker != marker:
+        print(f"--marker {args.marker} but the export says {marker}. Refusing "
+              f"rather than writing one marker's boxes to the other's file.")
+        return 1
+    if marker not in MARKERS:
+        print(f"the export's marker is {marker!r}, not one of {MARKERS}")
+        return 1
+    use_marker(marker)
+    print(f"marker: {marker}")
+
     plates = args.plates or regions.replace("roi_regions", "roi_plates")
     print(f"ROIs from {regions}")
     if os.path.exists(plates):
@@ -634,7 +729,10 @@ def main():
                 print(f"    {uid}: {why}")
         return 1
 
-    for path, rows in ((GEOM_CSV, geom), (BOX_CSV, boxes)):
+    # Written to the SUFFIXED pair always, even when the legacy unsuffixed file
+    # is what was read: the point is that a second marker cannot overwrite the
+    # first, and that only holds once both live under their own names.
+    for path, rows in ((geom_csv(marker), geom), (box_csv(marker), boxes)):
         with open(path, "w", newline="", encoding="utf-8") as fh:
             w = csv.DictWriter(fh, fieldnames=list(rows[0].keys()))
             w.writeheader()
@@ -654,10 +752,10 @@ def main():
     # boxes are too - the pair has to stay consistent, and a stale source
     # alongside fresh boxes would be worse than none.
     try:
-        used = os.path.join(REFORMAT_DIR, "roi_regions_used.csv")
+        used = os.path.join(REFORMAT_DIR, f"roi_regions_used_{marker}.csv")
         if os.path.abspath(regions) != os.path.abspath(used):
             shutil.copyfile(regions, used)
-        with open(os.path.join(REFORMAT_DIR, "roi_regions_used.txt"), "w",
+        with open(os.path.join(REFORMAT_DIR, f"roi_regions_used_{marker}.txt"), "w",
                   encoding="utf-8") as fh:
             fh.write(
                 f"source   : {os.path.abspath(regions)}\n"
@@ -675,8 +773,8 @@ def main():
         kinds[b["roi_kind"]] = kinds.get(b["roi_kind"], 0) + 1
     an = [g["anisotropy"] for g in geom]
     print("=" * 72)
-    print(f"{len(geom)} sections -> {GEOM_CSV}")
-    print(f"{len(boxes)} ROIs     -> {BOX_CSV}")
+    print(f"{len(geom)} sections -> {geom_csv(marker)}")
+    print(f"{len(boxes)} ROIs     -> {box_csv(marker)}")
     print(f"  by kind    : {kinds}")
     print(f"  anisotropy : median {np.median(an):.2f}, range "
           f"{min(an):.2f}-{max(an):.2f}   (1.00 would mean circles stay circles)")

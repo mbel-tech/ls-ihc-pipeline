@@ -132,7 +132,7 @@ def main(argv=None):
         return 1
 
     meas = G5.load_csv(G6C.MEAS_CSV)
-    boxes = G5.load_csv(G5.BOX_CSV)
+    boxes = G5.all_boxes()          # both markers; see 05a.all_boxes
     groups = (CONFIG.get("groups") or {}).get("by_animal") or {}
     envs = G6C.animal_environment()
 

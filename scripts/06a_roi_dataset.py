@@ -89,7 +89,10 @@ def main():
         return 1
     nuc = G5.load_csv(NUCLEI_CSV)
     box_by = {}
-    for b in G5.load_csv(G5.BOX_CSV):
+    # EVERY marker's boxes. roi_nuclei.csv holds both once the PCNA pass has
+    # run, and the cut is per section and h is per (marker, region), so one
+    # run covers both without pooling anything across them.
+    for b in G5.all_boxes():
         box_by.setdefault(b["scene_uid"], []).append(b)
     print(f"{len(nuc)} nuclei over "
           f"{len({r['scene_uid'] for r in nuc})} sections")

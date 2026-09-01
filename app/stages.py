@@ -202,7 +202,11 @@ STAGES = [
     # ---- Quantification ---------------------------------------------------
     Stage("roi_geometry", "Place the ROIs on the slide", "Quantification",
           script="05a_roi_geometry.py",
-          outputs=["reformatted/roi_geometry.csv", "reformatted/roi_boxes.csv"],
+          # Per marker since 2026-09-01, so a PCNA run cannot overwrite the
+          # pERK boxes 883,000 measured nuclei are joined against. pERK is
+          # what the app's status line tracks.
+          outputs=["reformatted/roi_geometry_AF568.csv",
+                   "reformatted/roi_boxes_AF568.csv"],
           needs=["roi_curator"],
           blurb="Inverts the reformat transform, so an ROI drawn on the 256 px "
                 "normalised frame becomes a rectangle in CZI pixels. Reads the "

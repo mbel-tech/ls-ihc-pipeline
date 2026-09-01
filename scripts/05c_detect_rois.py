@@ -235,12 +235,18 @@ def main():
                     help="write one overlay PNG per ROI to qc/roi_detections: "
                          "DAPI with nucleus boundaries, green counted, red "
                          "found but outside the disc")
+    ap.add_argument("--marker", choices=G5.MARKERS, default="AF568",
+                    help="which marker's boxes to measure (default AF568). "
+                         "Appends to the same roi_nuclei.csv - the two markers "
+                         "have disjoint sections.")
     ap.add_argument("--force", action="store_true", help="redo finished sections")
     args = ap.parse_args()
 
+    G5.use_marker(args.marker)
     if not os.path.exists(G5.BOX_CSV):
-        print(f"no {G5.BOX_CSV} - run 05a_roi_geometry.py first")
+        print(f"no {G5.BOX_CSV} - run 05a_roi_geometry.py --marker {args.marker} first")
         return 1
+    print(f"marker: {args.marker}  ({os.path.basename(G5.BOX_CSV)})")
     boxes = G5.load_csv(G5.BOX_CSV)
     geom = {g["scene_uid"]: g for g in G5.load_csv(G5.GEOM_CSV)}
     os.makedirs(RESULTS, exist_ok=True)
@@ -249,14 +255,20 @@ def main():
 
     # Resume by section, because a section is the unit that costs something:
     # one CZI open and a model call per ROI in it.
-    done = set()
-    if os.path.exists(NUCLEI_CSV) and not args.force:
-        done = {r["scene_uid"] for r in G5.load_csv(NUCLEI_CSV)}
-        print(f"resuming: {len(done)} sections already measured")
-
     by_sec = {}
     for b in boxes:
         by_sec.setdefault(b["scene_uid"], []).append(b)
+
+    # Resume by section, scoped to THIS MARKER. roi_nuclei.csv holds both once
+    # the PCNA pass has run, and while scene uids are disjoint - so a raw
+    # `done` set would still skip the right sections - the balanced-order
+    # counter below counts what each arm has already had, and the other
+    # marker's sections would inflate both arms and misdirect the ordering.
+    done = set()
+    if os.path.exists(NUCLEI_CSV) and not args.force:
+        done = {r["scene_uid"] for r in G5.load_csv(NUCLEI_CSV)
+                if r["scene_uid"] in by_sec}
+        print(f"resuming: {len(done)} {args.marker} sections already measured")
     todo = [u for u in sorted(by_sec) if u not in done]
     if args.order == "balanced":
         todo = balanced_order(todo, done)

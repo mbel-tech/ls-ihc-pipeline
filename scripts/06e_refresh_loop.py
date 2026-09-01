@@ -6,7 +6,7 @@ the datasets and the figures on a timer, and stop when there is nothing left to
 add.
 
 Python rather than a .bat because the stop condition is a real comparison -
-distinct sections in `results/roi_nuclei.csv` against `reformatted/roi_boxes.csv`
+distinct sections in `results/roi_nuclei.csv` against every marker's box file
 - rather than console text scraped from another program.
 
 **Two stop conditions, and the second one matters more than it looks.**
@@ -80,7 +80,7 @@ def progress():
     if not os.path.exists(G6C.NUCLEI_CSV):
         return 0, 0
     measured = {r["scene_uid"] for r in G5.load_csv(G6C.NUCLEI_CSV)}
-    planned = {b["scene_uid"] for b in G5.load_csv(G5.BOX_CSV)}
+    planned = {b["scene_uid"] for b in G5.all_boxes()}
     return len(measured), len(planned)
 
 
@@ -140,7 +140,8 @@ def main():
         stamp = time.strftime("%H:%M:%S")
         print(f"\n[{stamp}] pass {n}: {done} of {total} sections measured")
         if not total:
-            raise SystemExit("no roi_boxes.csv - run 05a_roi_geometry.py first")
+            raise SystemExit("no roi_boxes_<marker>.csv - run "
+                             "05a_roi_geometry.py first")
 
         ok = refresh(rscript)
         if not ok:

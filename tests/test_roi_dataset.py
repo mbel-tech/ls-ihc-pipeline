@@ -149,13 +149,20 @@ def build(tmp):
 
 
 def run_06a(tmp):
-    """Point 06a at the fixture and run it, restoring the real paths after."""
-    keep = (G6A.NUCLEI_CSV, G6A.MEAS_CSV, G6A.SPEC_CSV, G5.BOX_CSV)
+    """Point 06a at the fixture and run it, restoring the real paths after.
+
+    `all_boxes` is patched rather than `BOX_CSV`, because 06a takes the UNION of
+    every marker's box file - roi_nuclei.csv holds both once the PCNA pass has
+    run. Patching the path alone silently gave 06a zero boxes and it wrote an
+    empty file, which is how this seam was found.
+    """
+    keep = (G6A.NUCLEI_CSV, G6A.MEAS_CSV, G6A.SPEC_CSV, G5.BOX_CSV, G5.all_boxes)
     npath, bpath = build(tmp)
     G6A.NUCLEI_CSV = npath
     G6A.MEAS_CSV = os.path.join(tmp, "roi_measurements.csv")
     G6A.SPEC_CSV = os.path.join(tmp, "detector_specificity.csv")
     G5.BOX_CSV = bpath
+    G5.all_boxes = lambda: G5.load_csv(bpath)
     try:
         rc = G6A.main()
     finally:
@@ -164,7 +171,8 @@ def run_06a(tmp):
     spec = (G5.load_csv(G6A.SPEC_CSV)
             if os.path.exists(G6A.SPEC_CSV) else [])
     paths = (npath, bpath, G6A.MEAS_CSV)
-    G6A.NUCLEI_CSV, G6A.MEAS_CSV, G6A.SPEC_CSV, G5.BOX_CSV = keep
+    (G6A.NUCLEI_CSV, G6A.MEAS_CSV, G6A.SPEC_CSV, G5.BOX_CSV,
+     G5.all_boxes) = keep
     return rc, meas, spec, paths
 
 
@@ -250,6 +258,7 @@ def cross_check(tmp, paths, meas):
         return
     G6C.NUCLEI_CSV, G6C.MEAS_CSV = npath, mpath
     G6C.G5.BOX_CSV = bpath
+    G6C.G5.all_boxes = lambda: G6C.G5.load_csv(bpath)
     # No workbook on a test machine, and none is needed: the join is not what
     # is being checked here.
     G6C.animal_environment = lambda: {}
