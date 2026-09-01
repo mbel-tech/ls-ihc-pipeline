@@ -11,7 +11,14 @@ the dataset into browsable contact sheets, then adds hotspot detection, then pro
 anatomical regions from an atlas.
 
 Analysis is **blinded by construction** — every output is keyed by animal ID, and the group key
-is joined only in the final step.
+reaches the numbers only at 06b.
+
+Two stages read it earlier, both deliberately and neither in a way that touches a measurement:
+`05c` uses it to choose the ORDER sections are measured in, so any prefix of a long run is a
+balanced dataset (`--order uid` makes it blind again, and the finished file is identical either
+way), and `04l`'s Shotgun deck uses it to lay slides out by treatment, which is not something a
+group comparison figure can be built without. Both are documented at `config.groups`, and
+leaving `by_animal` empty disables both.
 
 ---
 
@@ -74,14 +81,67 @@ Every stage is resumable — re-running skips completed work.
 | 2 | `02_pair_passes.py` | Pairs the two marker passes onto the same physical sections via stage coordinates |
 | 4a | `04a_atlas_extract.py` | Extracts labelled plates and region seed points from the atlas PDF |
 
+The 04-series curation chain is not in `run_all.sh`: it needs the operator between the steps —
+assigning plates, placing ROIs — so there is nothing to batch.
+
+---
+
+## Quantification
+
+What runs after a curation pass is exported. `docs/nuclei-detection-after-roi-curation.md` is
+the full guide; this is the shape of it.
+
+| Stage | Script | What it does |
+|---|---|---|
+| 5a | `05a_roi_geometry.py` | Puts each curated ROI back on the slide — one affine matrix per section, one CZI pixel box per ROI |
+| 5c | `05c_detect_rois.py` | Reads those boxes at native 0.65 µm/px, segments nuclei on DAPI with StarDist, measures the marker inside each mask |
+| 6a | `06a_roi_dataset.py` | The positivity cut, the detector's false-positive rate, and Abercrombie. **Still blind** |
+| 6b | `06b_join_sampling.py` | Joins the sampling workbook — **the unblinding step** |
+| 6c / 6d | `06c_excel_dataset.py`, `06d_excel_by_slide.py` | The spreadsheets, per sample and per slide |
+| 6e | `06e_refresh_loop.py` | Rebuilds 6a→6d and the figures hourly while 5c is still running |
+
+```bash
+python scripts/05a_roi_geometry.py --verify     # check the map first: 0.04-0.15 px
+python scripts/05a_roi_geometry.py
+work/appenv/Scripts/python.exe scripts/05c_detect_rois.py     # hours; resumable
+python scripts/06a_roi_dataset.py
+Rscript analysis/plot_roi_figures.R
+```
+
+**`results/roi_nuclei.csv` is the artefact that matters** — one row per nucleus, with the
+marker's mean, median and 90th percentile over that nucleus's own pixels. Everything after it is
+arithmetic on a table, so changing your mind about where positivity falls costs a re-run of 06a,
+not a re-read of 130 CZI scenes.
+
+**06a owns every per-ROI number.** 6c and 6d group and format its output; they do not re-derive
+it. They used to, and the two implementations had drifted — 06a computes Abercrombie's `h` per
+(marker, region) as `config` declares, the copy in 06c computed it per (animal, region), and
+nothing compared them. `tests/test_roi_dataset.py` now does.
+
+**Two measures, side by side.** `cells_per_mm2` is every DAPI nucleus; `positive_cells_per_mm2`
+is the subset over that section's own cut, taken from its own background discs as
+`median + 3 × 1.4826 × MAD`. A spread and not a percentile, deliberately: a percentile would fix
+the false-positive rate by construction and destroy the only independent check the background
+discs exist to provide. Measured here at **2.1% median**, and — the number that decides whether
+positivity is usable at all — **not group-correlated** (control 2.2%, exercise 2.0%). Pooled ROI
+positivity is 13.3% against that, a 5.9x separation.
+
+`05c --qc` writes one overlay PNG per ROI to `qc/roi_detections/`: the DAPI crop with nucleus
+boundaries, green counted and red found-but-outside-the-disc. Nuclear diameter says the
+segmentation is finding objects of the right size; only the overlay says they are in the right
+places.
+
 ---
 
 ## Desktop app
 
 ```bash
-pip install -r requirements.txt
-run_app.bat                            # or: python -m app
+run_app.bat
 ```
+
+`run_app.bat` prefers `work/appenv`, the same Python 3.13 venv `build_app.bat` freezes the exe
+from. Running `python -m app` against an interpreter without PySide6 now says which interpreter
+it is and how to fix it, rather than writing a bare traceback to `lsapp-crash.log`.
 
 One window: the pipeline down the left with status read from disk, a log pane,
 and the three HTML curators embedded. The curator pages themselves are unchanged

@@ -9,6 +9,177 @@ where things landed, not which plausible-looking route was tried and abandoned, 
 
 ---
 
+## 2026-09-01 - Stage 06a had never been run, so every figure was DAPI density
+
+**Changed:** `06a_roi_dataset.py` rewritten to a single pass and run for the first time;
+`06c_excel_dataset.py` and `06d_excel_by_slide.py` now consume its output instead of
+re-deriving it; `plot_roi_figures.R` gains a positivity series; `05a_roi_geometry.py` archives
+the export it consumed; `05c_detect_rois.py` `--qc` implemented; new `tests/test_roi_dataset.py`.
+
+**The pipeline stopped one stage short of the thing the study is about.** `05c` had finished -
+883,077 nuclei over 128 sections - and `results/roi_measurements.csv` and
+`detector_specificity.csv` did not exist. 06a is the only stage that applies the positivity
+cut, measures the detector against the background discs and computes Abercrombie. It had never
+been run.
+
+06c and 06d did not read it. They re-aggregated `roi_nuclei.csv` themselves, with their own
+copy of the area and Abercrombie arithmetic, and emitted `n_nuclei` = **every DAPI nucleus**.
+So `roi_dataset.xlsx`, `roi_dataset_by_slide.xlsx` and all twenty PNGs were reporting **total
+nuclear density by treatment**. The pERK measurement sat unused in `roi_nuclei.csv`, one column
+away. Nothing was wrong with any individual number; the file simply did not answer the question.
+
+**06a re-scanned the whole table three times per section.** The cut filtered all 883k rows once
+per uid, h did the same per (marker, region), and `by_idx` once more per uid - a few hundred
+million comparisons. `06c` had already hit this and recorded what it cost: a rebuild that ran
+long enough to be killed part-written, leaving a 7 KB xlsx openpyxl could not reopen. Same fix,
+one pass building every index at once. **16 s** on the finished file, and the shape matters more
+than that figure, because PCNA is roughly six times this.
+
+### Two corrections to the docstring, one of them to a claim about a bug
+
+**The stated reason for the per-section cut was one the logs had already overturned.** The
+docstring justified it by a background level that "splits the animals into two groups 8,732
+units apart", citing a batch effect. Restricting to clip-free sections showed the two groups are
+the same - background 10,844 vs 12,300, tissue 5,542 vs 5,494 - and the 1.86x gap is *produced
+by* clipped pixels pinned at 65,535 dragging the mean up. Information loss, not a gain
+difference. The per-section cut stays; the reason is now section-to-section variation in a
+high-baseline marker.
+
+**The censored-nuclei rule looked like a bug and is correct.** 06a counts a censored nucleus as
+positive while excluding it from the intensity median, and that reads as an inconsistency.
+`04j_censor_clipped.py` states both halves outright: a censored pixel is right-censored *at the
+ceiling*, so it is unambiguously above any cut, and including a ceiling value in a median biases
+the statistic down. 04j also says why it matters - dropping them "would bias positive counts
+down in exactly the animals with the brightest staining". Left alone, with a comment naming 04j
+so the next reader does not fix it. Inert here in any case: **0 of 883,077 rows are censored.**
+
+### The two aggregations had drifted on h, and nothing compared them
+
+06a computes Abercrombie's h per **(marker, region)**, which is what
+`config.detection.abercrombie._h_source` declares. 06c computed it per **(animal, region)** and
+06d per **(slide, region)**. Adopting 06a moved `cells_per_mm2` by a median 1.7% and up to 10.7%.
+
+**That is not a rounding difference, because measured nuclear diameter is not the same in both
+arms.** Vl differs by 1.50 um between control and exercise, Vc by 0.99, Vs by 0.96. A per-animal
+h therefore made the correction factor vary with group, injecting up to **-6.6%** into the
+exercise-vs-control contrast in Vl and -1.6% on average across regions - which is exactly what
+`config._effect_on_the_comparison` warns about when it says the correction is only harmless "if
+h is similar between groups". Per (marker, region) keeps it a constant multiplier within a
+region, so it cannot manufacture a group difference.
+
+Worth stating plainly: **the physically more specific h is arguably the per-group one**, if that
+1.50 um is real biology rather than segmentation noise. That is a scientific call, not a coding
+one. The declared convention is what shipped; changing it is one line in 06a.
+
+`n_nuclei` and `total_tissue_area_mm2` are byte-identical across the refactor on all 67 by_roi
+and 96 by_slide rows - checked against the pre-refactor workbooks, which is why they were copied
+aside first.
+
+### What the background discs actually measured
+
+**False-positive rate: median 2.1%, range 0.0-8.0%, over 273,332 background nuclei.** Every one
+of the 130 sections had at least 5 background nuclei, so every one got a cut.
+
+The number that decides whether any of this is usable: **it is not group-correlated.** Control
+2.2%, exercise 2.0%, and no animal's median leaves the 1.7-3.0% band - LS105 lowest, LS45
+highest.
+
+Against that, pooled ROI positivity is **13.3%** against a pooled background of **2.2%**, a
+**5.9x** separation. (The median *per disc* is 7.4%; the pooled figure is the one to compare
+with the false-positive rate, since that is itself a pooled ratio.) Both are a much wider
+separation than the 1.23x ROI-vs-background *intensity* ratio suggested, because the cut is on a
+spread rather than a level.
+
+It remains a false-positive rate and not a negative control - the primary antibody is on the
+background tissue too - so absolute positivity rates are still not defensible. Relative
+comparisons between arms at matched levels are.
+
+### Positivity alongside density, never instead of it
+
+`n_positive`, `frac_positive` and `positive_cells_per_mm2` join the spreadsheets after the
+existing columns, and two new figure series - `positive_treatment/` and
+`positive_production_phase/` - join the two existing ones, which are unchanged and keep their
+folder names so nothing already cited moves. 40 PNGs where there were 20.
+
+Blank, not 0, wherever any disc behind a cell sat on a section with no cut: 0 reads as "looked
+and found none".
+
+**Both attempts to print the false-positive rate on the figures were silently clipped.** ggplot
+does not wrap a subtitle and `element_markdown` does not wrap a caption; each just runs off the
+panel edge. The note went to the subtitle first and vanished at the right margin, then to the
+caption as one 96-character line and vanished again. It is now two caption lines under 90
+characters each, broken on `<br>`. Both failures looked like a figure that had simply not been
+given the note.
+
+### Archiving the export found a stale box set
+
+`05a` took its ROIs from the newest `~/Downloads/roi_regions*.csv` and kept no record of which
+file that was. It now copies the export it used to `reformatted/roi_regions_used.csv` with a
+`.txt` beside it naming the path, its mtime, and what it produced.
+
+Doing that re-ran 05a, and the current export gives **130 sections and 2,069 discs** against the
+**128 and 2,036** the measurements were built from. The operator had curated two more sections
+after the last 05a run. Checked before trusting it, because a shifted `roi_index` would have
+silently re-pointed every measured disc: the new set is a strict superset - all 2,036 discs keep
+their index, kind, region and position, **0 misaligned**, and all 33 new discs are on the two new
+sections. `05c` then measured them, 12,471 nuclei.
+
+**894,601 nuclei over 130 of 130 sections.** The pERK pass really is complete now; it was 128 of
+130 against the curation that exists.
+
+### `--qc` did what its help text said
+
+It created `qc/roi_detections/` and wrote nothing into it - an empty directory that reads like a
+run which found nothing. It now writes one PNG per ROI: the DAPI crop with nucleus boundaries
+drawn on it, **green counted, red found inside the bounding box but outside the disc**.
+
+Boundaries rather than filled labels, because a fill hides the thing being judged. Drawing the
+rejects is the point - a box that is mostly red means the disc is small or misplaced relative to
+what was segmented, and no table shows that. Boundaries are computed with array shifts rather
+than `skimage.find_boundaries`, so the frozen build carries no new import.
+
+### Smaller things
+
+  * `run_app.bat` used the Python on PATH, which has no PySide6, and `lsapp-crash.log` was a
+    bare `ModuleNotFoundError` traceback. It now prefers `work/appenv` - the same 3.13 venv
+    `build_app.bat` freezes the exe from and `refresh_loop.bat` already used - and the ImportError
+    branch names the running interpreter and the fix instead of only the exception.
+  * `06e_refresh_loop.py` runs 06a at the head of every cycle. Without it a cycle would rebuild
+    the spreadsheets from the previous cycle's counts; 06c refuses a 06a that predates the nuclei
+    file rather than doing that quietly.
+  * `06c.main()` and `06d.main()` take an explicit argv. They parse their own, and 06e's flags
+    reach them through `sys.argv` - `--interval 1800` would have aborted the cycle with exit 2.
+  * `tests/test_roi_dataset.py`: the cut is a spread and not a percentile, a section one
+    background nucleus short of five gets blanks and not zeros, h excludes artifact nuclei, area
+    is the ellipse - and **06c's totals equal 06a's**, which is the regression that would have
+    caught the h drift.
+
+---
+
+## 2026-08-29 to 2026-08-31 - quantification, the datasets and the figures
+
+Not written up here at the time. The reasoning for this span is in the commit messages, which
+carry it in full - `git log 1eb2fdb..bd30e6a` - and this is an index rather than a second
+telling.
+
+  * **05a and 05c** (`0538f98`, `5a12a0c`): the curator's ROIs placed on the slide, then nuclei
+    segmented on DAPI with the marker measured inside each mask.
+  * **06a, 06b** (`5a12a0c`): the positivity cut and the Abercrombie correction, then the
+    unblinding join. Written, and - see above - not run until 2026-09-01.
+  * **Abercrombie** (`af82e53`, `10d9494`): sections are 14 um and consecutive, so what is
+    counted is profiles and neighbours double-count a boundary nucleus.
+  * **06c, 06d, 06e** (`5073714`, `6fa4063`, `64e73aa`): the spreadsheets, the per-slide level,
+    and the hourly rebuild with a stall detector.
+  * **The figures** (`6b6d73f`, `f7fe3b6`, `ed5374f`, `bd30e6a`): one measure and one level;
+    points became sections rather than slides after keying by slide reduced Dm's sea-control
+    group to a single point; a singular fit says what it means because four of ten ROIs are in
+    that state; Tukey letters are drawn only when they separate something, and the caption says
+    so when they do not.
+  * **Shotgun by region** (`0524cfc` and the working tree): the favourites as a PowerPoint,
+    split by treatment, cut by plate or by atlas region.
+
+---
+
 ## 2026-08-13 - The atlas was 101 fragments, not 101 plates. Rebuilt to 68 real plates.
 
 **Changed:** three new scripts - `04a2_atlas_remerge.py`, `04a3_plate_reframe.py`,
