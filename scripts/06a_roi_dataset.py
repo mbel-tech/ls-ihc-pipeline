@@ -7,12 +7,20 @@ tissue the operator judged to carry no real signal - give a robust upper bound:
 
     cut = median(background) + 3 * 1.4826 * MAD(background)
 
-Per section, because the recorded background level splits the animals into two
-groups 8,732 units apart (LOGS.md 2026-08-12) and a single global cut would put
-that batch effect straight into the counts. Robust rather than a percentile,
-and this is the point: a percentile would fix the false-positive rate by
-construction and destroy the only independent check available. With a spread
-based cut, how many background nuclei land above it is a MEASUREMENT.
+Per section, because this is a high-baseline marker and the background level
+moves from section to section. **The earlier reason given here was wrong and is
+corrected:** it claimed the background level "splits the animals into two groups
+8,732 units apart" and called that a staining batch effect. LOGS.md later
+overturned that reading - restricted to clip-free sections the two groups are
+the same (background 10,844 vs 12,300; tissue 5,542 vs 5,494), and the 1.86x gap
+is *produced by* clipped pixels pinned at 65,535 dragging the mean up. That is
+information loss, not a gain difference. The per-section cut is still the right
+choice; the reason is section-to-section variation, not two batches.
+
+Robust rather than a percentile, and this is the point: a percentile would fix
+the false-positive rate by construction and destroy the only independent check
+available. With a spread based cut, how many background nuclei land above it is
+a MEASUREMENT.
 
 **What the background discs then report.** The same detector over tissue called
 empty is a false-positive rate, per section and per animal. It is not a negative
@@ -34,6 +42,7 @@ Writes, all still keyed by animal only:
 Run:  python 06a_roi_dataset.py
 """
 
+import collections
 import csv
 import importlib.util
 import os
@@ -98,12 +107,36 @@ def main():
     # brightest-staining animals (LOGS.md 2026-08-12).
     nuc = [r for r in nuc if not r["_art"]]
 
+    # ONE PASS over the nuclei, building every index at once.
+    #
+    # This used to re-scan the whole table for each of three things: the cut
+    # filtered all of it per section, h did the same per (marker, region), and
+    # by_idx did it once more per section. At 883,078 nuclei that is hundreds of
+    # millions of comparisons. 06c_excel_dataset.py already hit exactly this and
+    # records what it cost - a rebuild that ran long enough to be killed
+    # part-written, leaving an xlsx openpyxl could not reopen. PCNA is roughly
+    # six times this file, so the shape matters more than the current runtime.
+    bg_by = collections.defaultdict(list)      # uid -> background values
+    by_idx = collections.defaultdict(list)     # (uid, roi_index) -> nuclei
+    diam_by = collections.defaultdict(list)    # (marker, region) -> diameters
+    uids, d_all = set(), []
+    for r in nuc:
+        uid = r["scene_uid"]
+        uids.add(uid)
+        d_all.append(r["_d"])
+        # roi_index is what ties a nucleus to the disc it was found in - 05c
+        # numbers the discs in the order roi_boxes.csv lists them for a section,
+        # and the emit loop below enumerates the same list in the same order.
+        by_idx[(uid, int(r["roi_index"]))].append(r)
+        if r["roi_kind"] == "background":
+            if not r["_cen"]:
+                bg_by[uid].append(r["_v"])
+        else:
+            diam_by[(r["marker"], r["region"])].append(r["_d"])
+
     # ---- the per-section cut, from that section's own background discs
     cuts, bgstat = {}, {}
-    for uid in sorted({r["scene_uid"] for r in nuc}):
-        bg = [r["_v"] for r in nuc
-              if r["scene_uid"] == uid and r["roi_kind"] == "background"
-              and not r["_cen"]]
+    for uid, bg in bg_by.items():
         if len(bg) < 5:
             continue
         m, s = st.median(bg), mad(bg) * 1.4826
@@ -111,30 +144,25 @@ def main():
         bgstat[uid] = (m, s, len(bg))
 
     # ---- h for Abercrombie, measured per region and marker
-    hs = {}
-    for key in {(r["marker"], r["region"]) for r in nuc if r["roi_kind"] == "roi"}:
-        d = [r["_d"] for r in nuc
-             if r["roi_kind"] == "roi" and (r["marker"], r["region"]) == key]
-        if d:
-            hs[key] = st.mean(d)
-    h_all = st.mean([r["_d"] for r in nuc]) if nuc else 0.0
+    hs = {k: st.mean(v) for k, v in diam_by.items() if v}
+    h_all = st.mean(d_all) if d_all else 0.0
 
     rows, spec = [], []
-    for uid in sorted({r["scene_uid"] for r in nuc}):
+    for uid in sorted(uids):
         cut = cuts.get(uid)
-        # roi_index is what ties a nucleus to the disc it was found in - 05c
-        # numbers the discs in the order roi_boxes.csv lists them for a section,
-        # and this enumerates the same list in the same order.
-        by_idx = {}
-        for r in nuc:
-            if r["scene_uid"] != uid:
-                continue
-            by_idx.setdefault(int(r["roi_index"]), []).append(r)
         for i, b in enumerate(box_by.get(uid, []), 1):
-            here = by_idx.get(i, [])
+            here = by_idx.get((uid, i), [])
             area = roi_area_um2(b)
             n_nuc = len(here)
             usable = [r for r in here if not r["_cen"]]
+            # A censored nucleus counts as POSITIVE and is still dropped from
+            # `usable`. That is not an inconsistency: 04j_censor_clipped.py
+            # defines a censored pixel as right-censored at the 16-bit ceiling,
+            # so it is unambiguously above any cut, while including a ceiling
+            # value in a median would bias the intensity statistic. 04j states
+            # both halves outright - censoring "MUST NOT be excluded from
+            # detection or from positivity" and MUST be excluded from any
+            # intensity statistic. Do not "fix" this to drop them.
             n_pos = (sum(1 for r in here if r["_cen"] or r["_v"] > cut)
                      if cut is not None else "")
             h = hs.get((b["marker"], b["region"]), h_all)

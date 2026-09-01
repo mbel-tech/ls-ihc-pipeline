@@ -53,44 +53,51 @@ def slide_of(uid):
     return f"{m['animal']}_s{m['slide']}{m['variant']}"
 
 
-def group_rows(nuc, live, keyfn, keyname, groups, envs):
+def group_rows(meas, keyfn, keyname, groups, envs):
     """One row per (key, region), where key is a slide or a section.
 
     `keyfn` maps a scene_uid to whatever the row is keyed by, so the slide and
     section tables are the same code at two granularities - the alternative was
     two nearly-identical loops that could drift.
+
+    Takes 06a's per-ROI rows, not the raw nuclei. h and the Abercrombie factor
+    are 06a's per-(marker, region) values and are NOT recomputed per slide: a
+    slide carries a handful of discs, so a per-slide h would be a mean over a
+    few hundred nuclei and would make the correction vary with sampling noise
+    from row to row. See config.detection.abercrombie._h_source.
     """
-    n_by, a_by, d_by, sec_by = (collections.Counter(), collections.Counter(),
-                                collections.Counter(), collections.defaultdict(set))
-    for r in nuc:
+    n_by, a_by, d_by = (collections.Counter(), collections.Counter(),
+                        collections.Counter())
+    p_by, pos_known = collections.Counter(), collections.Counter()
+    sec_by = collections.defaultdict(set)
+    h_by, ab_by, animal_of = {}, {}, {}
+    for r in meas:
         if r["roi_kind"] != "roi":
             continue
-        n_by[(keyfn(r["scene_uid"]), r["region"])] += 1
-        sec_by[(keyfn(r["scene_uid"]), r["region"])].add(r["scene_uid"])
-    for b in live:
-        if b["roi_kind"] != "roi":
-            continue
-        k = (keyfn(b["scene_uid"]), b["region"])
-        a_by[k] += G6C.disc_area_mm2(b)
+        k = (keyfn(r["scene_uid"]), r["region"])
+        n_by[k] += int(r["n_nuclei"])
+        a_by[k] += float(r["roi_area_mm2"])
         d_by[k] += 1
-
-    diam = collections.defaultdict(list)
-    for r in nuc:
-        if r["roi_kind"] == "roi":
-            diam[(keyfn(r["scene_uid"]), r["region"])].append(float(r["equiv_diam_um"]))
-
-    animal_of = {}
-    for b in live:
-        animal_of[keyfn(b["scene_uid"])] = b["animal"]
+        sec_by[k].add(r["scene_uid"])
+        if r["n_positive"] not in ("", None):
+            p_by[k] += int(r["n_positive"])
+            pos_known[k] += 1
+        h_by[k] = float(r["mean_nucleus_diam_um"]) if r["mean_nucleus_diam_um"] else None
+        ab_by[k] = float(r["abercrombie_factor"]) if r["abercrombie_factor"] else 1.0
+        animal_of[keyfn(r["scene_uid"])] = r["animal"]
 
     out = []
     for key in sorted(a_by):
         k, rg = key
         n = n_by.get(key, 0)
         area = a_by[key]
-        h = st.mean(diam[key]) if diam.get(key) else None
-        ab = (T_UM / (T_UM + h)) if (AB_ON and h) else 1.0
+        h = h_by.get(key)
+        ab = ab_by.get(key) or 1.0
         an = animal_of.get(k, "")
+        # Blank, not 0, where any disc behind the row sat on a section with no
+        # positivity cut - 0 would read as "looked and found none".
+        full = pos_known[key] == d_by[key]
+        npos = p_by[key] if full else ""
         out.append({
             "n_nuclei": n,
             "ROI": rg,
@@ -99,6 +106,10 @@ def group_rows(nuc, live, keyfn, keyname, groups, envs):
             "treatment": groups.get(an, ""),
             "environment": envs.get(an, ""),
             "total_tissue_area_mm2": round(area, 6),
+            "n_positive": npos,
+            "frac_positive": round(npos / n, 4) if (full and n) else "",
+            "positive_cells_per_mm2": (round(npos * ab / area, 1)
+                                       if (full and area) else ""),
             "n_discs": d_by[key],
             "n_sections": len(sec_by.get(key, ())),
             "profiles_per_mm2": round(n / area, 1) if area else "",
@@ -109,32 +120,33 @@ def group_rows(nuc, live, keyfn, keyname, groups, envs):
     return out
 
 
-def main():
+def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default=XLSX)
-    args = ap.parse_args()
+    # argv is passed explicitly by 06e_refresh_loop, whose own flags would
+    # otherwise reach this parser and abort the cycle.
+    args = ap.parse_args(argv)
 
-    if not os.path.exists(G6C.NUCLEI_CSV):
-        print(f"no {G6C.NUCLEI_CSV} yet - run 05c_detect_rois.py first")
+    if not os.path.exists(G6C.MEAS_CSV):
+        print(f"no {G6C.MEAS_CSV} - run 06a_roi_dataset.py first")
         return 1
 
-    nuc = G5.load_csv(G6C.NUCLEI_CSV)
+    meas = G5.load_csv(G6C.MEAS_CSV)
     boxes = G5.load_csv(G5.BOX_CSV)
     groups = (CONFIG.get("groups") or {}).get("by_animal") or {}
     envs = G6C.animal_environment()
 
-    measured = {r["scene_uid"] for r in nuc}
+    # 06a emits rows only for measured sections, and only for discs on them, so
+    # the "partial count divided by a complete area" rule 06c states is already
+    # enforced upstream - there is no `live` filter to apply here any more.
+    measured = {r["scene_uid"] for r in meas}
     planned = {b["scene_uid"] for b in boxes}
+    n_total = sum(int(r["n_nuclei"]) for r in meas)
     print(f"{len(measured)} of {len(planned)} sections measured "
-          f"({100*len(measured)/len(planned):.0f}%), {len(nuc)} nuclei")
+          f"({100*len(measured)/len(planned):.0f}%), {n_total} nuclei")
 
-    nuc = [r for r in nuc if r["artifact"] != "1"]
-    # Only discs on measured sections contribute area, or a partial count would
-    # be divided by a complete area. Same rule as 06c.
-    live = [b for b in boxes if b["scene_uid"] in measured]
-
-    by_slide = group_rows(nuc, live, slide_of, "slide", groups, envs)
-    by_section = group_rows(nuc, live, lambda u: u, "scene_uid", groups, envs)
+    by_slide = group_rows(meas, slide_of, "slide", groups, envs)
+    by_section = group_rows(meas, lambda u: u, "scene_uid", groups, envs)
 
     coverage = []
     for sl in sorted({slide_of(b["scene_uid"]) for b in boxes}):

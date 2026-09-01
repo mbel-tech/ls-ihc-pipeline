@@ -41,6 +41,7 @@ def _load(name, filename):
 
 
 G5 = _load("_g5", "05a_roi_geometry.py")
+G6A = _load("_g6a", "06a_roi_dataset.py")
 G6C = _load("_g6c", "06c_excel_dataset.py")
 G6D = _load("_g6d", "06d_excel_by_slide.py")
 
@@ -84,11 +85,27 @@ def progress():
 
 
 def refresh(rscript, quiet=True):
-    """One pass: both datasets, then the figures."""
-    for label, mod in (("per sample", G6C), ("per slide", G6D)):
-        rc = mod.main()
+    """One pass: 06a, both datasets, then the figures.
+
+    06a runs FIRST and every cycle. It owns the per-ROI numbers - the positivity
+    cut, the Abercrombie factor, the disc areas - and 06c/06d only group and
+    format them, so a cycle that skipped it would rebuild the spreadsheets from
+    the previous cycle's counts while detection had moved on. 06c refuses to run
+    against a 06a that predates the nuclei file rather than doing that quietly,
+    which would turn this loop into a stream of identical failures instead of
+    stale numbers; either way the fix is to run 06a here.
+
+    It costs about 16 s on the finished pERK file, against hours for detection.
+
+    `main([])` rather than `main()`: these parse their own argv, and this
+    process's argv carries 06e's flags - so `--interval 1800` would reach 06c's
+    parser and abort the cycle with exit 2.
+    """
+    for label, mod in (("measurements", G6A), ("per sample", G6C),
+                       ("per slide", G6D)):
+        rc = mod.main([]) if label != "measurements" else mod.main()
         if rc:
-            print(f"  {label} dataset FAILED (exit {rc})")
+            print(f"  {label} FAILED (exit {rc})")
             return False
     r = subprocess.run([rscript, R_SCRIPT], cwd=_REPO,
                        capture_output=quiet, text=True)

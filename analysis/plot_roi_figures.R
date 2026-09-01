@@ -1,20 +1,29 @@
-# Per-ROI density figures, with statistics, plus a PowerPoint of the lot.
+# Per-ROI figures, with statistics, plus a PowerPoint of the lot.
 #
-# Writes two series into results/ROI_plots/, one PNG per ROI in each:
+# Writes FOUR series into results/ROI_plots/, one PNG per ROI in each - two
+# grouping series x two measures:
 #
-#   treatment/         control vs exercise
-#   production_phase/  brackish control | brackish exercise,
-#                      sea control | sea exercise
+#   treatment/                   density, control vs exercise
+#   production_phase/            density, brackish/sea x control/exercise
+#   positive_treatment/          pERK-positive, control vs exercise
+#   positive_production_phase/   pERK-positive, the four groups
 #
 # The grouping factor is still called `environment` in the data - renaming that
 # column would ripple through 06b, 06c, 06d and every model formula - but every
 # label a reader sees says PRODUCTION PHASE.
 #
-# ONE measure and ONE level. The y value is `cells_per_mm2` - Abercrombie
-# corrected - and every point is a SLIDE. The raw counts/area layer and the
-# per-sample panel were both dropped: two scatters of one hue at different
-# opacity, doubled across two panels, was four clouds per group to read before
-# the reader got to the statistics.
+# TWO MEASURES, ONE LEVEL. `cells_per_mm2` is every DAPI nucleus;
+# `positive_cells_per_mm2` is the subset over that section's own cut. Both are
+# Abercrombie-corrected, both come from 06a via 06d, and every point is a
+# SECTION. Positivity is drawn ALONGSIDE density, never instead of it: with no
+# no-primary control and no tERK channel an absolute positivity rate is not a
+# claim these data support, so the density series has to stay readable on its
+# own. The false-positive rate the background discs measured is printed in the
+# caption of every positivity figure for the same reason.
+#
+# The raw counts/area layer and the per-sample panel were both dropped: two
+# scatters of one hue at different opacity, doubled across two panels, was four
+# clouds per group to read before the reader got to the statistics.
 #
 # Sections are consecutive at 14 um, so a nucleus cut by the boundary appears in
 # both and pooling raw counts across sections counts it twice. The correction is
@@ -48,11 +57,48 @@ library(ggtext)
 
 results <- if (length(args) >= 1) args[1] else RESULTS_DEFAULT
 outdir <- file.path(results, "ROI_plots")
-dirs <- list(treatment = file.path(outdir, "treatment"),
-             phase = file.path(outdir, "production_phase"))
 PPTX <- file.path(results, "ROI_figures.pptx")
 
-VALUE <- "cells_per_mm2"          # Abercrombie-corrected density
+# TWO MEASURES, each drawn as the same two series. Density is every DAPI
+# nucleus; positivity is the subset over that section's own cut.
+#
+# Positivity is added ALONGSIDE density, never in place of it. There is no
+# no-primary control and no tERK channel in this dataset, so an absolute
+# positivity rate is not a claim these data support - what is supported is the
+# comparison between arms at matched levels, because the non-specific component
+# is shared. The density figures stand unchanged; the existing folder names are
+# kept so nothing already cited moves.
+MEASURES <- list(
+  list(key = "density", value = "cells_per_mm2",
+       ylab = expression(density~(cells~per~mm^2)),
+       treatment = file.path(outdir, "treatment"),
+       phase = file.path(outdir, "production_phase"),
+       note = "Abercrombie-corrected", cap = NULL),
+  list(key = "positive", value = "positive_cells_per_mm2",
+       ylab = expression(pERK*"-positive"~(cells~per~mm^2)),
+       treatment = file.path(outdir, "positive_treatment"),
+       phase = file.path(outdir, "positive_production_phase"),
+       note = "Abercrombie-corrected",
+       cap = "positivity cut per section from its own background discs")
+)
+dirs <- unlist(lapply(MEASURES, function(m) c(m$treatment, m$phase)))
+
+# The false-positive rate the background discs measured, quoted on every
+# positivity figure. Without it a positivity number reads as absolute, which is
+# exactly the reading these data do not support. Median over sections.
+SPEC <- file.path(results, "detector_specificity.csv")
+fp_note <- ""
+if (file.exists(SPEC)) {
+  sp <- utils::read.csv(SPEC, stringsAsFactors = FALSE)
+  fr <- suppressWarnings(as.numeric(sp$false_positive_rate))
+  fr <- fr[is.finite(fr)]
+  if (length(fr)) fp_note <- sprintf(
+    "detector false-positives on background discs: median %.1f%% (range %.1f-%.1f%%, n=%d)",
+    100 * median(fr), 100 * min(fr), 100 * max(fr), length(fr))
+} else {
+  message("  no detector_specificity.csv - run 06a_roi_dataset.py; ",
+          "positivity figures will carry no false-positive rate")
+}
 
 # All 8 Rm seeds are flagged uncertain in the atlas itself (LOGS.md), so a
 # figure of it would look exactly like the others and mean less. Dropped from
@@ -112,12 +158,16 @@ slide$group4 <- factor(paste(slide$environment, slide$treatment), levels = GROUP
 slide$sample <- factor(slide$sample,
                        levels = unique(slide$sample[order(
                          as.numeric(sub("^LS", "", slide$sample)))]))
-slide$value <- suppressWarnings(as.numeric(slide[[VALUE]]))
-slide <- slide[is.finite(slide$value), ]
+for (m in MEASURES) {
+  if (!m$value %in% names(slide)) {
+    stop(sprintf("no column '%s' in by_section - rebuild the datasets:\n%s",
+                 m$value,
+                 "  python scripts/06a_roi_dataset.py && python scripts/06c_excel_dataset.py && python scripts/06d_excel_by_slide.py"))
+  }
+}
 
 message(sprintf("  %d sections, %d animals, %d ROIs", nrow(slide),
                 nlevels(droplevels(slide$sample)), nlevels(slide$ROI)))
-report_n(slide, "one point = one section")
 
 for (d in dirs) dir.create(d, showWarnings = FALSE, recursive = TRUE)
 # Sweep the PARENT too, not just the two series folders. An earlier layout wrote
@@ -204,10 +254,27 @@ shape_scale <- scale_shape_manual(
                        override.aes = list(size = 3.6, colour = "grey20",
                                            fill = "grey60")))
 
-message(sprintf("\n  writing %d ROIs x 2 series", nlevels(slide$ROI)))
+message(sprintf("\n  writing %d ROIs x 2 series x %d measures",
+                nlevels(slide$ROI), length(MEASURES)))
 
-for (roi in levels(slide$ROI)) {
-  d <- slide[slide$ROI == roi, ]
+# The measure loop is OUTSIDE the ROI loop, so `value` is set once per measure
+# and every figure in a series is drawn from the same column. Rows with no value
+# for that measure drop HERE and not globally: a section that has a density but
+# no positivity - no cut could be formed on it - must still appear in the
+# density figures.
+for (M in MEASURES) {
+  slide_m <- slide
+  slide_m$value <- suppressWarnings(as.numeric(slide_m[[M$value]]))
+  slide_m <- slide_m[is.finite(slide_m$value), ]
+  if (!nrow(slide_m)) {
+    message(sprintf("  %s: no rows carry a value, series skipped", M$key))
+    next
+  }
+  message(sprintf("  %s: %d sections", M$key, nrow(slide_m)))
+  report_n(slide_m, sprintf("one point = one section (%s)", M$key))
+
+for (roi in levels(slide_m$ROI)) {
+  d <- slide_m[slide_m$ROI == roi, ]
   if (!nrow(d)) next
   d$environment <- droplevels(d$environment)
   # sample keeps ALL its levels so the shape scale stays identical across
@@ -259,8 +326,21 @@ for (roi in levels(slide$ROI)) {
     # clip="off" lets the (N=x) annotation sit outside the panel, between the
     # axis line and the group name.
     coord_cartesian(clip = "off"),
-    labs(x = NULL, y = expression(density~(cells~per~mm^2)), title = roi),
+    labs(x = NULL, y = M$ylab, title = roi),
     base_theme)
+
+  # The false-positive rate belongs on the positivity figures and nowhere else.
+  # The subtitle is ONE unwrapped line and ggplot will not break it - a long
+  # one is silently clipped at the panel edge, which is how the false-positive
+  # rate disappeared off the right of every positivity figure the first time.
+  # Anything longer than a clause goes in the caption, which is markdown and
+  # breaks on <br>.
+  sub_note <- paste0(M$note, "; one point per section, shape = animal")
+  # Two SEPARATE caption lines, not one joined string. element_markdown wraps
+  # on <br> and on nothing else, so a single line carrying both notes came to
+  # ~96 characters and ran off the right of the panel - the same clipping that
+  # hid this note when it lived in the subtitle. Each line stays under ~90.
+  cap_note <- if (is.null(M$cap)) NULL else c(M$cap, fp_note)
 
   # ---- series 1: treatment ------------------------------------------------
   st1 <- stat_treatment(d)
@@ -274,12 +354,12 @@ for (roi in levels(slide$ROI)) {
               colour = "grey25") +
     scale_x_discrete(labels = axis_labeller) +
     common +
-    labs(subtitle = "Abercrombie-corrected; one point per section, shape = animal",
-         caption = st1$caption)
+    labs(subtitle = sub_note,
+         caption = paste(c(st1$caption, cap_note), collapse = "<br>"))
   # Two scatters, so a letter pair would only ever read "a / b" - which says
   # nothing a single mark does not. The asterisk goes on the HIGHER group.
   p1 <- p1 + star_layer(d, "treatment", st1$p, top)
-  ggsave(file.path(dirs$treatment, paste0(safe_name(roi), ".png")), p1,
+  ggsave(file.path(M$treatment, paste0(safe_name(roi), ".png")), p1,
          width = 9.5, height = 8.0, dpi = 200, bg = "white")
 
   # ---- series 2: the four groups -----------------------------------------
@@ -310,9 +390,9 @@ for (roi in levels(slide$ROI)) {
     scale_x_discrete(drop = FALSE, labels = axis_labeller) +
     common +
     labs(subtitle = paste0(
-           "Abercrombie-corrected; one point per section, shape = animal",
+           sub_note,
            if (letters_shown) "; letters share = not different (Tukey)" else ""),
-         caption = paste(c(st4$caption, tukey_note,
+         caption = paste(c(st4$caption, tukey_note, cap_note,
                            "production phase is confounded with timepoint: brackish = tp1, sea = tp2"),
                          collapse = "<br>"))
 
@@ -328,8 +408,9 @@ for (roi in levels(slide$ROI)) {
                          fontface = "bold", colour = "black") +
       expand_limits(y = top * 1.18)
   }
-  ggsave(file.path(dirs$phase, paste0(safe_name(roi), ".png")), p2,
+  ggsave(file.path(M$phase, paste0(safe_name(roi), ".png")), p2,
          width = 12.0, height = 8.4, dpi = 200, bg = "white")
+}
 }
 
 pngs <- unlist(lapply(dirs, list.files, pattern = "\\.png$", full.names = TRUE))
