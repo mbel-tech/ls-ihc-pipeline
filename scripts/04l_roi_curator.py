@@ -248,8 +248,8 @@ PROV_FIELDS = [
     "scene_index", "status", "decision", "exclusion_class", "decision_reason",
     "proposed_excluded", "tissue_area_mm2", "focus_score", "largest_mm2",
     "n_artifact_objects", "artifact_pct_of_tissue", "in_analysis_set",
-    "censor_reason", "has_overview", "has_section", "has_mask", "n_rois",
-    "n_nuclei",
+    "censored_fraction_in_tissue", "censor_reason",
+    "has_overview", "has_section", "has_mask", "n_rois", "n_nuclei",
 ]
 
 # Columns whose values repeat across thousands of rows. "manually excluded:
@@ -507,22 +507,16 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
 #revImg{width:100%;border:1px solid var(--line);border-radius:4px;background:#000;
         display:block;aspect-ratio:1;object-fit:contain}
 #revImgWrap{position:relative}
-/* The mask is 0 clean / 1 compact / 2 elongated - VALUES, not 0-255 - so it is
-   very nearly black and shows nothing without amplification. brightness(255)
-   takes 1 to 255 and 2 past it, leaving 0 at 0, which turns it into the stencil
-   the two states below need. Done in CSS rather than by reading the bitmap:
-   getImageData taints on a file:// page, and that is the trap this page was
-   already written to avoid. */
-#revMask{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;
-         pointer-events:none;display:none}
-/* MASKED: invert the amplified stencil - artifact white->black, clean
-   black->white - and multiply. Artifact pixels go black, everything else is
-   untouched. That is what 04a does to the pixels, in the frame they live in. */
-#revImgWrap.masked #revMask{display:block;mix-blend-mode:multiply;
-         filter:brightness(255) invert(1)}
-/* OVERLAY: the same stencil, tinted red and screened on top. */
-#revImgWrap.overlay #revMask{display:block;mix-blend-mode:screen;
-         filter:brightness(255) sepia(1) saturate(14) hue-rotate(-42deg)}
+/* THE OVERLAYS ARE DRAWN, NOT BLENDED.
+   The first version stacked the mask PNGs with mix-blend-mode. `screen` is
+   invisible over bright tissue - and artifacts are BY DEFINITION the brightest
+   pixels in the section, so it failed exactly where it was needed. `multiply`
+   has the mirrored problem on dark background. No blend mode reads on both.
+   So the two masks are now image SOURCES only, kept in the DOM so the browser
+   loads and caches them, and a canvas composites them at a fixed opacity.
+   Still no getImageData anywhere - that taints on a file:// page. */
+#revMask,#revCensor{display:none}
+#revOv{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
 .revChain{font:11px ui-monospace,monospace;line-height:1.5}
 .revChain .st{display:flex;gap:6px;padding:3px 0;border-bottom:1px solid #1b1f26}
 .revChain .st b{flex:0 0 96px;color:var(--dim);font-weight:600}
@@ -577,16 +571,43 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
   </span>
   </span>
 </header>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <!-- LUMINANCE -> ALPHA. Canvas compositing reads alpha, and a greyscale mask
+       PNG is opaque everywhere, so `source-in` kept the fill across the whole
+       rectangle rather than only where the mask was set. This matrix copies the
+       red channel into RGB and into A, which makes the stencil's alpha mean what
+       its brightness means. sRGB so the values are not linearised first. -->
+  <filter id="revLumAlpha" color-interpolation-filters="sRGB">
+    <feColorMatrix type="matrix" values="1 0 0 0 0  1 0 0 0 0  1 0 0 0 0  1 0 0 0 0"/>
+  </filter>
+</defs></svg>
 <div id="review">
   <div id="revGrid"></div>
   <div id="revSide">
     <div class="card"><h3 id="revTitle">SECTION REVIEW</h3>
-      <div class="kv" id="revHint">pick a section on the left</div></div>
+      <div class="kv" id="revHint">pick a section on the left</div>
+      <div class="deliver" style="margin-top:5px">
+        <button class="btn-edit" onclick="revStep(-1)" title="Previous section (up arrow)">&lsaquo;</button>
+        <span class="kv" id="revPos" style="flex:1 1 auto;text-align:center">-</span>
+        <button class="btn-edit" onclick="revStep(1)" title="Next section (down arrow)">&rsaquo;</button>
+      </div>
+      <select id="revFilter" onchange="revRender(); this.blur()" style="width:100%;margin-top:5px">
+        <option value="all">every scanned section</option>
+        <option value="excluded">excluded only - what the pipeline threw out</option>
+        <option value="analysis">in the analysis only</option>
+        <option value="measured">measured only</option>
+        <option value="masked">has an artifact mask</option>
+      </select></div>
     <div class="card"><h3 id="revImgH">IMAGE</h3>
-      <div id="revImgWrap"><img id="revImg" alt=""><img id="revMask" alt=""></div>
+      <div id="revImgWrap"><img id="revImg" alt=""><img id="revMask" alt="">
+        <img id="revCensor" alt=""><canvas id="revOv"></canvas></div>
       <div class="kv" id="revImgNote" style="margin-top:4px"></div>
-      <button class="btn-plate" onclick="cycleRevImg()" style="margin-top:4px">
-        Masked / unmasked / overlay <kbd>m</kbd></button></div>
+      <div class="deliver" style="flex-wrap:wrap;margin-top:4px">
+        <button id="revDapiBtn" class="btn-plate" onclick="revLayer('dapi')">DAPI</button>
+        <button id="revArtBtn" class="btn-rot" onclick="revLayer('art')">Artifacts</button>
+        <button id="revCenBtn" class="btn-kill" onclick="revLayer('cen')">Censored</button>
+        <button id="revApplyBtn" class="btn-excl" onclick="revLayer('apply')">Apply mask</button>
+      </div></div>
     <div class="card"><h3>WHAT EACH STAGE DECIDED</h3>
       <div class="revChain" id="revChain"></div></div>
     <div class="card"><h3>YOUR DECISION</h3>
@@ -651,8 +672,11 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
   measured by the same detector, so it reports the false-positive rate here
   (it takes no seed number and does not move the guided cursor) &middot;
   <kbd>Review</kbd> every scanned section and what each stage decided about it -
-  reinstate one the pipeline excluded, or reject its artifact mask;
-  <kbd>m</kbd> there cycles masked / unmasked / mask in red &middot;
+  reinstate one the pipeline excluded, or reject its artifact mask. There,
+  <kbd>&uarr;</kbd>/<kbd>&darr;</kbd> step one section at a time through whatever
+  the filter shows (including the excluded ones), and the layers are independent:
+  <kbd>d</kbd> DAPI on/off, <kbd>v</kbd> artifacts in red, <kbd>c</kbd> censored
+  pixels in cyan, <kbd>m</kbd> apply the mask to see what 04a removed &middot;
   <kbd>[</kbd><kbd>]</kbd> ROI size (or drag as you place one) &middot;
   3 pairs for an affine, 6 for a spline &middot;
   <span style="color:#7c5cff">purple</span> = registered &middot;
@@ -1841,7 +1865,12 @@ addEventListener("keydown", e=>{
   // upstream decisions would be a silent edit to work the operator is not
   // looking at.
   if(revOn){
-    if(e.key==="m" || e.key==="M"){ cycleRevImg(); e.preventDefault(); }
+    if(e.key==="ArrowDown"){ revStep(1); e.preventDefault(); }
+    else if(e.key==="ArrowUp"){ revStep(-1); e.preventDefault(); }
+    else if(e.key==="d" || e.key==="D"){ revLayer("dapi"); }
+    else if(e.key==="v" || e.key==="V"){ revLayer("art"); }
+    else if(e.key==="c" || e.key==="C"){ revLayer("cen"); }
+    else if(e.key==="m" || e.key==="M"){ revLayer("apply"); }
     return;
   }
   if(!active) return;
@@ -2642,15 +2671,99 @@ const P_BY = Object.fromEntries(PROWS.map(p => [p.scene_uid, p]));
 // which is the part that cannot be derived, and writes the same paths from the
 // same rule; if one of these moves, both move.
 function revSrc(p, what){
-  if(what === "overview")
-    return p.has_overview ? `../overviews/${p.animal}/${p.marker}/${p.scene_uid}_RGB.png` : "";
+  const ov = k => `../overviews/${p.animal}/${p.marker}/${p.scene_uid}_${k}.png`;
+  // RGB is DAPI + marker together; MARK is the marker alone. Both exist for
+  // every scanned section, so "remove DAPI" is a different file rather than a
+  // composite that would have to be built - and it is exact, not approximated.
+  if(what === "overview") return p.has_overview ? ov(REV.dapi ? "RGB" : "MARK") : "";
+  if(what === "dapi")     return p.has_overview ? ov("DAPI") : "";
   if(what === "section")
     return p.has_section
       ? `sections${p.marker === "AF568" ? "_AF568" : ""}/${p.scene_uid}.png` : "";
+  if(what === "censor")   return `../censor/${p.scene_uid}_censor.png`;
   return p.has_mask ? `../artifacts/${p.scene_uid}_artifact.png` : "";
 }
 
-let revOn = false, revSel = null, revImgMode = 0;   // 0 masked, 1 unmasked, 2 overlay
+// Independent layers, not a cycle.
+//
+// This started as one button cycling masked -> unmasked -> overlay, which is
+// fine for answering "what did the mask remove" and useless for anything else:
+// you cannot see the artifacts and the censored pixels at once, and you cannot
+// take DAPI off to look at the marker alone. Four switches say what is on
+// screen at all times, which a three-state cycle never does.
+const REV = {dapi: true, art: false, cen: false, apply: false};
+
+function revLayer(k){
+  REV[k] = !REV[k];
+  revImg();
+}
+
+// Composite the masks onto a canvas over the section.
+//
+// Each mask is drawn through an offscreen pass: brightness(255) turns the
+// artifact mask's 0/1/2 into a 0/255 stencil (the censor mask is already 0/255
+// and is unharmed by it), then `source-in` fills the stencil with a flat colour
+// and leaves everything else transparent. The result composites at a fixed
+// alpha, so it reads over bright tissue and dark background alike.
+//
+// RED is an artifact, CYAN is a censored pixel, and they must not look alike:
+// they mean opposite things. An artifact LEAVES the analysis; a censored pixel
+// STAYS in the count and is positive by construction (04j).
+//
+// "Apply mask" is the other direction - paint the artifact black, which is what
+// 04a does to the pixels - so it draws opaque instead of tinted.
+function drawRevOverlays(p, hasCen){
+  const c = el("revOv"), base = el("revImg");
+  const W = c.clientWidth, H = c.clientHeight;
+  if(!W || !H) return;
+  c.width = W; c.height = H;
+  const x = c.getContext("2d");
+  x.clearRect(0, 0, W, H);
+  const nw = base.naturalWidth, nh = base.naturalHeight;
+  if(!nw || !nh) return;
+
+  // Undo object-fit:contain. The element box is not the drawn area - the same
+  // trap the ROI curator's click mapping had to solve - so the masks are placed
+  // in the letterboxed rect the base image actually occupies, not the box.
+  const k = Math.min(W / nw, H / nh);
+  const dw = nw * k, dh = nh * k, dx = (W - dw) / 2, dy = (H - dh) / 2;
+
+  const layer = (img, colour, alpha) => {
+    if(!img || !img.naturalWidth) return;
+    const t = document.createElement("canvas");
+    t.width = Math.round(dw); t.height = Math.round(dh);
+    const g = t.getContext("2d");
+    // brightness(255) turns the artifact mask's 1 and 2 into 255 and leaves 0
+    // at 0; the censor mask is already 0/255 and passes through unchanged. Then
+    // luminance becomes alpha, so the source-in below clips to the mask instead
+    // of to the whole rectangle.
+    g.filter = "brightness(255) url(#revLumAlpha)";
+    g.drawImage(img, 0, 0, t.width, t.height);
+    g.filter = "none";
+    g.globalCompositeOperation = "source-in";
+    g.fillStyle = colour;
+    g.fillRect(0, 0, t.width, t.height);
+    x.globalAlpha = alpha;
+    x.drawImage(t, dx, dy);
+    x.globalAlpha = 1;
+  };
+
+  if(REV.apply && p.has_mask) layer(el("revMask"), "#000000", 1);
+  if(REV.art   && p.has_mask) layer(el("revMask"), "#ff3b30", 0.75);
+  if(REV.cen   && hasCen)     layer(el("revCensor"), "#00d5ff", 0.55);
+}
+
+// A src is assigned and the overlay drawn in the same breath, so the first draw
+// usually runs before anything has decoded and naturalWidth is still 0 - which
+// is a blank overlay and no error. Every load re-draws.
+for(const id of ["revImg", "revMask", "revCensor"]){
+  el(id).addEventListener("load", () => {
+    const p = P_BY[revSel];
+    if(p) drawRevOverlays(p, p.marker === "AF568" && !!p.has_section);
+  });
+}
+
+let revOn = false, revSel = null;
 
 // Everything drawn here comes out of a CSV rather than out of this page, so it
 // is escaped. The rest of the curator interpolates values it generated itself -
@@ -2692,10 +2805,38 @@ function toggleReview(){
 // Grouped animal -> slide, in scan order, because that is the order they came
 // off the scanner and the order damage runs in - a bad slide is usually a run
 // of neighbours, and seeing them adjacent is most of the review.
+// The one list. The grid draws it and the stepper walks it, so "next" always
+// means the next cell you can see - a stepper over a different set than the one
+// on screen is the kind of thing that looks like a bug in the data.
+function revList(){
+  const want = el("animal").value;
+  const f = el("revFilter") ? el("revFilter").value : "all";
+  return PROWS
+    .filter(p => want === "both" || !want || p.animal === want)
+    .filter(p => f === "all" ? true
+               : f === "excluded" ? p.status === "excluded"
+               : f === "analysis" ? p.status !== "excluded"
+               : f === "measured" ? p.status === "measured"
+               : f === "masked"   ? !!p.has_mask : true)
+    .sort((a, b) => (a.animal + a.slide + a.marker).localeCompare(
+                     b.animal + b.slide + b.marker)
+                 || (+a.section_order || 0) - (+b.section_order || 0));
+}
+
+// One section at a time, in the order the grid shows them.
+function revStep(d){
+  const list = revList();
+  if(!list.length) return;
+  const i = list.findIndex(p => p.scene_uid === revSel);
+  const next = list[(i < 0 ? 0 : i + d + list.length) % list.length];
+  revPick(next.scene_uid);
+  const cell = document.querySelector(`.rc[data-uid="${next.scene_uid}"]`);
+  if(cell) cell.scrollIntoView({block: "nearest"});
+}
+
 function revRender(){
   const g = el("revGrid");
-  const want = el("animal").value;
-  const rows = PROWS.filter(p => want === "both" || !want || p.animal === want);
+  const rows = revList();
   const groups = new Map();
   for(const p of rows){
     const k = p.animal + " " + p.slide + p.marker;
@@ -2741,7 +2882,8 @@ function revCell(p){
   // excluded ones an image too. The fallback stays for a section that somehow
   // has neither.
   const src = revSrc(p, "section") || revSrc(p, "overview");
-  return `<div class="${cls.join(" ")}" onclick="revPick('${p.scene_uid}')" `
+  return `<div class="${cls.join(" ")}" data-uid="${p.scene_uid}" `
+       + `onclick="revPick('${p.scene_uid}')" `
        + `title="${esc(p.scene_uid)} - ${esc(p.status)}">`
        + (src ? `<img loading="lazy" src="${esc(src)}" alt="">`
               : `<div style="aspect-ratio:1"></div>`)
@@ -2750,9 +2892,11 @@ function revCell(p){
 
 function revPick(uid){
   revSel = uid;
-  revImgMode = 0;
   revDetail();
   revRender();
+  const list = revList();
+  const i = list.findIndex(p => p.scene_uid === uid);
+  el("revPos").textContent = i < 0 ? "-" : `${i + 1} of ${list.length}`;
 }
 
 // One line per stage, in the order they ran. A stage that had nothing to say
@@ -2823,27 +2967,42 @@ function revDetail(){
 function revImg(){
   const p = P_BY[revSel];
   if(!p) return;
-  const names = ["masked - what 04a removed", "unmasked - as scanned",
-                 "mask in red"];
-  if(!p.has_mask && revImgMode !== 1) revImgMode = 1;
+  // Censoring is pERK-only by construction - AF488's display high is below the
+  // 16-bit ceiling so it cannot clip - and 04j writes a mask for the 718 it
+  // reformatted. A section with none disables the button and says why, rather
+  // than offering a switch that does nothing.
+  const hasCen = p.marker === "AF568" && p.has_section;
+
   el("revImg").src = revSrc(p, "overview");
   el("revMask").src = revSrc(p, "mask");
-  const w = el("revImgWrap");
-  w.classList.toggle("masked", revImgMode === 0 && !!p.has_mask);
-  w.classList.toggle("overlay", revImgMode === 2 && !!p.has_mask);
-  el("revImgH").textContent = "IMAGE - " + names[revImgMode];
-  el("revImgNote").textContent =
-    !p.has_mask ? "no mask on this section - nothing was removed"
-    : `${p.n_artifact_objects || 0} objects, ${p.artifact_pct_of_tissue || 0}% `
-      + `of tissue` + (revImgMode === 1 ? " would be removed" : " removed");
-}
+  el("revCensor").src = hasCen ? revSrc(p, "censor") : "";
 
-function cycleRevImg(){
-  const p = P_BY[revSel];
-  if(!p) return;
-  // With no mask there is only one picture, so cycling would look broken.
-  revImgMode = p.has_mask ? (revImgMode + 1) % 3 : 1;
-  revImg();
+  drawRevOverlays(p, hasCen);
+
+  const on = (id, v, dis) => {
+    el(id).classList.toggle("mode-on", !!v);
+    el(id).disabled = !!dis;
+  };
+  on("revDapiBtn",  REV.dapi,  !p.has_overview);
+  on("revArtBtn",   REV.art,   !p.has_mask);
+  on("revCenBtn",   REV.cen,   !hasCen);
+  on("revApplyBtn", REV.apply, !p.has_mask);
+  el("revDapiBtn").textContent = REV.dapi ? "DAPI ✓" : "DAPI";
+  el("revCenBtn").title = hasCen ? "" :
+    "no censor mask - 04j runs on pERK only, because AF488 cannot clip";
+
+  el("revImgH").textContent = "IMAGE - "
+    + (REV.dapi ? "DAPI + marker" : "marker only")
+    + (REV.apply ? ", artifacts removed" : "");
+  const bits = [];
+  bits.push(p.has_mask
+    ? `${p.n_artifact_objects || 0} artifact objects, `
+      + `${p.artifact_pct_of_tissue || 0}% of tissue`
+    : "no artifact mask");
+  if(hasCen && p.censored_fraction_in_tissue !== "")
+    bits.push(`${(100 * (+p.censored_fraction_in_tissue || 0)).toFixed(2)}% of `
+            + `tissue censored`);
+  el("revImgNote").textContent = bits.join("  ·  ");
 }
 
 function revAct(act){

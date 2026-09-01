@@ -18,8 +18,7 @@ const { env, load, chk, note, done } = require("./harness");
 const { store } = env;
 
 const X = load(`{KEY, PROV, PROWS, P_BY, st, save, revSrc, revAct, revPick,
-  revImg, cycleRevImg, exportReview, csvq, esc,
-  get revImgMode(){return revImgMode}, set revImgMode(v){revImgMode=v},
+  revImg, revLayer, revStep, revList, REV, exportReview, csvq, esc,
   get revSel(){return revSel}}`);
 
 // ---- the table ------------------------------------------------------------
@@ -68,28 +67,61 @@ if (noSection) {
   chk("...but still has an overview", !!X.revSrc(noSection, "overview"), true);
 }
 
-// ---- the image cycle ------------------------------------------------------
+// ---- the layers -----------------------------------------------------------
 //
-// With no mask there is only one picture to show, so cycling has to stay put -
-// otherwise two of the three states are indistinguishable and the button looks
-// broken.
+// Four independent switches, not a cycle. The one that has to be checked is
+// DAPI, because "remove DAPI" is a different FILE rather than a composite -
+// _RGB.png is DAPI plus marker, _MARK.png is the marker alone - so a wrong
+// mapping shows the wrong channel with nothing to say so.
 
-const noMask = X.PROWS.find(p => !p.has_mask);
-if (noMask) {
-  X.revPick(noMask.scene_uid);
-  X.revImgMode = 0;
-  X.cycleRevImg();
-  chk("no mask - the cycle stays on unmasked", X.revImgMode, 1);
-  X.cycleRevImg();
-  chk("...and stays there", X.revImgMode, 1);
-}
-
-const masked = X.PROWS.find(p => p.has_mask);
+const masked = X.PROWS.find(p => p.has_mask && p.marker === "AF568");
 X.revPick(masked.scene_uid);
-X.revImgMode = 0;
-const seen = [];
-for (let i = 0; i < 4; i++) { seen.push(X.revImgMode); X.cycleRevImg(); }
-chk("with a mask it cycles through all three", seen.join(""), "0120");
+
+X.REV.dapi = true;  X.revImg();
+const withDapi = env.els.revImg.src;
+X.REV.dapi = false; X.revImg();
+const noDapi = env.els.revImg.src;
+chk("DAPI on shows the RGB composite", /_RGB\.png$/.test(withDapi), true);
+chk("DAPI off shows the marker alone", /_MARK\.png$/.test(noDapi), true);
+
+X.REV.art = false;
+X.revLayer("art");
+chk("a layer toggles on", X.REV.art, true);
+X.revLayer("art");
+chk("...and off again", X.REV.art, false);
+
+// Censoring is pERK-only - AF488 cannot clip - so the button must refuse
+// rather than offer a switch that does nothing.
+const pcna = X.PROWS.find(p => p.marker === "AF488");
+if (pcna) {
+  X.revPick(pcna.scene_uid);
+  chk("PCNA has no censor layer", env.els.revCenBtn.disabled, true);
+}
+X.revPick(masked.scene_uid);
+chk("pERK does", env.els.revCenBtn.disabled, false);
+
+// ---- stepping and filtering -----------------------------------------------
+//
+// The stepper walks the SAME list the grid draws; a stepper over a different
+// set than the one on screen reads as missing data.
+
+const list = X.revList();
+chk("the list is non-empty", list.length > 0, true);
+X.revPick(list[0].scene_uid);
+X.revStep(1);
+chk("step moves to the next in the list", X.revSel, list[1].scene_uid);
+X.revStep(-1);
+chk("...and back", X.revSel, list[0].scene_uid);
+X.revStep(-1);
+chk("stepping off the front wraps to the end", X.revSel,
+    list[list.length - 1].scene_uid);
+
+env.els.revFilter.value = "excluded";
+const exc = X.revList();
+chk("the filter narrows the list", exc.length < list.length, true);
+chk("...to excluded sections only",
+    exc.every(p => p.status === "excluded"), true);
+env.els.revFilter.value = "all";
 
 // ---- decisions ------------------------------------------------------------
 
