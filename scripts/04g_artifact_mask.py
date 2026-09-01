@@ -248,6 +248,10 @@ def main():
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--marker", default="AF488", choices=["AF488", "AF568"],
                     help="AF488 = PCNA (default), AF568 = pERK")
+    ap.add_argument("--include-excluded", action="store_true",
+                    help="also mask sections in excluded_sections_<marker>.csv, so "
+                         "they can be reviewed with a mask like every other "
+                         "section. They are marked excluded=1 in the summary.")
     args = ap.parse_args()
     os.makedirs(MASK_DIR, exist_ok=True)
     os.makedirs(REPORT_DIR, exist_ok=True)
@@ -264,7 +268,46 @@ def main():
     index_csv = (os.path.join(REFORMAT_DIR, "reformat_index.csv") if args.marker == "AF488"
                  else os.path.join(REFORMAT_DIR, f"reformat_index_{args.marker}.csv"))
     with open(index_csv, newline="", encoding="utf-8") as fh:
-        index = [r for r in csv.DictReader(fh) if r["kind"] == "section"]
+        index = [{"id": r["id"], "animal": r["animal"],
+                  "section_order": r["section_order"], "excluded": 0}
+                 for r in csv.DictReader(fh) if r["kind"] == "section"]
+
+    # EXCLUDED SECTIONS GET A MASK TOO, on request.
+    #
+    # They are not in the index - that is what excluded means - so this stage
+    # never saw them, and the ROI curator's Review mode could offer a
+    # with/without-mask comparison for a kept section and nothing for a rejected
+    # one. Reviewing an exclusion is exactly when you want to know whether an
+    # artifact is what drove it.
+    #
+    # The identity comes from focus.csv, the only table that covers every
+    # scanned section; the index does not have them by construction. Masking one
+    # changes nothing downstream: 04a reads the mask only for sections it
+    # reformats, and these are not in its index either.
+    if args.include_excluded:
+        exc_csv = os.path.join(REFORMAT_DIR,
+                               "excluded_sections.csv" if args.marker == "AF488"
+                               else f"excluded_sections_{args.marker}.csv")
+        have = {r["id"] for r in index}
+        meta = {}
+        with open(QC_CSV, newline="", encoding="utf-8") as fh:
+            for r in csv.DictReader(fh):
+                meta[r["scene_uid"]] = r
+        n_add = 0
+        if os.path.exists(exc_csv):
+            with open(exc_csv, newline="", encoding="utf-8") as fh:
+                for r in csv.DictReader(fh):
+                    uid = r["scene_uid"]
+                    m = meta.get(uid)
+                    if uid in have or not m:
+                        continue
+                    index.append({"id": uid, "animal": m["animal"],
+                                  "section_order": m["section_order"],
+                                  "excluded": 1})
+                    n_add += 1
+        print(f"  including {n_add} excluded section(s) from "
+              f"{os.path.basename(exc_csv)}")
+
     if args.limit:
         index = index[: args.limit]
 
@@ -289,6 +332,10 @@ def main():
         a_e = sum(x["area_mm2"] for x in recs if x["label"] == LBL_ELONGATED)
         rows.append({
             "scene_uid": uid, "animal": r["animal"], "section_order": r["section_order"],
+            # Which rows describe the analysis set and which describe sections
+            # that were thrown out. Without it a consumer joining on this file
+            # would silently gain the rejects.
+            "excluded": r.get("excluded", 0),
             "tissue_mm2": round(tissue_mm2, 3),
             "n_compact": sum(1 for x in recs if x["label"] == LBL_COMPACT),
             "n_elongated": sum(1 for x in recs if x["label"] == LBL_ELONGATED),

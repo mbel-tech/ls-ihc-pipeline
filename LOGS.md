@@ -72,9 +72,27 @@ byte-identical, 0 excluded sections in the index, and 473 excluded sections now 
 one. `section_provenance.csv` goes from "2,099 in the analysis frame, 473 as the
 original scan only" to **2,572 and 0**.
 
-Two things noticed in passing and not acted on: the 473 have no 04g mask, since 04g
-runs off the index (their Review view is therefore unmasked-only, which is honest -
-there is no mask to reject); and 04a's `PLATE_DIR` is hardcoded to `atlas/plates`
+**Since acted on: `04g --include-excluded`, both markers.** 04g runs off the index, so
+it had never seen an excluded section - which meant Review could offer a
+with/without-mask comparison for a kept section and nothing for a rejected one,
+exactly when you most want to know whether an artifact drove the exclusion. The
+identity comes from `focus.csv`, the only table covering every scanned section, and
+the summary gains an `excluded` column so a consumer joining on it cannot silently
+pick up the rejects.
+
+**Determinism was checked, not assumed, and that is what made the PCNA run safe.**
+Re-running 04g regenerates the masks for the indexed sections too, and those are
+already baked into the reformatted images - so a non-deterministic 04g would have
+left every reformatted image stale against its own mask, silently. 25 pERK masks
+were checksummed before the run and 25 PCNA ones before theirs: **50 of 50
+byte-identical**. Only then was PCNA re-run.
+
+Both markers now: a mask for every scanned section, a summary covering every scanned
+section, and a column saying which rows are the analysis set. pERK 1,191 = 718 + 473,
+PCNA 1,381 = 788 + 593, and all 2,572 carry an overview, a reformatted image, a mask
+and artifact counts.
+
+One thing noticed in passing and not acted on: 04a's `PLATE_DIR` is hardcoded to `atlas/plates`
 while `config.atlas_plate_set.dir` is `plates_final`, so the plate rows it rewrites in
 `reformat_index` describe a set nothing else uses. That is why those 101 rows moved in
 the 4th decimal on this run while every section row held.
