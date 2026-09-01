@@ -383,11 +383,17 @@ def main(argv=None):
     tr = collections.Counter(r["treatment"] or "(none)" for r in by_section)
     print(f"  sections measured by arm: {dict(tr)}")
     print()
-    print(f"  {'sample':8} {'treatment':10} {'sections':>9} {'ROIs':>6} {'nuclei':>8}")
+    # Matched to the coverage sheet, which is per (sample, MARKER). Summing
+    # by sample alone printed each animal's pooled totals twice, once against
+    # each marker's section count - two rows that disagreed with themselves.
+    print(f"  {'sample':8} {'marker':7} {'treatment':10} {'sections':>9} "
+          f"{'ROIs':>6} {'nuclei':>8}")
     for c in coverage:
-        n = sum(r["n_nuclei"] for r in by_roi if r["sample"] == c["sample"])
-        d = sum(r["n_discs"] for r in by_roi if r["sample"] == c["sample"])
-        print(f"  {c['sample']:8} {c['treatment'] or '?':10} "
+        same = [r for r in by_roi
+                if r["sample"] == c["sample"] and r["marker"] == c["marker"]]
+        n = sum(r["n_nuclei"] for r in same)
+        d = sum(r["n_discs"] for r in same)
+        print(f"  {c['sample']:8} {c['marker']:7} {c['treatment'] or '?':10} "
               f"{c['sections_measured']:>4}/{c['sections_planned']:<4} {d:>6} {n:>8}")
     print("=" * 72)
     return 0

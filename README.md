@@ -105,7 +105,8 @@ python scripts/05a_roi_geometry.py --verify     # check the map first: 0.04-0.15
 python scripts/05a_roi_geometry.py
 work/appenv/Scripts/python.exe scripts/05c_detect_rois.py     # hours; resumable
 python scripts/06a_roi_dataset.py
-Rscript analysis/plot_roi_figures.R
+python scripts/06c_excel_dataset.py
+Rscript analysis/plot_roi_figures.R                           # LS_MARKER=AF488 for PCNA
 ```
 
 **`results/roi_nuclei.csv` is the artefact that matters** — one row per nucleus, with the
@@ -125,6 +126,12 @@ the false-positive rate by construction and destroy the only independent check t
 discs exist to provide. Measured here at **2.1% median**, and — the number that decides whether
 positivity is usable at all — **not group-correlated** (control 2.2%, exercise 2.0%). Pooled ROI
 positivity is 13.3% against that, a 5.9x separation.
+
+**One marker per figure.** The sheets carry both, keyed by `(sample, marker, ROI)`, but a
+figure draws one — `LS_MARKER` selects it and defaults to `AF568`. Two markers in one panel
+would share a mean bar, an SEM bar and a significance test, and `roi_stats.R` picks `lm` or a
+mixed model on whether an animal has more than one row, so a second antibody would read as a
+second slide. Non-default markers write to suffixed folders and their own pptx.
 
 `05c --qc` writes one overlay PNG per ROI to `qc/roi_detections/`: the DAPI crop with nucleus
 boundaries, green counted and red found-but-outside-the-disc. Nuclear diameter says the

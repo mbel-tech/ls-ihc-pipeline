@@ -133,8 +133,10 @@ silently re-pointed every measured disc: the new set is a strict superset - all 
 their index, kind, region and position, **0 misaligned**, and all 33 new discs are on the two new
 sections. `05c` then measured them, 12,471 nuclei.
 
-**894,601 nuclei over 130 of 130 sections.** The pERK pass really is complete now; it was 128 of
-130 against the curation that exists.
+**895,548 rows over 130 of 130 sections - 894,601 of them analysable, the other 947 flagged
+`artifact` and dropped by 06a.** Both numbers appear downstream and they are not the same
+number, so which is which is worth fixing here: the file has 895,548, the analysis has 894,601.
+The pERK pass really is complete now; it was 128 of 130 against the curation that exists.
 
 ### `--qc` did what its help text said
 
@@ -185,6 +187,40 @@ rather than a defect.
     intensity statistics"** - which is two thirds of it. The missing third is that a censored
     nucleus is counted POSITIVE without consulting the cut, and that is the part that looks like
     a bug in the code. Now stated outright, with 04j quoted.
+
+### The marker assumption displaced twice more before it was cornered
+
+Three review rounds, and each one found the same defect one layer further down. Worth recording
+as a shape rather than three separate fixes: a pipeline built for one marker does not announce
+where it assumed that, and every place it did produced plausible numbers rather than an error.
+
+Round 1 found it in 06c/06d's aggregation keys. Round 2 found it in `analysis/`, which had no
+mention of a marker at all. Round 3 found the last two:
+
+  * **`detector_specificity.csv` is read directly, not through `load_sheet`**, so it never
+    inherited the sheet filter - and it is the one number on a positivity figure that must not be
+    pooled, since it is what stops the positivity being read as absolute. Measured on a synthetic
+    two-marker file: unfiltered gives median 2.6%, range 0.0-45.0% over 180 sections against the
+    true 2.1%, 0.0-8.0% over 130. Now filtered by a shared `filter_marker()`.
+  * **`06e_refresh_loop.py` ran `Rscript` with no `LS_MARKER`**, so it would have spent the whole
+    PCNA run - the long one it exists to babysit - redrawing unchanged pERK figures and reporting
+    success. It now reads which markers 06a has measured and runs the script once per marker.
+
+Two smaller ones from the same round: 06c's printed summary still totalled by sample alone, so
+each animal appeared twice with identical pooled figures against per-marker section counts; and
+`marker_label()`'s fallback was unreachable, because `[[` on a named character vector throws for
+an unknown name rather than returning NULL, so an unrecognised marker would have died with
+"subscript out of bounds" instead of printing its own id.
+
+**`all_boxes()` now checks the invariant instead of asserting it in a comment.** Scene uids being
+disjoint across markers is what makes 06a's `(scene_uid, roi_index)` join correct - the index is
+a position in the per-uid box list - so a collision would pair every nucleus on that section with
+the wrong disc, silently. It was stated in three comments and verified nowhere; it now raises.
+
+`app/stages.py` had `excel_sample`, `excel_slide`, `join_sampling` and `refresh_loop` still
+declaring `needs=["detect"]`. 06c and 06d hard-require `roi_measurements.csv` now, so the graph
+said something the code no longer did - and the file's own docstring calls a disagreement with
+`run_all.sh` "a bug here".
 
 ### Smaller things
 

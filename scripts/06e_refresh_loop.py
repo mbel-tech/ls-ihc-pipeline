@@ -75,6 +75,22 @@ def find_rscript(explicit=None):
                      + "\nPass --rscript, or set the RSCRIPT environment variable.")
 
 
+def marker_list():
+    """The markers 06a has actually measured, in a stable order.
+
+    Read from `roi_measurements.csv` rather than from config or a constant, so
+    the loop plots what exists rather than what was expected to exist. Falls
+    back to the R default if the column or the file is missing, which is what a
+    dataset built before the column existed looks like.
+    """
+    path = G6C.MEAS_CSV
+    if not os.path.exists(path):
+        return ["AF568"]
+    rows = G5.load_csv(path)
+    seen = [r.get("marker") for r in rows if r.get("marker")]
+    return sorted(set(seen)) or ["AF568"]
+
+
 def progress():
     """(sections measured, sections planned). The stop condition, as numbers."""
     if not os.path.exists(G6C.NUCLEI_CSV):
@@ -107,16 +123,30 @@ def refresh(rscript, quiet=True):
         if rc:
             print(f"  {label} FAILED (exit {rc})")
             return False
-    r = subprocess.run([rscript, R_SCRIPT], cwd=_REPO,
-                       capture_output=quiet, text=True)
-    if r.returncode:
-        print("  plotting FAILED:")
-        print((r.stderr or r.stdout or "").strip()[-2000:])
-        return False
-    if quiet and r.stderr:
-        # Rscript writes message() to stderr; it is progress, not failure.
-        for line in r.stderr.strip().splitlines()[-4:]:
-            print("  " + line)
+    # ONE R RUN PER MARKER PRESENT.
+    #
+    # The figures draw one marker at a time - LS_MARKER selects it, defaulting
+    # to AF568 - so a bare Rscript call rebuilds the pERK figures and nothing
+    # else. That is wrong in exactly the situation this loop exists for: the
+    # long run it is meant to babysit is the PCNA one, and it would have spent
+    # hours redrawing unchanged pERK figures, reporting success, and never
+    # producing a PCNA figure at all. Nothing would have errored.
+    #
+    # The markers come from what 06a actually wrote, so this follows the data
+    # rather than a list that has to be kept in step.
+    markers = marker_list()
+    for mk in markers:
+        env = dict(os.environ, LS_MARKER=mk)
+        r = subprocess.run([rscript, R_SCRIPT], cwd=_REPO, env=env,
+                           capture_output=quiet, text=True)
+        if r.returncode:
+            print(f"  plotting FAILED for {mk}:")
+            print((r.stderr or r.stdout or "").strip()[-2000:])
+            return False
+        if quiet and r.stderr:
+            # Rscript writes message() to stderr; it is progress, not failure.
+            for line in r.stderr.strip().splitlines()[-4:]:
+                print(f"  [{mk}] " + line)
     return True
 
 

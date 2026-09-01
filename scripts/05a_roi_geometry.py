@@ -137,13 +137,28 @@ def all_boxes():
     the PCNA pass has run, so they need every box rather than one marker's.
     Scene uids are disjoint across markers, so this is a union and not a merge.
     """
-    seen, out = set(), []
+    seen, out, uids = set(), [], {}
     for m in MARKERS:
         p = resolve_paths(m)[1]
         if p in seen or not os.path.exists(p):
             continue
         seen.add(p)
-        out.extend(load_csv(p))
+        rows = load_csv(p)
+        # THE DISJOINTNESS IS CHECKED, NOT ASSUMED. 06a joins a nucleus to its
+        # disc by (scene_uid, roi_index), where the index is the position of the
+        # box in this list for that uid. If two markers ever shared a uid their
+        # boxes would interleave and every nucleus on that section would be
+        # measured against the wrong disc - silently, with plausible numbers.
+        for r in rows:
+            u = r["scene_uid"]
+            if uids.get(u, m) != m:
+                raise SystemExit(
+                    f"scene_uid {u} appears under both {uids[u]} and {m}. "
+                    f"The per-marker box files must not overlap - every "
+                    f"downstream join is by (scene_uid, roi_index) and would "
+                    f"silently pair nuclei with the wrong discs.")
+            uids[u] = m
+        out.extend(rows)
     return out
 
 BASE_PX_UM = CONFIG["pixel_size_um"]

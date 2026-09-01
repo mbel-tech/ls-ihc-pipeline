@@ -248,7 +248,7 @@ STAGES = [
     Stage("excel_sample", "Spreadsheet - per sample", "Quantification",
           script="06c_excel_dataset.py",
           outputs=["results/roi_dataset.xlsx"],
-          needs=["detect"],
+          needs=["roi_dataset"],
           blurb="One row per ROI per sample, plus per-disc, per-section and "
                 "coverage sheets. Buildable mid-run: pair it with 05c's "
                 "balanced ordering and a partial run is still a comparison."),
@@ -256,7 +256,7 @@ STAGES = [
     Stage("excel_slide", "Spreadsheet - per slide", "Quantification",
           script="06d_excel_by_slide.py",
           outputs=["results/roi_dataset_by_slide.xlsx"],
-          needs=["detect"],
+          needs=["roi_dataset"],
           blurb="The same table one level finer - one row per ROI per slide, so "
                 "within-animal spread is visible instead of averaged away. "
                 "Carries a per-section sheet too."),
@@ -264,7 +264,7 @@ STAGES = [
     Stage("refresh_loop", "Refresh datasets and figures hourly", "Quantification",
           script="06e_refresh_loop.py",
           outputs=["results/ROI_plots"],
-          needs=["detect"],
+          needs=["roi_dataset"],
           cli_only="a long-running loop, not a one-shot stage - it would hold "
                    "the app's runner open for hours. Run: refresh_loop.bat",
           blurb="Rebuilds both spreadsheets and re-draws the per-ROI figures "

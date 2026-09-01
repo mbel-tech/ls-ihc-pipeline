@@ -36,8 +36,26 @@ MARKER <- Sys.getenv("LS_MARKER", "AF568")
 MARKER_LABEL <- c(AF568 = "pERK", AF488 = "PCNA")
 
 marker_label <- function(m = MARKER) {
-  lbl <- MARKER_LABEL[[m]]
-  if (is.null(lbl)) m else lbl
+  # Single brackets and is.na, NOT [[ ]]: double-bracket lookup of an unknown
+  # name on a named character vector THROWS rather than returning NULL, so the
+  # fallback below was unreachable and an unrecognised marker would have failed
+  # with "subscript out of bounds" instead of printing its own id.
+  lbl <- MARKER_LABEL[m]
+  if (is.na(lbl)) m else unname(lbl)
+}
+
+# Filter any per-section table to the marker in play.
+#
+# Shared because `detector_specificity.csv` needs exactly what the sheets need
+# and got it wrong by being a separate read: it is not a sheet, so it did not
+# pass through load_sheet, and the false-positive rate printed on every pERK
+# positivity figure would have had PCNA's sections folded into it.
+filter_marker <- function(df, what) {
+  if (!"marker" %in% names(df)) {
+    message(sprintf("  %s has no marker column - treating it as AF568 (pERK)", what))
+    return(df)
+  }
+  df[!is.na(df$marker) & df$marker == MARKER, , drop = FALSE]
 }
 
 # Colour-blind safe, and deliberately not red/green.

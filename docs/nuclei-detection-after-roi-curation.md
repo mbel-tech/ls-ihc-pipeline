@@ -832,10 +832,36 @@ work when deciding which arm is behind.
 
 ```bash
 python scripts/06a_roi_dataset.py        # covers both markers in one pass
+python scripts/06c_excel_dataset.py
+python scripts/06d_excel_by_slide.py
 ```
 
-Nothing downstream needs a flag: 06a takes the union of the box files, the cut is per section,
-and `h` is per (marker, region) — so the two markers are never pooled.
+**The spreadsheet side needs no flag.** 06a takes the union of the box files, the cut is per
+section, and `h` is per (marker, region), so the two markers are never pooled — `marker` is part
+of the key and a column in every sheet.
+
+**The FIGURES do need one**, because a figure draws one marker at a time:
+
+```bash
+LS_MARKER=AF488 Rscript analysis/plot_roi_figures.R
+```
+
+On Windows `cmd`: `set LS_MARKER=AF488` first, then the bare `Rscript` line.
+
+`LS_MARKER` defaults to `AF568`, so a bare `Rscript analysis/plot_roi_figures.R` redraws the
+pERK figures and nothing else. PCNA output lands in `positive_treatment_AF488/` and siblings,
+and in `ROI_figures_AF488.pptx`, so it sits beside the pERK figures rather than over them; the
+axis label and the panel title name the marker. Asking for a marker the sheet does not hold
+stops with a message saying what it does hold.
+
+`06e_refresh_loop.py` and `refresh_loop.bat` need nothing: they read which markers 06a has
+actually measured and run the R script once per marker.
+
+**Why this is a flag and not automatic.** Each figure carries a mean bar, an SEM bar and a
+significance test over its points. Two markers in one panel would share all three, and
+`roi_stats.R` chooses between `lm` and a mixed model on whether an animal has more than one row
+— so a second antibody would read as a second slide and change the model family silently. One
+marker per figure is the only version of this that means anything.
 
 **Expect it to be slow.** PCNA is roughly six times the pERK volume.
 

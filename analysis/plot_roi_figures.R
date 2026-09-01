@@ -100,6 +100,12 @@ SPEC <- file.path(results, "detector_specificity.csv")
 fp_note <- ""
 if (file.exists(SPEC)) {
   sp <- utils::read.csv(SPEC, stringsAsFactors = FALSE)
+  # THIS MARKER'S SECTIONS ONLY. detector_specificity.csv carries a marker
+  # column and is read here rather than through load_sheet, so it did not
+  # inherit the sheet filter - and pooling it would caption every pERK figure
+  # with PCNA's sections mixed in. It is the one number on the figure that must
+  # not be pooled, since it is what stops the positivity being read as absolute.
+  sp <- filter_marker(sp, "detector_specificity.csv")
   fr <- suppressWarnings(as.numeric(sp$false_positive_rate))
   fr <- fr[is.finite(fr)]
   if (length(fr)) fp_note <- sprintf(
