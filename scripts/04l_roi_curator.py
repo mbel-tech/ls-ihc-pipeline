@@ -434,6 +434,10 @@ input[type=range]{width:100%}
    pane resizes between a 3-column and a 4-column layout. */
 .cell.excl{border-color:#f85149;opacity:.5}
 .cell.excl img{filter:grayscale(1)}
+/* Reinstated in Review mode: curatable now, but NOT in the index until 04a runs
+   again, so it must not look like an ordinary section that was always there. */
+.cell.reinstated{border-color:#3fb950;border-style:dashed;opacity:1}
+.cell.reinstated img{filter:none}
 /* The seeds are drawn in the atlas's own colours on both panes, so the key has
    to use those same colours - reading it off the seed rather than a table here
    is what keeps the two from ever disagreeing. */
@@ -590,6 +594,38 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
        its brightness means. sRGB so the values are not linearised first. -->
   <filter id="revLumAlpha" color-interpolation-filters="sRGB">
     <feColorMatrix type="matrix" values="1 0 0 0 0  1 0 0 0 0  1 0 0 0 0  1 0 0 0 0"/>
+  </filter>
+
+  <!-- THE OVERVIEW PUTS THE MARKER IN BOTH RED AND GREEN, so every section
+       renders yellow whichever channel it is - and the section composites next
+       to it are red for pERK and green for PCNA. Same section, two colour
+       schemes, and the one that looks like a third marker is the overview.
+
+       The duplication is what makes this exact rather than a tint: R and G hold
+       the identical marker image (measured: means equal to 2dp), so dropping
+       one loses nothing and leaves the marker in its own colour. Blue is DAPI
+       and is untouched by the choice.
+
+       DAPI is then lifted 4x. It is not a contrast preference: in tissue the
+       marker runs 4.0-4.6x brighter than DAPI across 24 sampled sections, so
+       at native scale the counterstain is swamped by the thing sitting on top
+       of it and the section reads as marker-only. The pipeline measures the
+       raw data; this is the viewing pane.
+
+       Marker-only (_MARK.png) is greyscale, so R=G=B there and the same matrix
+       gives the marker its colour with no blue to lift - hence a pair per
+       channel rather than one filter with a toggle. -->
+  <filter id="revPerkDapi" color-interpolation-filters="sRGB">
+    <feColorMatrix type="matrix" values="1 0 0 0 0  0 0 0 0 0  0 0 4 0 0  0 0 0 1 0"/>
+  </filter>
+  <filter id="revPerkOnly" color-interpolation-filters="sRGB">
+    <feColorMatrix type="matrix" values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0"/>
+  </filter>
+  <filter id="revPcnaDapi" color-interpolation-filters="sRGB">
+    <feColorMatrix type="matrix" values="0 0 0 0 0  0 1 0 0 0  0 0 4 0 0  0 0 0 1 0"/>
+  </filter>
+  <filter id="revPcnaOnly" color-interpolation-filters="sRGB">
+    <feColorMatrix type="matrix" values="0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 1 0"/>
   </filter>
 </defs></svg>
 <div id="review">
@@ -1667,7 +1703,14 @@ function select(uid, keep){
 }
 const isDone   = uid => (S[uid]?.pairs?.length || 0) >= 3;
 const isNoRoi  = uid => !!S[uid]?.noroi;
-const isExcl   = uid => !!S[uid]?.excl;
+// A REINSTATEMENT BEATS THE EXCLUSION FLAG. Both live in the same record, and
+// a section that is flagged excluded while carrying act:"restore" would be
+// hidden by "hide excluded", drawn red, and counted as excluded - by the same
+// tool the operator just used to put it back. revAct() clears the flag too, so
+// this is a belt on top of that; it also covers a store written before that
+// existed.
+const isExcl   = uid => !!S[uid]?.excl && S[uid]?.rev?.act !== "restore";
+const isReinstated = uid => S[uid]?.rev?.act === "restore";
 // Plate chosen deliberately but not landmarked - a real decision, and one the
 // export used to discard.
 const isPlateOnly = uid => !!S[uid]?.assigned && !isDone(uid) && !isNoRoi(uid);
@@ -1680,11 +1723,15 @@ function cellClass(uid){
   const base = isExcl(uid) ? "excl"
              : isDone(uid) ? "done" : isNoRoi(uid) ? "noroi"
              : isPlateOnly(uid) ? "plateonly" : "";
-  return S[uid]?.fav ? base + " fav" : base;
+  const cls = isReinstated(uid) ? (base + " reinstated").trim() : base;
+  return S[uid]?.fav ? cls + " fav" : cls;
 }
 function cellTag(uid){
   const s=S[uid], n=s?.pairs?.length||0;
   if(isExcl(uid)) return "excluded";
+  // Said on the cell, because a reinstated section is curatable but is NOT in
+  // the index yet, and nothing else on the strip distinguishes it.
+  if(isReinstated(uid) && !n) return "reinstated";
   return isNoRoi(uid) ? "no ROI" : n ? n+" pts"
        : isPlateOnly(uid) ? PLATES[s.plate].id.replace("plate_","pl ") : "";
 }
@@ -3059,6 +3106,12 @@ function revImg(){
   const hasCen = !!p.has_censor;
 
   el("revImg").src = revSrc(p, "overview");
+  // Marker in ITS OWN colour, matching the composites in the grid beside it -
+  // red pERK, green PCNA - instead of the overview's yellow-for-both. See the
+  // filter definitions for why this is exact and why DAPI is lifted.
+  el("revImg").style.filter = "url(#" + (p.marker === "AF568"
+      ? (REV.dapi ? "revPerkDapi" : "revPerkOnly")
+      : (REV.dapi ? "revPcnaDapi" : "revPcnaOnly")) + ")";
   el("revMask").src = revSrc(p, "mask");
   el("revCensor").src = hasCen ? revSrc(p, "censor") : "";
   el("revTissue").src = p.has_tissue ? revSrc(p, "tissue") : "";
@@ -3086,8 +3139,13 @@ function revImg(){
   el("revCenBtn").title = hasCen ? "" :
     "no censor mask for this section - run 04j_censor_clipped.py";
 
+  // The 4x is named rather than left to be noticed. A viewer that quietly
+  // rescales one channel invites reading brightness off the screen, and DAPI
+  // here is 4x further from its neighbours than it looks.
   el("revImgH").textContent = "IMAGE - "
-    + (REV.dapi ? "DAPI + marker" : "marker only")
+    + (REV.dapi
+        ? (p.marker === "AF568" ? "pERK red" : "PCNA green") + " + DAPI blue x4"
+        : (p.marker === "AF568" ? "pERK only" : "PCNA only"))
     + (REV.apply ? ", artifacts removed" : "");
   const bits = [];
   bits.push(p.has_mask
@@ -3102,15 +3160,90 @@ function revImg(){
   el("revImgNote").textContent = bits.join("  ·  ");
 }
 
+// A REINSTATED SECTION JOINS THE STRIP IMMEDIATELY.
+//
+// Review mode used to end at "recorded, now re-run 04a" - the decision was
+// written, the section stayed invisible to the curator, and the only way to act
+// on it was a pipeline run. Every scanned section now has a reformatted image
+// and a composite, so the picture the strip needs already exists and the wait
+// was for nothing.
+//
+// WHAT THIS DOES NOT DO IS PUT IT INTO THE ANALYSIS. The index is what does
+// that, and only 04a writes the index. ROIs placed here are real curation and
+// they export, but the nuclei behind them are not measured until 04a and 05c
+// have run - which is exactly what exportReview() already warns about. The
+// subset is written as "reinstated" so the export says where the row came from
+// rather than implying it was in the worklist all along.
+function reinstatedRow(p){
+  const dir = "sections" + (p.marker === "AF568" ? "_AF568" : "")
+            + (p.has_section_rgb ? "_rgb" : "");
+  return {uid: p.scene_uid, animal: p.animal, m: p.marker, sub: "reinstated",
+          order: +p.section_order || 0, rgb: !!p.has_section_rgb,
+          img: dir + "/" + p.scene_uid + ".png", reinstated: true};
+}
+
+// Add the ones that are restored, drop the ones that no longer are, so undoing
+// a reinstatement takes the section back out instead of leaving it stranded in
+// a strip it can no longer be removed from.
+function syncReinstated(){
+  const want = new Set(Object.keys(S).filter(u =>
+    S[u] && S[u].rev && S[u].rev.act === "restore"
+    && P_BY[u] && P_BY[u].has_section));
+  let changed = false;
+  for(const uid of want){
+    if(!DATA.some(d => d.uid === uid)){ DATA.push(reinstatedRow(P_BY[uid])); changed = true; }
+  }
+  for(let i = DATA.length - 1; i >= 0; i--){
+    if(DATA[i].reinstated && !want.has(DATA[i].uid)){ DATA.splice(i, 1); changed = true; }
+  }
+  return changed;
+}
+
 function revAct(act){
   const p = P_BY[revSel];
   if(!p) return;
+  // st() CREATES a record for whatever it is given, and `excl` below is enough
+  // to make the export treat that record as a decision. Undoing a reinstatement
+  // on a section nobody had otherwise touched would then leave an operator
+  // exclusion it never made.
+  //
+  // `mine` is carried ON the decision rather than recomputed, because by the
+  // time undo runs the record always exists - the restore created it - so
+  // asking "did this exist?" at that moment always says yes. It has to be
+  // answered once, when review first touches the section, and remembered.
+  //
+  // It cannot be inferred from content either: a record holding nothing but
+  // excl:true is exactly what the 227 exclusions the operator really did record
+  // look like, so there is no telling them apart afterwards.
+  const had = Object.prototype.hasOwnProperty.call(S, revSel);
   const e = st(revSel);
+  const mine = e.rev ? e.rev.mine : !had;
+  // The exclusion to put back on undo is THE ONE THAT WAS THERE, captured once,
+  // not one re-derived from p.status. The curator's flag and the pipeline's
+  // status are different facts: an operator can exclude a section 04a happily
+  // reformatted, and rebuilding the flag from the status would throw that
+  // decision away the moment a reinstatement was undone.
+  const wasExcl = e.rev ? e.rev.wasExcl : !!e.excl;
   if(!act){ delete e.rev; }
-  else { e.rev = {act, why: el("revWhy").value.trim(), status: p.status}; }
+  else { e.rev = {act, why: el("revWhy").value.trim(), status: p.status,
+                  mine, wasExcl}; }
+  // Reinstating IS a curation decision, so the curator's own exclusion flag
+  // follows it rather than contradicting it. Undo puts back exactly what was
+  // there before review touched the section.
+  e.excl = act === "restore" ? false : wasExcl;
+  // Undo means undo. A record this call invented, carrying nothing but the
+  // exclusion the pipeline already decided, says nothing the pipeline has not
+  // said - and roi_plates.csv reports sections the OPERATOR touched.
+  if(!act && mine && !e.assigned && !e.fav && !e.noroi && !e.pairs.length
+     && !e.rot){
+    delete S[revSel];
+  }
   save();
+  syncReinstated();
   revDetail();
   revRender();
+  render();          // the strip, so the section is curatable without a reload
+  status();
 }
 
 function revCount(){
@@ -3151,6 +3284,9 @@ function exportReview(){
 
 el("roiSize").value = PT_R_CANON;
 el("roiSizeVal").textContent = PT_R_CANON;
+// Before the first render: a reinstatement made in an earlier session is still
+// one, and the section has to be back in the strip for it to be curatable.
+syncReinstated();
 scopeLabel();
 shotBtnState();
 render();
