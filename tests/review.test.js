@@ -54,10 +54,28 @@ if (withAll) {
   const mk = withAll.marker === "AF568" ? "_AF568" : "";
   chk("overview path", X.revSrc(withAll, "overview"),
       `../overviews/${withAll.animal}/${withAll.marker}/${withAll.scene_uid}_RGB.png`);
-  chk("section path", X.revSrc(withAll, "section"),
-      `sections${mk}/${withAll.scene_uid}.png`);
+  // Colour where there is colour, greyscale where there is not. All 2,572
+  // sections have a greyscale image; only the 1,506 reformatted ones have a
+  // composite, so this cannot be inferred from has_section - inferring it asks
+  // for 1,066 files that do not exist, and a failed <img> is silent.
+  chk("section path uses the composite when there is one",
+      X.revSrc(withAll, "section"),
+      `sections${mk}${withAll.has_section_rgb ? "_rgb" : ""}/${withAll.scene_uid}.png`);
   chk("mask path", X.revSrc(withAll, "mask"),
       `../artifacts/${withAll.scene_uid}_artifact.png`);
+
+  const colour = X.PROWS.find(p => p.has_section && p.has_section_rgb);
+  const grey   = X.PROWS.find(p => p.has_section && !p.has_section_rgb);
+  if (colour) {
+    chk("...a section with a composite gets the _rgb directory",
+        /_rgb\//.test(X.revSrc(colour, "section")), true);
+  }
+  if (grey) {
+    chk("...one without falls back rather than 404ing",
+        /_rgb\//.test(X.revSrc(grey, "section")), false);
+    chk("...and still names a file", X.revSrc(grey, "section").endsWith(
+        `${grey.scene_uid}.png`), true);
+  }
 }
 
 const noSection = X.PROWS.find(p => !p.has_section);

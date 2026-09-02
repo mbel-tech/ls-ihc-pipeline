@@ -249,7 +249,8 @@ PROV_FIELDS = [
     "proposed_excluded", "tissue_area_mm2", "focus_score", "largest_mm2",
     "n_artifact_objects", "artifact_pct_of_tissue", "in_analysis_set",
     "censored_fraction_in_tissue", "censor_reason",
-    "has_overview", "has_section", "has_mask", "has_censor", "has_tissue",
+    "has_overview", "has_section", "has_section_rgb", "has_mask", "has_censor",
+    "has_tissue",
     "n_rois", "n_nuclei",
 ]
 
@@ -288,6 +289,9 @@ def load_provenance():
     for r in rows:
         r["has_overview"] = 1 if r.get("overview_img") else 0
         r["has_section"] = 1 if r.get("section_img") else 0
+        # Separate from has_section on purpose: all 2,572 have a greyscale
+        # section image, only the 1,506 reformatted ones have a composite.
+        r["has_section_rgb"] = 1 if r.get("section_rgb") else 0
         r["has_mask"] = 1 if r.get("mask_img") else 0
         # WHETHER the file exists, never which marker. 04j was AF568-only while
         # it read the 8-bit _MARK.png; reading the raw data lifted that and both
@@ -2687,9 +2691,15 @@ function revSrc(p, what){
   // composite that would have to be built - and it is exact, not approximated.
   if(what === "overview") return p.has_overview ? ov(REV.dapi ? "RGB" : "MARK") : "";
   if(what === "dapi")     return p.has_overview ? ov("DAPI") : "";
-  if(what === "section")
-    return p.has_section
-      ? `sections${p.marker === "AF568" ? "_AF568" : ""}/${p.scene_uid}.png` : "";
+  if(what === "section"){
+    // Colour where there is colour. The composite is what the operator is
+    // looking at everywhere else in this page, and a grid of grey thumbnails
+    // next to a colour detail reads as two different datasets. Falls back to
+    // the greyscale rather than 404ing: 1,066 sections have no composite.
+    if(!p.has_section) return "";
+    const dir = `sections${p.marker === "AF568" ? "_AF568" : ""}`;
+    return `${dir}${p.has_section_rgb ? "_rgb" : ""}/${p.scene_uid}.png`;
+  }
   if(what === "censor")   return p.has_censor
       ? `../censor/${p.scene_uid}_censor.png` : "";
   if(what === "tissue")   return p.has_tissue

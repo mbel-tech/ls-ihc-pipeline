@@ -150,7 +150,8 @@ COLUMNS = [
     # 04a
     "reformatted", "angle", "manual_rotation", "manual_flip",
     # what can be shown, and what was measured
-    "overview_img", "section_img", "mask_img", "tissue_img", "censor_img",
+    "overview_img", "section_img", "section_rgb", "mask_img", "tissue_img",
+    "censor_img",
     "n_rois", "n_nuclei",
 ]
 
@@ -331,6 +332,14 @@ def main():
                 os.path.join(OVERVIEW_DIR, m["animal"], mk, uid + "_RGB.png")) else "",
             "section_img": sec_rel if os.path.exists(
                 os.path.join(REFORMAT_DIR, sec_dir, uid + ".png")) else "",
+            # The colour composite is a SEPARATE question from the greyscale.
+            # Every one of the 2,572 has a greyscale section image now, but only
+            # the 1,506 reformatted ones have a composite, so a viewer that
+            # inferred one from the other would ask for 1,066 files that are not
+            # there. 04o writes these; the marker decides the directory.
+            "section_rgb": sec_rel.replace(sec_dir, sec_dir + "_rgb", 1)
+            if os.path.exists(
+                os.path.join(REFORMAT_DIR, sec_dir + "_rgb", uid + ".png")) else "",
             "mask_img": mask_rel if os.path.exists(
                 os.path.join(MASK_DIR, uid + "_artifact.png")) else "",
             "tissue_img": f"../tissue/{uid}_tissue.png" if os.path.exists(
