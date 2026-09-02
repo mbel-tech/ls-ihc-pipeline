@@ -20,8 +20,29 @@ flip, crop, pad and resize - the same trick the artifact and censor masks alread
 use - and the blue channel of the output is the byte-for-byte image the curator
 was showing. `--verify` checks exactly that rather than assuming it.
 
-Only the sections in `roi_worklist.csv` are built, so this covers the curation
-job rather than all 718 reformatted sections.
+Only the sections in `roi_worklist.csv` are built by default, so that covers the
+curation job rather than all 718 reformatted sections. `--all` builds the
+marker's whole reformat index instead, and `--include-excluded` builds every
+scanned section in `focus.csv` - including the 1,066 the pipeline threw out.
+
+Those excluded sections are exactly why this reaches past the index. They have a
+greyscale image (`04a --render-excluded` writes one so they can be LOOKED at in
+Review mode) but no composite, so the review grid showed them in grey next to
+colour neighbours - which reads as a rendering fault rather than as "this one
+was excluded". Being in `sections_*_rgb/` still puts nothing into the analysis -
+the index is what does that, and this does not touch it.
+
+AN EXCLUDED SECTION IS BUILT UNMASKED, because that is what its greyscale is.
+04a masks only under `--mask-artifacts`, and the excluded ones were rendered
+before `04g --include-excluded` gave them artifact masks at all - so their
+stored image has no masking in it, while every section in the index does.
+Applying the mask here anyway made 848 of the 1,066 fail `--verify` against the
+picture the grid actually shows: same frame, different pixels.
+
+It is also the better picture to review. An excluded section is on screen so
+somebody can decide whether to reinstate it, and a base image with the artifact
+already painted black cannot answer that - the mask is a layer you switch on in
+Review mode, and it has nothing to show if it has been baked in.
 
 Thumbnails
 ----------
@@ -116,6 +137,13 @@ def main():
                          "instead of the pERK worklist. The worklist is keyed on "
                          "pERK and reaches PCNA only through the pairing, so it "
                          "cannot define the PCNA job - this can")
+    ap.add_argument("--include-excluded", action="store_true",
+                    help="build every SCANNED section for this marker, not just the "
+                         "ones that survived. The excluded ones already have a "
+                         "greyscale image from 04a --render-excluded and are shown "
+                         "in Review mode; without this they are the only grey cells "
+                         "in a colour grid. Adds no index row, so nothing downstream "
+                         "picks them up")
     ap.add_argument("--force", action="store_true",
                     help="rebuild composites that already exist (default is to skip "
                          "them, so topping a set up costs only the missing ones)")
@@ -131,6 +159,7 @@ def main():
     paths = RF.marker_paths(args.marker)
     src_dir = paths["sections"]
     out_dir = src_dir + "_rgb"
+    index_path = paths["index"]
 
     # Thumbnails are a resize of what is already on disk, so they need none of
     # the overrides, focus table or worklist below.
@@ -148,7 +177,11 @@ def main():
         secs = {r["scene_uid"]: r for r in csv.DictReader(fh)
                 if r["marker_channel"] == args.marker}
 
-    if args.all:
+    if args.include_excluded:
+        # focus.csv is the whole scanned set for this marker - the same list 04p
+        # walks - so this reaches the sections the index deliberately omits.
+        uids = sorted(secs)
+    elif args.all:
         with open(paths["index"], newline="", encoding="utf-8") as fh:
             uids = [r["id"] for r in csv.DictReader(fh) if r["kind"] == "section"]
     else:
@@ -159,6 +192,12 @@ def main():
         # sections do not have - hence --all, which reads the marker's own index.
         uid_col = "pcna_scene_uid" if args.marker == "AF488" else "scene_uid"
         uids = [u for u in ((w.get(uid_col) or "").strip() for w in want) if u]
+
+    # The index is the definition of "survived", so it is also the definition of
+    # "was masked on the way in" - 04a writes an index row for exactly the
+    # sections it reformatted under the analysis flags.
+    with open(index_path, newline="", encoding="utf-8") as fh:
+        in_index = {r["id"] for r in csv.DictReader(fh) if r["kind"] == "section"}
 
     plane = MARKER_PLANE[args.marker]
     made = skipped = mismatched = existing = 0
@@ -180,8 +219,12 @@ def main():
             continue
 
         extra, flip = overrides.get(uid, (0.0, False))
-        art = RF.load_artifact(uid, (RF.WORK_SIZE, RF.WORK_SIZE))
-        cen = RF.load_censor(uid, (RF.WORK_SIZE, RF.WORK_SIZE))
+        # Masked exactly as this section's own greyscale was - see the module
+        # docstring. Not a preference: the blue plane has to equal the picture
+        # already on disk, and for an excluded section that picture is raw.
+        excluded_here = uid not in in_index
+        art = None if excluded_here else RF.load_artifact(uid, (RF.WORK_SIZE, RF.WORK_SIZE))
+        cen = None if excluded_here else RF.load_censor(uid, (RF.WORK_SIZE, RF.WORK_SIZE))
         out = RF.reformat(dapi, light_background=False, extra_angle=extra, flip=flip,
                           artifact=art, censor=cen, companion=mark,
                           render_scale=1 if args.verify else args.scale)
