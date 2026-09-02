@@ -532,6 +532,43 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
    Still no getImageData anywhere - that taints on a file:// page. */
 #revMask,#revCensor,#revTissue{display:none}
 #revOv{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+/* FULLSCREEN. The pane is ~320px wide and the overview is 1174x1632, so the
+   detail image is shown at about a fifth of its resolution - fine for "which
+   section is this", useless for "is that debris or tissue". The card goes
+   fullscreen rather than the image alone so the channel and mask toggles come
+   with it; looking closely is exactly when switching layers matters.
+
+   aspect-ratio is dropped here: square is right for a side panel, and wrong
+   for a screen. The canvas follows the image because it is inset:0 on the same
+   wrapper, but its BACKING STORE is sized in drawRevOverlays from clientWidth,
+   so entering and leaving fullscreen has to redraw - see revFull(). */
+/* TWO MECHANISMS, ONE LOOK. The Fullscreen API is the nicer one - it hides the
+   browser chrome too - but it is refused often enough to be useless on its own:
+   a permissions-policy on an embedding viewer, or a page opened from file://,
+   and requestFullscreen resolves having done nothing. So the class is what
+   actually does the work and native fullscreen is a bonus layered on top. Both
+   selectors carry the same rules so the two cannot drift. */
+#revImgCard:fullscreen,#revImgCard.imgmax{background:#000;padding:10px;
+        display:flex;flex-direction:column;gap:6px;box-sizing:border-box}
+#revImgCard.imgmax{position:fixed;inset:0;z-index:9999;margin:0;border-radius:0;
+        overflow:auto}
+#revImgCard:fullscreen #revImgWrap,#revImgCard.imgmax #revImgWrap{
+        flex:1 1 auto;min-height:0;display:flex}
+#revImgCard:fullscreen #revImg,#revImgCard.imgmax #revImg{
+        height:100%;width:100%;aspect-ratio:auto;border:0;object-fit:contain}
+#revImgCard:fullscreen .deliver,#revImgCard.imgmax .deliver{
+        flex:0 0 auto;justify-content:center}
+#revFullBtn{margin-left:auto}
+/* Stepping and reinstating live in other cards, which do not come along when
+   the image card is maximised - so they are repeated here and shown only then.
+   Hidden in the windowed layout on purpose: the same two controls a few
+   centimetres apart is a worse page, not a more capable one. */
+.fsonly{display:none}
+#revImgCard:fullscreen .fsonly,#revImgCard.imgmax .fsonly{display:inline-flex;
+        align-items:center;gap:6px}
+#revImgCard:fullscreen #revFsPos,#revImgCard.imgmax #revFsPos{
+        color:var(--dim);font:11px ui-monospace,monospace;min-width:74px;
+        text-align:center}
 .revChain{font:11px ui-monospace,monospace;line-height:1.5}
 .revChain .st{display:flex;gap:6px;padding:3px 0;border-bottom:1px solid #1b1f26}
 .revChain .st b{flex:0 0 96px;color:var(--dim);font-weight:600}
@@ -659,8 +696,9 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
         <option value="measured">measured only</option>
         <option value="masked">has an artifact mask</option>
       </select></div>
-    <div class="card"><h3 id="revImgH">IMAGE</h3>
-      <div id="revImgWrap"><img id="revImg" alt=""><img id="revMask" alt="">
+    <div class="card" id="revImgCard"><h3 id="revImgH">IMAGE</h3>
+      <div id="revImgWrap" ondblclick="revFull()" title="double-click for fullscreen">
+        <img id="revImg" alt=""><img id="revMask" alt="">
         <img id="revCensor" alt=""><img id="revTissue" alt="">
         <canvas id="revOv"></canvas></div>
       <div class="kv" id="revImgNote" style="margin-top:4px"></div>
@@ -670,6 +708,17 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
         <button id="revArtBtn" class="btn-rot" onclick="revLayer('art')">Artifacts</button>
         <button id="revCenBtn" class="btn-kill" onclick="revLayer('cen')">Censored</button>
         <button id="revApplyBtn" class="btn-excl" onclick="revLayer('apply')">Apply mask</button>
+        <span class="fsonly">
+          <button class="btn-edit" onclick="revStep(-1)"
+                  title="Previous section (up arrow)">&lsaquo;</button>
+          <span id="revFsPos">-</span>
+          <button class="btn-edit" onclick="revStep(1)"
+                  title="Next section (down arrow)">&rsaquo;</button>
+          <button id="revFsRestore" class="btn-plate" onclick="revAct('restore')"
+                  title="Put this section back into the pipeline">Reinstate</button>
+        </span>
+        <button id="revFullBtn" class="btn-edit" onclick="revFull()"
+                title="Fullscreen (f) - double-clicking the image does it too">&#9974; Full</button>
       </div>
       <label class="chk" style="margin-top:5px;display:block">
         <input type="checkbox" id="revPenChk" checked onchange="revImg()">
@@ -741,8 +790,9 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
   reinstate one the pipeline excluded, or reject its artifact mask. There,
   <kbd>&uarr;</kbd>/<kbd>&darr;</kbd> step one section at a time through whatever
   the filter shows (including the excluded ones), and the layers are independent:
-  <kbd>d</kbd> DAPI on/off, <kbd>v</kbd> artifacts in red, <kbd>c</kbd> censored
-  pixels in cyan, <kbd>m</kbd> apply the mask to see what 04a removed &middot;
+  <kbd>d</kbd> DAPI on/off, <kbd>k</kbd> the marker on/off, <kbd>v</kbd> artifacts
+  in red, <kbd>c</kbd> censored pixels in cyan, <kbd>m</kbd> apply the mask to see
+  what 04a removed, <kbd>f</kbd> fullscreen (or double-click the image) &middot;
   <kbd>[</kbd><kbd>]</kbd> ROI size (or drag as you place one) &middot;
   3 pairs for an affine, 6 for a spline &middot;
   <span style="color:#7c5cff">purple</span> = registered &middot;
@@ -1945,9 +1995,21 @@ addEventListener("keydown", e=>{
     if(e.key==="ArrowDown"){ revStep(1); e.preventDefault(); }
     else if(e.key==="ArrowUp"){ revStep(-1); e.preventDefault(); }
     else if(e.key==="d" || e.key==="D"){ revLayer("dapi"); }
+    // `k` for the marker, because `m` is already the mask and moving a binding
+    // people have in their fingers costs more than an imperfect mnemonic.
+    else if(e.key==="k" || e.key==="K"){ revLayer("mark"); }
     else if(e.key==="v" || e.key==="V"){ revLayer("art"); }
     else if(e.key==="c" || e.key==="C"){ revLayer("cen"); }
     else if(e.key==="m" || e.key==="M"){ revLayer("apply"); }
+    else if(e.key==="f" || e.key==="F"){ revFull(); }
+    // Escape closes it. With native fullscreen refused there is no
+    // fullscreenchange to listen for, so the key has to be handled directly -
+    // otherwise the only way out of a maximised card is the button, and a
+    // maximised card is exactly when the button is easiest to lose.
+    else if(e.key==="Escape" && el("revImgCard")
+            && el("revImgCard").classList.contains("imgmax")){
+      revFull(false); e.preventDefault();
+    }
     return;
   }
   if(!active) return;
@@ -3040,6 +3102,10 @@ function revPick(uid){
   const list = revList();
   const i = list.findIndex(p => p.scene_uid === uid);
   el("revPos").textContent = i < 0 ? "-" : `${i + 1} of ${list.length}`;
+  // The maximised card carries its own copy of the position, because the card
+  // that normally shows it is not on screen then.
+  const fsp = el("revFsPos");
+  if(fsp) fsp.textContent = el("revPos").textContent;
 }
 
 // One line per stage, in the order they ran. A stage that had nothing to say
@@ -3090,6 +3156,16 @@ function revDetail(){
   // Reinstating something that was never excluded, or rejecting a mask that
   // does not exist, are both meaningless - say so on the button.
   el("revRestore").disabled = p.status !== "excluded";
+  // Same rule for the maximised copy, and it says which way it will go - there
+  // is no separate Clear button up there, so the one button has to toggle.
+  const fsr = el("revFsRestore");
+  if(fsr){
+    const on = r && r.act === "restore";
+    fsr.disabled = p.status !== "excluded";
+    fsr.textContent = on ? "Reinstated ✓" : "Reinstate";
+    fsr.classList.toggle("mode-on", !!on);
+    fsr.onclick = () => revAct(on ? "" : "restore");
+  }
   el("revDrop").disabled = p.status === "excluded";
   el("revUnmask").disabled = !p.has_mask;
 }
@@ -3228,6 +3304,84 @@ function syncReinstated(){
   }
   return changed;
 }
+
+// FULLSCREEN, and the redraw that has to go with it.
+//
+// The overlay canvas is stretched over the image by CSS, but what it holds is a
+// bitmap sized in drawRevOverlays from clientWidth at the moment it was drawn.
+// Resizing the element without redrawing would leave a ~320px bitmap scaled up
+// to fill a 1400px box - a blurry mask sitting a few pixels off the artifact it
+// is supposed to be marking, which is worse than no overlay because it still
+// looks like an answer.
+function revFull(on){
+  const card = el("revImgCard");
+  if(!card) return;
+  const want = on === undefined ? !card.classList.contains("imgmax") : !!on;
+  card.classList.toggle("imgmax", want);
+  // Native fullscreen ON TOP of the class, never instead of it. It is allowed
+  // to fail silently - the class has already filled the viewport - which is
+  // what keeps this working from file:// and inside an embedding viewer.
+  try {
+    if(want && card.requestFullscreen && !document.fullscreenElement){
+      const r = card.requestFullscreen();
+      if(r && r.catch) r.catch(() => {});
+    } else if(!want && document.fullscreenElement && document.exitFullscreen){
+      const r = document.exitFullscreen();
+      if(r && r.catch) r.catch(() => {});
+    }
+  } catch(e){ /* class-only is a complete answer */ }
+  revRedrawOverlays();
+  const b = el("revFullBtn");
+  if(b) b.textContent = want ? "✖ Exit" : "⛶ Full";
+}
+
+// REDRAW WHEN THE BOX ACTUALLY CHANGES SIZE, not a guessed number of frames
+// after asking it to.
+//
+// drawRevOverlays sizes the canvas bitmap from clientWidth at the moment it
+// runs, and the canvas is then stretched over the wrapper by CSS. Get the
+// timing wrong and the bitmap keeps the OLD dimensions while the box has the
+// new ones - going fullscreen and back left a 1258x567 bitmap stretched into a
+// 324x324 box, which is not merely blurry: the aspect ratios differ, so the
+// overlay lands somewhere other than the artifact it is marking while still
+// looking like a real answer.
+//
+// A double requestAnimationFrame was the first attempt and is a guess about
+// how long layout takes - it held when the box grew and lost the race when it
+// shrank. This asks the browser instead, and covers every cause at once:
+// fullscreen in and out, a resized window, a resized panel.
+const revBoxObserver = typeof ResizeObserver === "function"
+  ? new ResizeObserver(() => {
+      const p = P_BY[revSel];
+      if(p) drawRevOverlays(p, !!p.has_censor);
+    })
+  : null;
+if(revBoxObserver && el("revImgWrap")) revBoxObserver.observe(el("revImgWrap"));
+
+// Kept for the browsers without ResizeObserver, and harmless where it observes:
+// a second draw at the same size is idempotent.
+function revRedrawOverlays(){
+  const p = P_BY[revSel];
+  if(!p) return;
+  requestAnimationFrame(() => requestAnimationFrame(() =>
+    drawRevOverlays(p, !!p.has_censor)));
+}
+// Leaving native fullscreen by Escape or the browser's own control does not go
+// through revFull(), so the class has to be taken off here or the card would
+// stay pinned over the page with no obvious way out.
+document.addEventListener("fullscreenchange", () => {
+  if(!document.fullscreenElement) {
+    const card = el("revImgCard");
+    if(card && card.classList.contains("imgmax")) revFull(false);
+  } else revRedrawOverlays();
+});
+// The window can also change size under a maximised card - a real fullscreen
+// transition, or just a resized window - and the bitmap is sized in pixels.
+addEventListener("resize", () => {
+  const card = el("revImgCard");
+  if(card && (card.classList.contains("imgmax") || document.fullscreenElement))
+    revRedrawOverlays();
+});
 
 function revAct(act){
   const p = P_BY[revSel];
