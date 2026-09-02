@@ -2755,12 +2755,13 @@ function drawRevOverlays(p, hasCen){
     g.filter = "none";
     // HIDE THE PEN RING: keep only the part of the stencil that is on tissue.
     //
-    // 82% of all censored pixels lie OUTSIDE the tissue, because 04j censors
-    // every clipped pixel in the frame and the PAP pen ring is saturated - so
-    // the overlay is mostly pen and the real clipping is invisible underneath
-    // it. The pen has no DAPI signal at all, which is what makes it separable:
-    // thresholding DAPI gives a tissue stencil, and intersecting the two leaves
-    // the censoring that is actually on tissue.
+    // 96.4% of all censored pixels lie OUTSIDE the tissue - 169.0M censored,
+    // 6.0M on tissue, measured over the 1,506 sections that have both masks -
+    // because 04j censors every clipped pixel in the frame and the PAP pen ring
+    // is saturated. 39% of sections with any censoring have NONE of it on
+    // tissue at all. So the overlay is mostly pen and the real clipping is
+    // invisible underneath it; intersecting with a tissue stencil leaves the
+    // censoring that is actually on tissue.
     //
     // THRESHOLDING DAPI IN THE BROWSER WAS TRIED FIRST AND CANNOT WORK. In the
     // 8-bit overview DAPI has a median of 4/255 inside tissue against 1-2
@@ -2770,8 +2771,20 @@ function drawRevOverlays(p, hasCen){
     // The mask now comes from 04p, which runs the pipeline's own log-space
     // Otsu on the data it was designed for.
     //
-    // Still a way of LOOKING, not a measurement: `censored_fraction_in_tissue`
-    // is the number to quote, and 04j computes it properly.
+    // Still a way of LOOKING, not a measurement - but do NOT reach for
+    // `censored_fraction_in_tissue` as the number instead. That column is not
+    // restricted to tissue: 04j takes its stencil as `DAPI > 0`, which is every
+    // pixel that is not exactly black and covers 74-92% of the frame (mean 83%)
+    // against 10-35% for real tissue. `cen[DAPI > 0].mean()` reproduces the
+    // column to four decimals on every section checked, so the name promises a
+    // restriction the arithmetic does not make, and the pen sits inside it.
+    // That is why it runs ~7x the tissue-restricted overlap and correlates with
+    // it only r=0.61.
+    //
+    // Reported, not fixed here: 04j belongs to the censoring work and this is
+    // the viewer. Whoever lands that stage should decide what the column ought
+    // to mean; this comment exists so the next person does not quote it as
+    // "fraction in tissue" on the strength of its name.
     if(clipToTissue){
       const tsrc = el("revTissue");
       if(tsrc && tsrc.naturalWidth){
