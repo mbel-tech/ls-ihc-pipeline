@@ -23,9 +23,26 @@ was showing. `--verify` checks exactly that rather than assuming it.
 Only the sections in `roi_worklist.csv` are built, so this covers the curation
 job rather than all 718 reformatted sections.
 
+Thumbnails
+----------
+
+`--thumbs` writes a `RF.GRID`-sized copy of each composite into
+`<sections>_rgb_thumb/`. The review grid draws a few hundred cells at 78px, and
+a 768px composite is 448 KB against 21 KB for the greyscale it replaced - one
+animal's grid went from 4.7 MB to 56.6 MB for pictures nobody sees at that size.
+That is the same mistake the grid already made once with the 1632x1862
+overviews, which left most cells blank behind `loading="lazy"` and looked broken
+rather than slow.
+
+A thumbnail is a DOWNSCALE OF THE COMPOSITE, never a re-render. Re-rendering
+would put a second code path between the picture and the frame it was built in,
+and the only thing that makes these safe to show next to landmark work is that
+they are the same image, smaller.
+
 Run:  python 04o_section_rgb.py
       python 04o_section_rgb.py --tier core
       python 04o_section_rgb.py --verify
+      python 04o_section_rgb.py --thumbs --all --marker AF488
 """
 
 import argparse
@@ -50,6 +67,41 @@ FOCUS_CSV = os.path.join(OUT_ROOT, "qc", "focus.csv")
 MARKER_PLANE = {"AF568": 0, "AF488": 1}
 
 
+def write_thumbs(rgb_dir, size=RF.GRID, force=False):
+    """Downscale every composite in `rgb_dir` into `<rgb_dir>_thumb`.
+
+    Reads the composites rather than rebuilding from the overviews: a thumbnail
+    that went through its own render could differ from the picture the landmarks
+    were placed on, and the whole point is that it cannot.
+
+    LANCZOS because this is a 3:1 reduction of a sparse fluorescent signal -
+    nearest or bilinear drop isolated positive nuclei entirely, which is exactly
+    the thing the grid is being scanned for.
+    """
+    out_dir = rgb_dir + "_thumb"
+    os.makedirs(out_dir, exist_ok=True)
+    made = existing = failed = 0
+    for name in sorted(os.listdir(rgb_dir)):
+        if not name.endswith(".png"):
+            continue
+        dst = os.path.join(out_dir, name)
+        if os.path.exists(dst) and not force:
+            existing += 1
+            continue
+        try:
+            with Image.open(os.path.join(rgb_dir, name)) as im:
+                im.convert("RGB").resize((size, size), Image.LANCZOS).save(dst)
+            made += 1
+        except OSError:
+            failed += 1
+    print(f"wrote {made} thumbnails ({size}px) to {out_dir}")
+    if existing:
+        print(f"  {existing} already there, left alone (--force rebuilds them)")
+    if failed:
+        print(f"  {failed} could not be read")
+    return made, existing, failed
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--marker", choices=("AF488", "AF568"), default="AF568")
@@ -69,12 +121,27 @@ def main():
                          "them, so topping a set up costs only the missing ones)")
     ap.add_argument("--verify", action="store_true",
                     help="check the blue plane still equals the existing greyscale section")
+    ap.add_argument("--thumbs", action="store_true",
+                    help="downscale the composites already built for this marker to "
+                         f"{RF.GRID}px for the review grid, and do nothing else")
+    ap.add_argument("--thumb-size", type=int, default=RF.GRID, metavar="N",
+                    help=f"thumbnail edge in pixels (default {RF.GRID})")
     args = ap.parse_args()
 
     paths = RF.marker_paths(args.marker)
-    overrides, _ = RF.load_overrides(paths)
     src_dir = paths["sections"]
     out_dir = src_dir + "_rgb"
+
+    # Thumbnails are a resize of what is already on disk, so they need none of
+    # the overrides, focus table or worklist below.
+    if args.thumbs:
+        if not os.path.isdir(out_dir):
+            print(f"no composites to shrink: {out_dir} does not exist")
+            return
+        write_thumbs(out_dir, args.thumb_size, args.force)
+        return
+
+    overrides, _ = RF.load_overrides(paths)
     os.makedirs(out_dir, exist_ok=True)
 
     with open(FOCUS_CSV, newline="", encoding="utf-8") as fh:

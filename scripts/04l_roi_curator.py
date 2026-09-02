@@ -249,8 +249,8 @@ PROV_FIELDS = [
     "proposed_excluded", "tissue_area_mm2", "focus_score", "largest_mm2",
     "n_artifact_objects", "artifact_pct_of_tissue", "in_analysis_set",
     "censored_fraction_in_tissue", "censor_reason",
-    "has_overview", "has_section", "has_section_rgb", "has_mask", "has_censor",
-    "has_tissue",
+    "has_overview", "has_section", "has_section_rgb", "has_section_thumb",
+    "has_mask", "has_censor", "has_tissue",
     "n_rois", "n_nuclei",
 ]
 
@@ -292,6 +292,7 @@ def load_provenance():
         # Separate from has_section on purpose: all 2,572 have a greyscale
         # section image, only the 1,506 reformatted ones have a composite.
         r["has_section_rgb"] = 1 if r.get("section_rgb") else 0
+        r["has_section_thumb"] = 1 if r.get("section_thumb") else 0
         r["has_mask"] = 1 if r.get("mask_img") else 0
         # WHETHER the file exists, never which marker. 04j was AF568-only while
         # it read the 8-bit _MARK.png; reading the raw data lifted that and both
@@ -2692,13 +2693,24 @@ function revSrc(p, what){
   if(what === "overview") return p.has_overview ? ov(REV.dapi ? "RGB" : "MARK") : "";
   if(what === "dapi")     return p.has_overview ? ov("DAPI") : "";
   if(what === "section"){
-    // Colour where there is colour. The composite is what the operator is
-    // looking at everywhere else in this page, and a grid of grey thumbnails
-    // next to a colour detail reads as two different datasets. Falls back to
-    // the greyscale rather than 404ing: 1,066 sections have no composite.
+    // Colour where there is colour, at the SIZE THE GRID DRAWS.
+    //
+    // The composite is what the operator is looking at everywhere else in this
+    // page, and a grid of grey thumbnails next to a colour detail reads as two
+    // different datasets. But the composite is 768px and 448 KB for a cell
+    // drawn at 78px - one animal is 56.6 MB of picture nobody sees at that
+    // size, which is the overview mistake again with smaller numbers. 04o
+    // --thumbs writes a 256px copy at 61 KB; that is what the grid asks for.
+    //
+    // Three steps down, because each one is a separate fact about the disk:
+    // thumbnail, then composite, then the greyscale every section has. Nothing
+    // here infers one file from another - 1,066 sections have no composite and
+    // a failed <img> is silent.
     if(!p.has_section) return "";
     const dir = `sections${p.marker === "AF568" ? "_AF568" : ""}`;
-    return `${dir}${p.has_section_rgb ? "_rgb" : ""}/${p.scene_uid}.png`;
+    const sub = p.has_section_thumb ? "_rgb_thumb"
+              : p.has_section_rgb   ? "_rgb" : "";
+    return `${dir}${sub}/${p.scene_uid}.png`;
   }
   if(what === "censor")   return p.has_censor
       ? `../censor/${p.scene_uid}_censor.png` : "";
@@ -2939,7 +2951,7 @@ function revCell(p){
                      : r.act === "drop" ? "dr" : "um"}">`
                  + (r.act === "restore" ? "IN" : r.act === "drop" ? "OUT" : "NOMASK")
                  + `</span>` : "";
-  // THE REFORMATTED IMAGE, at 18 KB, not the overview at 556 KB.
+  // THE 256px THUMBNAIL, at 61 KB, not the overview at 556 KB.
   //
   // The grid draws a few hundred cells at 78 px, and the overview is
   // 1632x1862 - LS61's pERK sections alone are 98 MB of PNG against 2.3 MB

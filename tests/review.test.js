@@ -54,28 +54,42 @@ if (withAll) {
   const mk = withAll.marker === "AF568" ? "_AF568" : "";
   chk("overview path", X.revSrc(withAll, "overview"),
       `../overviews/${withAll.animal}/${withAll.marker}/${withAll.scene_uid}_RGB.png`);
-  // Colour where there is colour, greyscale where there is not. All 2,572
-  // sections have a greyscale image; only the 1,506 reformatted ones have a
-  // composite, so this cannot be inferred from has_section - inferring it asks
-  // for 1,066 files that do not exist, and a failed <img> is silent.
-  chk("section path uses the composite when there is one",
+  // Colour where there is colour, at the size the grid draws. Three separate
+  // facts about the disk - thumbnail, composite, greyscale - and none inferred
+  // from another: all 2,572 have a greyscale image, only 1,506 have a
+  // composite, and a set built before 04o --thumbs has no thumbnails at all.
+  // Inferring any of them asks for files that are not there, and a failed
+  // <img> is silent.
+  const sub = withAll.has_section_thumb ? "_rgb_thumb"
+            : withAll.has_section_rgb ? "_rgb" : "";
+  chk("section path prefers the thumbnail",
       X.revSrc(withAll, "section"),
-      `sections${mk}${withAll.has_section_rgb ? "_rgb" : ""}/${withAll.scene_uid}.png`);
+      `sections${mk}${sub}/${withAll.scene_uid}.png`);
   chk("mask path", X.revSrc(withAll, "mask"),
       `../artifacts/${withAll.scene_uid}_artifact.png`);
 
-  const colour = X.PROWS.find(p => p.has_section && p.has_section_rgb);
-  const grey   = X.PROWS.find(p => p.has_section && !p.has_section_rgb);
-  if (colour) {
-    chk("...a section with a composite gets the _rgb directory",
-        /_rgb\//.test(X.revSrc(colour, "section")), true);
+  const thumb = X.PROWS.find(p => p.has_section && p.has_section_thumb);
+  const grey  = X.PROWS.find(p => p.has_section && !p.has_section_rgb);
+  if (thumb) {
+    chk("...a section with a thumbnail gets the _rgb_thumb directory",
+        /_rgb_thumb\//.test(X.revSrc(thumb, "section")), true);
   }
   if (grey) {
-    chk("...one without falls back rather than 404ing",
-        /_rgb\//.test(X.revSrc(grey, "section")), false);
+    chk("...one with neither falls back rather than 404ing",
+        /_rgb/.test(X.revSrc(grey, "section")), false);
     chk("...and still names a file", X.revSrc(grey, "section").endsWith(
         `${grey.scene_uid}.png`), true);
   }
+  // The middle step is the one that only exists between runs of 04o, so it is
+  // pinned with a synthetic row rather than left to whatever is on disk.
+  chk("...a composite with no thumbnail yet still gets colour",
+      X.revSrc({scene_uid: "U", marker: "AF488", has_section: 1,
+                has_section_rgb: 1, has_section_thumb: 0}, "section"),
+      "sections_rgb/U.png");
+  chk("...and the pERK directory is not shared",
+      X.revSrc({scene_uid: "U", marker: "AF568", has_section: 1,
+                has_section_rgb: 1, has_section_thumb: 1}, "section"),
+      "sections_AF568_rgb_thumb/U.png");
 }
 
 const noSection = X.PROWS.find(p => !p.has_section);

@@ -150,8 +150,8 @@ COLUMNS = [
     # 04a
     "reformatted", "angle", "manual_rotation", "manual_flip",
     # what can be shown, and what was measured
-    "overview_img", "section_img", "section_rgb", "mask_img", "tissue_img",
-    "censor_img",
+    "overview_img", "section_img", "section_rgb", "section_thumb", "mask_img",
+    "tissue_img", "censor_img",
     "n_rois", "n_nuclei",
 ]
 
@@ -340,6 +340,14 @@ def main():
             "section_rgb": sec_rel.replace(sec_dir, sec_dir + "_rgb", 1)
             if os.path.exists(
                 os.path.join(REFORMAT_DIR, sec_dir + "_rgb", uid + ".png")) else "",
+            # The 256px colour thumbnail 04o --thumbs writes. Asked separately
+            # from the composite for the same reason the composite is asked
+            # separately from the greyscale: whether a file is there is a fact
+            # about the disk, and a set built without thumbnails must degrade to
+            # the composite rather than request one that was never made.
+            "section_thumb": sec_rel.replace(sec_dir, sec_dir + "_rgb_thumb", 1)
+            if os.path.exists(
+                os.path.join(REFORMAT_DIR, sec_dir + "_rgb_thumb", uid + ".png")) else "",
             "mask_img": mask_rel if os.path.exists(
                 os.path.join(MASK_DIR, uid + "_artifact.png")) else "",
             "tissue_img": f"../tissue/{uid}_tissue.png" if os.path.exists(
