@@ -90,15 +90,37 @@ chk("a layer toggles on", X.REV.art, true);
 X.revLayer("art");
 chk("...and off again", X.REV.art, false);
 
-// Censoring is pERK-only - AF488 cannot clip - so the button must refuse
-// rather than offer a switch that does nothing.
-const pcna = X.PROWS.find(p => p.marker === "AF488");
-if (pcna) {
-  X.revPick(pcna.scene_uid);
-  chk("PCNA has no censor layer", env.els.revCenBtn.disabled, true);
+// THE MASK ON DISK DECIDES, NOT THE MARKER.
+//
+// This block used to assert "PCNA has no censor layer", because censoring
+// really was pERK-only: 04j thresholded the 8-bit _MARK.png at 255, which only
+// means "clipped" for AF568, whose display high IS the 16-bit ceiling. AF488's
+// is 37,263, so nothing ever reached 255 and no PCNA mask was written.
+//
+// Reading the raw data instead lifted that and both channels have masks now.
+// A marker test would silently refuse on all 788 PCNA sections while the files
+// sat there - so the test is inverted deliberately: it now pins the button to
+// has_censor, and fails if anyone reintroduces a per-marker shortcut.
+const withCen    = X.PROWS.filter(p => p.has_censor);
+const withoutCen = X.PROWS.filter(p => !p.has_censor);
+
+if (withCen.length) {
+  X.revPick(withCen[0].scene_uid);
+  chk("a section with a censor mask offers the layer", env.els.revCenBtn.disabled, false);
 }
+if (withoutCen.length) {
+  X.revPick(withoutCen[0].scene_uid);
+  chk("one without it refuses", env.els.revCenBtn.disabled, true);
+}
+
+// The regression itself: PCNA sections that HAVE masks must not be refused.
+const pcnaCen = X.PROWS.filter(p => p.marker === "AF488" && p.has_censor);
+if (pcnaCen.length) {
+  X.revPick(pcnaCen[0].scene_uid);
+  chk("PCNA with a mask is not refused for being PCNA", env.els.revCenBtn.disabled, false);
+}
+
 X.revPick(masked.scene_uid);
-chk("pERK does", env.els.revCenBtn.disabled, false);
 
 // ---- stepping and filtering -----------------------------------------------
 //

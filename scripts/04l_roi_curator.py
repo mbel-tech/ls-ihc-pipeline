@@ -249,7 +249,8 @@ PROV_FIELDS = [
     "proposed_excluded", "tissue_area_mm2", "focus_score", "largest_mm2",
     "n_artifact_objects", "artifact_pct_of_tissue", "in_analysis_set",
     "censored_fraction_in_tissue", "censor_reason",
-    "has_overview", "has_section", "has_mask", "n_rois", "n_nuclei",
+    "has_overview", "has_section", "has_mask", "has_censor", "has_tissue",
+    "n_rois", "n_nuclei",
 ]
 
 # Columns whose values repeat across thousands of rows. "manually excluded:
@@ -288,6 +289,11 @@ def load_provenance():
         r["has_overview"] = 1 if r.get("overview_img") else 0
         r["has_section"] = 1 if r.get("section_img") else 0
         r["has_mask"] = 1 if r.get("mask_img") else 0
+        # WHETHER the file exists, never which marker. 04j was AF568-only while
+        # it read the 8-bit _MARK.png; reading the raw data lifted that and both
+        # channels have censor masks now, so a marker test is already wrong.
+        r["has_censor"] = 1 if r.get("censor_img") else 0
+        r["has_tissue"] = 1 if r.get("tissue_img") else 0
 
     pool, index = {}, {}
     for k in PROV_POOLED:
@@ -515,7 +521,7 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
    So the two masks are now image SOURCES only, kept in the DOM so the browser
    loads and caches them, and a canvas composites them at a fixed opacity.
    Still no getImageData anywhere - that taints on a file:// page. */
-#revMask,#revCensor{display:none}
+#revMask,#revCensor,#revTissue{display:none}
 #revOv{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
 .revChain{font:11px ui-monospace,monospace;line-height:1.5}
 .revChain .st{display:flex;gap:6px;padding:3px 0;border-bottom:1px solid #1b1f26}
@@ -600,14 +606,18 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
       </select></div>
     <div class="card"><h3 id="revImgH">IMAGE</h3>
       <div id="revImgWrap"><img id="revImg" alt=""><img id="revMask" alt="">
-        <img id="revCensor" alt=""><canvas id="revOv"></canvas></div>
+        <img id="revCensor" alt=""><img id="revTissue" alt="">
+        <canvas id="revOv"></canvas></div>
       <div class="kv" id="revImgNote" style="margin-top:4px"></div>
       <div class="deliver" style="flex-wrap:wrap;margin-top:4px">
         <button id="revDapiBtn" class="btn-plate" onclick="revLayer('dapi')">DAPI</button>
         <button id="revArtBtn" class="btn-rot" onclick="revLayer('art')">Artifacts</button>
         <button id="revCenBtn" class="btn-kill" onclick="revLayer('cen')">Censored</button>
         <button id="revApplyBtn" class="btn-excl" onclick="revLayer('apply')">Apply mask</button>
-      </div></div>
+      </div>
+      <label class="chk" style="margin-top:5px;display:block">
+        <input type="checkbox" id="revPenChk" checked onchange="revImg()">
+        hide the PAP pen ring - show only censoring inside the tissue</label></div>
     <div class="card"><h3>WHAT EACH STAGE DECIDED</h3>
       <div class="revChain" id="revChain"></div></div>
     <div class="card"><h3>YOUR DECISION</h3>
@@ -2680,7 +2690,10 @@ function revSrc(p, what){
   if(what === "section")
     return p.has_section
       ? `sections${p.marker === "AF568" ? "_AF568" : ""}/${p.scene_uid}.png` : "";
-  if(what === "censor")   return `../censor/${p.scene_uid}_censor.png`;
+  if(what === "censor")   return p.has_censor
+      ? `../censor/${p.scene_uid}_censor.png` : "";
+  if(what === "tissue")   return p.has_tissue
+      ? `../tissue/${p.scene_uid}_tissue.png` : "";
   return p.has_mask ? `../artifacts/${p.scene_uid}_artifact.png` : "";
 }
 
@@ -2728,7 +2741,7 @@ function drawRevOverlays(p, hasCen){
   const k = Math.min(W / nw, H / nh);
   const dw = nw * k, dh = nh * k, dx = (W - dw) / 2, dy = (H - dh) / 2;
 
-  const layer = (img, colour, alpha) => {
+  const layer = (img, colour, alpha, clipToTissue) => {
     if(!img || !img.naturalWidth) return;
     const t = document.createElement("canvas");
     t.width = Math.round(dw); t.height = Math.round(dh);
@@ -2740,6 +2753,34 @@ function drawRevOverlays(p, hasCen){
     g.filter = "brightness(255) url(#revLumAlpha)";
     g.drawImage(img, 0, 0, t.width, t.height);
     g.filter = "none";
+    // HIDE THE PEN RING: keep only the part of the stencil that is on tissue.
+    //
+    // 82% of all censored pixels lie OUTSIDE the tissue, because 04j censors
+    // every clipped pixel in the frame and the PAP pen ring is saturated - so
+    // the overlay is mostly pen and the real clipping is invisible underneath
+    // it. The pen has no DAPI signal at all, which is what makes it separable:
+    // thresholding DAPI gives a tissue stencil, and intersecting the two leaves
+    // the censoring that is actually on tissue.
+    //
+    // THRESHOLDING DAPI IN THE BROWSER WAS TRIED FIRST AND CANNOT WORK. In the
+    // 8-bit overview DAPI has a median of 4/255 inside tissue against 1-2
+    // outside; no cut separates them, and the one that looked plausible kept
+    // 0.2% of the censoring 04j says is on tissue - a display that would have
+    // read as "almost nothing is censored here" while the file said 10.6%.
+    // The mask now comes from 04p, which runs the pipeline's own log-space
+    // Otsu on the data it was designed for.
+    //
+    // Still a way of LOOKING, not a measurement: `censored_fraction_in_tissue`
+    // is the number to quote, and 04j computes it properly.
+    if(clipToTissue){
+      const tsrc = el("revTissue");
+      if(tsrc && tsrc.naturalWidth){
+        g.globalCompositeOperation = "destination-in";
+        g.filter = "url(#revLumAlpha)";       // already 0/255, only alpha needed
+        g.drawImage(tsrc, 0, 0, t.width, t.height);
+        g.filter = "none";
+      }
+    }
     g.globalCompositeOperation = "source-in";
     g.fillStyle = colour;
     g.fillRect(0, 0, t.width, t.height);
@@ -2750,16 +2791,21 @@ function drawRevOverlays(p, hasCen){
 
   if(REV.apply && p.has_mask) layer(el("revMask"), "#000000", 1);
   if(REV.art   && p.has_mask) layer(el("revMask"), "#ff3b30", 0.75);
-  if(REV.cen   && hasCen)     layer(el("revCensor"), "#00d5ff", 0.55);
+  if(REV.cen && hasCen)
+    layer(el("revCensor"), "#00d5ff", 0.55,
+          !!p.has_tissue && el("revPenChk") && el("revPenChk").checked);
 }
 
 // A src is assigned and the overlay drawn in the same breath, so the first draw
 // usually runs before anything has decoded and naturalWidth is still 0 - which
 // is a blank overlay and no error. Every load re-draws.
-for(const id of ["revImg", "revMask", "revCensor"]){
+for(const id of ["revImg", "revMask", "revCensor", "revTissue"]){
   el(id).addEventListener("load", () => {
     const p = P_BY[revSel];
-    if(p) drawRevOverlays(p, p.marker === "AF568" && !!p.has_section);
+    // has_censor, not the marker - the same test as revImg. This handler kept
+    // the old marker check after revImg moved off it, so every image load
+    // redrew PCNA with the censor layer off and quietly wiped it.
+    if(p) drawRevOverlays(p, !!p.has_censor);
   });
 }
 
@@ -2967,15 +3013,20 @@ function revDetail(){
 function revImg(){
   const p = P_BY[revSel];
   if(!p) return;
-  // Censoring is pERK-only by construction - AF488's display high is below the
-  // 16-bit ceiling so it cannot clip - and 04j writes a mask for the 718 it
-  // reformatted. A section with none disables the button and says why, rather
-  // than offering a switch that does nothing.
-  const hasCen = p.marker === "AF568" && p.has_section;
+  // WHETHER A CENSOR MASK EXISTS, not which marker this is.
+  //
+  // Censoring WAS pERK-only, and this asked `p.marker === "AF568"` because of
+  // it: 04j thresholded the 8-bit _MARK.png at 255, which only means "clipped"
+  // for AF568, whose display high is the 16-bit ceiling. AF488's is 37,263, so
+  // the test did not generalise and PCNA had no masks. Reading the raw data
+  // instead lifted that, both channels now have them, and a marker test would
+  // silently refuse on half the dataset. The file is the authority.
+  const hasCen = !!p.has_censor;
 
   el("revImg").src = revSrc(p, "overview");
   el("revMask").src = revSrc(p, "mask");
   el("revCensor").src = hasCen ? revSrc(p, "censor") : "";
+  el("revTissue").src = p.has_tissue ? revSrc(p, "tissue") : "";
 
   drawRevOverlays(p, hasCen);
 
@@ -2983,13 +3034,22 @@ function revImg(){
     el(id).classList.toggle("mode-on", !!v);
     el(id).disabled = !!dis;
   };
+  const pen = el("revPenChk");
+  if(pen){
+    // The clip needs a real tissue mask. Without one the box is not merely
+    // ineffective, it would be a lie about what is on screen.
+    pen.disabled = !p.has_tissue;
+    pen.parentElement.style.opacity = p.has_tissue ? "1" : ".45";
+    pen.parentElement.title = p.has_tissue ? ""
+      : "needs a tissue mask - run: python scripts/04p_section_provenance.py --tissue-masks";
+  }
   on("revDapiBtn",  REV.dapi,  !p.has_overview);
   on("revArtBtn",   REV.art,   !p.has_mask);
   on("revCenBtn",   REV.cen,   !hasCen);
   on("revApplyBtn", REV.apply, !p.has_mask);
   el("revDapiBtn").textContent = REV.dapi ? "DAPI ✓" : "DAPI";
   el("revCenBtn").title = hasCen ? "" :
-    "no censor mask - 04j runs on pERK only, because AF488 cannot clip";
+    "no censor mask for this section - run 04j_censor_clipped.py";
 
   el("revImgH").textContent = "IMAGE - "
     + (REV.dapi ? "DAPI + marker" : "marker only")
@@ -2999,9 +3059,11 @@ function revImg(){
     ? `${p.n_artifact_objects || 0} artifact objects, `
       + `${p.artifact_pct_of_tissue || 0}% of tissue`
     : "no artifact mask");
-  if(hasCen && p.censored_fraction_in_tissue !== "")
+  if(hasCen && p.censored_fraction_in_tissue !== ""){
+    const pen = el("revPenChk") && el("revPenChk").checked;
     bits.push(`${(100 * (+p.censored_fraction_in_tissue || 0)).toFixed(2)}% of `
-            + `tissue censored`);
+            + `tissue censored` + (pen ? "" : " - pen ring shown too"));
+  }
   el("revImgNote").textContent = bits.join("  ·  ");
 }
 

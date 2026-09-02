@@ -40,6 +40,7 @@ Writes `reformatted/section_provenance.csv`.
 Run:  python 04p_section_provenance.py
 """
 
+import argparse
 import csv
 import importlib.util
 import json
@@ -55,9 +56,11 @@ OUT_ROOT = CONFIG["out_root"]
 REFORMAT_DIR = os.path.join(OUT_ROOT, "reformatted")
 OVERVIEW_DIR = os.path.join(OUT_ROOT, "overviews")
 MASK_DIR = os.path.join(OUT_ROOT, "artifacts")
+CENSOR_DIR = os.path.join(OUT_ROOT, "censor")
 RESULTS = os.path.join(OUT_ROOT, "results")
 MANIFEST_CSV = os.path.join(OUT_ROOT, "manifest", "manifest_scenes.csv")
 FOCUS_CSV = os.path.join(OUT_ROOT, "qc", "focus.csv")
+TISSUE_DIR = os.path.join(OUT_ROOT, "tissue")
 OUT_CSV = os.path.join(REFORMAT_DIR, "section_provenance.csv")
 
 # 04m already turns these reason strings into a class and the number embedded in
@@ -66,6 +69,67 @@ _spec = importlib.util.spec_from_file_location(
     "_g4m", os.path.join(_HERE, "04m_sections_dataset.py"))
 G4M = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(G4M)
+
+def write_tissue_masks(rows, force=False):
+    """One tissue mask per section, in the OVERVIEW frame.
+
+    **Why this has to exist at all.** Several stages compute a tissue mask and
+    none of them keep it: 04g rebuilds one every run, 04i rebuilds one to align
+    the two channels, 04j builds one to report
+    `censored_fraction_in_tissue`, and 04a's lives only in the reformatted
+    frame. So nothing downstream can ask "is this pixel tissue?" in the frame
+    the overviews and the censor and artifact masks all share.
+
+    The ROI curator's Review mode needs exactly that, to separate censoring on
+    tissue from censoring on the PAP pen ring - **82% of censored pixels are
+    outside the tissue**, so the overlay is mostly pen and the real clipping is
+    invisible under it.
+
+    **Thresholding DAPI in the browser was tried first and cannot work.** In the
+    8-bit overview, DAPI inside tissue has a median of 4/255 against 1-2
+    outside; no cut separates them, and the one that looked plausible kept 0.2%
+    of the censoring that 04j says is on tissue. The mask has to come from the
+    same log-space Otsu the pipeline uses, on the data it was designed for.
+
+    `04a_reformat.tissue_mask` is that function, applied the way `04g` applies
+    it - squashed to a square work grid, then stretched back - so this mask is
+    the pipeline's own opinion rather than a fourth definition of tissue.
+    """
+    from PIL import Image
+    import numpy as np
+    _s = importlib.util.spec_from_file_location(
+        "_rf4p", os.path.join(_HERE, "04a_reformat.py"))
+    RF = importlib.util.module_from_spec(_s)
+    _s.loader.exec_module(RF)
+
+    os.makedirs(TISSUE_DIR, exist_ok=True)
+    made = skipped = failed = 0
+    for i, r in enumerate(rows):
+        uid = r["scene_uid"]
+        out = os.path.join(TISSUE_DIR, uid + "_tissue.png")
+        if os.path.exists(out) and not force:
+            skipped += 1
+            continue
+        src = os.path.join(OVERVIEW_DIR, r["animal"], r["marker"], uid + "_DAPI.png")
+        if not os.path.exists(src):
+            failed += 1
+            continue
+        im = np.asarray(Image.open(src).convert("L")).astype(np.float32)
+        small = np.asarray(Image.fromarray(im).resize(
+            (RF.WORK_SIZE, RF.WORK_SIZE), Image.BILINEAR)).astype(np.float32)
+        t = RF.tissue_mask(small, light_background=False)
+        if t is None:
+            failed += 1
+            continue
+        big = Image.fromarray((t.astype(np.uint8) * 255)).resize(
+            (im.shape[1], im.shape[0]), Image.NEAREST)
+        big.save(out)
+        made += 1
+        if (i + 1) % 200 == 0:
+            print(f"\r  tissue masks {i + 1}/{len(rows)}", end="")
+    print(f"\r  tissue masks: {made} written, {skipped} already there, "
+          f"{failed} could not be built        ")
+
 
 COLUMNS = [
     # where it came from
@@ -86,7 +150,8 @@ COLUMNS = [
     # 04a
     "reformatted", "angle", "manual_rotation", "manual_flip",
     # what can be shown, and what was measured
-    "overview_img", "section_img", "mask_img", "n_rois", "n_nuclei",
+    "overview_img", "section_img", "mask_img", "tissue_img", "censor_img",
+    "n_rois", "n_nuclei",
 ]
 
 
@@ -142,6 +207,14 @@ def count_rois():
 
 
 def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--tissue-masks", action="store_true",
+                    help="build a tissue mask per section in the OVERVIEW frame "
+                         "(tissue/<uid>_tissue.png). Slow - it opens every DAPI "
+                         "overview - and only needed once.")
+    ap.add_argument("--force", action="store_true",
+                    help="rebuild tissue masks that already exist")
+    args = ap.parse_args()
     man = load(MANIFEST_CSV)
     focus = {r["scene_uid"]: r for r in load(FOCUS_CSV)}
 
@@ -260,11 +333,30 @@ def main():
                 os.path.join(REFORMAT_DIR, sec_dir, uid + ".png")) else "",
             "mask_img": mask_rel if os.path.exists(
                 os.path.join(MASK_DIR, uid + "_artifact.png")) else "",
+            "tissue_img": f"../tissue/{uid}_tissue.png" if os.path.exists(
+                os.path.join(TISSUE_DIR, uid + "_tissue.png")) else "",
+            # WHETHER a censor mask exists, not which marker this is. 04j was
+            # AF568-only when it read the 8-bit _MARK.png, because AF488's
+            # display high sits below the 16-bit ceiling so a 255 there does not
+            # mean clipped. Reading the raw data removed that limit and both
+            # channels now have masks, so anything keyed on the marker is
+            # already wrong.
+            "censor_img": f"../censor/{uid}_censor.png" if os.path.exists(
+                os.path.join(CENSOR_DIR, uid + "_censor.png")) else "",
             "n_rois": n_roi.get(uid, 0), "n_nuclei": n_nuc.get(uid, 0),
         })
 
     rows.sort(key=lambda r: (r["animal"], r["marker"],
                              int(r["section_order"] or 0)))
+
+    # After the table is built, so the mask pass has the marker per section, and
+    # before it is written, so tissue_img reflects what was just made.
+    if args.tissue_masks:
+        write_tissue_masks(rows, force=args.force)
+        for r in rows:
+            if os.path.exists(os.path.join(TISSUE_DIR,
+                                           r["scene_uid"] + "_tissue.png")):
+                r["tissue_img"] = f"../tissue/{r['scene_uid']}_tissue.png"
 
     os.makedirs(REFORMAT_DIR, exist_ok=True)
     with open(OUT_CSV, "w", newline="", encoding="utf-8") as fh:
@@ -282,7 +374,9 @@ def main():
     print(f"  showable   : {sum(1 for r in rows if r['section_img'])} in the "
           f"analysis frame, {sum(1 for r in rows if not r['section_img'])} as the "
           f"original scan only")
-    print(f"  masks      : {sum(1 for r in rows if r['mask_img'])}")
+    print(f"  masks      : {sum(1 for r in rows if r['mask_img'])} artifact, "
+          f"{sum(1 for r in rows if r['censor_img'])} censor, "
+          f"{sum(1 for r in rows if r['tissue_img'])} tissue")
     if unparsed:
         print(f"  UNPARSED reasons: {len(unparsed)} e.g. {unparsed[:2]}")
     print("=" * 72)

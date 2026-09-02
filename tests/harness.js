@@ -75,6 +75,13 @@ function makeEnv() {
     // is the package that gets built around it, not the picture.
     toBlob(cb) { cb(mkBlob([PNG_1PX])); },
     getBoundingClientRect: () => ({ left: 0, top: 0, width: 600, height: 600 }),
+    // Every element in a real document has a parent, and the page dresses the
+    // label AROUND a checkbox - disabling it also dims and re-titles the
+    // wrapper. A stub with no parentElement made that a TypeError, which reads
+    // as "the page is broken" when it is the fake DOM that is thin.
+    get parentElement() {
+      return (this._parent ||= { style: {}, title: "", classList: mkCL() });
+    },
     getContext: () => new Proxy({}, {
       get: (t, k) => k === "measureText"
         ? (s => ({ width: String(s).length * 8 }))
