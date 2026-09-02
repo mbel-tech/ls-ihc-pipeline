@@ -627,6 +627,20 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
   <filter id="revPcnaOnly" color-interpolation-filters="sRGB">
     <feColorMatrix type="matrix" values="0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 1 0"/>
   </filter>
+  <!-- DAPI alone. _DAPI.png is greyscale, so R=G=B and only the blue row does
+       anything. Still lifted 4x: the point of a toggle is to compare, and a
+       channel that changed brightness depending on what was next to it would
+       make that comparison a guess. -->
+  <filter id="revDapiOnly" color-interpolation-filters="sRGB">
+    <feColorMatrix type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 4 0 0  0 0 0 1 0"/>
+  </filter>
+  <!-- Both channels off. The image still LOADS - blanked rather than removed -
+       because the overlay canvas takes its size from the base image, so a
+       missing one would take the artifact and censor layers down with it. This
+       way the masks can be read on their own against black. -->
+  <filter id="revBlank" color-interpolation-filters="sRGB">
+    <feColorMatrix type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0"/>
+  </filter>
 </defs></svg>
 <div id="review">
   <div id="revGrid"></div>
@@ -652,6 +666,7 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
       <div class="kv" id="revImgNote" style="margin-top:4px"></div>
       <div class="deliver" style="flex-wrap:wrap;margin-top:4px">
         <button id="revDapiBtn" class="btn-plate" onclick="revLayer('dapi')">DAPI</button>
+        <button id="revMarkBtn" class="btn-fav" onclick="revLayer('mark')">Marker</button>
         <button id="revArtBtn" class="btn-rot" onclick="revLayer('art')">Artifacts</button>
         <button id="revCenBtn" class="btn-kill" onclick="revLayer('cen')">Censored</button>
         <button id="revApplyBtn" class="btn-excl" onclick="revLayer('apply')">Apply mask</button>
@@ -2773,7 +2788,7 @@ function revSrc(p, what){
 // you cannot see the artifacts and the censored pixels at once, and you cannot
 // take DAPI off to look at the marker alone. Four switches say what is on
 // screen at all times, which a three-state cycle never does.
-const REV = {dapi: true, art: false, cen: false, apply: false};
+const REV = {dapi: true, mark: true, art: false, cen: false, apply: false};
 
 function revLayer(k){
   REV[k] = !REV[k];
@@ -3105,13 +3120,23 @@ function revImg(){
   // silently refuse on half the dataset. The file is the authority.
   const hasCen = !!p.has_censor;
 
-  el("revImg").src = revSrc(p, "overview");
+  // FOUR STATES, THREE FILES. The overview ships the composite, the marker
+  // alone and DAPI alone, so every combination is a real image rather than a
+  // channel knocked out of a composite - "marker off" shows the counterstain
+  // that was actually recorded, not the composite with a plane zeroed.
+  //
   // Marker in ITS OWN colour, matching the composites in the grid beside it -
   // red pERK, green PCNA - instead of the overview's yellow-for-both. See the
   // filter definitions for why this is exact and why DAPI is lifted.
-  el("revImg").style.filter = "url(#" + (p.marker === "AF568"
-      ? (REV.dapi ? "revPerkDapi" : "revPerkOnly")
-      : (REV.dapi ? "revPcnaDapi" : "revPcnaOnly")) + ")";
+  const perk = p.marker === "AF568";
+  el("revImg").src = (REV.mark || !REV.dapi)
+      ? revSrc(p, "overview")     // RGB when REV.dapi, MARK when not
+      : revSrc(p, "dapi");
+  el("revImg").style.filter = "url(#" + (
+        !REV.mark && !REV.dapi ? "revBlank"
+      : !REV.mark              ? "revDapiOnly"
+      : REV.dapi               ? (perk ? "revPerkDapi" : "revPcnaDapi")
+                               : (perk ? "revPerkOnly" : "revPcnaOnly")) + ")";
   el("revMask").src = revSrc(p, "mask");
   el("revCensor").src = hasCen ? revSrc(p, "censor") : "";
   el("revTissue").src = p.has_tissue ? revSrc(p, "tissue") : "";
@@ -3132,20 +3157,25 @@ function revImg(){
       : "needs a tissue mask - run: python scripts/04p_section_provenance.py --tissue-masks";
   }
   on("revDapiBtn",  REV.dapi,  !p.has_overview);
+  on("revMarkBtn",  REV.mark,  !p.has_overview);
   on("revArtBtn",   REV.art,   !p.has_mask);
   on("revCenBtn",   REV.cen,   !hasCen);
   on("revApplyBtn", REV.apply, !p.has_mask);
   el("revDapiBtn").textContent = REV.dapi ? "DAPI ✓" : "DAPI";
+  el("revMarkBtn").textContent = REV.mark
+    ? (perk ? "pERK ✓" : "PCNA ✓") : (perk ? "pERK" : "PCNA");
   el("revCenBtn").title = hasCen ? "" :
     "no censor mask for this section - run 04j_censor_clipped.py";
 
   // The 4x is named rather than left to be noticed. A viewer that quietly
   // rescales one channel invites reading brightness off the screen, and DAPI
   // here is 4x further from its neighbours than it looks.
+  const mk = perk ? "pERK red" : "PCNA green";
   el("revImgH").textContent = "IMAGE - "
-    + (REV.dapi
-        ? (p.marker === "AF568" ? "pERK red" : "PCNA green") + " + DAPI blue x4"
-        : (p.marker === "AF568" ? "pERK only" : "PCNA only"))
+    + (REV.mark && REV.dapi ? mk + " + DAPI blue x4"
+     : REV.mark            ? mk.replace(/ (red|green)$/, "") + " only"
+     : REV.dapi            ? "DAPI blue x4, no marker"
+                           : "both channels hidden - masks only")
     + (REV.apply ? ", artifacts removed" : "");
   const bits = [];
   bits.push(p.has_mask

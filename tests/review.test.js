@@ -109,12 +109,50 @@ if (noSection) {
 const masked = X.PROWS.find(p => p.has_mask && p.marker === "AF568");
 X.revPick(masked.scene_uid);
 
-X.REV.dapi = true;  X.revImg();
-const withDapi = env.els.revImg.src;
-X.REV.dapi = false; X.revImg();
-const noDapi = env.els.revImg.src;
-chk("DAPI on shows the RGB composite", /_RGB\.png$/.test(withDapi), true);
-chk("DAPI off shows the marker alone", /_MARK\.png$/.test(noDapi), true);
+// FOUR STATES, THREE FILES, and each one has to reach the right file AND the
+// right filter. The overview writes the marker into both red and green, so the
+// filter is not decoration: without it every state renders yellow, and with the
+// wrong one a channel that was switched off is still on screen.
+//
+// The blank state matters most. Both channels off keeps the image LOADED and
+// blanks it, because the overlay canvas takes its size from the base image - a
+// removed one would silently take the artifact and censor layers with it, which
+// is the opposite of what "show me the masks alone" should do.
+const shown = (dapi, mark) => {
+  X.REV.dapi = dapi; X.REV.mark = mark; X.revImg();
+  return {file: (env.els.revImg.src || "").split("/").pop(),
+          filter: env.els.revImg.style.filter || ""};
+};
+const isPerk = masked.marker === "AF568";
+
+let v = shown(true, true);
+chk("both on: the composite", /_RGB\.png$/.test(v.file), true);
+chk("...tinted for this marker",
+    v.filter.includes(isPerk ? "revPerkDapi" : "revPcnaDapi"), true);
+
+v = shown(false, true);
+chk("DAPI off: the marker alone", /_MARK\.png$/.test(v.file), true);
+chk("...and no blue in the matrix",
+    v.filter.includes(isPerk ? "revPerkOnly" : "revPcnaOnly"), true);
+
+v = shown(true, false);
+chk("marker off: the DAPI file, not a zeroed composite",
+    /_DAPI\.png$/.test(v.file), true);
+chk("...through the DAPI-only matrix", v.filter.includes("revDapiOnly"), true);
+
+v = shown(false, false);
+chk("both off: blanked, not unloaded", v.filter.includes("revBlank"), true);
+chk("...so the base image still has a src", v.file.length > 0, true);
+
+// The button says which marker it is turning off - "Marker" would be one more
+// thing to remember on a page that already names both channels everywhere.
+shown(true, true);
+chk("the button names the channel",
+    env.els.revMarkBtn.textContent, isPerk ? "pERK ✓" : "PCNA ✓");
+shown(true, false);
+chk("...and drops the tick when it is off",
+    env.els.revMarkBtn.textContent, isPerk ? "pERK" : "PCNA");
+X.REV.dapi = true; X.REV.mark = true; X.revImg();
 
 X.REV.art = false;
 X.revLayer("art");
