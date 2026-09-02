@@ -15,6 +15,12 @@ is what acts on them, and everything it can get wrong is quiet:
 
 None of those raise. All of them produce a plausible reformatted set.
 
+`select_only` is here for the same reason. A `--only` run re-renders pictures
+and writes no index, so letting it touch an INDEXED section would leave the
+analysis pointing at an image that no longer matches the angle and fill in its
+row - silent, and undetectable downstream. The guard is the whole safety of
+that flag, so it is pinned rather than trusted.
+
 Run:  python tests/test_section_review.py
 """
 
@@ -106,9 +112,53 @@ def main():
         RF.REVIEW_CSV = keep
         shutil.rmtree(tmp, ignore_errors=True)
 
+    test_select_only()
+
     print()
     print("ALL PASS" if not fails else f"{fails} FAILED")
     return 1 if fails else 0
+
+
+def test_select_only():
+    """--only may touch excluded sections and nothing else."""
+    excluded = {"A": "manual", "B": "focus"}
+
+    chk("an excluded uid is allowed", RF.select_only("A", excluded), {"A"})
+    chk("several, comma separated", RF.select_only("A,B", excluded), {"A", "B"})
+    chk("whitespace is not a uid", RF.select_only(" A , B ", excluded), {"A", "B"})
+
+    # The one that matters: a section the index carries must be refused.
+    try:
+        RF.select_only("A,KEPT", excluded)
+        chk("an INDEXED section is refused", "no error", "SystemExit")
+    except SystemExit as e:
+        chk("an INDEXED section is refused", "KEPT" in str(e), True)
+        chk("...and the message says why",
+            "writes no index" in str(e), True)
+
+    # An empty selection would silently render nothing and look like success.
+    try:
+        RF.select_only("", excluded)
+        chk("an empty selection is refused", "no error", "SystemExit")
+    except SystemExit:
+        chk("an empty selection is refused", True, True)
+
+    # @file, which is how a list of 45 actually arrives.
+    tmp = tempfile.mkdtemp(prefix="lsonly_")
+    try:
+        p = os.path.join(tmp, "uids.txt")
+        with open(p, "w", encoding="utf-8") as fh:
+            fh.write(os.linesep.join(["A", "", "B", ""]))
+        chk("@file reads one uid per line", RF.select_only("@" + p, excluded), {"A", "B"})
+        with open(p, "w", encoding="utf-8") as fh:
+            fh.write(os.linesep.join(["A", "KEPT", ""]))
+        try:
+            RF.select_only("@" + p, excluded)
+            chk("@file is guarded too", "no error", "SystemExit")
+        except SystemExit:
+            chk("@file is guarded too", True, True)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 if __name__ == "__main__":

@@ -498,6 +498,35 @@ def load_overrides(paths=None):
     return out, excluded
 
 
+def select_only(spec, excluded):
+    """The uids a `--only` run may touch, or raise.
+
+    A PARTIAL RUN REPAIRS PICTURES AND NOTHING ELSE. The index is written from
+    the rows a full pass builds, so `--only` writes none - and this guard is
+    what makes that safe rather than merely true. Re-rendering an INDEXED
+    section without rewriting its row would leave the analysis pointing at an
+    image that no longer matches the angle and fill recorded for it, and nothing
+    downstream could detect that. An excluded section has no row to disagree
+    with, so those are the only ones this can touch.
+
+    `spec` is a comma-separated list, or "@path" for one uid per line.
+    """
+    if spec.startswith("@"):
+        with open(spec[1:], encoding="utf-8") as fh:
+            want = {ln.strip() for ln in fh if ln.strip()}
+    else:
+        want = {u.strip() for u in spec.split(",") if u.strip()}
+    if not want:
+        raise SystemExit("--only was given no scene_uids")
+    indexed = want - set(excluded)
+    if indexed:
+        raise SystemExit(
+            "--only refuses %d section(s) that are not excluded, because a "
+            "partial run writes no index and their rows would go stale: %s"
+            % (len(indexed), ", ".join(sorted(indexed)[:10])))
+    return want
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--preview", type=int, default=8)
@@ -513,6 +542,14 @@ def main():
                     help="also render excluded sections, so they can be LOOKED at "
                          "in the ROI curator's Review mode. They are never added "
                          "to the index, so nothing downstream can pick them up.")
+    ap.add_argument("--only", metavar="UIDS",
+                    help="re-render just these scene_uids (comma-separated, or @file "
+                         "for one per line) and write NO index. Every uid must be an "
+                         "excluded one: a partial run cannot produce a complete "
+                         "index, and re-rendering an INDEXED section without "
+                         "rewriting the index would leave the analysis pointing at "
+                         "an image that no longer matches its row. Repairs the "
+                         "look-at-only PNGs, nothing else")
     args = ap.parse_args()
     paths = marker_paths(args.marker)
     overrides, excluded = load_overrides(paths) if args.apply_overrides else ({}, {})
@@ -530,6 +567,11 @@ def main():
     with open(os.path.join(PLATE_DIR, "plates.csv"), newline="", encoding="utf-8") as fh:
         plates = list(csv.DictReader(fh))
     ok = 0
+    # A --only run repairs section pictures; the plates are not sections and
+    # rewriting them would be a side effect nobody asked for, even though the
+    # bytes would come out the same.
+    if args.only:
+        plates = []
     for p in plates:
         # Plates are Nissl - cell bodies DARK on white paper - so they are
         # inverted into DAPI polarity and then treated by the dark-background
@@ -548,6 +590,25 @@ def main():
 
     with open(QC_CSV, newline="", encoding="utf-8") as fh:
         secs = [r for r in csv.DictReader(fh) if r["marker_channel"] == args.marker]
+
+    # A PARTIAL RUN REPAIRS PICTURES AND NOTHING ELSE.
+    #
+    # The index is written from `rows`, which a partial run only half fills, so
+    # --only must not reach it - and the guard below is what makes that safe
+    # rather than merely true. Re-rendering an INDEXED section without rewriting
+    # its row would leave the analysis pointing at an image that no longer
+    # matches the angle and fill recorded for it, which nothing downstream could
+    # detect. Excluded sections have no row to disagree with, so they are the
+    # only ones this can touch.
+    if args.only:
+        want = select_only(args.only, excluded)
+        secs = [r for r in secs if r["scene_uid"] in want]
+        gone = want - {r["scene_uid"] for r in secs}
+        if gone:
+            print("--only: %d uid(s) not in %s for this marker, skipped: %s"
+                  % (len(gone), os.path.basename(QC_CSV), ", ".join(sorted(gone)[:5])))
+        print(f"--only: re-rendering {len(secs)} excluded section(s), no index write")
+        args.render_excluded = True
     ok = 0
     n_excluded = 0
     n_rendered = 0
@@ -639,6 +700,12 @@ def main():
         for uid in sorted(unaccounted)[:20]:
             print(f"    {uid}")
         print("!" * 74)
+
+    if args.only:
+        print()
+        print("=" * 72)
+        print(f"--only: rendered {n_rendered} excluded section(s); index left alone")
+        return
 
     out_csv = paths["index"]
     keys = ["kind", "id", "angle", "fill", "animal", "section_order", "regions",
