@@ -66,7 +66,7 @@ def main():
                     help="print the URL instead of opening a browser")
     args = ap.parse_args()
 
-    cfg = os.path.join(_REPO, "config.json")
+    cfg = os.environ.get("LS_CONFIG") or os.path.join(_REPO, "config.json")
     if not os.path.exists(cfg):
         print(f"no {cfg} - copy config.example.json and fill in the paths")
         return 1
