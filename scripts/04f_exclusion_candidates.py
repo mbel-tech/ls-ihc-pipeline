@@ -96,6 +96,14 @@ with open(CONFIG_PATH, encoding="utf-8") as _fh:
 OUT_ROOT = CONFIG["out_root"]
 OVERVIEW_DIR = os.path.join(OUT_ROOT, "overviews")
 REFORMAT_DIR = os.path.join(OUT_ROOT, "reformatted")
+CANDIDATES_CSV = os.path.join(REFORMAT_DIR, "exclusion_candidates.csv")
+SURVEY_CSV = os.path.join(OUT_ROOT, "qc", "exclusion", "survey.csv")
+
+
+def output_path(survey):
+    """--survey measures and proposes nothing, so it must not overwrite the
+    proposals 04d reads. It gets its own file under qc/."""
+    return SURVEY_CSV if survey else CANDIDATES_CSV
 QC_CSV = os.path.join(OUT_ROOT, "qc", "focus.csv")
 REPORT_DIR = os.path.join(OUT_ROOT, "qc", "exclusion")
 
@@ -254,7 +262,8 @@ def main():
         print("proposal was wrong stays measurable rather than assumed.")
     print("=" * 74)
 
-    out = os.path.join(REFORMAT_DIR, "exclusion_candidates.csv")
+    out = output_path(args.survey)
+    os.makedirs(os.path.dirname(out), exist_ok=True)
     keys = ["uid", "animal", "section_order", "proposed", "artifact_class", "reason",
             "largest_mm2", "total_mm2", "n_pieces", "focus_score", "frame_mm2"]
     IO.atomic_write_csv(out, sorted(rows, key=lambda r: (-r["proposed"], r["animal"], r["section_order"])), keys)

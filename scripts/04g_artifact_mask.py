@@ -285,6 +285,13 @@ def summary_row(uid, r, recs, tissue_mm2, satur, satur_raw):
     }
 
 
+def run_plan(preview, collected):
+    """(keep processing, write masks). --preview N is a LOOK: it stops once N
+    overlays are collected and writes nothing to MASK_DIR on the way."""
+    if not preview:
+        return True, True
+    return collected < preview, False
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--preview", type=int, default=0, help="render N overlays and stop")
@@ -360,6 +367,9 @@ def main():
 
     rows, previews = [], []
     for i, r in enumerate(index):
+        go, write_masks = run_plan(args.preview, len(previews))
+        if not go:
+            break
         uid = r["id"]
         src = os.path.join(OVERVIEW_DIR, r["animal"], chan.get(uid, args.marker), uid + "_DAPI.png")
         if not os.path.exists(src):
@@ -372,7 +382,9 @@ def main():
 
         # Written per section rather than batched: this drive has dropped writes
         # mid-run before, and a partial run should cost minutes, not the lot.
-        Image.fromarray(mask).save(os.path.join(MASK_DIR, uid + "_artifact.png"))
+        if write_masks:
+            with IO.atomic_save(os.path.join(MASK_DIR, uid + "_artifact.png")) as tmp:
+                Image.fromarray(mask).save(tmp, format="PNG")
 
         tissue_mm2 = float(tis.sum()) * UM_PX ** 2
         rows.append(summary_row(uid, r, recs, tissue_mm2, satur, satur_raw))
@@ -381,7 +393,9 @@ def main():
         if (i + 1) % 100 == 0:
             print(f"\r  {i + 1}/{len(index)}", end="")
     print(f"\r  masked {len(rows)}/{len(index)} sections        ")
-    if not rows:
+    # A preview that found no artifact in its first few sections reports; only
+    # a full run with nothing masked is a missing-input error.
+    if not rows and not args.preview:
         raise SystemExit("nothing masked - run 04a_reformat.py first")
 
     if previews:
