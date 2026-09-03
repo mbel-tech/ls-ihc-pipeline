@@ -33,12 +33,18 @@ Run:  python 04b_atlas_match.py
 
 import argparse
 import csv
+import importlib.util
 import json
 import os
 
 import numpy as np
 from PIL import Image
 from scipy import ndimage
+
+_lsio = importlib.util.spec_from_file_location(
+    "_lsio", os.path.join(os.path.dirname(os.path.abspath(__file__)), "ls_io.py"))
+IO = importlib.util.module_from_spec(_lsio)
+_lsio.loader.exec_module(IO)
 
 # LS_CONFIG names the file explicitly; the file-relative path is the fallback.
 # Frozen, the scripts sit inside _internal/ while config.json is beside the
@@ -313,7 +319,7 @@ def build_curator(proposals):
     ordered = sorted(proposals,
                      key=lambda p: (p["proposed_score"],
                                     p["proposed_plate"] == p["local_best"]))
-    page = TEMPLATE.replace("__DATA__", json.dumps(ordered))
+    page = IO.fill(TEMPLATE, {"__DATA__": ordered})
     out = os.path.join(REPORT_DIR, "atlas_curator.html")
     with open(out, "w", encoding="utf-8") as fh:
         fh.write(page)

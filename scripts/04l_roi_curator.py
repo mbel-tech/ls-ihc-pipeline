@@ -175,9 +175,15 @@ Run:  python 04l_roi_curator.py
 
 import argparse
 import csv
+import importlib.util
 import json
 import math
 import os
+
+_lsio = importlib.util.spec_from_file_location(
+    "_lsio", os.path.join(os.path.dirname(os.path.abspath(__file__)), "ls_io.py"))
+IO = importlib.util.module_from_spec(_lsio)
+_lsio.loader.exec_module(IO)
 
 # LS_CONFIG names the file explicitly; the file-relative path is the fallback.
 # Frozen, the scripts sit inside _internal/ while config.json is beside the
@@ -3823,15 +3829,10 @@ def main():
         except (OSError, ValueError):
             seed = {}
 
-    page = (PAGE.replace("__SEED__", json.dumps(seed))
-                .replace("__PROV__", json.dumps(load_provenance()))
-                .replace("__DATA__", json.dumps(data))
-                .replace("__PLATES__", json.dumps(pl))
-                .replace("__PLATESET__", json.dumps(PLATE_SET))
-                .replace("__MARKERS__", json.dumps(markers))
-                .replace("__MARKER__", json.dumps(args.marker))
-                .replace("__SECGRID__", json.dumps(SEC_GRID))
-                .replace("__GROUPS__", json.dumps(GROUPS)))
+    page = IO.fill(PAGE, {
+        "__SEED__": seed, "__PROV__": load_provenance(), "__DATA__": data,
+        "__PLATES__": pl, "__PLATESET__": PLATE_SET, "__MARKERS__": markers,
+        "__MARKER__": args.marker, "__SECGRID__": SEC_GRID, "__GROUPS__": GROUPS})
     with open(CURATOR_HTML, "w", encoding="utf-8") as fh:
         fh.write(page)
 

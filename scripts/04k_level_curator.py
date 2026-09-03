@@ -46,8 +46,14 @@ Run:  python 04k_level_curator.py
 
 import argparse
 import csv
+import importlib.util
 import json
 import os
+
+_lsio = importlib.util.spec_from_file_location(
+    "_lsio", os.path.join(os.path.dirname(os.path.abspath(__file__)), "ls_io.py"))
+IO = importlib.util.module_from_spec(_lsio)
+_lsio.loader.exec_module(IO)
 
 # LS_CONFIG names the file explicitly; the file-relative path is the fallback.
 # Frozen, the scripts sit inside _internal/ while config.json is beside the
@@ -344,9 +350,8 @@ def main():
     pl = [{"id": p["plate_id"], "img": f"../atlas/{PLATE_SET}/{p['image_file']}",
            "regions": p.get("regions", "")} for p in plates]
 
-    page = (PAGE.replace("__DATA__", json.dumps(data))
-                .replace("__PLATES__", json.dumps(pl))
-                .replace("__PLATESET__", json.dumps(PLATE_SET)))
+    page = IO.fill(PAGE, {"__DATA__": data, "__PLATES__": pl,
+                          "__PLATESET__": PLATE_SET})
     with open(CURATOR_HTML, "w", encoding="utf-8") as fh:
         fh.write(page)
 

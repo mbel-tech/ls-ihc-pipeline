@@ -23,7 +23,9 @@ Imported by path, like every other cross-script import here:
 
 import contextlib
 import csv
+import json
 import os
+import re
 import time
 
 
@@ -77,3 +79,27 @@ def atomic_save(path, attempts=5):
                 os.remove(tmp)
             except OSError:
                 pass
+
+
+def embed(obj):
+    """JSON for a <script> block.
+
+    `json.dumps` leaves `</script>` and `<!--` alone, and either one inside a
+    string value ends the block or opens an HTML comment. Both are escaped in
+    a way a JS string literal ignores: `<\\/` reads as `</`, `<\\!--` as `<!--`.
+    """
+    return json.dumps(obj).replace("</", "<\\/").replace("<!--", "<\\!--")
+
+
+def fill(template, values):
+    """Substitute every `__NAME__` placeholder in ONE pass.
+
+    Chained `str.replace` calls re-scan the JSON just inserted, so a placeholder
+    name inside a data value would be substituted as well. A placeholder the
+    template does not carry is a programming error and raises.
+    """
+    for name in values:
+        if name not in template:
+            raise KeyError(f"placeholder {name} is not in the template")
+    pattern = re.compile("|".join(re.escape(k) for k in values))
+    return pattern.sub(lambda m: embed(values[m.group(0)]), template)
