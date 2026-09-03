@@ -317,6 +317,11 @@ function setActive(uid){
 }
 
 addEventListener("keydown", e => {
+  if(e.ctrlKey || e.metaKey || e.altKey) return;
+  // A focused control eats its own keys: the animal select does type-ahead
+  // on letters, and a range input steps itself on the arrows.
+  const tag = e.target && e.target.tagName;
+  if(tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
   if(!active) return;
   const s = get(active);
   const step = e.shiftKey ? 10 : 1;

@@ -297,6 +297,9 @@ function clearAnimal(){
 }
 
 addEventListener("keydown", e => {
+  if(e.ctrlKey || e.metaKey || e.altKey) return;
+  const tag = e.target && e.target.tagName;
+  if(tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
   if(!active) return;
   const step = e.shiftKey ? 10 : 1;
   if(e.key==="ArrowRight"){ el("slider").value = clamp(+el("slider").value+step); onSlide(el("slider").value); e.preventDefault(); }

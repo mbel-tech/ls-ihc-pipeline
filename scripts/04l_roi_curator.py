@@ -2123,6 +2123,10 @@ function render(){
 }
 
 addEventListener("keydown", e=>{
+  // Ctrl/Cmd/Alt chords belong to the browser - Ctrl+F finds, Ctrl+X cuts -
+  // and a chord must never read as the bare letter. Shift is a real modifier
+  // here (Shift+drag snaps), so it is left alone.
+  if(e.ctrlKey || e.metaKey || e.altKey) return;
   // A focused control eats its own keys - but only the ones it actually uses.
   //
   // This used to bail on ANY input, which killed the arrows for good: tick

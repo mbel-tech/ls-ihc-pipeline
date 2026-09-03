@@ -37,4 +37,20 @@ chk("a reason cannot break out of the title attribute",
 chk("...it is entity-escaped", els["wall"].innerHTML.includes("&quot; onmouseover=&quot;"), true);
 delete X.AUTO[u];
 
+// ---- keyboard guards ------------------------------------------------------
+note("");
+X.active = u;
+const key = (k, extra) => fire("keydown",
+  Object.assign({key: k, target: {tagName: "BODY"}, preventDefault() {}}, extra || {}));
+key("x", {ctrlKey: true});
+chk("ctrl+x does not exclude", X.isExcluded(u), false);
+key("x", {target: {tagName: "SELECT"}});
+chk("a key inside the animal select does nothing", X.isExcluded(u), false);
+key("ArrowRight", {target: {tagName: "INPUT", type: "range"}});
+chk("arrows inside a slider do nothing", X.get(u).r, 0);
+key("x");
+chk("plain x excludes", X.isExcluded(u), true);
+key("x");
+chk("...and toggles back", X.isExcluded(u), false);
+
 done();

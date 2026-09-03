@@ -39,4 +39,20 @@ X.showPlate(0);
 chk("region labels are escaped before the pipe becomes a dot",
     els["plateRegions"].innerHTML, "Dm &middot; &lt;b&gt;x&lt;/b&gt;");
 
+// ---- keyboard guards ------------------------------------------------------
+note("");
+X.active = list[1].uid;
+const key = (k, extra) => fire("keydown",
+  Object.assign({key: k, target: {tagName: "BODY"}, preventDefault() {}}, extra || {}));
+const nBefore = Object.keys(X.anchors).length;
+key("a", {ctrlKey: true});
+chk("ctrl+a selects text, sets no anchor", Object.keys(X.anchors).length, nBefore);
+key("a", {target: {tagName: "SELECT"}});
+chk("type-ahead in the animal select sets no anchor", Object.keys(X.anchors).length, nBefore);
+els["slider"].value = 0;
+key("a");
+chk("plain a anchors", X.anchors[list[1].uid], 0);
+key("d");
+chk("plain d drops it", list[1].uid in X.anchors, false);
+
 done();
