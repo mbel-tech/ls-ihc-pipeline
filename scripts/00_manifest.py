@@ -18,6 +18,7 @@ Run:  python 00_manifest.py
       python 00_manifest.py --accept-suggestions   # write suggested row counts
 """
 
+import contextlib
 import csv
 import glob
 import json
@@ -30,7 +31,9 @@ from collections import defaultdict
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+_HERE = os.path.dirname(os.path.abspath(__file__))
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
 from czi_meta import read_metadata, summarise  # noqa: E402
 
 # ---------------------------------------------------------------- configuration
@@ -89,11 +92,12 @@ ROW_SPREAD_FLAG = 0.8
 # ---------------------------------------------------------------- source discovery
 
 
-def discover_sources():
+def discover_sources(stack):
     """Yield (source, member, opener) for every CZI, loose files first.
 
     `source` is either "LOOSE" or the zip filename; `opener` returns a fresh
-    binary file object positioned at 0.
+    binary file object positioned at 0. `stack` is a contextlib.ExitStack that
+    owns every archive opened here; the openers are only valid while it is live.
 
     An optional `source_files` list in config narrows this to named files. That
     is how "process these slides, not the whole folder" is expressed: the files
@@ -119,7 +123,7 @@ def discover_sources():
         if only and zname not in only:
             continue
         try:
-            zf = zipfile.ZipFile(zpath)
+            zf = stack.enter_context(zipfile.ZipFile(zpath))
         except zipfile.BadZipFile:
             print(f"  !! cannot open {zname}, skipping")
             continue
@@ -430,141 +434,144 @@ def main():
     accept_suggestions = "--accept-suggestions" in sys.argv
     overrides = load_overrides()
     accepted = {}
-    entries = discover_sources()
-    print(f"Discovered {len(entries)} CZI entries across loose files and zips.")
+    # The archives stay open only for as long as the openers are used; the
+    # CSVs below are written after they are released.
+    with contextlib.ExitStack() as stack:
+        entries = discover_sources(stack)
+        print(f"Discovered {len(entries)} CZI entries across loose files and zips.")
 
-    file_rows = []
-    scene_rows = []
-    layout_rows = []
-    seen_names = {}
-    failures = []
+        file_rows = []
+        scene_rows = []
+        layout_rows = []
+        seen_names = {}
+        failures = []
 
-    for source, member, container, opener in entries:
-        base = os.path.basename(member)
-        parsed = parse_name(member)
-        if parsed is None:
-            failures.append((source, member, "filename did not match LS<animal>_<slide><variant>"))
-            continue
+        for source, member, container, opener in entries:
+            base = os.path.basename(member)
+            parsed = parse_name(member)
+            if parsed is None:
+                failures.append((source, member, "filename did not match LS<animal>_<slide><variant>"))
+                continue
 
-        if base in seen_names:
-            # Loose copies duplicate zip members byte for byte; record and move on.
-            file_rows.append(
-                {
-                    **seen_names[base],
-                    "source": source,
-                    "container": container,
-                    "is_redundant_copy": 1,
-                }
-            )
-            continue
+            if base in seen_names:
+                # Loose copies duplicate zip members byte for byte; record and move on.
+                file_rows.append(
+                    {
+                        **seen_names[base],
+                        "source": source,
+                        "container": container,
+                        "is_redundant_copy": 1,
+                    }
+                )
+                continue
 
-        try:
-            with opener() as fh:
-                info = summarise(read_metadata(fh))
-        except Exception as exc:  # noqa: BLE001 - want the reason in the report
-            failures.append((source, member, repr(exc)[:120]))
-            continue
+            try:
+                with opener() as fh:
+                    info = summarise(read_metadata(fh))
+            except Exception as exc:  # noqa: BLE001 - want the reason in the report
+                failures.append((source, member, repr(exc)[:120]))
+                continue
 
-        channel_names = [c["name"] for c in info["channels"]]
-        marker = channel_names[1] if len(channel_names) > 1 else None
-        marker_exposure = info["channels"][1]["exposure_ms"] if len(info["channels"]) > 1 else None
+            channel_names = [c["name"] for c in info["channels"]]
+            marker = channel_names[1] if len(channel_names) > 1 else None
+            marker_exposure = info["channels"][1]["exposure_ms"] if len(info["channels"]) > 1 else None
 
-        row = {
-            "file": base,
-            "source": source,
-            "container": container,
-            "animal": parsed["animal"],
-            "slide": parsed["slide"],
-            "variant": parsed["variant"],
-            "name_suffix": parsed["name_suffix"],
-            "marker_channel": marker,
-            "marker_exposure_ms": marker_exposure,
-            "dapi_exposure_ms": info["channels"][0]["exposure_ms"] if info["channels"] else None,
-            "acquired": info["acquired"],
-            "size_x": info["size_x"],
-            "size_y": info["size_y"],
-            "size_c": info["size_c"],
-            "size_s": info["size_s"],
-            "n_tiles_m": info["size_m"],
-            "n_scenes": len(info["scenes"]),
-            "pixel_type": info["pixel_type"],
-            "px_um": info["px_um_x"],
-            "objective_mag": info["objective_mag"],
-            "objective_na": info["objective_na"],
-            "camera": info["camera"],
-            "shading_reference_mode": info["shading_reference_mode"],
-            "online_stitching": info["online_stitching"],
-            "is_redundant_copy": 0,
-        }
-        seen_names[base] = {k: row[k] for k in row if k not in ("source", "container", "is_redundant_copy")}
-        file_rows.append(row)
+            row = {
+                "file": base,
+                "source": source,
+                "container": container,
+                "animal": parsed["animal"],
+                "slide": parsed["slide"],
+                "variant": parsed["variant"],
+                "name_suffix": parsed["name_suffix"],
+                "marker_channel": marker,
+                "marker_exposure_ms": marker_exposure,
+                "dapi_exposure_ms": info["channels"][0]["exposure_ms"] if info["channels"] else None,
+                "acquired": info["acquired"],
+                "size_x": info["size_x"],
+                "size_y": info["size_y"],
+                "size_c": info["size_c"],
+                "size_s": info["size_s"],
+                "n_tiles_m": info["size_m"],
+                "n_scenes": len(info["scenes"]),
+                "pixel_type": info["pixel_type"],
+                "px_um": info["px_um_x"],
+                "objective_mag": info["objective_mag"],
+                "objective_na": info["objective_na"],
+                "camera": info["camera"],
+                "shading_reference_mode": info["shading_reference_mode"],
+                "online_stitching": info["online_stitching"],
+                "is_redundant_copy": 0,
+            }
+            seen_names[base] = {k: row[k] for k in row if k not in ("source", "container", "is_redundant_copy")}
+            file_rows.append(row)
 
-        scenes = info["scenes"]
-        if not scenes:
-            failures.append((source, member, "no scenes in metadata"))
-            continue
+            scenes = info["scenes"]
+            if not scenes:
+                failures.append((source, member, "no scenes in metadata"))
+                continue
 
-        forced = overrides.get(base)
-        rows_idx, cols_idx = build_grid(scenes, forced)
-        spread = row_spread_ratio(scenes, rows_idx)
-        suggestion = suggest_rows(scenes) if (spread > ROW_SPREAD_FLAG and not forced) else None
-
-        if suggestion and accept_suggestions:
-            forced = suggestion
-            accepted[base] = suggestion
+            forced = overrides.get(base)
             rows_idx, cols_idx = build_grid(scenes, forced)
             spread = row_spread_ratio(scenes, rows_idx)
-            suggestion = None
+            suggestion = suggest_rows(scenes) if (spread > ROW_SPREAD_FLAG and not forced) else None
 
-        serials = serial_numbers(rows_idx, cols_idx, scenes)
+            if suggestion and accept_suggestions:
+                forced = suggestion
+                accepted[base] = suggestion
+                rows_idx, cols_idx = build_grid(scenes, forced)
+                spread = row_spread_ratio(scenes, rows_idx)
+                suggestion = None
 
-        for i, sc in enumerate(scenes):
-            scene_rows.append(
+            serials = serial_numbers(rows_idx, cols_idx, scenes)
+
+            for i, sc in enumerate(scenes):
+                scene_rows.append(
+                    {
+                        "scene_uid": f"{parsed['animal']}_s{parsed['slide']:02d}{parsed['variant']}_sc{sc['index']:02d}",
+                        "file": base,
+                        "animal": parsed["animal"],
+                        "slide": parsed["slide"],
+                        "variant": parsed["variant"],
+                        "marker_channel": marker,
+                        "scene_index": sc["index"],
+                        "scene_name": sc["name"],
+                        "center_x_um": round(sc["center_x_um"], 2) if sc["center_x_um"] is not None else "",
+                        "center_y_um": round(sc["center_y_um"], 2) if sc["center_y_um"] is not None else "",
+                        "width_um": round(sc["width_um"], 2) if sc["width_um"] else "",
+                        "height_um": round(sc["height_um"], 2) if sc["height_um"] else "",
+                        "slide_row": int(rows_idx[i]),
+                        "slide_col": int(cols_idx[i]),
+                        **{f"serial_{k}": int(serials[k][i]) for k, _ in CONVENTIONS},
+                    }
+                )
+
+            row_counts = np.bincount(rows_idx).tolist()
+            layout_rows.append(
                 {
-                    "scene_uid": f"{parsed['animal']}_s{parsed['slide']:02d}{parsed['variant']}_sc{sc['index']:02d}",
                     "file": base,
                     "animal": parsed["animal"],
                     "slide": parsed["slide"],
                     "variant": parsed["variant"],
-                    "marker_channel": marker,
-                    "scene_index": sc["index"],
-                    "scene_name": sc["name"],
-                    "center_x_um": round(sc["center_x_um"], 2) if sc["center_x_um"] is not None else "",
-                    "center_y_um": round(sc["center_y_um"], 2) if sc["center_y_um"] is not None else "",
-                    "width_um": round(sc["width_um"], 2) if sc["width_um"] else "",
-                    "height_um": round(sc["height_um"], 2) if sc["height_um"] else "",
-                    "slide_row": int(rows_idx[i]),
-                    "slide_col": int(cols_idx[i]),
-                    **{f"serial_{k}": int(serials[k][i]) for k, _ in CONVENTIONS},
+                    "n_scenes": len(scenes),
+                    "n_rows": int(rows_idx.max()) + 1,
+                    "n_cols": int(cols_idx.max()) + 1,
+                    "row_counts": "|".join(str(c) for c in row_counts),
+                    "row_spread_ratio": round(float(spread), 2),
+                    "rows_forced": forced or "",
+                    "suggested_rows": suggestion or "",
+                    "needs_review": int(suggestion is not None),
                 }
             )
 
-        row_counts = np.bincount(rows_idx).tolist()
-        layout_rows.append(
-            {
-                "file": base,
-                "animal": parsed["animal"],
-                "slide": parsed["slide"],
-                "variant": parsed["variant"],
-                "n_scenes": len(scenes),
-                "n_rows": int(rows_idx.max()) + 1,
-                "n_cols": int(cols_idx.max()) + 1,
-                "row_counts": "|".join(str(c) for c in row_counts),
-                "row_spread_ratio": round(float(spread), 2),
-                "rows_forced": forced or "",
-                "suggested_rows": suggestion or "",
-                "needs_review": int(suggestion is not None),
-            }
-        )
-
-        render_slidemap(
-            os.path.join(SLIDEMAP_DIR, base.replace(".czi", ".png")),
-            base,
-            scenes,
-            rows_idx,
-            cols_idx,
-            serials,
-        )
+            render_slidemap(
+                os.path.join(SLIDEMAP_DIR, base.replace(".czi", ".png")),
+                base,
+                scenes,
+                rows_idx,
+                cols_idx,
+                serials,
+            )
 
     if accepted:
         merged = dict(overrides)
