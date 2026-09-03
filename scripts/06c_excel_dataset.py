@@ -89,15 +89,15 @@ def animal_environment():
     environment is equally a statement about time.
     """
     try:
-        sheet = G6B.read_sheet(G6B.DEFAULT_XLSX)[1:]
+        col, sheet = G6B.read_table(G6B.DEFAULT_XLSX)
     except Exception as exc:                                   # noqa: BLE001
         print(f"  (no environment: {exc})")
         return {}
     out = {}
     for r in sheet:
-        fid = (r.get(G6B.COL["fish"], "") or "").strip()
+        fid = (r.get(col["fish"], "") or "").strip()
         if fid.isdigit():
-            out["LS" + fid] = (r.get(G6B.COL["environment"], "") or "").strip()
+            out["LS" + fid] = (r.get(col["environment"], "") or "").strip()
     return out
 
 
@@ -133,6 +133,23 @@ def write_workbook(path, sheets):
         wb.save(tmp)
 
 
+def resolve_groups(config_groups, meta_csv=None):
+    """Treatment per animal. 06b is the unblinding step and validates the
+    workbook; config.groups.by_animal is hand-typed. Where both exist they
+    must agree, and the metadata fills in animals the config does not list."""
+    meta_csv = meta_csv or G6B.META_CSV
+    if not os.path.exists(meta_csv):
+        return dict(config_groups)
+    meta = {r["animal"]: r["treatment"] for r in G5.load_csv(meta_csv) if r.get("treatment")}
+    clash = {a: (config_groups[a], meta[a]) for a in config_groups
+             if a in meta and config_groups[a] != meta[a]}
+    if clash:
+        raise SystemExit(
+            "config.groups.by_animal disagrees with results/animal_metadata.csv: "
+            + ", ".join(f"{a}: config={c} workbook={m}" for a, (c, m) in sorted(clash.items()))
+            + "\n  06b_join_sampling.py is the unblinding - fix config.json or rerun 06b.")
+    return {**meta, **config_groups}
+
 def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default=XLSX)
@@ -152,7 +169,7 @@ def main(argv=None):
 
     meas = G5.load_csv(MEAS_CSV)
     boxes = G5.all_boxes()          # both markers; see 05a.all_boxes
-    groups = (CONFIG.get("groups") or {}).get("by_animal") or {}
+    groups = resolve_groups((CONFIG.get("groups") or {}).get("by_animal") or {})
     envs = animal_environment()
 
     # 06a emits a row only for sections that are in roi_nuclei.csv, so the set

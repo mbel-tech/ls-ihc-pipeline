@@ -120,7 +120,7 @@ if (file.exists(SPEC)) {
 # the FIGURES AND STATISTICS only - the spreadsheets keep it.
 DROP_ROIS <- c("Rm")
 
-# Eleven animals need eleven marks that can be told apart at a glance, and R
+# Twelve animals need twelve marks that can be told apart at a glance, and R
 # only has five filled FORMS - circle, square, diamond, triangle up, triangle
 # down - in two styles each. The first nine are those: 21-25 filled with a
 # border, then 15-18 solid.
@@ -130,15 +130,22 @@ DROP_ROIS <- c("Rm")
 # border and a couple of pixels of radius. A star and a square-with-triangle
 # are not "full" shapes, but being able to tell two animals apart matters more
 # than the fill.
-SHAPES <- c(21, 22, 23, 24, 25, 15, 16, 17, 18, 8, 14)
+#
+# 11 is the two-triangle star, distinct from both 8 and 14 at PT 4.6.
+SHAPES <- c(21, 22, 23, 24, 25, 15, 16, 17, 18, 8, 14, 11)
 
 # An animal keeps ITS OWN shape in every figure. Assigning shapes per ROI from
 # whichever animals happen to be present looked fine on any single plot and made
 # LS37 a circle in one figure and a square in the next - which, in a twenty-slide
 # deck someone reads in order, is worse than no shapes at all. The mapping is
 # built once from the full animal list and reused.
-animal_shapes <- function(levels_all) setNames(
-  rep_len(SHAPES, length(levels_all)), levels_all)
+animal_shapes <- function(levels_all) {
+  # Never recycle: a thirteenth animal drawn with the first animal's mark is a
+  # figure that lies quietly. Add a shape here instead.
+  if (length(levels_all) > length(SHAPES))
+    stop(sprintf("%d animals but only %d shapes in SHAPES - add one", length(levels_all), length(SHAPES)))
+  setNames(SHAPES[seq_along(levels_all)], levels_all)
+}
 
 BASE <- 18                        # everything is sized off this
 PT   <- 4.6
