@@ -24,6 +24,7 @@ import argparse
 import glob
 import importlib.util
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -72,6 +73,17 @@ def r_command(rscript, script, results_dir):
     return [rscript, script, results_dir]
 
 
+def rscript_version(path):
+    """(major, minor, patch) from an `R-x.y.z` path component; (0,0,0) if none."""
+    m = re.search(r"R-(\d+)\.(\d+)\.(\d+)", path)
+    return tuple(int(x) for x in m.groups()) if m else (0, 0, 0)
+
+
+def newest(hits):
+    """The highest-versioned Rscript. Sorting the paths as text put R-4.9.1
+    after R-4.10.0."""
+    return max(hits, key=rscript_version)
+
 def find_rscript(explicit=None):
     """Where R is, in decreasing order of how much someone meant it.
 
@@ -92,9 +104,9 @@ def find_rscript(explicit=None):
         return found
     pattern = r"C:\Program Files\R\R-*\bin\Rscript.exe"
     tried.append(pattern)
-    hits = sorted(glob.glob(pattern))
+    hits = glob.glob(pattern)
     if hits:
-        return hits[-1]           # newest version by name
+        return newest(hits)
     raise SystemExit("cannot find Rscript. Tried:\n  " + "\n  ".join(tried)
                      + "\nPass --rscript, or set the RSCRIPT environment variable.")
 
@@ -171,9 +183,13 @@ def refresh(rscript, quiet=True):
         env = dict(os.environ, LS_MARKER=mk)
         for script in R_SCRIPTS:
             name = os.path.basename(script)
+            # R writes UTF-8 (a degree sign in a caption, an em dash in a
+            # warning); the console codepage is not. Decode explicitly, and
+            # never let a stray byte take the loop down.
             r = subprocess.run(r_command(rscript, script, results_dir),
                                cwd=_REPO, env=env,
-                               capture_output=quiet, text=True)
+                               capture_output=quiet, text=True,
+                               encoding="utf-8", errors="replace")
             if r.returncode:
                 print(f"  {name} FAILED for {mk}:")
                 print((r.stderr or r.stdout or "").strip()[-2000:])
@@ -184,6 +200,14 @@ def refresh(rscript, quiet=True):
                     print(f"  [{mk} {name}] " + line)
     return True
 
+
+def stall_count(stalled, done, last):
+    """Consecutive readings at the same count, the current one included.
+
+    Three identical readings ARE three stalled cycles; counting from the
+    second made --stall-cycles 3 wait for a fourth, an hour later.
+    """
+    return stalled + 1 if last is not None and done == last else 1
 
 def main():
     ap = argparse.ArgumentParser()
@@ -222,10 +246,10 @@ def main():
 
         # A count that has not moved means 05c is not running. Rebuilding the
         # same figures on the hour forever would look like progress.
-        stalled = stalled + 1 if done == last else 0
+        stalled = stall_count(stalled, done, last)
         last = done
         if stalled >= args.stall_cycles:
-            print(f"\nSTALLED: {done}/{total} unchanged for {stalled} cycles. "
+            print(f"\nSTALLED: {done}/{total} unchanged over {stalled} readings. "
                   f"05c_detect_rois.py is not running - restart it, then start "
                   f"this again.")
             return 2
