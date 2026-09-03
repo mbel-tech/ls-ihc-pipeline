@@ -1,7 +1,8 @@
-"""The CZI self-test's geometry and metadata parsing.
+"""The CZI self-test's geometry, metadata parsing, and exit policy.
 
-The pure functions are checked here; anything needing the 222 CZIs skips itself
-with a note, so this suite still runs on a machine with the repo and no images.
+The pure functions and the fake-reader `inspect()` cases are checked here;
+anything needing the 222 real CZIs skips itself with a note, so this suite
+still runs on a machine with the repo and no images.
 
 Run:  python tests/test_czi_selftest.py
 """
@@ -9,6 +10,8 @@ Run:  python tests/test_czi_selftest.py
 import importlib.util
 import os
 import sys
+
+import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCRIPTS = os.path.join(os.path.dirname(HERE), "scripts")
@@ -73,11 +76,231 @@ chk("shading mode", bd["shading"], "None")
 chk("online stitching", bd["online_stitching"], "false")
 chk("bitcount ranges", bd["bitcount_ranges"], ["16"])
 
+# --- bit_depth: anchored XPath still finds a differently-shaped document ---
+# No <Metadata> wrapper at all - the anchored path misses and must fall back
+# to the loose (pre-existing) one rather than reporting nothing.
+LOOSE_XML = """<Something><Information><Image>
+  <ComponentBitCount>12</ComponentBitCount>
+</Image></Information>
+<SelectedShadingReferenceMode>Full</SelectedShadingReferenceMode>
+</Something>"""
+bd_loose = ST.bit_depth(LOOSE_XML)
+chk("anchored miss falls back: bit count", bd_loose["image_component_bit_count"], 12)
+chk("anchored miss falls back: shading", bd_loose["shading"], "Full")
+
 # --- nominal_ceiling --------------------------------------------------------
 chk("16 bits -> 65535", ST.nominal_ceiling(16), 65535)
 chk("14 bits -> 16383", ST.nominal_ceiling(14), 16383)
 chk("12 bits -> 4095", ST.nominal_ceiling(12), 4095)
 chk("missing bit count -> None", ST.nominal_ceiling(None), None)
+chk("zero bits -> None", ST.nominal_ceiling(0), None)
+chk("negative bits -> None (not a ValueError)", ST.nominal_ceiling(-4), None)
+chk("non-int bits -> None", ST.nominal_ceiling("16"), None)
+
+# --- bit_count_disagreement --------------------------------------------------
+chk("agreeing counts -> None", ST.bit_count_disagreement(16, [16, 16]), None)
+chk("a channel disagrees with the image level",
+    ST.bit_count_disagreement(16, [16, 14]) is None, False)
+chk("disagreement text names both", "14" in ST.bit_count_disagreement(16, [16, 14]), True)
+chk("no image-level count -> None (handled as bit_count_missing instead)",
+    ST.bit_count_disagreement(None, [16, 14]), None)
+chk("no channel counts at all -> None", ST.bit_count_disagreement(16, [None, None]), None)
+
+# --- shallow_bit_signature ---------------------------------------------------
+chk("14-bit ceiling under a 16-bit declaration", ST.shallow_bit_signature(16383, 16), 14)
+chk("full-scale max is not a shallow signature", ST.shallow_bit_signature(65535, 16), None)
+chk("a max that isn't 2**n - 1 at all", ST.shallow_bit_signature(50000, 16), None)
+chk("no declared bit count -> None", ST.shallow_bit_signature(16383, None), None)
+chk("no observed max -> None", ST.shallow_bit_signature(None, 16), None)
+chk("8-bit ceiling under 16", ST.shallow_bit_signature(255, 16), 8)
+
+# --- pick_sample_indices: spreads across the file list, not the first N ----
+chk("4 of 222 spreads out", sorted(ST.pick_sample_indices(222, 4)), [0, 55, 111, 166])
+chk("0 requested -> empty", ST.pick_sample_indices(222, 0), set())
+chk("0 files -> empty", ST.pick_sample_indices(0, 4), set())
+chk("more requested than exist is capped", len(ST.pick_sample_indices(3, 10)), 3)
+
+# --- summarise: the exit-code policy, asserted rather than eyeballed -------
+_, code = ST.summarise([])
+chk("no rows at all -> exit 2 (no files found)", code, 2)
+
+
+def _row(**over):
+    r = {k: "" for k in ST.KEYS}
+    r.update(n_scenes=0, overlapping_pairs=0, scenes_in_overlap=0, max_overlap_frac=0.0,
+              pyramid_levels="", frames_compared=0, frame_key_mismatch=0,
+              origin_drift=0, extent_drift=0, nominal_ceiling=None,
+              image_bit_count=16, shading="None", online_stitching="false",
+              violations="", error="")
+    r.update(over)
+    return r
+
+
+_, code = ST.summarise([_row(file="a.czi")])
+chk("one clean row -> exit 0", code, 0)
+
+_, code = ST.summarise([_row(file="a.czi", origin_drift=1, violations="origin_drift")])
+chk("origin drift on any file -> exit 2", code, 2)
+
+_, code = ST.summarise([_row(file="a.czi", frame_key_mismatch=1, violations="frame_key_mismatch")])
+chk("frame key mismatch -> exit 2", code, 2)
+
+_, code = ST.summarise([_row(file="a.czi", image_bit_count=None, violations="bit_count_missing")])
+chk("missing ComponentBitCount -> exit 2", code, 2)
+
+_, code = ST.summarise([_row(file="a.czi", violations="bit_count_disagreement",
+                              bit_count_disagreement="image=16 channels=16,14")])
+chk("bit count disagreement -> exit 2", code, 2)
+
+_, code = ST.summarise([_row(file="a.czi", error="boom", violations="error")])
+chk("a per-file exception -> exit 2", code, 2)
+
+_, code = ST.summarise([_row(file="a.czi", overlapping_pairs=1, scenes_in_overlap=2, n_scenes=2)])
+chk("scene overlap ALONE does not gate the exit code", code, 0)
+
+lines, code = ST.summarise([_row(file="a.czi", pyramid_levels="1,2,4")])
+chk("pyramid levels alone do not gate the exit code", code, 0)
+chk("pyramid levels are reported", any("PYRAMID" in l for l in lines), True)
+
+
+# --- inspect(): a fake reader, no CZI files needed --------------------------
+
+class _Rect:
+    def __init__(self, x, y, w, h):
+        self.x, self.y, self.w, self.h = x, y, w, h
+
+
+class _Size:
+    def __init__(self, w):
+        self.w = w
+
+
+class _Rect2:
+    def __init__(self, w):
+        self.w = w
+
+
+class _SubblockInfo:
+    def __init__(self, physical_w, logical_w):
+        self.physicalSize = _Size(physical_w)
+        self.logicalRect = _Rect2(logical_w)
+
+
+def _xml(image_bits="16", channels=(("DAPI", "16", "Gray16"), ("AF568", "16", "Gray16"))):
+    def bc(b):
+        return f"<ComponentBitCount>{b}</ComponentBitCount>" if b is not None else ""
+    ch_xml = "".join(
+        f'<Channel Name="{n}">{bc(b)}<PixelType>{pt}</PixelType></Channel>'
+        for n, b, pt in channels)
+    return f"""<ImageDocument><Metadata><Information><Image>
+      {bc(image_bits)}
+      <Dimensions><Channels>{ch_xml}</Channels></Dimensions>
+    </Image></Information>
+    <HardwareSetting><SelectedShadingReferenceMode>None</SelectedShadingReferenceMode>
+      <IsOnlineStitchingEnabled>false</IsOnlineStitchingEnabled></HardwareSetting>
+    </Metadata></ImageDocument>"""
+
+
+class _FakeCzi:
+    def __init__(self, scenes, scenes_no_pyramid, subblocks, raw_xml, channel_arrays=None):
+        self.scenes_bounding_rectangle = scenes
+        self.scenes_bounding_rectangle_no_pyramid = scenes_no_pyramid
+        self._subblocks = subblocks
+        self.raw_metadata = raw_xml
+        self._channel_arrays = channel_arrays or {}
+        self.read_calls = []
+
+    def enumerate_subblocks(self, cb):
+        for idx, info in self._subblocks:
+            if not cb(idx, info):
+                break
+
+    def read(self, roi, plane, scene, zoom):
+        self.read_calls.append({"roi": roi, "plane": dict(plane), "scene": scene, "zoom": zoom})
+        return self._channel_arrays[plane["C"]]
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+class _FakePyczi:
+    def __init__(self, czi):
+        self._czi = czi
+
+    def open_czi(self, path):
+        return self._czi
+
+
+# 1. zero scenes - must not crash, must not report a false violation
+c = _FakeCzi({}, {}, [], _xml())
+row = ST.inspect("x.czi", _FakePyczi(c), False)
+chk("zero scenes: n_scenes", row["n_scenes"], 0)
+chk("zero scenes: frames_compared", row["frames_compared"], 0)
+chk("zero scenes: no violation", row["violations"], "")
+
+# 2. one scene, matching frames
+c = _FakeCzi({0: _Rect(0, 0, 100, 100)}, {0: _Rect(0, 0, 100, 100)},
+             [(0, _SubblockInfo(100, 100))], _xml())
+row = ST.inspect("x.czi", _FakePyczi(c), False)
+chk("one scene: n_scenes", row["n_scenes"], 1)
+chk("one scene: pyramid level 1 seen", row["pyramid_levels"], "1")
+chk("one scene: no violation", row["violations"], "")
+
+# 3. enumerate_subblocks yields nothing - must not crash
+c = _FakeCzi({0: _Rect(0, 0, 100, 100)}, {0: _Rect(0, 0, 100, 100)}, [], _xml())
+row = ST.inspect("x.czi", _FakePyczi(c), False)
+chk("no subblocks: pyramid_levels empty, no crash", row["pyramid_levels"], "")
+
+# 4. physicalSize.w == 0 - the div-by-zero guard
+c = _FakeCzi({0: _Rect(0, 0, 100, 100)}, {0: _Rect(0, 0, 100, 100)},
+             [(0, _SubblockInfo(0, 100))], _xml())
+row = ST.inspect("x.czi", _FakePyczi(c), False)
+chk("physicalSize.w == 0: no crash, no level tallied", row["pyramid_levels"], "")
+
+# 5. disjoint keys between the two frames -> flagged, not a silent pass
+c = _FakeCzi({0: _Rect(0, 0, 10, 10)}, {1: _Rect(0, 0, 10, 10)}, [], _xml())
+row = ST.inspect("x.czi", _FakePyczi(c), False)
+chk("disjoint frame keys: frames_compared", row["frames_compared"], 0)
+chk("disjoint frame keys: frame_key_mismatch", row["frame_key_mismatch"], 1)
+chk("disjoint frame keys: flagged as a violation", "frame_key_mismatch" in row["violations"], True)
+
+# 6. missing ComponentBitCount -> flagged, not silently None
+c = _FakeCzi({0: _Rect(0, 0, 10, 10)}, {0: _Rect(0, 0, 10, 10)}, [], _xml(image_bits=None))
+row = ST.inspect("x.czi", _FakePyczi(c), False)
+chk("missing bit count: image_bit_count", row["image_bit_count"], None)
+chk("missing bit count: flagged as a violation", "bit_count_missing" in row["violations"], True)
+
+# 7. bit-count disagreement (the test fixture's own XML shape) -> flagged
+c = _FakeCzi({0: _Rect(0, 0, 10, 10)}, {0: _Rect(0, 0, 10, 10)}, [],
+             _xml(channels=(("DAPI", "16", "Gray16"), ("AF568", "14", "Gray16"))))
+row = ST.inspect("x.czi", _FakePyczi(c), False)
+chk("bit count disagreement: column set", row["bit_count_disagreement"] != "", True)
+chk("bit count disagreement: flagged as a violation",
+    "bit_count_disagreement" in row["violations"], True)
+
+# 8. origin drift between the two frames -> flagged
+c = _FakeCzi({0: _Rect(5, 5, 10, 10)}, {0: _Rect(0, 0, 10, 10)}, [], _xml())
+row = ST.inspect("x.czi", _FakePyczi(c), False)
+chk("origin drift: count", row["origin_drift"], 1)
+chk("origin drift: flagged as a violation", "origin_drift" in row["violations"], True)
+
+# 9. pixel sampling: native zoom, largest scene, both channels, bounded reads
+scenes = {0: _Rect(0, 0, 10, 10), 1: _Rect(0, 0, 1000, 1000)}
+arrays = {
+    0: np.array([[65535, 65535], [0, 0]], dtype=np.uint16),
+    1: np.array([[16383, 100], [0, 0]], dtype=np.uint16),
+}
+c = _FakeCzi(scenes, scenes, [(0, _SubblockInfo(1000, 1000))], _xml(), channel_arrays=arrays)
+row = ST.inspect("x.czi", _FakePyczi(c), True)
+chk("pixel sample: reads the larger scene", c.read_calls[0]["scene"], 1)
+chk("pixel sample: native zoom", c.read_calls[0]["zoom"], 1.0)
+chk("pixel sample: reads both channels", len(c.read_calls), 2)
+chk("pixel sample: observed max per channel", row["observed_max_by_channel"], "65535,16383")
+chk("pixel sample: pixels at ceiling per channel", row["clipped_at_ceiling_by_channel"], "2,0")
+chk("pixel sample: shallow signature per channel", row["shallow_signature_by_channel"], ",14")
 
 # --- dataset checks skip when the images are not present --------------------
 if not os.path.isdir(ST.SOURCE_DIR):

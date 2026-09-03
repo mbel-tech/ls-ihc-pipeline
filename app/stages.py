@@ -147,11 +147,13 @@ STAGES = [
     Stage("czi_selftest", "00d  CZI self-test", "Ingest and QC",
           script="00d_czi_selftest.py", reader="pylibCZIrw",
           outputs=["qc/czi_selftest.csv"],
-          needs=["manifest"],
+          needs=[],
           blurb="Checks the four assumptions every pixel stage makes about the "
                 "CZIs: scene-rectangle overlap, stored pyramid levels, sensor "
                 "bit depth, and whether the pyramid and layer-0 frames share an "
-                "origin. See docs/czi-reading-audit.md."),
+                "origin. Gates on drifted frames and bad bit-depth metadata; "
+                "scene overlap and pyramid levels are reported, not gated - "
+                "they are true of this dataset. See docs/czi-reading-audit.md."),
 
     Stage("overviews", "01  Export section overviews", "Ingest and QC",
           script="01_overviews.py", reader="pylibCZIrw",
