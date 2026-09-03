@@ -457,7 +457,7 @@ def apply_review(excluded, marker):
     return out, rejected
 
 
-def load_overrides(paths=None):
+def load_overrides(paths=None, write=False):
     """Manual rotation corrections from 04d_rotation_curator.py.
 
     Stored as a correction *on top of* the automatic angle rather than as an
@@ -496,15 +496,37 @@ def load_overrides(paths=None):
         print(f"  {restored} of {prop} automatic proposals were overruled "
               f"({100 * restored / prop:.0f}%) - see LOGS.md if that rate is high")
 
-    # Written out separately as the canonical list, so any stage can honour
-    # exclusions without parsing the curator's export format.
-    if excluded:
-        with open(paths["excluded"], "w", newline="", encoding="utf-8") as fh:
-            w = csv.writer(fh)
-            w.writerow(["scene_uid", "decision", "reason"])
-            for uid in sorted(excluded):
-                w.writerow([uid, excluded[uid][0], excluded[uid][1]])
+    # The canonical list is written by main(), AFTER apply_review() has merged
+    # section_review.csv over this - writing it here published a list that
+    # never carried a Review-mode drop or reinstatement, and every caller of
+    # this loader (04o builds composites) rewrote it. `write=True` is for a
+    # caller that has no review to merge and wants the old behaviour.
+    if write:
+        write_excluded(paths["excluded"], excluded)
     return out, excluded
+
+
+def write_excluded(path, excluded):
+    """`excluded_sections*.csv`: the canonical exclusion list, one row per
+    section, so any stage can honour it without parsing a curator export.
+    Header-only when there is nothing to exclude: an absent file reads as
+    "never computed", which is a different fact."""
+    rows = [{"scene_uid": uid, "decision": excluded[uid][0], "reason": excluded[uid][1]}
+            for uid in sorted(excluded)]
+    IO.atomic_write_csv(path, rows, ["scene_uid", "decision", "reason"])
+
+
+def wants_masks(is_excl, mask_artifacts, censor, mask_rejected, uid):
+    """(use artifact mask, use censor mask) for one section.
+
+    An excluded section is rendered RAW whatever the flags say. 04o builds its
+    composite unmasked - the blue plane has to equal this picture - and a
+    section on screen so somebody can decide whether to reinstate it cannot
+    be judged with the artifact already painted black.
+    """
+    if is_excl:
+        return False, False
+    return (mask_artifacts and uid not in mask_rejected), censor
 
 
 def select_only(spec, excluded):
@@ -565,6 +587,8 @@ def main():
     mask_rejected = set()
     if args.apply_overrides:
         excluded, mask_rejected = apply_review(excluded, args.marker)
+        # After the merge, unconditionally: header-only means "nothing excluded".
+        write_excluded(paths["excluded"], excluded)
 
     sec_dir = paths["sections"]
     plate_dir = os.path.join(REFORMAT_DIR, "plates")
@@ -657,14 +681,15 @@ def main():
         # A rejected mask means this section reformats UNMASKED even with
         # --mask-artifacts on. The mask file is left alone, so the decision is
         # reversible by deleting one row of section_review.csv.
-        art = (load_artifact(r["scene_uid"], (WORK_SIZE, WORK_SIZE))
-               if args.mask_artifacts and r["scene_uid"] not in mask_rejected
-               else None)
-        cen = load_censor(r["scene_uid"], (WORK_SIZE, WORK_SIZE)) if args.censor else None
+        use_art, use_cen = wants_masks(is_excl, args.mask_artifacts, args.censor,
+                                       mask_rejected, r["scene_uid"])
+        art = load_artifact(r["scene_uid"], (WORK_SIZE, WORK_SIZE)) if use_art else None
+        cen = load_censor(r["scene_uid"], (WORK_SIZE, WORK_SIZE)) if use_cen else None
         # "no mask was built for this section" and "its mask was rejected on
         # review" are different facts, and reporting the second as the first
         # would read as a gap in 04g rather than as a decision someone made.
-        if args.mask_artifacts and art is None and r["scene_uid"] not in mask_rejected:
+        if (args.mask_artifacts and art is None and not is_excl
+                and r["scene_uid"] not in mask_rejected):
             no_mask.append(r["scene_uid"])
         out = reformat(src, light_background=False, extra_angle=extra, flip=flip,
                        artifact=art, censor=cen)
@@ -674,9 +699,11 @@ def main():
         img, mask, angle, amask, cmask = out
         Image.fromarray(img).save(os.path.join(sec_dir, r["scene_uid"] + ".png"))
         np.save(os.path.join(sec_dir, r["scene_uid"] + "_mask.npy"), mask)
-        if args.mask_artifacts:
+        # No mask products for an excluded section: it is a picture to look at,
+        # and 05c reads these .npy files as "this section is in the analysis".
+        if use_art:
             np.save(os.path.join(sec_dir, r["scene_uid"] + "_artifact.npy"), amask)
-        if args.censor:
+        if use_cen:
             np.save(os.path.join(sec_dir, r["scene_uid"] + "_censor.npy"), cmask)
         # THE INDEX IS WHAT PUTS A SECTION INTO THE ANALYSIS, and an excluded
         # one must never enter it - however good its picture looks.
