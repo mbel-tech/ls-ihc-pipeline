@@ -193,6 +193,31 @@ def merge_into_focus(rows):
     return hit
 
 
+def summarise(rows, measured, failed):
+    """The console summary. Returns early on nothing measured: np.max on an
+    empty array raises, and a run whose only file failed still has to exit
+    with a sentence rather than a traceback."""
+    print()
+    print("=" * 74)
+    print("measured %d, failed %d, %s now holds %d sections"
+          % (measured, failed, OUT_CSV, len(rows)))
+    if not rows:
+        print("nothing measured - is the source drive mounted?")
+        print("=" * 74)
+        return
+    raw = np.array([float(r["saturated_fraction_raw"]) for r in rows])
+    dap = np.array([float(r["saturated_fraction_dapi_raw"]) for r in rows])
+    ratio = np.array([float(r["raw_over_corrected"]) for r in rows if r["raw_over_corrected"]])
+    print("  marker clipping (raw) : median %.6f  p95 %.6f  max %.6f"
+          % (np.median(raw), np.percentile(raw, 95), raw.max()))
+    print("  DAPI clipping (raw)   : median %.6f  max %.6f   <- expected near zero"
+          % (np.median(dap), dap.max()))
+    if len(ratio):
+        print("  raw / corrected       : median %.3f  p05 %.3f  p95 %.3f  (n=%d)"
+              % (np.median(ratio), np.percentile(ratio, 5), np.percentile(ratio, 95), len(ratio)))
+    print("=" * 74)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, default=0)
@@ -299,12 +324,7 @@ def main():
     print()
     IO.atomic_write_csv(OUT_CSV, rows, KEYS)
 
-    raw = np.array([float(r["saturated_fraction_raw"]) for r in rows])
-    dap = np.array([float(r["saturated_fraction_dapi_raw"]) for r in rows])
-    ratio = np.array([float(r["raw_over_corrected"]) for r in rows if r["raw_over_corrected"]])
-
-    print()
-    print("=" * 74)
+    summarise(rows, measured, failed)
     print("measured %d, failed %d, %s now holds %d sections"
           % (measured, failed, OUT_CSV, len(rows)))
     print("  marker clipping (raw) : median %.6f  p95 %.6f  max %.6f"
@@ -316,6 +336,8 @@ def main():
               % (np.median(ratio), np.percentile(ratio, 5), np.percentile(ratio, 95), len(ratio)))
     print("=" * 74)
 
+    if not rows:
+        return
     if not args.no_merge:
         merge_into_focus(rows)
     if args.native_sample:

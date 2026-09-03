@@ -64,6 +64,15 @@ def nn_spacing(pts):
     return float(np.median(d.min(axis=1)))
 
 
+def _fnum(v):
+    """A float cell, or nan for a blank one - a scene with no recorded centre
+    must load, and be ignored by the distance maths, rather than kill the run."""
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return float("nan")
+
+
 def load_scenes():
     path = os.path.join(MANIFEST_DIR, "manifest_scenes.csv")
     with open(path, newline="", encoding="utf-8") as fh:
@@ -73,8 +82,8 @@ def load_scenes():
         r["scene_index"] = int(r["scene_index"])
         r["slide_serial"] = int(r["slide_serial"])
         r["section_order"] = int(r["section_order"])
-        r["center_x_um"] = float(r["center_x_um"])
-        r["center_y_um"] = float(r["center_y_um"])
+        r["center_x_um"] = _fnum(r["center_x_um"])
+        r["center_y_um"] = _fnum(r["center_y_um"])
     return rows
 
 

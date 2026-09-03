@@ -768,7 +768,9 @@ def preview(rows, sec_dir, plate_dir, n):
     plates = [r for r in rows if r["kind"] == "plate"][:n]
     secs = [r for r in rows if r["kind"] == "section"]
     secs = secs[:: max(1, len(secs) // n)][:n]
-    fig, ax = plt.subplots(2, n, figsize=(2.1 * n, 4.6))
+    # squeeze=False: with n == 1 the axes array comes back 1-D and every
+    # ax[row, col] below raises.
+    fig, ax = plt.subplots(2, n, figsize=(2.1 * n, 4.6), squeeze=False)
     for k, p in enumerate(plates):
         ax[0, k].imshow(np.asarray(Image.open(os.path.join(plate_dir, p["id"] + ".png"))), cmap="gray")
         ax[0, k].set_title(f"{p['id']}\n{p['angle']:.0f} deg", fontsize=7)

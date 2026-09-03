@@ -71,7 +71,6 @@ REPORT_DIR = os.path.join(OUT_ROOT, "qc", "saturation")
 # 8-bit proxy for a clipped 16-bit pixel.
 SAT_LEVEL = 254          # fallback only; see raw_clip_mask()
 RAW_MASK_DIR = os.path.join(OUT_ROOT, "qc", "censor_raw")
-_fallbacks = []
 # --proxy reproduces the pre-2026-09-02 measurement with TODAY'S code, so a
 # before/after comparison isolates the mask change instead of mixing it with
 # three weeks of drift in this file. Debugging affordance only; never the
@@ -138,7 +137,7 @@ def raw_clip_mask(uid, shape):
     return m if m.shape == shape else None
 
 
-def analyse(row, um_px):
+def analyse(row, um_px, fallbacks):
     base = os.path.join(OVERVIEW_DIR, row["animal"], row["marker_channel"], row["scene_uid"])
     mark_path, dapi_path = base + "_MARK.png", base + "_DAPI.png"
     if not (os.path.exists(mark_path) and os.path.exists(dapi_path)):
@@ -151,7 +150,7 @@ def analyse(row, um_px):
     dapi = np.asarray(Image.open(dapi_path).convert("L"))
     sat = None if _force_proxy[0] else raw_clip_mask(row["scene_uid"], mark.shape)
     if sat is None and not _force_proxy[0]:
-        _fallbacks.append(row["scene_uid"])
+        fallbacks.append(row["scene_uid"])
     if sat is None:
         sat = mark >= SAT_LEVEL
     sat_fraction = float(sat.mean())
@@ -273,6 +272,9 @@ def main():
                          "of the raw masks, writing saturation_<marker>_proxy.csv. "
                          "For reproducing the pre-fix census with current code.")
     args = ap.parse_args()
+    # Per run, not per process: the app runs stages in-process, and a
+    # module-level list reported the PREVIOUS run's sections on the second.
+    fallbacks = []
     _force_proxy[0] = args.proxy
     suffix = "_proxy" if args.proxy else ""
     if args.proxy:
@@ -290,7 +292,7 @@ def main():
 
     for i, row in enumerate(rows):
         um_px = float(row["um_px"] or 5.2)
-        out = analyse(row, um_px)
+        out = analyse(row, um_px, fallbacks)
         if out is None:
             continue
         res, imgs = out
@@ -345,10 +347,10 @@ def report(results, marker):
 
     affected = [r for r in results if r.get("verdict") not in (None, "negligible", "no tissue mask")]
     print(f"\n{len(affected)} sections with a non-negligible verdict")
-    if _fallbacks:
-        print(f"\n!! {len(_fallbacks)} sections had no raw clipping mask and fell "
+    if fallbacks:
+        print(f"\n!! {len(fallbacks)} sections had no raw clipping mask and fell "
               f"back to the 8-bit proxy, which UNDERCOUNTS by roughly 2x.")
-        print(f"   Run 01k_saturation_raw.py. First few: {_fallbacks[:5]}")
+        print(f"   Run 01k_saturation_raw.py. First few: {fallbacks[:5]}")
     print(f"verdicts: {dict(sorted(defaultdict_count(results, 'verdict').items(), key=lambda kv: -kv[1]))}")
     if not affected:
         print("=" * 72)

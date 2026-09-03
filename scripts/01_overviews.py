@@ -240,6 +240,14 @@ def sample_display_ranges(scenes, fields, zoom, force):
     return ranges
 
 
+def channel_range(ranges, name):
+    """(lo, hi) for a channel, or a clear stop when display_ranges.json predates it."""
+    if name not in ranges:
+        raise SystemExit(f"{RANGES_PATH} has no entry for {name} - it was sampled before "
+                         f"this marker existed. Delete it and rerun to resample.")
+    return ranges[name]["lo"], ranges[name]["hi"]
+
+
 def export(scenes, fields, ranges, zoom, limit, force):
     done_uids = set()
     qc_rows = []
@@ -270,8 +278,8 @@ def export(scenes, fields, ranges, zoom, limit, force):
         marker = rows[0]["marker_channel"]
         out_dir = os.path.join(OVERVIEW_DIR, rows[0]["animal"], marker)
         os.makedirs(out_dir, exist_ok=True)
-        d_lo, d_hi = ranges["DAPI"]["lo"], ranges["DAPI"]["hi"]
-        m_lo, m_hi = ranges[marker]["lo"], ranges[marker]["hi"]
+        d_lo, d_hi = channel_range(ranges, "DAPI")
+        m_lo, m_hi = channel_range(ranges, marker)
 
         try:
             with pyczi.open_czi(path) as czidoc:

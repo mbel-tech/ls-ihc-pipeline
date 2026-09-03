@@ -214,6 +214,112 @@ REGION_GROUP = {r: "/".join(g) for g in AMBIGUOUS_GROUPS for r in g}
 # render the picture larger; the curator divides that back out on export.
 SEC_GRID = 256
 
+# COL_BAND / COL_SPAN group the seeds of a plate into the vertical strips the
+# click-through order runs down; see the long note at their use in `main`. They
+# live up here because the region hulls below reuse COL_SPAN, and a reader has
+# to be able to see that the two thresholds are deliberately the same number
+# rather than two guesses that happen to agree.
+COL_BAND, COL_SPAN = 0.08, 0.12
+
+# A region on one plate is not one blob, and hulling it as though it were is the
+# mistake this constant exists to stop. These regions are BILATERAL: a hull over
+# all of Dl's seeds spans the midline gap and draws a single band across the
+# whole brain. `04f_exclusion_candidates.py` documents the identical failure for
+# section solidity - "two bilaterally separated lobes ... its hull spans the
+# midline gap" - and rejected the metric over it. So a region's seeds are SPLIT
+# before they are hulled, and each part is hulled on its own.
+#
+# The split is a gap in x at COL_SPAN, reused rather than invented. That value is
+# already tuned to sit between the two real scales: wide enough to hold a strip
+# that drifts sideways as it descends (the left lateral arc on plate_013 runs
+# x = 0.05 -> 0.13), narrow enough that a strip cannot chain across the midline
+# and swallow its bilateral partner (plate_013's partners sit at 0.05 and 0.94).
+# That is exactly the discrimination a lobe split needs.
+#
+# EVERY gap over the threshold cuts, not only the widest: nothing says a region
+# has exactly two parts, and a midline structure like POA has one.
+LOBE_GAP = COL_SPAN
+
+
+def convex_hull(pts):
+    """Monotone-chain hull of (x, y) pairs, no repeated closing point.
+
+    Written out rather than imported. This runs wherever the page is generated
+    and is emitted as page data, and pulling scipy in for eight points would be
+    the only reason this stage needed it at all.
+
+    CONVEX, not concave, and that is a limit of the data rather than a
+    preference: a lobe of Dl carries a handful of seeds, and a concave hull over
+    three points is noise dressed as anatomy.
+
+    Fewer than three points is not an error - Vs and Vc carry four seeds in the
+    entire atlas - so a part of one or two comes back as itself and the page
+    draws a dot or a segment. Collinear points collapse to the two ends for the
+    same reason.
+    """
+    p = sorted(set((float(a), float(b)) for a, b in pts))
+    if len(p) < 3:
+        return [list(q) for q in p]
+
+    def cross(o, a, b):
+        return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+
+    lower = []
+    for q in p:
+        while len(lower) > 1 and cross(lower[-2], lower[-1], q) <= 0:
+            lower.pop()
+        lower.append(q)
+    upper = []
+    for q in reversed(p):
+        while len(upper) > 1 and cross(upper[-2], upper[-1], q) <= 0:
+            upper.pop()
+        upper.append(q)
+    return [list(q) for q in lower[:-1] + upper[:-1]]
+
+
+def region_hulls(sd):
+    """One hull per (region, part) on a plate, built from that plate's own seeds.
+
+    This is what the atlas pane draws a region as, instead of leaving the reader
+    to infer the region's extent from a scatter of numbered dots. `sd` is the
+    plate's seed list, already numbered by the click-through order.
+
+    Vertices are FRACTIONS of the plate image, exactly as the seeds are, so the
+    plate can keep being shown in its original unreformatted form and nothing
+    here needs a transform.
+    """
+    by_region = {}
+    for s in sd:
+        by_region.setdefault(s["region"], []).append(s)
+    out = []
+    for region in sorted(by_region):
+        grp = sorted(by_region[region], key=lambda s: s["xf"])
+        parts, cur = [], [grp[0]]
+        for s in grp[1:]:
+            if s["xf"] - cur[-1]["xf"] > LOBE_GAP:
+                parts.append(cur)
+                cur = [s]
+            else:
+                cur.append(s)
+        parts.append(cur)
+        for i, part in enumerate(parts, 1):
+            out.append({
+                "region": region,
+                # Both uncertainties belong to the seeds, so a hull inherits
+                # them rather than inventing its own. `amb` is the same for
+                # every seed of a region by construction. `unk` is true if ANY
+                # seed under the hull is one the atlas marked "??" - a part
+                # holding an uncertain seed is not a settled part.
+                "amb": part[0]["amb"],
+                "unk": 1 if any(s["unk"] for s in part) else 0,
+                "hex": part[0]["hex"],
+                "part": i, "n_parts": len(parts),
+                "seeds": sorted(s["n"] for s in part),
+                "v": [[round(x, 6), round(y, 6)] for x, y in
+                      convex_hull([(s["xf"], s["yf"]) for s in part])],
+            })
+    return out
+
 
 def marker_paths(marker):
     """Index and image directory for a marker, mirroring `04a_reformat`."""
@@ -3708,6 +3814,8 @@ def main():
                          "out_root). tests/run.sh points this at tests/build/ so a "
                          "test run never rewrites the page being curated in")
     args = ap.parse_args()
+    if args.worklist and not os.path.exists(args.worklist):
+        raise SystemExit(f"--worklist: {args.worklist} not found - run 04n_roi_worklist.py first")
 
     # Both channels go into one page. They are separate physical sections and
     # stay independently curated - this shares the TOOL, not the decisions - so
@@ -3813,8 +3921,8 @@ def main():
     #
     # COL_SPAN caps a column's total width as well as the step between
     # neighbours, so a strip drifting steadily sideways cannot chain across the
-    # midline and swallow its bilateral partner.
-    COL_BAND, COL_SPAN = 0.08, 0.12
+    # midline and swallow its bilateral partner. Both constants live at module
+    # level, because `region_hulls` splits a region's lobes at that same COL_SPAN.
     for _lst in seeds.values():
         _lst.sort(key=lambda s: (s["xf"], s["yf"]))
         _cols, _cur = [], [_lst[0]]
@@ -3853,7 +3961,10 @@ def main():
                    # this image, so no transform chain is needed.
                    "img": f"../atlas/{PLATE_SET}/{p['image_file']}",
                    "w": int(p["px_w"]), "h": int(p["px_h"]),
-                   "labelled": int(bool(sd)), "seeds": sd})
+                   "labelled": int(bool(sd)), "seeds": sd,
+                   # What a REGION is on this plate, as opposed to where its
+                   # individual seeds are. One entry per region per lobe.
+                   "hulls": region_hulls(sd)})
 
     # The curation the app has on file, carried into the page so a browser copy
     # opens with the same work rather than empty. --no-seed leaves it out, which
@@ -3896,7 +4007,8 @@ def main():
               f"   {nrgb} with a colour composite")
     print(f"  {len(data)} sections in the page, {len(pl)} plates, "
           f"{sum(len(p['seeds']) for p in pl)} region seeds")
-    print(f"  {len(lab)} plates carry seeds: {lab[0]['id']} .. {lab[-1]['id']}")
+    print(f"  {len(lab)} plates carry seeds"
+          + (f": {lab[0]['id']} .. {lab[-1]['id']}" if lab else " - no region can be placed yet"))
     print()
     print("Scrub the plate slider until it matches, then click matching points -")
     print("section first, then plate. From three pairs the atlas regions are warped")

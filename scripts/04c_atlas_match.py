@@ -70,11 +70,18 @@ Run:  python 04c_atlas_match.py
 
 import argparse
 import csv
+import importlib.util
 import glob
 import json
 import os
 
 import numpy as np
+
+_lsio = importlib.util.spec_from_file_location(
+    "_lsio", os.path.join(os.path.dirname(os.path.abspath(__file__)), "ls_io.py"))
+IO = importlib.util.module_from_spec(_lsio)
+_lsio.loader.exec_module(IO)
+
 from scipy import ndimage
 
 # LS_CONFIG names the file explicitly; the file-relative path is the fallback.
@@ -281,11 +288,10 @@ def main():
               f"{plate_ids[int(path.min())]} -> {plate_ids[int(path.max())]}  "
               f"mean {chosen.mean():.3f}  flipped {int(flipped.sum())}/{len(keep)}")
 
+    if not proposals:
+        raise SystemExit("no sections matched - is reformat_index.csv empty? Run 04a_reformat.py first")
     out = os.path.join(REPORT_DIR, "atlas_proposals_v2.csv")
-    with open(out, "w", newline="", encoding="utf-8") as fh:
-        w = csv.DictWriter(fh, fieldnames=list(proposals[0].keys()))
-        w.writeheader()
-        w.writerows(proposals)
+    IO.atomic_write_csv(out, proposals, list(proposals[0].keys()))
 
     scores = [p["proposed_score"] for p in proposals]
     locals_ = [p["local_best_score"] for p in proposals]
