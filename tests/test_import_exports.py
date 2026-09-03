@@ -124,13 +124,85 @@ def replace_guard(d, plates):
     chk("...and keeps the unmentioned section", "LS22_s01b_sc00" in kept, True)
 
 
+# Two sections of the same marker, one shown as a 768 px composite and one as
+# the 256 px greyscale - the situation a flat k cannot describe.
+PLATES_2 = """\
+scene_uid,animal,marker,subset,section_order,plate_set,plate_id,plate_index,\
+plate_has_seeds,n_landmarks,n_background,transform,status,favorite,view_rotation_deg,excluded
+LS22_s01a_sc00,LS22,AF568,roi_worklist,1,plates_final,plate_009,8,1,1,0,affine,registered,1,0.0,0
+LS22_s02a_sc00,LS22,AF568,roi_worklist,2,plates_final,plate_009,8,1,1,0,affine,registered,1,0.0,0
+"""
+
+LANDMARKS_2 = """\
+scene_uid,animal,marker,section_order,plate_set,plate_id,pair,\
+sec_x,sec_y,sec_r,plate_x,plate_y,residual_px,seed_n,seed_region
+LS22_s01a_sc00,LS22,AF568,1,plates_final,plate_009,1,100.00,50.00,8.00,72.27,405.98,0.00,1,Dl
+LS22_s02a_sc00,LS22,AF568,2,plates_final,plate_009,1,100.00,50.00,8.00,72.27,405.98,0.00,1,Dl
+"""
+
+
+def frames(d):
+    """A reformatted/ tree with a composite for one section and only the
+    greyscale for the other, exactly as 04o leaves it."""
+    from PIL import Image
+    rd = os.path.join(d, "reformatted")
+    for sub, uid, w in (("sections_AF568_rgb", "LS22_s01a_sc00", 768),
+                        ("sections_AF568", "LS22_s01a_sc00", 256),
+                        ("sections_AF568", "LS22_s02a_sc00", 256)):
+        os.makedirs(os.path.join(rd, sub), exist_ok=True)
+        Image.new("L", (w, w)).save(os.path.join(rd, sub, uid + ".png"))
+    return rd
+
+
+def per_section_frame(d):
+    """The rebuild reads each section in the frame it was CLICKED in.
+
+    `rebuild` used to take one k for the whole import and default it to 3, so a
+    section the page had shown as the 256 greyscale came back with every
+    landmark three times too far out. 04l stamps `frame` per record and 04q
+    already derives it from disk; this is the same rule on the import path.
+    """
+    print("\n\nper-section frames:\n")
+    rd = frames(d)
+    fo = IE.frame_from_disk(rd)
+    chk("a composite section is a 768 frame", fo("LS22_s01a_sc00", "AF568"), 768.0)
+    chk("a greyscale-only section is 256", fo("LS22_s02a_sc00", "AF568"), 256.0)
+    chk("an unknown section falls back to the export's own grid",
+        fo("LS22_s09z_sc00", "AF568"), 256.0)
+    chk("--no-rgb ignores the composite",
+        IE.frame_from_disk(rd, rgb=False)("LS22_s01a_sc00", "AF568"), 256.0)
+
+    pl = write(d, "plates2.csv", PLATES_2)
+    lm = write(d, "landmarks2.csv", LANDMARKS_2)
+    S, n, _ = IE.rebuild(pl, lm, frame_of=fo)
+    a = S["LS22_s01a_sc00"]
+    b = S["LS22_s02a_sc00"]
+    chk("both sections rebuilt", n, 2)
+    chk("the composite section is scaled by 3",
+        [round(v, 2) for v in a["pairs"][0][:2]], [300.0, 150.0])
+    chk("...and its record says which frame that was", a["frame"], 768.0)
+    chk("the greyscale section is not scaled",
+        [round(v, 2) for v in b["pairs"][0][:2]], [100.0, 50.0])
+    chk("...and its record says so too", b["frame"], 256.0)
+    chk("its radius follows the same frame", round(b["pairs"][0][5], 2), 8.0)
+    chk("...and the composite's does not", round(a["pairs"][0][5], 2), 24.0)
+
+    # A caller that knows every section shared one frame can still say so.
+    S2, _, _ = IE.rebuild(pl, lm, k=3.0)
+    chk("an explicit flat k still applies to every section",
+        [round(S2[u]["pairs"][0][0], 2) for u in sorted(S2)], [300.0, 300.0])
+    chk("...and is stamped as a frame", S2["LS22_s02a_sc00"]["frame"], 768.0)
+
+
 def main():
     with tempfile.TemporaryDirectory() as d:
         pl = write(d, "roi_plates.csv", PLATES)
         lm = write(d, "roi_landmarks.csv", LANDMARKS)
         rg = write(d, "roi_regions.csv", REGIONS)
 
-        S, n_pairs, n_bg = IE.rebuild(pl, lm, regions_csv=rg)
+        # k=3.0 explicitly: this fixture is a 768 px composite section, and
+        # the default is no longer a guess that every section was one.
+        S, n_pairs, n_bg = IE.rebuild(pl, lm, k=3.0, regions_csv=rg)
         e = S["LS22_s01a_sc00"]
         pairs = e["pairs"]
         bg = [p for p in pairs if len(p) > 6 and p[6] == "bg"]
@@ -160,18 +232,19 @@ def main():
 
         print("\nan export written before background discs existed:\n")
         rg_old = write(d, "roi_regions_old.csv", REGIONS_OLD)
-        S2, n2, nbg2 = IE.rebuild(pl, lm, regions_csv=rg_old)
+        S2, n2, nbg2 = IE.rebuild(pl, lm, k=3.0, regions_csv=rg_old)
         chk("its landmarks still load", n2, 3)
         chk("and it contributes no background discs", nbg2, 0)
         chk("...leaving pairs untouched",
             len(S2["LS22_s01a_sc00"]["pairs"]), 3)
 
         print("\nno regions file at all:\n")
-        S3, n3, nbg3 = IE.rebuild(pl, lm, regions_csv=os.path.join(d, "nope.csv"))
+        S3, n3, nbg3 = IE.rebuild(pl, lm, k=3.0, regions_csv=os.path.join(d, "nope.csv"))
         chk("the rebuild still works", n3, 3)
         chk("and says it found none", nbg3, 0)
 
         replace_guard(d, pl)
+        per_section_frame(d)
 
     print("\n" + (f"{fails} FAILED" if fails else "ALL PASS"))
     return 1 if fails else 0
