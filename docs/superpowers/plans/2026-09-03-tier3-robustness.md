@@ -43,7 +43,7 @@ raise SystemExit(1 if fails else 0)
 
 `scripts/01k_saturation_raw.py:91-121` already has the right idiom (tmp file, `os.replace`, five attempts with 1/2/4/8 s backoff). It has two limits: it returns silently on empty rows (`if not rows: return`, line 105), so an empty result leaves last run's file standing, and it is CSV-only, so the workbooks (06c/06d) and the PNG masks (01k:295) cannot use it.
 
-- [ ] **Step 1: Write the failing test** `tests/test_ls_io.py`
+- [x] **Step 1: Write the failing test** `tests/test_ls_io.py`
 
 ```python
 """ls_io: tmp-then-replace writes, with a retry.
@@ -164,14 +164,14 @@ print("\n" + ("ALL PASS" if not fails else f"{fails} FAILED"))
 raise SystemExit(1 if fails else 0)
 ```
 
-- [ ] **Step 2: Run it, expect the import to fail**
+- [x] **Step 2: Run it, expect the import to fail**
 
 ```
 work/appenv/Scripts/python.exe tests/test_ls_io.py
 ```
 Expected: `FileNotFoundError: ... scripts/ls_io.py` (traceback, exit 1).
 
-- [ ] **Step 3: Create `scripts/ls_io.py`**
+- [x] **Step 3: Create `scripts/ls_io.py`**
 
 ```python
 """Shared file-writing helpers: tmp-then-replace, with a retry.
@@ -255,14 +255,14 @@ def atomic_save(path, attempts=5):
                 pass
 ```
 
-- [ ] **Step 4: Run the test, expect all pass**
+- [x] **Step 4: Run the test, expect all pass**
 
 ```
 work/appenv/Scripts/python.exe tests/test_ls_io.py
 ```
 Expected: 16 `ok` lines and `ALL PASS`.
 
-- [ ] **Step 5: Point 01k at it**
+- [x] **Step 5: Point 01k at it**
 
 In `scripts/01k_saturation_raw.py`:
 
@@ -284,14 +284,14 @@ with
 
 `import time` stays: `t0 = time.time()` still uses it.
 
-- [ ] **Step 6: Verify 01k still compiles and no longer defines the helper**
+- [x] **Step 6: Verify 01k still compiles and no longer defines the helper**
 
 ```
 work/appenv/Scripts/python.exe -m py_compile scripts/01k_saturation_raw.py && grep -c "def atomic_write" scripts/01k_saturation_raw.py
 ```
 Expected: compile succeeds, grep prints `0`.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```
 git add scripts/ls_io.py scripts/01k_saturation_raw.py tests/test_ls_io.py
@@ -310,7 +310,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 Each of these currently opens the final path with `"w"` and writes into it directly, so a crash or a drive dropout mid-write leaves a truncated file under the name the next stage reads. 06c's `write_workbook()` (`06c:99-127`) is shared with 06d, so one change covers both workbooks. The test is a source scan: the scripts need the imaging data to run end-to-end, and what has to hold is simply that the in-place `open(..., "w")` at each site is gone and the helper is called.
 
-- [ ] **Step 1: Write the failing test** `tests/test_atomic_adoption.py`
+- [x] **Step 1: Write the failing test** `tests/test_atomic_adoption.py`
 
 ```python
 """Every keyed output is written through ls_io, never in place.
@@ -368,13 +368,13 @@ print("\n" + ("ALL PASS" if not fails else f"{fails} FAILED"))
 raise SystemExit(1 if fails else 0)
 ```
 
-- [ ] **Step 2: Run it, expect 22 FAILs (01k's three lines already pass from Task 1)**
+- [x] **Step 2: Run it, expect 22 FAILs (01k's three lines already pass from Task 1)**
 
 ```
 work/appenv/Scripts/python.exe tests/test_atomic_adoption.py
 ```
 
-- [ ] **Step 3: Make the edits**
+- [x] **Step 3: Make the edits**
 
 Add the IO import boilerplate (conventions above) near the other path-imports in each file; `04a`, `04h` and `04m` also need `import importlib.util` added to their import block. Then, per site:
 
@@ -449,7 +449,7 @@ OVERRIDE_KEYS = ["perk_scene_uid", "pcna_scene_uid", "animal", "extra_rotation",
         wb.save(tmp)
 ```
 
-- [ ] **Step 4: Run the scan and the existing Python suites**
+- [x] **Step 4: Run the scan and the existing Python suites**
 
 ```
 work/appenv/Scripts/python.exe tests/test_atomic_adoption.py
@@ -457,7 +457,7 @@ for t in tests/test_*.py; do work/appenv/Scripts/python.exe "$t" > /dev/null || 
 ```
 Expected: `ALL PASS` from the scan; no `FAIL` lines (the import chains 04j->04a, 06d->06c->06b->05a->04a etc. all still load).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```
 git add scripts/04a_reformat.py scripts/04j_censor_clipped.py scripts/04g_artifact_mask.py scripts/04f_exclusion_candidates.py scripts/04h_symmetry_axis.py scripts/04i_propagate_to_perk.py scripts/04m_sections_dataset.py scripts/04p_section_provenance.py scripts/05a_roi_geometry.py scripts/06a_roi_dataset.py scripts/06c_excel_dataset.py tests/test_atomic_adoption.py
@@ -476,7 +476,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 All four generators do `PAGE.replace("__X__", json.dumps(x)).replace("__Y__", json.dumps(y))...`. Two defects: `json.dumps` does not escape `</script>` or `<!--`, so a section reason or a region label containing either would end the script block; and chained `.replace` re-scans the JSON just inserted, so a value containing a later placeholder's name would be substituted too. One helper, one pass.
 
-- [ ] **Step 1: Write the failing test** `tests/test_embed.py`
+- [x] **Step 1: Write the failing test** `tests/test_embed.py`
 
 ```python
 """JSON embedded in a <script> block: escaped, and substituted in one pass.
@@ -531,13 +531,13 @@ print("\n" + ("ALL PASS" if not fails else f"{fails} FAILED"))
 raise SystemExit(1 if fails else 0)
 ```
 
-- [ ] **Step 2: Run it, expect `AttributeError: module 'lsio' has no attribute 'embed'`**
+- [x] **Step 2: Run it, expect `AttributeError: module 'lsio' has no attribute 'embed'`**
 
 ```
 work/appenv/Scripts/python.exe tests/test_embed.py
 ```
 
-- [ ] **Step 3: Add to `scripts/ls_io.py`** (add `import json` and `import re` to its imports)
+- [x] **Step 3: Add to `scripts/ls_io.py`** (add `import json` and `import re` to its imports)
 
 ```python
 def embed(obj):
@@ -564,9 +564,9 @@ def fill(template, values):
     return pattern.sub(lambda m: embed(values[m.group(0)]), template)
 ```
 
-- [ ] **Step 4: Run the test, expect `ALL PASS`**
+- [x] **Step 4: Run the test, expect `ALL PASS`**
 
-- [ ] **Step 5: Use it in the four generators** (each gets the IO import boilerplate; 04b, 04d, 04k, 04l all already have `import os`; 04b/04d/04k need `import importlib.util` added; 04l has no `importlib` import either - add it)
+- [x] **Step 5: Use it in the four generators** (each gets the IO import boilerplate; 04b, 04d, 04k, 04l all already have `import os`; 04b/04d/04k need `import importlib.util` added; 04l has no `importlib` import either - add it)
 
 `04l_roi_curator.py:3779-3787` - replace the `page = (PAGE.replace(...)...)` chain with
 ```python
@@ -593,14 +593,14 @@ def fill(template, values):
     page = IO.fill(TEMPLATE, {"__DATA__": ordered})
 ```
 
-- [ ] **Step 6: Regenerate one page and check the placeholders are gone**
+- [x] **Step 6: Regenerate one page and check the placeholders are gone**
 
 ```
 work/appenv/Scripts/python.exe scripts/04k_level_curator.py > /dev/null && grep -c "__DATA__\|__PLATES__" "$(work/appenv/Scripts/python.exe -c "import json;print(json.load(open('config.json'))['out_root'])")/reformatted/level_curator.html"
 ```
 Expected: `0`.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```
 git add scripts/ls_io.py scripts/04l_roi_curator.py scripts/04d_rotation_curator.py scripts/04k_level_curator.py scripts/04b_atlas_match.py tests/test_embed.py
@@ -619,7 +619,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 `tests/run.sh:35` regenerates `<out_root>/reformatted/roi_curator.html` with `--no-seed` and line 68 regenerates it again with the seed - the file the operator is curating in is rewritten twice per test run, and a crash between the two leaves it seedless. `tests/harness.js:45` hard-codes `build/curator.js`, so only 04l can be tested. `channels.test.js:19-20` asserts 454/788 rows, `:23` asserts every row has a composite, `guided.test.js:43,47` assert 8 and 42 seeds, and `shotgun.test.js` names six animals and plate indices 9/12 - all facts about the operator's data, not about the code.
 
-- [ ] **Step 1: Add `--out` to the three generators**
+- [x] **Step 1: Add `--out` to the three generators**
 
 `04l_roi_curator.py` - after the `--rgb` argument (line 3615-3618) add
 ```python
@@ -634,7 +634,7 @@ and change line 3788 `with open(CURATOR_HTML, "w", encoding="utf-8") as fh:` to 
 
 `04k_level_curator.py` - after `--animal` (line 308) add the same `--out`; change line 331 to `args.out` and line 335 to `print(f"wrote {args.out}")`.
 
-- [ ] **Step 2: Rewrite `tests/run.sh`**
+- [x] **Step 2: Rewrite `tests/run.sh`**
 
 ```bash
 #!/usr/bin/env bash
@@ -710,7 +710,7 @@ if [ "$fail" -eq 0 ]; then echo "ALL SUITES PASS"; else echo "SUITE FAILURES"; f
 exit "$fail"
 ```
 
-- [ ] **Step 3: Make the harness page-aware** - in `tests/harness.js` replace lines 43-45
+- [x] **Step 3: Make the harness page-aware** - in `tests/harness.js` replace lines 43-45
 
 ```js
 // Written by tests/run.sh, which regenerates the page with --no-seed and lifts
@@ -747,7 +747,7 @@ function load(exportExpr, page = "curator") {
   let js = fs.readFileSync(file, "utf8");
 ```
 
-- [ ] **Step 4: Replace the data-dependent assertions**
+- [x] **Step 4: Replace the data-dependent assertions**
 
 `tests/channels.test.js:19-23` - replace
 ```js
@@ -850,7 +850,7 @@ then:
 - line 258: `X.secRegions({plate: 9, pairs: ...})` -> `{plate: PA, ...}`;
 - lines 293 and 296: `X.PLATES[9]` -> `X.PLATES[PA]`.
 
-- [ ] **Step 5: Create the two new suites** (smoke level now; Tasks 5, 7, 8, 9 extend them)
+- [x] **Step 5: Create the two new suites** (smoke level now; Tasks 5, 7, 8, 9 extend them)
 
 `tests/rotation_curator.test.js`
 ```js
@@ -922,7 +922,7 @@ chk("one row per section of the anchored animal", lines.length - 1, list.length)
 done();
 ```
 
-- [ ] **Step 6: Run the whole build and note the live page is untouched**
+- [x] **Step 6: Run the whole build and note the live page is untouched**
 
 ```
 LIVE="$(work/appenv/Scripts/python.exe -c "import json;print(json.load(open('config.json'))['out_root'])")/reformatted/roi_curator.html"
@@ -930,7 +930,7 @@ stat -c %Y "$LIVE"; bash tests/run.sh; stat -c %Y "$LIVE"; ls tests/build
 ```
 Expected: `ALL SUITES PASS`; the two `stat` values are identical; `tests/build` lists `curator.html curator.js rotation_curator.html rotation_curator.js level_curator.html level_curator.js` (plus `shotgun.pptx`).
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```
 git add scripts/04l_roi_curator.py scripts/04d_rotation_curator.py scripts/04k_level_curator.py tests/run.sh tests/harness.js tests/channels.test.js tests/guided.test.js tests/shotgun.test.js tests/rotation_curator.test.js tests/level_curator.test.js
@@ -949,7 +949,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 `04d:354` puts `AUTO[d.uid].reason` (free text from `exclusion_candidates.csv`) straight into a `title="..."` attribute and into `innerHTML`; `04k:247-249` puts `p.regions` into `innerHTML`; `04b:404` puts `c.regions` into `innerHTML`. `04l:2069`, `04l:3202`, `04k:215` and `04b:402` build `onclick="select('${uid}')"` strings - a uid or plate id containing a quote breaks out of the handler. `04l` already has `esc()` at `:3088`; the review grid at `:3201-3204` uses it for `title` but still emits `onclick`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `tests/rotation_curator.test.js` before `done();`:
 ```js
@@ -981,14 +981,14 @@ X.render();
 chk("strip cells carry data-uid, not onclick", els["strip"].innerHTML.includes("onclick="), false);
 ```
 
-- [ ] **Step 2: Run them, expect the new lines to FAIL**
+- [x] **Step 2: Run them, expect the new lines to FAIL**
 
 ```
 bash tests/run.sh 2>&1 | grep -E "^FAIL|SUITE"
 ```
 Expected: `FAIL a reason cannot break out...`, `FAIL the strip carries no inline handlers`, `FAIL region labels are escaped...`, `FAIL strip cells carry data-uid...`, `SUITE FAILURES`.
 
-- [ ] **Step 3: 04l** - replace lines 2067-2070
+- [x] **Step 3: 04l** - replace lines 2067-2070
 ```js
   el("strip").innerHTML = list.map(d=>
     `<div class="cell ${cellClass(d.uid)} ${active===d.uid?"active":""}"
@@ -1021,7 +1021,7 @@ el("revGrid").addEventListener("click", e => {
 });
 ```
 
-- [ ] **Step 4: 04d** - after `const el = id => document.getElementById(id);` (line 172) add
+- [x] **Step 4: 04d** - after `const el = id => document.getElementById(id);` (line 172) add
 ```js
 const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g,
   c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
@@ -1048,7 +1048,7 @@ with
     const stack = cell.querySelector(".stack");
 ```
 
-- [ ] **Step 5: 04k** - after `const el = id => document.getElementById(id);` (line 165) add the same `esc` as in Step 4, plus
+- [x] **Step 5: 04k** - after `const el = id => document.getElementById(id);` (line 165) add the same `esc` as in Step 4, plus
 ```js
 el("strip").addEventListener("click", e => {
   const c = e.target.closest && e.target.closest(".cell"); if(c) select(c.dataset.uid);
@@ -1077,7 +1077,7 @@ with
     : "<span class='unlab'>no region labels on this plate</span>";
 ```
 
-- [ ] **Step 6: 04b** - after `const el = id => document.getElementById(id);` (line 386) add the same `esc` and
+- [x] **Step 6: 04b** - after `const el = id => document.getElementById(id);` (line 386) add the same `esc` and
 ```js
 el("cands").addEventListener("click", e => {
   const c = e.target.closest && e.target.closest(".cand"); if(c) setMark(c.dataset.plate);
@@ -1100,13 +1100,13 @@ with
       ${c.regions ? '<br>'+esc(c.regions) : ''}</div>
 ```
 
-- [ ] **Step 7: Run the suites, expect `ALL SUITES PASS`**
+- [x] **Step 7: Run the suites, expect `ALL SUITES PASS`**
 
 ```
 bash tests/run.sh 2>&1 | grep -E "^FAIL|SUITE"
 ```
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```
 git add scripts/04l_roi_curator.py scripts/04d_rotation_curator.py scripts/04k_level_curator.py scripts/04b_atlas_match.py tests/rotation_curator.test.js tests/level_curator.test.js tests/channels.test.js
@@ -1128,7 +1128,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 `dl()` at `04l:2266-2269` joins with `","` and quotes nothing; `csvq` at `:3096` exists and is applied only to the `why` field of `exportReview` (`:3576`). `roi_landmarks.csv` carries `seed_region`, `roi_regions.csv` carries `region`/`ambiguity_group` - region labels from `seeds.csv`, free text. Quote in `dl()` so every export gets it, and stop pre-quoting in `exportReview` (or the field is quoted twice).
 
-- [ ] **Step 1: Write the failing test** `tests/csvq.test.js`
+- [x] **Step 1: Write the failing test** `tests/csvq.test.js`
 
 ```js
 // Every 04l export goes through one quoting rule.
@@ -1171,13 +1171,13 @@ chk("...not wrapped twice", blobs[0].includes('"""torn'), false);
 done();
 ```
 
-- [ ] **Step 2: Run it, expect `dl quotes each field` and the region/review lines to FAIL**
+- [x] **Step 2: Run it, expect `dl quotes each field` and the region/review lines to FAIL**
 
 ```
 bash tests/run.sh 2>&1 | grep -E "^FAIL|SUITE"
 ```
 
-- [ ] **Step 3: Implement** - in `04l_roi_curator.py` cut the `csvq` definition (lines 3091-3099, comment included) and paste it immediately above `function dl(...)` (line 2266); then replace lines 2266-2269
+- [x] **Step 3: Implement** - in `04l_roi_curator.py` cut the `csvq` definition (lines 3091-3099, comment included) and paste it immediately above `function dl(...)` (line 2266); then replace lines 2266-2269
 ```js
 function dl(rowsArr,name){
   const b=new Blob([rowsArr.map(r=>r.join(",")).join("\\n")],{type:"text/csv"});
@@ -1191,9 +1191,9 @@ function dl(rowsArr,name){
 ```
 and in `exportReview` (line 3576) change `csvq(r.why || "")` to `r.why || ""`. Update the moved comment's first sentence to: `// dl() applies this to every field; it is defined here because exportReview and the region exports both need it.`
 
-- [ ] **Step 4: Run the suites, expect `ALL SUITES PASS`** (guided/channels split on `,` and read numeric or comma-free columns, so they are unaffected).
+- [x] **Step 4: Run the suites, expect `ALL SUITES PASS`** (guided/channels split on `,` and read numeric or comma-free columns, so they are unaffected).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```
 git add scripts/04l_roi_curator.py tests/csvq.test.js
@@ -1212,7 +1212,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 `04l:2077-2149` handles `x`, `f`, `a`, `d`... with no check on `ctrlKey`/`metaKey`/`altKey`, so Ctrl+F (find) excludes nothing but Ctrl+X excludes the active section. It bails on `TEXTAREA`/`SELECT` and some `INPUT`s (`:2089-2094`). `04d:311-321` and `04k:277-283` check neither modifiers nor focus: typing `a` in the animal `<select>`'s type-ahead sets an anchor.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `tests/keys.test.js`
 ```js
@@ -1276,9 +1276,9 @@ key("d");
 chk("plain d drops it", list[1].uid in X.anchors, false);
 ```
 
-- [ ] **Step 2: Run, expect the modifier/focus lines to FAIL** (`bash tests/run.sh 2>&1 | grep -E "^FAIL|SUITE"`)
+- [x] **Step 2: Run, expect the modifier/focus lines to FAIL** (`bash tests/run.sh 2>&1 | grep -E "^FAIL|SUITE"`)
 
-- [ ] **Step 3: 04l** - after line 2077 `addEventListener("keydown", e=>{` insert as the first statement
+- [x] **Step 3: 04l** - after line 2077 `addEventListener("keydown", e=>{` insert as the first statement
 ```js
   // Ctrl/Cmd/Alt chords belong to the browser - Ctrl+F finds, Ctrl+X cuts -
   // and a chord must never read as the bare letter. Shift is a real modifier
@@ -1286,7 +1286,7 @@ chk("plain d drops it", list[1].uid in X.anchors, false);
   if(e.ctrlKey || e.metaKey || e.altKey) return;
 ```
 
-- [ ] **Step 4: 04d** - replace lines 311-313
+- [x] **Step 4: 04d** - replace lines 311-313
 ```js
 addEventListener("keydown", e => {
   if(!active) return;
@@ -1304,7 +1304,7 @@ addEventListener("keydown", e => {
   const s = get(active);
 ```
 
-- [ ] **Step 5: 04k** - replace lines 277-278
+- [x] **Step 5: 04k** - replace lines 277-278
 ```js
 addEventListener("keydown", e => {
   if(!active) return;
@@ -1318,9 +1318,9 @@ addEventListener("keydown", e => {
   if(!active) return;
 ```
 
-- [ ] **Step 6: Run the suites, expect `ALL SUITES PASS`**
+- [x] **Step 6: Run the suites, expect `ALL SUITES PASS`**
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```
 git add scripts/04l_roi_curator.py scripts/04d_rotation_curator.py scripts/04k_level_curator.py tests/keys.test.js tests/rotation_curator.test.js tests/level_curator.test.js
@@ -1339,7 +1339,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 `04d:293-300` calls `setState()` on every `pointermove`, which serialises the whole state to `localStorage` and repaints per event. Keep the angle on the `drag` object, paint only the transform, and call `setState` once on `pointerup`/`pointercancel` - the same shape as 04l's `draftRot` (`tests/rotation.test.js`).
 
-- [ ] **Step 1: Write the failing test** - append to `tests/rotation_curator.test.js` before `done();`
+- [x] **Step 1: Write the failing test** - append to `tests/rotation_curator.test.js` before `done();`
 
 ```js
 // ---- drag: a draft until release ------------------------------------------
@@ -1364,9 +1364,9 @@ X.onUp();
 chk("a press that never moved changes nothing", X.state[v].r, 90);
 ```
 
-- [ ] **Step 2: Run, expect `mid-drag: nothing in the record` and `...but the draft is live` to FAIL**
+- [x] **Step 2: Run, expect `mid-drag: nothing in the record` and `...but the draft is live` to FAIL**
 
-- [ ] **Step 3: Implement** - replace lines 293-301
+- [x] **Step 3: Implement** - replace lines 293-301
 ```js
 function onMove(e){
   if(!drag) return;
@@ -1404,9 +1404,9 @@ function onUp(){
 ```
 `onDown` (line 289) already records `base: get(uid).r`; add `r: get(uid).r` to that object literal so a release after a sub-threshold move has a value. The `pointerup`/`pointercancel` listeners at lines 365-366 already call `onUp`.
 
-- [ ] **Step 4: Run the suites, expect `ALL SUITES PASS`**
+- [x] **Step 4: Run the suites, expect `ALL SUITES PASS`**
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```
 git add scripts/04d_rotation_curator.py tests/rotation_curator.test.js
@@ -1425,7 +1425,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 `toggleExclude` (`:219-223`) calls `setState(uid, s.r, s.f, ...)` with `s = get(uid)`, whose `r` is `symOf(uid)` when the user never rotated - so the proposal is copied into the record, `isSymAuto` (`:195`) turns false, and the export (`:402-404`) reports `manual_overrode_auto` for a section nobody rotated. `setState` (`:214`) deletes the record when `r === 0 && !f && x === undefined`, so a proposed section cannot be set to 0: `get()` falls back to the proposal again.
 
-- [ ] **Step 1: Write the failing test** - append to `tests/rotation_curator.test.js` before `done();`
+- [x] **Step 1: Write the failing test** - append to `tests/rotation_curator.test.js` before `done();`
 
 ```js
 // ---- tri-state rotation ---------------------------------------------------
@@ -1461,9 +1461,9 @@ X.setState(X.DATA[4].uid, 0, false, undefined);
 chk("0 with no proposal stores nothing", X.DATA[4].uid in X.state, false);
 ```
 
-- [ ] **Step 2: Run, expect `excluding does not adopt the proposal`, `0 on a proposed section is a decision`, `...sourced as an overruled proposal` to FAIL**
+- [x] **Step 2: Run, expect `excluding does not adopt the proposal`, `0 on a proposed section is a decision`, `...sourced as an overruled proposal` to FAIL**
 
-- [ ] **Step 3: Implement** - replace lines 194-200
+- [x] **Step 3: Implement** - replace lines 194-200
 ```js
 const symOf = uid => (SYM[uid] ? SYM[uid].r : 0);
 // The user's own rotation wins; with none, the symmetry proposal stands.
@@ -1531,9 +1531,9 @@ with (keeping the `decision`/`reason` lines between them as they are)
 ```
 The keyboard `r`/`0` bindings (`:317-318`) call `setState(active, 0, ...)` and now store an explicit 0 on proposed sections - which is what pressing "reset" on a proposal should mean. `resetAll` and the v2 migration (`:154-163`) build records with `r: s.r || 0`; leave the migration alone (a stored `r:0` under the new rule is read as "own 0", which is what v2 recorded).
 
-- [ ] **Step 4: Run the suites, expect `ALL SUITES PASS`** (the Task 8 drag test passes `r` through `setState` with a nonzero angle, unaffected)
+- [x] **Step 4: Run the suites, expect `ALL SUITES PASS`** (the Task 8 drag test passes `r` through `setState` with a nonzero angle, unaffected)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```
 git add scripts/04d_rotation_curator.py tests/rotation_curator.test.js
@@ -1552,7 +1552,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 `select()` (`:1852`) calls `st(uid)`, which creates `{plate:0, pairs:[], ...}`; `onSlide()` (`:1818`) then `save()`s, so every section merely looked at is persisted and later treated as work by the S initialiser (`:845-851`: "if the store has any keys, it wins") and by `adoptSeed` (`:2296`: seed entries are skipped whenever the browser has *any* record). `status()` (`:1622`) runs `st(active)` with `active === null` and creates `S["null"]`. `isDone` (`:1875`) and `cellTag` (`:1901`) count `s.pairs.length`, which includes background discs, while the export counts `roiPairs(s)`. The export (`:2189-2199`) tests `s.excl`, but the strip uses `isExcl(uid)` (`:1883`), which honours a reinstatement.
 
-- [ ] **Step 1: Write the failing test** `tests/seed.test.js`
+- [x] **Step 1: Write the failing test** `tests/seed.test.js`
 
 ```js
 // A record is work only if it holds a decision. Looking at a section is not one.
@@ -1628,9 +1628,9 @@ chk("...on disk too - a zero tilt on an undecided section stores nothing",
     (disk(uid).rot || 0).toFixed(1), "0.0");
 ```
 
-- [ ] **Step 2: Run, expect `LOAD ERROR: initState is not defined`** (`node tests/seed.test.js` after `bash tests/run.sh` has built the page)
+- [x] **Step 2: Run, expect `LOAD ERROR: initState is not defined`** (`node tests/seed.test.js` after `bash tests/run.sh` has built the page)
 
-- [ ] **Step 3: Implement** - replace lines 844-854
+- [x] **Step 3: Implement** - replace lines 844-854
 ```js
 const SEED_STATE = __SEED__;
 let S = (function(){
@@ -1718,9 +1718,9 @@ function adoptSeed(){
 ```
 and in the seed-offer block (`:2278`) count `missing` with the same rule: `const missing = Object.keys(SEED_STATE).filter(u => hasDecision(SEED_STATE[u]) && !hasDecision(S[u])).length;`.
 
-- [ ] **Step 4: Run the suites, expect `ALL SUITES PASS`**
+- [x] **Step 4: Run the suites, expect `ALL SUITES PASS`**
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```
 git add scripts/04l_roi_curator.py tests/seed.test.js tests/rotation.test.js
@@ -1739,7 +1739,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 Each is a first-run or partial-run crash: `rows[0].keys()` on an empty result (00b:170, 04c:283), `raw.max()` on an empty array (01k:333), `lab[0]` when no plate carries seeds (04l:3813), a bare `open(args.worklist)` (04l:3643), `plt.subplots(2, 1)` returning a 1-D axes array indexed as 2-D (04a:768-771), `float("")` on a blank `center_x_um` (02:73-74), `ranges[marker]` when `display_ranges.json` predates a marker (01_overviews:274), and 01g's module-level `_fallbacks` (:74) that is appended to by `analyse()` and never cleared, so a second `main()` in one process (the app runs stages in-process) reports the previous run's sections.
 
-- [ ] **Step 1: Write the failing test** `tests/test_empty_guards.py`
+- [x] **Step 1: Write the failing test** `tests/test_empty_guards.py`
 
 ```python
 """First-run and partial-run inputs that used to crash.
@@ -1852,9 +1852,9 @@ print("\n" + ("ALL PASS" if not fails else f"{fails} FAILED"))
 raise SystemExit(1 if fails else 0)
 ```
 
-- [ ] **Step 2: Run it, expect `AttributeError: module 'v' has no attribute 'STATUS_KEYS'`**
+- [x] **Step 2: Run it, expect `AttributeError: module 'v' has no attribute 'STATUS_KEYS'`**
 
-- [ ] **Step 3: Implement, file by file**
+- [x] **Step 3: Implement, file by file**
 
 **00b** - add after `QC_DIR = ...` (line 35):
 ```python
@@ -1943,9 +1943,9 @@ and replace lines 273-274 with
 
 **01g** - delete `_fallbacks = []` (line 74); change the signature at line 141 to `def analyse(row, um_px, fallbacks):` and line 154 to `fallbacks.append(row["scene_uid"])`; in `main()` add `fallbacks = []` right after `args = ap.parse_args()` (line ~275), pass it at the `analyse(...)` call site, and change lines 348-351 to read `fallbacks` instead of `_fallbacks`.
 
-- [ ] **Step 4: Run the test, expect `ALL PASS`**; then `bash tests/run.sh` still passes.
+- [x] **Step 4: Run the test, expect `ALL PASS`**; then `bash tests/run.sh` still passes.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```
 git add scripts/00b_verify_extraction.py scripts/04c_atlas_match.py scripts/01k_saturation_raw.py scripts/04l_roi_curator.py scripts/04a_reformat.py scripts/02_pair_passes.py scripts/01_overviews.py scripts/01g_saturation_map.py tests/test_empty_guards.py
@@ -1964,7 +1964,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 `load_overrides()` writes `excluded_sections*.csv` at `:495-500`, before `apply_review()` at `:561` merges `section_review.csv` over the same dict - so the canonical list on disk never carries a Review-mode drop or reinstatement, and `04o_section_rgb.py:173` calls `load_overrides(paths)` too, rewriting it on every composite build. In the section loop, `art` (`:654-656`) and `cen` (`:657`) are loaded for excluded sections under `--render-excluded --mask-artifacts`, and the `.npy` masks are written (`:671-674`), while `04o:225-227` renders an excluded section unmasked on the assumption that 04a did - so `04o --verify` fails on exactly those.
 
-- [ ] **Step 1: Write the failing test** `tests/test_excluded_write.py`
+- [x] **Step 1: Write the failing test** `tests/test_excluded_write.py`
 
 ```python
 """excluded_sections.csv is written once, after the review merge, by main().
@@ -2043,9 +2043,9 @@ print("\n" + ("ALL PASS" if not fails else f"{fails} FAILED"))
 raise SystemExit(1 if fails else 0)
 ```
 
-- [ ] **Step 2: Run, expect `FAIL load_overrides writes nothing by default` then `AttributeError: ... write_excluded`**
+- [x] **Step 2: Run, expect `FAIL load_overrides writes nothing by default` then `AttributeError: ... write_excluded`**
 
-- [ ] **Step 3: Implement** - in `04a_reformat.py`:
+- [x] **Step 3: Implement** - in `04a_reformat.py`:
 
 Change the signature at line 454 to `def load_overrides(paths=None, write=False):` and replace lines 493-500
 ```python
@@ -2141,9 +2141,9 @@ with
 ```
 The `no_mask` accounting at lines 661-662 keys on `args.mask_artifacts and art is None and uid not in mask_rejected` - add `and not is_excl` so an excluded section is not reported as "had no 04g mask". `04o_section_rgb.py:173` needs no change: with the default `write=False` it can no longer rewrite the list.
 
-- [ ] **Step 4: Run `tests/test_excluded_write.py` and `tests/test_section_review.py`, expect both `ALL PASS`**
+- [x] **Step 4: Run `tests/test_excluded_write.py` and `tests/test_section_review.py`, expect both `ALL PASS`**
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```
 git add scripts/04a_reformat.py tests/test_excluded_write.py
@@ -2162,7 +2162,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 `04f --survey` blanks every proposal (`:211-212`) and then writes the result to `exclusion_candidates.csv` (`:251-257`) - the file 04d reads its proposals from, so a survey run silently un-proposes everything. `04g --preview N` collects `N` overlays (`:355`) but the loop runs the whole index (`:315`) and writes every mask to `MASK_DIR` (`:331`) before `:363-366` returns; a "look at three" run rewrites 1,381 masks.
 
-- [ ] **Step 1: Write the failing test** `tests/test_survey_preview.py`
+- [x] **Step 1: Write the failing test** `tests/test_survey_preview.py`
 
 ```python
 """--survey and --preview are read-only modes.
@@ -2213,9 +2213,9 @@ print("\n" + ("ALL PASS" if not fails else f"{fails} FAILED"))
 raise SystemExit(1 if fails else 0)
 ```
 
-- [ ] **Step 2: Run, expect `AttributeError: module 'f' has no attribute 'output_path'`**
+- [x] **Step 2: Run, expect `AttributeError: module 'f' has no attribute 'output_path'`**
 
-- [ ] **Step 3: 04f** - after `REFORMAT_DIR = ...` (line 92) add
+- [x] **Step 3: 04f** - after `REFORMAT_DIR = ...` (line 92) add
 ```python
 CANDIDATES_CSV = os.path.join(REFORMAT_DIR, "exclusion_candidates.csv")
 SURVEY_CSV = os.path.join(OUT_ROOT, "qc", "exclusion", "survey.csv")
@@ -2239,7 +2239,7 @@ with
 ```
 (the `IO.atomic_write_csv(out, ...)` line from Task 2 stays).
 
-- [ ] **Step 4: 04g** - add above `main()`:
+- [x] **Step 4: 04g** - add above `main()`:
 ```python
 def run_plan(preview, collected):
     """(keep processing, write masks). --preview N is a LOOK: it stops once N
@@ -2273,9 +2273,9 @@ with
 ```
 Change the `if not rows: raise SystemExit("nothing masked ...")` at line 361 to `if not rows and not args.preview:` so a preview that found no artifact in its first few sections reports rather than dies; the existing `if previews: overlay(previews); if args.preview: return` at 363-366 stays.
 
-- [ ] **Step 5: Run the test, expect `ALL PASS`**
+- [x] **Step 5: Run the test, expect `ALL PASS`**
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```
 git add scripts/04f_exclusion_candidates.py scripts/04g_artifact_mask.py tests/test_survey_preview.py
@@ -2294,7 +2294,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 `04j:168-171` skips a section with no raw clipping mask, so the analysis set simply lacks the row and `04m:123-127` reads "no row" as `censored_out`, which is a false statement about clipping. A `04j` run on a half-built `censor_raw/` therefore overwrites a complete `perk_analysis_set.csv` with a partial one and every missing section becomes "censored". `04m.classify()` (`:79`) recognises only the `manually excluded` prefix, but 04a records `"too damaged to measure"` (`04a:469`, the default when the curator export carries no reason) and `"excluded on review"` (`04a:446`) - both fall to `unparsed`.
 
-- [ ] **Step 1: Write the failing test** `tests/test_analysis_set.py`
+- [x] **Step 1: Write the failing test** `tests/test_analysis_set.py`
 
 ```python
 """Unmeasured is not censored.
@@ -2378,9 +2378,9 @@ print("\n" + ("ALL PASS" if not fails else f"{fails} FAILED"))
 raise SystemExit(1 if fails else 0)
 ```
 
-- [ ] **Step 2: Run, expect `AttributeError: module 'j' has no attribute 'unmeasured_row'`**
+- [x] **Step 2: Run, expect `AttributeError: module 'j' has no attribute 'unmeasured_row'`**
 
-- [ ] **Step 3: 04j** - add above `main()`:
+- [x] **Step 3: 04j** - add above `main()`:
 ```python
 def unmeasured_row(uid, animal, section_order):
     """A section 01k has no raw mask for. Present in the file with a BLANK
@@ -2431,7 +2431,7 @@ with
 ```
 change the message at line 204-205 from `were SKIPPED` to `are in the file as UNMEASURED (blank in_analysis_set)`; insert `guard_partial(out_csv, rows, args.allow_partial)` immediately before the `IO.atomic_write_csv(out_csv, rows, ANALYSIS_KEYS)` line; and in the stats (lines 213-233) use `keep = [r for r in rows if r["in_analysis_set"] == 1]`, `drop = [r for r in rows if r["in_analysis_set"] == 0]`, add `unmeasured = [r for r in rows if r["in_analysis_set"] == ""]` with a printed line `f"  unmeasured (no raw mask)                 : {len(unmeasured)}"`, and change the per-animal accumulator at line 233 to `d[1] += 1 if r["in_analysis_set"] == 1 else 0`.
 
-- [ ] **Step 4: 04m** - replace `classify()` lines 79-80
+- [x] **Step 4: 04m** - replace `classify()` lines 79-80
 ```python
     if reason.startswith("manually excluded"):
         return "tissue_damaged", None
@@ -2475,9 +2475,9 @@ with
 ```
 Update the module docstring's three-fates list (lines 6-8) to four, adding `unmeasured    no 04j row yet, or no raw clipping mask - not a statement about clipping`, and add `'unmeasured':>11` to the per-animal table header and body at lines 188-193 (`c['unmeasured']`).
 
-- [ ] **Step 5: Run the test, expect `ALL PASS`**
+- [x] **Step 5: Run the test, expect `ALL PASS`**
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```
 git add scripts/04j_censor_clipped.py scripts/04m_sections_dataset.py tests/test_analysis_set.py
@@ -2496,7 +2496,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 `00_manifest.py:122` opens a `zipfile.ZipFile` per archive and stores closures over it in `entries`; nothing closes them, so the app (which runs stages in-process) keeps every archive open for the session. Line 33 inserts `scripts/` into `sys.path` unconditionally, once per import. `01b:72-74` computes `chosen_files = [files[int(i * stride)] ...]`, which for `n_files == 1` is always `files[0]` - the first slide of every animal, the opposite of the "spread" the docstring promises.
 
-- [ ] **Step 1: Write the failing test** `tests/test_stale_state.py`
+- [x] **Step 1: Write the failing test** `tests/test_stale_state.py`
 
 ```python
 """Handles closed, sys.path not duplicated, and a real middle pick.
@@ -2574,9 +2574,9 @@ print("\n" + ("ALL PASS" if not fails else f"{fails} FAILED"))
 raise SystemExit(1 if fails else 0)
 ```
 
-- [ ] **Step 2: Run, expect `TypeError: discover_sources() takes 0 positional arguments but 1 was given`**
+- [x] **Step 2: Run, expect `TypeError: discover_sources() takes 0 positional arguments but 1 was given`**
 
-- [ ] **Step 3: 00_manifest** - replace line 33 `sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))` with
+- [x] **Step 3: 00_manifest** - replace line 33 `sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))` with
 ```python
 _HERE = os.path.dirname(os.path.abspath(__file__))
 if _HERE not in sys.path:
@@ -2600,7 +2600,7 @@ with
 ```
 Add `import contextlib` to the imports, and in `main()` wrap the body from line 433 (`entries = discover_sources()`) to the end of the loop over `entries` (the `for source, member, container, opener in entries:` block) in `with contextlib.ExitStack() as stack:`, calling `entries = discover_sources(stack)`. Everything after that loop (the `section_order` pass, the three `_write_csv` calls, `_report`) sits outside the `with`, which is where the handles are released.
 
-- [ ] **Step 4: 01b** - add above `main()`:
+- [x] **Step 4: 01b** - add above `main()`:
 ```python
 def pick_files(files, n_files):
     """`n_files` of `files`, evenly spread. Sampling at the CENTRE of each
@@ -2620,9 +2620,9 @@ with
         chosen_files = pick_files(files, n_files)
 ```
 
-- [ ] **Step 5: Run the test, expect `ALL PASS`**
+- [x] **Step 5: Run the test, expect `ALL PASS`**
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```
 git add scripts/00_manifest.py scripts/01b_pick_sections.py tests/test_stale_state.py
@@ -2641,7 +2641,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 `06b:61-63` hard-codes column indices (`"treatment": 5`, `"sliced_july_2025": 17`). The live header row is `Fish ID, timepoint, enviroment, brackish Tank, sea water  tank, treatment, ... Body weight(g), Fork Length (cm), Sex, ..., Brain for, ..., slicing IHC July 2025, slicing MD MARCH 2026` - a column inserted before `treatment` silently reassigns every animal. `06c:149` and `06d:138` read `config.groups.by_animal` while 06b validates the workbook, so the two spreadsheets can carry a treatment the unblinding step never checked. `plot_roi_figures.R:133` lists 11 shapes and `:141` uses `rep_len`, so the twelfth animal silently repeats the first animal's mark.
 
-- [ ] **Step 1: Write the failing test** `tests/test_join_metadata.py`
+- [x] **Step 1: Write the failing test** `tests/test_join_metadata.py`
 
 ```python
 """Workbook columns by name, groups checked against the unblinding, 12 shapes.
@@ -2733,9 +2733,9 @@ print("\n" + ("ALL PASS" if not fails else f"{fails} FAILED"))
 raise SystemExit(1 if fails else 0)
 ```
 
-- [ ] **Step 2: Run, expect `AttributeError: module 'b' has no attribute 'resolve_columns'`**
+- [x] **Step 2: Run, expect `AttributeError: module 'b' has no attribute 'resolve_columns'`**
 
-- [ ] **Step 3: 06b** - replace lines 61-63 (`COL = {...}`) with
+- [x] **Step 3: 06b** - replace lines 61-63 (`COL = {...}`) with
 ```python
 # The columns this stage needs, by a prefix of the header cell after
 # lower-casing and collapsing whitespace. The live sheet spells them
@@ -2790,7 +2790,7 @@ with
 ```
 (the remaining `COL[...]` uses at lines 143-165 now read the local.) Also switch the two `with open(META_CSV, "w"...)`/`DATASET_CSV` writes at lines 168-171 and 179-182 to `IO.atomic_write_csv(META_CSV, [meta[a] for a in animals], list(next(iter(meta.values())).keys()))` and `IO.atomic_write_csv(DATASET_CSV, out, list(out[0].keys()))` (add the IO import; `meas` is guarded non-empty by the file check at line 111, and `animals` is derived from it).
 
-- [ ] **Step 4: 06c** - replace lines 86-95 in `animal_environment()`
+- [x] **Step 4: 06c** - replace lines 86-95 in `animal_environment()`
 ```python
     try:
         sheet = G6B.read_sheet(G6B.DEFAULT_XLSX)[1:]
@@ -2837,7 +2837,7 @@ def resolve_groups(config_groups, meta_csv=None):
 ```
 and change line 149 to `groups = resolve_groups((CONFIG.get("groups") or {}).get("by_animal") or {})`. In `06d:138` change to `groups = G6C.resolve_groups((CONFIG.get("groups") or {}).get("by_animal") or {})`.
 
-- [ ] **Step 5: R** - change `analysis/plot_roi_figures.R:133` to
+- [x] **Step 5: R** - change `analysis/plot_roi_figures.R:133` to
 ```r
 SHAPES <- c(21, 22, 23, 24, 25, 15, 16, 17, 18, 8, 14, 11)
 ```
@@ -2857,9 +2857,9 @@ animal_shapes <- function(levels_all) {
 }
 ```
 
-- [ ] **Step 6: Run the test, expect `ALL PASS`**; then `work/appenv/Scripts/python.exe tests/test_roi_dataset.py` still passes (it loads 06c).
+- [x] **Step 6: Run the test, expect `ALL PASS`**; then `work/appenv/Scripts/python.exe tests/test_roi_dataset.py` still passes (it loads 06c).
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```
 git add scripts/06b_join_sampling.py scripts/06c_excel_dataset.py scripts/06d_excel_by_slide.py analysis/plot_roi_figures.R tests/test_join_metadata.py
@@ -2878,7 +2878,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 `06e:82-84` sorts `C:\Program Files\R\R-*\bin\Rscript.exe` lexically and takes the last, so `R-4.9.1` beats `R-4.10.0`. `:160-161` runs Rscript with `text=True` and no encoding, so a non-cp1252 byte in R's stderr raises `UnicodeDecodeError` inside the loop. `:210-212` sets `stalled = stalled + 1 if done == last else 0` with `last = None` on the first pass, so `--stall-cycles 3` needs four identical readings (three hours at the default interval) before it stops.
 
-- [ ] **Step 1: Write the failing test** `tests/test_refresh_loop.py`
+- [x] **Step 1: Write the failing test** `tests/test_refresh_loop.py`
 
 ```python
 """06e: Rscript by version, and a stall that counts readings.
@@ -2932,9 +2932,9 @@ print("\n" + ("ALL PASS" if not fails else f"{fails} FAILED"))
 raise SystemExit(1 if fails else 0)
 ```
 
-- [ ] **Step 2: Run, expect `AttributeError: module 'e' has no attribute 'rscript_version'`**
+- [x] **Step 2: Run, expect `AttributeError: module 'e' has no attribute 'rscript_version'`**
 
-- [ ] **Step 3: Implement** - add `import re` to the imports; add above `find_rscript()`:
+- [x] **Step 3: Implement** - add `import re` to the imports; add above `find_rscript()`:
 ```python
 def rscript_version(path):
     """(major, minor, patch) from an `R-x.y.z` path component; (0,0,0) if none."""
@@ -2998,16 +2998,16 @@ with
             print(f"\nSTALLED: {done}/{total} unchanged over {stalled} readings. "
 ```
 
-- [ ] **Step 4: Run the test, expect `ALL PASS`**
+- [x] **Step 4: Run the test, expect `ALL PASS`**
 
-- [ ] **Step 5: Run everything once more**
+- [x] **Step 5: Run everything once more**
 
 ```
 bash tests/run.sh 2>&1 | tail -3
 ```
 Expected: `ALL SUITES PASS`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```
 git add scripts/06e_refresh_loop.py tests/test_refresh_loop.py
