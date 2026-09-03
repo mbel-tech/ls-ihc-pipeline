@@ -9,6 +9,60 @@ where things landed, not which plausible-looking route was tried and abandoned, 
 
 ---
 
+## 2026-09-03 - 04i was subtracting angles from two different frames
+
+**Changed:** `04i_propagate_to_perk.py` converts between `04a`'s per-scan squashed frame and the
+physical grid before combining angles, and writes a new `final_iou_256` column. New
+`tests/test_propagate_frames.py`. `perk_overrides.csv` on disk is now stale, and so is everything
+built from it - NOT re-run, see below.
+
+**The bug.** `04a` resizes every overview to a 400x400 square *before* measuring the principal
+axis, and that resize is anisotropic for any non-square scan box - `04a` says so itself in the
+`report` note. So every angle `04a` reports or consumes is in a frame that belongs to that one
+scan. `04i`'s `align()` measures on the isotropic physical grid. The old code did
+`target = rotate(m488_physical, total488)` with a squashed-frame `total488`, and
+`extra = deg - a568` with a physical `deg` and a squashed `a568`. Scan boxes here run 0.44-1.99
+in aspect and paired scans differ by a median of 12%, so the two errors do not cancel. And
+`align_iou` is computed *before* the mix, so it was 0.98 on sections where the delivered angle was
+15 degrees off - the confidence column could not see the thing it was meant to guard.
+
+**What the conversion is.** `ndimage.rotate(img, A)` sends a direction at angle `a` to `a - A`,
+which is why `04a` rotates by `principal_angle` and not its negative. The invariant across frames
+is therefore *the direction that ends up horizontal*, and a direction's angle transforms through
+the resize as `atan2(w sin t, h cos t)` (physical -> squashed). Checked against `04a`'s own
+`principal_angle` on a thin bar, not trusted: agrees to 0.01 degrees, the inverse map misses by 9.
+A principal axis of a *blob* does not transform this way - eigenvectors do not survive anisotropic
+scaling - which is why the first version of that check failed by 4 degrees on the section shape
+and had to be rewritten with a bar. Only a shape that is a direction can be the probe.
+
+**What the fix cannot do, and this is the more important finding.** The review asked for the two
+256-px masks to reach IoU 0.95. They cannot. The squash survives `04a`'s crop and square-pad, so
+the curated PCNA mask and the propagated pERK mask are one shape squashed two different ways, and
+brute force over the full circle puts the ceiling at **0.65-0.81** on synthetic sections with
+realistic box pairs. The angle fix reaches that ceiling (within 2 degrees and 0.025 IoU on all
+three test cases, from 10-15 degrees off before); it does not raise it. The test gates on the
+ceiling, and pins that the ceiling is below 0.95, so nobody tightens it into a gate no code passes.
+`final_iou_256` is reported per section and NOT gated, for the same reason: it is comparable
+between neighbours, not against a number.
+
+**Measured on the real data before re-running anything** (12 random paired sections, read-only):
+the corrected `extra_rotation` differs from the stored one by a **median of 1.0 degree, max 5.4**,
+and the 256-px IoU moves by +-0.02 either way. Real sections leave `04a` near-horizontal in both
+frames, which is where the two frames agree; the 37-degree synthetic case is the worst of it, not
+the typical. Since `04l` curates the two channels independently and `05a` inverts each scan's own
+geometry, the bug was a few-degree tilt of the pERK *picture* the operator saw, not a coordinate
+error in any measurement.
+
+**Consequence, and why nothing was re-run.** `perk_overrides.csv`, the pERK reformat
+(`04a --marker AF568 ...`), `reformat_index_AF568.csv`, `sections_AF568/`, and every stage after
+them are stale until `04i` and `04a` are re-run. Re-running rotates the pERK pictures by those
+1-5 degrees under the **130 sections already landmarked against the current frames**, which would
+move every one of those landmarks. Whether a median 1-degree tilt is worth re-curating 130
+sections, or the fix is carried forward for sections not yet curated, is the operator's call, so
+the files were left as they are.
+
+---
+
 ## 2026-09-03 - Export scale is per section, and CSV fields are quoted
 
 **Changed:** `scripts/04l_roi_curator.py` (JS: `frameOf`/`frameIn`/`syncFrame`/
