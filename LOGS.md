@@ -9,6 +9,52 @@ where things landed, not which plausible-looking route was tried and abandoned, 
 
 ---
 
+## 2026-09-03 - Three quiet ways roi_nuclei.csv could go wrong on a resume
+
+**Changed:** `05c_detect_rois.py` gains `check_header()` and `drop_rows()`; a resume onto a
+file with a different header stops and names `06g_flag_off_tissue.py`, and `--force` drops
+only the sections it is about to redo. `06a_roi_dataset.py` gains `check_join()`, which
+verifies the positional nucleus-to-disc join before anything is computed. New
+`tests/test_detect_resume.py`; `tests/test_roi_dataset.py` now tests 05c's real helpers
+instead of a copy of its rewrite block, and adds the join check.
+
+**Why.** All three are the same failure shape as 2026-09-02: nothing errors, the numbers
+look fine, and the dataset is wrong.
+
+**Header mismatch on resume.** COLUMNS gained `off_tissue` on 2026-09-02, and 05c appends
+positionally. A resume against a file written before that put 21-field rows under a
+20-field header. csv.DictReader maps the extra field to key `None`, so in 06a every NEW
+nucleus read `off_tissue` as None - indistinguishable from absent - and 06g cannot backfill
+a file that is half old and half new. 05c now compares the file's header to COLUMNS before
+touching it, order included: a permuted header would take every appended row scrambled.
+The current file is already the 21-column one, so this changes nothing today; it is the
+next column that would have found this.
+
+**`--force --limit N`.** The force path dropped every row of the marker and then
+re-measured N sections. `--force --limit 5` on pERK would have silently discarded 125
+sections of detection while printing that it had kept the PCNA rows. The drop is now scoped
+to the todo list - exactly the sections whose rows are about to be replaced - and runs after
+`load_model()`, so a model that fails to load leaves the file as it was. One consequence:
+plain `--force` no longer removes rows for a section that has since left the box file. 06a
+reports those instead of skipping them silently, which is the better place to notice.
+
+**The positional join.** A nucleus names its disc by `roi_index`, its row position in
+`roi_boxes_<marker>.csv` for that section, and 05a rewrites that file from the newest
+export. Insert or remove a disc on a section after 05c has run and every later index on it
+shifts: the background disc's nuclei are summed under an ROI, with a count and a density
+that look entirely plausible. Nuclei rows carry `roi_kind` and `region`, so 06a now checks
+that the box at each index agrees on both and refuses with the list of sections and the two
+ways out - restore the box file the nuclei were measured against, or re-run 05c `--force`
+for those uids. Sections in the nuclei file with no boxes anywhere are reported, not fatal.
+Against today's 895,548 nuclei and 130 sections the check passes in 0.21 s.
+
+**The test that was a copy.** `force_check` mirrored 05c's rewrite block on the belief that
+05c could not be imported without StarDist. That import is lazy inside `load_model()`, so
+the module loads fine and the tests now call the real `drop_rows`. A copy tests that the
+copy still works.
+
+---
+
 ## 2026-09-03 - 04j section gate decided on tissue, not on the frame
 
 **Changed:** `scripts/04j_censor_clipped.py` - the section-level 1% tolerance is

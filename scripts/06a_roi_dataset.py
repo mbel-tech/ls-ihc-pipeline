@@ -83,6 +83,58 @@ def roi_area_um2(b):
     return np.pi * float(b["axis_a_um"]) * float(b["axis_b_um"])
 
 
+def check_join(nuc, box_by):
+    """The nucleus-to-disc join is POSITIONAL. Check it before trusting it.
+
+    A nucleus names its disc by `roi_index`, the row position of that disc in
+    roi_boxes_<marker>.csv for its section, and the emit loop in main()
+    enumerates the same list in the same order. 05a rewrites that file from
+    the newest curator export, so a disc inserted or removed on a section after
+    05c ran shifts every later index on it: the background disc's nuclei would
+    be summed under an ROI, with a count and a density that look fine. The
+    nuclei rows also carry roi_kind and region, so for every (section, index)
+    the box at that position must agree on both - a mismatch means the boxes
+    changed under the measurements.
+
+    Sections present in the nuclei but absent from every box file are the
+    other case: a stale row, or a box file regenerated without them. Those are
+    skipped by the emit loop already; they are returned and reported, not
+    fatal.
+    """
+    seen, bad, orphan = set(), {}, set()
+    for r in nuc:
+        uid = r["scene_uid"]
+        key = (uid, r["roi_index"])
+        if key in seen:
+            continue
+        seen.add(key)
+        boxes = box_by.get(uid)
+        if not boxes:
+            orphan.add(uid)
+            continue
+        i = int(r["roi_index"])
+        if not 1 <= i <= len(boxes):
+            bad.setdefault(uid, f"roi_index {i} but only {len(boxes)} boxes")
+            continue
+        b = boxes[i - 1]
+        if b["roi_kind"] != r["roi_kind"] or b["region"] != r["region"]:
+            bad.setdefault(uid, f"roi_index {i}: nuclei say {r['roi_kind']}/"
+                                f"{r['region']}, box is {b['roi_kind']}/{b['region']}")
+    if orphan:
+        print(f"  !! {len(orphan)} sections in roi_nuclei.csv have no boxes in any "
+              f"roi_boxes_<marker>.csv and are skipped: {sorted(orphan)[:8]}")
+    if bad:
+        lines = "\n".join(f"    {u}  {why}" for u, why in sorted(bad.items()))
+        raise SystemExit(
+            f"!! roi_boxes disagree with roi_nuclei.csv on {len(bad)} sections:\n"
+            f"{lines}\n"
+            f"  The boxes were regenerated after detection, so the positional "
+            f"join is shifted. Either restore the roi_boxes file the nuclei "
+            f"were measured against, or re-run 05c_detect_rois.py --force for "
+            f"those sections.")
+    return orphan
+
+
 def main(argv=None):
     # argv is accepted and ignored: this stage has no flags, and taking it
     # lets 06e call every stage the same way instead of branching on a label.
@@ -99,6 +151,7 @@ def main(argv=None):
         box_by.setdefault(b["scene_uid"], []).append(b)
     print(f"{len(nuc)} nuclei over "
           f"{len({r['scene_uid'] for r in nuc})} sections")
+    check_join(nuc, box_by)
 
     for r in nuc:
         r["_v"] = float(r[STAT])

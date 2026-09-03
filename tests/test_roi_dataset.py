@@ -23,6 +23,11 @@ properties pinned here are the ones whose violation looks like a result:
   * a 06a that is one section BEHIND roi_nuclei.csv is a warning, not a
     failure - that is the ordinary state while 05c is still appending, and
     06e turns a failed refresh into ending the loop.
+  * the nucleus-to-disc join is POSITIONAL, and 06a checks it. A nucleus
+    names its disc by row position in roi_boxes_<marker>.csv, which 05a
+    rewrites from the newest export; a disc inserted since detection shifts
+    every later index on that section onto the wrong disc with plausible
+    numbers. Every nucleus's box must agree on roi_kind and region.
 
 Synthetic input throughout, so this runs on a machine with no imaging data.
 
@@ -50,6 +55,9 @@ def load(name, filename):
 
 G6A = load("g6a", "06a_roi_dataset.py")
 G5 = G6A.G5
+# 05c imports StarDist lazily inside load_model(), so the module loads here
+# and its file helpers can be tested as they are rather than as copies.
+G5C = load("g5c", "05c_detect_rois.py")
 
 fails = 0
 
@@ -329,68 +337,139 @@ def behind_check(tmp, paths):
 
 
 def force_check(tmp):
-    """05c --force must drop only its own marker's rows.
+    """05c --force must drop only its own marker's rows, and only its todo.
 
     THE ONLY PATH IN THE PIPELINE THAT DELETES MEASURED DATA. Both markers
     append to one roi_nuclei.csv, so opening it "w" to redo one would discard
     the other entirely - and that is hours of detection, not a number that can
-    be recomputed. Exercised here rather than in 05c itself because 05c cannot
-    be imported without StarDist and TensorFlow.
-
-    This mirrors `05c_detect_rois.py`'s rewrite block. It is a copy, and a copy
-    is what a test of an unimportable module can be - so if that block changes,
-    change this with it.
+    be recomputed. This used to be a copy of 05c's rewrite block, because 05c
+    was thought unimportable without StarDist; the import is lazy, so the real
+    `drop_rows` is exercised now. tests/test_detect_resume.py covers the
+    `--limit` case and the header check in more detail.
     """
-    cols = ["scene_uid", "marker", "n"]
+    cols = G5C.COLUMNS
     path = os.path.join(tmp, "force_nuclei.csv")
 
-    def seed():
+    def rec(uid, marker):
+        r = dict.fromkeys(cols, "0")
+        r.update(scene_uid=uid, marker=marker, roi_kind="roi", region="Dm")
+        return [r[c] for c in cols]
+
+    def seed(rows=None):
         with open(path, "w", newline="", encoding="utf-8") as fh:
             w = csv.writer(fh)
             w.writerow(cols)
-            w.writerows([["A1", "AF568", 1], ["A2", "AF568", 2],
-                         ["B1", "AF488", 3]])
+            w.writerows(rows if rows is not None else
+                        [rec("A1", "AF568"), rec("A2", "AF568"),
+                         rec("A3", "AF568"), rec("B1", "AF488")])
 
-    def rewrite(marker):
-        keep = []
-        with open(path, newline="", encoding="utf-8") as rf:
-            rd = csv.reader(rf)
-            header = next(rd, None)
-            mi = header.index("marker") if header and "marker" in header else None
-            for row in rd:
-                if mi is not None and row and row[mi] != marker:
-                    keep.append(row)
-        if keep:
-            t = path + ".tmp"
-            with open(t, "w", newline="", encoding="utf-8") as tf:
-                tw = csv.writer(tf)
-                tw.writerow(cols)
-                tw.writerows(keep)
-            os.replace(t, path)
-        return keep
+    def uids():
+        with open(path, newline="", encoding="utf-8") as fh:
+            return [r["scene_uid"] for r in csv.DictReader(fh)]
 
     seed()
-    rewrite("AF488")
-    rows = list(csv.DictReader(open(path, newline="", encoding="utf-8")))
-    chk("--force AF488 keeps the pERK rows", [r["scene_uid"] for r in rows],
-        "['A1', 'A2']")
+    G5C.drop_rows(path, "AF488", ["B1"])
+    chk("--force AF488 keeps the pERK rows", uids(), "['A1', 'A2', 'A3']")
     chk("...and leaves no .tmp behind", os.path.exists(path + ".tmp"), False)
 
     seed()
-    rewrite("AF568")
-    rows = list(csv.DictReader(open(path, newline="", encoding="utf-8")))
-    chk("--force AF568 keeps the PCNA rows", [r["scene_uid"] for r in rows],
-        "['B1']")
+    G5C.drop_rows(path, "AF568", ["A1", "A2", "A3"])
+    chk("--force AF568 keeps the PCNA rows", uids(), "['B1']")
 
-    # One marker only: nothing to keep, so the caller falls through to "w" and
-    # writes its own header. The rewrite must not leave a headerless file.
+    # --force --limit 1: only the one section about to be redone goes.
     seed()
-    with open(path, "w", newline="", encoding="utf-8") as fh:
-        w = csv.writer(fh)
-        w.writerow(cols)
-        w.writerows([["A1", "AF568", 1]])
-    kept = rewrite("AF568")
-    chk("a single-marker file keeps nothing, so the caller rewrites it", kept, [])
+    G5C.drop_rows(path, "AF568", ["A2"])
+    chk("--force --limit drops only the todo uid", uids(), "['A1', 'A3', 'B1']")
+
+    # One marker only, everything dropped: the file must keep its header so
+    # the caller can append to it.
+    seed([rec("A1", "AF568")])
+    dropped, kept = G5C.drop_rows(path, "AF568", ["A1"])
+    chk("a single-marker file empties to its header", (dropped, kept), (1, 0))
+    chk("...which is still there", uids(), [])
+
+
+def join_check(tmp):
+    """06a must refuse a nuclei/boxes pair whose positional join has shifted.
+
+    A nucleus carries `roi_index`, the ROW POSITION of its disc in the box file
+    for its section, and 06a joins on that. 05a rewrites roi_boxes_<marker>.csv
+    from the newest curator export, so a disc inserted or removed after 05c ran
+    moves every later index on that section: the nuclei of the background disc
+    would be summed under an ROI, with a count and a density that look fine.
+    Nuclei also carry roi_kind and region, so the box at each index can be
+    checked against them.
+    """
+    bad = dict(box("S1", "roi", "Dl"))      # the disc someone added later
+    cases = {
+        "consistent": [box("S1", "roi", "Dm"), box("S1", "background", "__background__"),
+                       box("S2", "roi", "Dm"), box("S2", "background", "__background__")],
+        # inserted at position 2 on S1: the background nuclei (index 2) now
+        # land on a Dl ROI disc
+        "inserted": [box("S1", "roi", "Dm"), bad, box("S1", "background", "__background__"),
+                     box("S2", "roi", "Dm"), box("S2", "background", "__background__")],
+        # removed on S2: index 2 points past the end of the list
+        "removed": [box("S1", "roi", "Dm"), box("S1", "background", "__background__"),
+                    box("S2", "roi", "Dm")],
+    }
+    nuc = []
+    for uid in ("S1", "S2"):
+        nuc.append(nucleus(uid, "roi", "Dm", 1, 1, 100.0))
+        nuc.append(nucleus(uid, "background", "__background__", 2, 2, 100.0))
+
+    def by_uid(boxes):
+        d = {}
+        for b in boxes:
+            d.setdefault(b["scene_uid"], []).append(b)
+        return d
+
+    orphans = G6A.check_join(nuc, by_uid(cases["consistent"]))
+    chk("consistent nuclei/boxes pass the join check", sorted(orphans), [])
+
+    for name, want in (("inserted", "S1"), ("removed", "S2")):
+        other = "S2" if want == "S1" else "S1"
+        try:
+            G6A.check_join(nuc, by_uid(cases[name]))
+            got = "no exit"
+        except SystemExit as exc:
+            got = str(exc)
+        chk(f"a disc {name} after detection -> SystemExit", got != "no exit", True)
+        chk(f"...naming {want}", want in got, True)
+        chk(f"...and not the untouched {other}", other not in got, True)
+        chk("...with the two ways out", "--force" in got and "roi_boxes" in got, True)
+
+    # A section in the nuclei file with no boxes at all is REPORTED, not fatal:
+    # that is a box file regenerated without it, or a stale row, and 06a
+    # already skips it - it just used to do so silently.
+    nuc.append(nucleus("S9", "roi", "Dm", 1, 1, 100.0))
+    orphans = G6A.check_join(nuc, by_uid(cases["consistent"]))
+    chk("a section absent from every box file is reported, not fatal",
+        sorted(orphans), "['S9']")
+
+    # And main() runs it: the fixture on disk with the inserted disc must
+    # stop 06a before it writes anything.
+    npath, bpath = build(tmp)
+    boxes = G5.load_csv(bpath)
+    boxes.insert(1, bad)
+    with open(bpath, "w", newline="", encoding="utf-8") as fh:
+        w = csv.DictWriter(fh, fieldnames=BOX_COLS)
+        w.writeheader()
+        w.writerows(boxes)
+    keep = (G6A.NUCLEI_CSV, G6A.MEAS_CSV, G6A.SPEC_CSV, G5.all_boxes)
+    G6A.NUCLEI_CSV = npath
+    G6A.MEAS_CSV = os.path.join(tmp, "join_measurements.csv")
+    G6A.SPEC_CSV = os.path.join(tmp, "join_specificity.csv")
+    G5.all_boxes = lambda: G5.load_csv(bpath)
+    try:
+        try:
+            G6A.main()
+            got = "no exit"
+        except SystemExit as exc:
+            got = str(exc)
+        chk("06a main() refuses the shifted join", got != "no exit", True)
+        chk("...and wrote no measurements", os.path.exists(G6A.MEAS_CSV), False)
+    finally:
+        G6A.NUCLEI_CSV, G6A.MEAS_CSV, G6A.SPEC_CSV, G5.all_boxes = keep
 
 
 def main():
@@ -458,6 +537,9 @@ def main():
 
         # ---- and --force must not take the other marker down with it
         force_check(tmp)
+
+        # ---- and the positional nucleus-to-disc join must be checked
+        join_check(tmp)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

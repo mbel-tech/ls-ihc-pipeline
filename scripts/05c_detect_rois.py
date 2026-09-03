@@ -70,6 +70,71 @@ COLUMNS = ["scene_uid", "animal", "marker", "roi_kind", "region", "seed_n",
            "censored", "artifact", "off_tissue"]
 
 
+def check_header(path, columns):
+    """Refuse to append to a roi_nuclei.csv whose header is not `columns`.
+
+    This stage appends positionally, and the file is shared across runs and
+    both markers. COLUMNS gained `off_tissue` on 2026-09-02; a resume against a
+    file written before that appended 21-field rows under a 20-field header,
+    and nothing failed: csv.DictReader maps the extra field to key None, so in
+    06a every NEW nucleus read `off_tissue` as None - the same as absent - and
+    06g_flag_off_tissue.py cannot backfill a file that is half old and half
+    new. Order is checked too, not just the set: a permuted header would take
+    every appended row scrambled.
+    """
+    with open(path, newline="", encoding="utf-8") as rf:
+        header = next(csv.reader(rf), None) or []
+    if header == list(columns):
+        return
+    missing = [c for c in columns if c not in header]
+    extra = [c for c in header if c not in columns]
+    why = (f"missing {missing}" if missing else "") + \
+          (f" extra {extra}" if extra else "") or "same columns, different order"
+    raise SystemExit(
+        f"!! {path} has a different header from the one this stage writes "
+        f"({why}). Appending to it would give the new rows a different layout "
+        f"from the old ones. If `off_tissue` is what is missing, run "
+        f"06g_flag_off_tissue.py to backfill it first; otherwise re-run "
+        f"05c_detect_rois.py --force to rewrite the file.")
+
+
+def drop_rows(path, marker, uids):
+    """Rewrite `path` without the rows of `marker` whose scene_uid is in `uids`.
+
+    THE ONLY PATH IN THE PIPELINE THAT DELETES MEASURED DATA, so it is exact:
+    other markers' rows and this marker's other sections are kept as they are.
+    `--force --limit N` used to drop EVERY row of the marker and then
+    re-measure N sections, silently discarding the rest; the caller now passes
+    its todo list and nothing outside it is touched.
+
+    Through a temp file and one atomic replace, because this stage runs against
+    a drive that has dropped writes and a half-written roi_nuclei.csv is the
+    whole dataset. Returns (dropped, kept).
+    """
+    uids = set(uids)
+    tmp = path + ".tmp"
+    dropped = kept = 0
+    with open(path, newline="", encoding="utf-8") as rf, \
+            open(tmp, "w", newline="", encoding="utf-8") as tf:
+        rd, tw = csv.reader(rf), csv.writer(tf)
+        header = next(rd, None)
+        if not header or "marker" not in header or "scene_uid" not in header:
+            tf.close()
+            os.remove(tmp)
+            raise SystemExit(f"!! {path} has no marker/scene_uid column - "
+                             f"cannot tell whose rows to drop")
+        tw.writerow(header)
+        mi, ui = header.index("marker"), header.index("scene_uid")
+        for row in rd:
+            if row and row[mi] == marker and row[ui] in uids:
+                dropped += 1
+                continue
+            tw.writerow(row)
+            kept += 1
+    os.replace(tmp, path)
+    return dropped, kept
+
+
 def load_model():
     """StarDist's pretrained fluorescence model.
 
@@ -264,8 +329,13 @@ def main():
     # `done` set would still skip the right sections - the balanced-order
     # counter below counts what each arm has already had, and the other
     # marker's sections would inflate both arms and misdirect the ordering.
+    exists = os.path.exists(NUCLEI_CSV)
+    if exists:
+        # Before anything else: appending to a file with a different header
+        # corrupts it quietly (see check_header), and the check is one line.
+        check_header(NUCLEI_CSV, COLUMNS)
     done = set()
-    if os.path.exists(NUCLEI_CSV) and not args.force:
+    if exists and not args.force:
         # Streamed with csv.reader, not load_csv: this needs one column and
         # load_csv would build a dict per row - about five million of them once
         # PCNA is in the file, on the resume of the run this stage exists to
@@ -293,7 +363,8 @@ def main():
     from pylibCZIrw import czi as pyczi
     from skimage.measure import regionprops
 
-    # --force MUST NOT TRUNCATE THE OTHER MARKER'S ROWS.
+    # --force MUST NOT TRUNCATE THE OTHER MARKER'S ROWS, NOR THE SECTIONS IT
+    # IS NOT ABOUT TO REDO.
     #
     # roi_nuclei.csv is shared: the two markers have disjoint sections and
     # append to one file. Opening it "w" to redo one marker would discard the
@@ -303,35 +374,19 @@ def main():
     # same hazard Phase 3.1 removed from 05a's box files, one stage later, and
     # here the cost is hours of irrecoverable detection.
     #
-    # So a forced run REWRITES the file keeping every other marker's rows and
-    # dropping only this marker's. The rewrite goes through a temp file and one
-    # atomic replace, because this stage runs against a drive that has dropped
-    # writes and a half-written roi_nuclei.csv is the whole dataset.
-    keep_rows = []
-    if os.path.exists(NUCLEI_CSV) and args.force:
-        with open(NUCLEI_CSV, newline="", encoding="utf-8") as rf:
-            rd = csv.reader(rf)
-            header = next(rd, None)
-            mi = header.index("marker") if header and "marker" in header else None
-            for row in rd:
-                if mi is not None and row and row[mi] != args.marker:
-                    keep_rows.append(row)
-        dropped = "all" if mi is None else f"{args.marker}"
-        print(f"  --force: rewriting roi_nuclei.csv, dropping {dropped} rows and "
-              f"keeping {len(keep_rows)} from other markers")
+    # The same applied within the marker: `--force --limit 5` dropped every
+    # section of the marker and re-measured five. So the drop is scoped to
+    # `todo` - exactly the sections whose rows are about to be replaced - and
+    # done after load_model(), so a model that fails to load leaves the file
+    # as it was.
+    if exists and args.force:
+        dropped, kept = drop_rows(NUCLEI_CSV, args.marker, todo)
+        print(f"  --force: dropped {dropped} {args.marker} rows over {len(todo)} "
+              f"sections, kept {kept}")
 
-    new = not os.path.exists(NUCLEI_CSV) or args.force
-    if new and keep_rows:
-        tmp = NUCLEI_CSV + ".tmp"
-        with open(tmp, "w", newline="", encoding="utf-8") as tf:
-            tw = csv.writer(tf)
-            tw.writerow(COLUMNS)
-            tw.writerows(keep_rows)
-        os.replace(tmp, NUCLEI_CSV)
-        new = False                      # header and the kept rows are in place
-    fh = open(NUCLEI_CSV, "w" if new else "a", newline="", encoding="utf-8")
+    fh = open(NUCLEI_CSV, "a" if exists else "w", newline="", encoding="utf-8")
     w = csv.writer(fh)
-    if new:
+    if not exists:
         w.writerow(COLUMNS)
 
     px_area = BASE_PX_UM ** 2
