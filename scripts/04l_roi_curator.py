@@ -848,16 +848,31 @@ const KEY = "ls_roi_curator_v1";
 // Whatever this browser already holds wins. The seed only fills an empty store,
 // so opening a stale copy of the page can never overwrite work in progress.
 const SEED_STATE = __SEED__;
-let S = (function(){
+// WHAT COUNTS AS WORK. `st()` creates a record the moment a section is looked
+// at, and the slider writes into it - so "the store has records" never meant
+// "the operator decided something". These two predicates are the only rule:
+// hasRoiWork is what exportCsv reports; hasDecision adds the two things kept
+// but exported elsewhere (a tilt, a Review-mode verdict).
+const hasRoiWork  = r => !!r && !!(r.assigned || r.fav || r.excl || r.noroi
+                                   || (r.pairs && r.pairs.length));
+const hasDecision = r => hasRoiWork(r) || !!(r && (r.rot || r.rev));
+const decided = obj => Object.fromEntries(
+  Object.entries(obj || {}).filter(([, v]) => hasDecision(v)));
+// Whatever this browser already holds wins - but only what it holds that is a
+// decision. A store of looked-at sections is an empty store.
+function initState(raw, seed){
   try {
-    const raw = localStorage.getItem(KEY);
-    if (raw) { const v = JSON.parse(raw); if (v && Object.keys(v).length) return v; }
+    if (raw) { const v = decided(JSON.parse(raw)); if (Object.keys(v).length) return v; }
   } catch (e) {}
-  return SEED_STATE && Object.keys(SEED_STATE).length ? SEED_STATE : {};
-})();
+  return decided(seed);
+}
+let S = initState(localStorage.getItem(KEY), SEED_STATE);
 let active = null, pending = null;   // pending section point awaiting its plate partner
 const el = id => document.getElementById(id);
-const save = () => localStorage.setItem(KEY, JSON.stringify(S));
+// Only decisions reach disk. The in-memory record for a section being looked
+// at stays (the plate it is on is needed while it is on screen); it is simply
+// not persisted until something is decided about it.
+const save = () => localStorage.setItem(KEY, JSON.stringify(decided(S)));
 // AUTOSAVE.
 //
 // save() already runs on every change - all twelve mutation sites call it - so
@@ -1667,6 +1682,7 @@ function clearPts(){ if(!active) return; undoMark(active, "clear points"); st(ac
   gSync(); drawSec(); drawPl(); status(); paintCell(active); }
 
 function status(){
+  if(!active) return;
   const s=st(active), T=transform(s.pairs);
   const nRoi = roiPairs(s).length, nBg = bgPairs(s).length;
   el("npair").textContent = nRoi;
@@ -1920,7 +1936,10 @@ function select(uid, keep){
   if(!keep) document.querySelector(`[data-uid="${CSS.escape(uid)}"]`)
     ?.scrollIntoView({inline:"center", block:"nearest"});
 }
-const isDone   = uid => (S[uid]?.pairs?.length || 0) >= 3;
+// LANDMARKS, not pairs: a background disc is a pair too, and three of them
+// would light the cell green with nothing registered.
+const nRoi     = uid => S[uid]?.pairs ? roiPairs(S[uid]).length : 0;
+const isDone   = uid => nRoi(uid) >= 3;
 const isNoRoi  = uid => !!S[uid]?.noroi;
 // A REINSTATEMENT BEATS THE EXCLUSION FLAG. Both live in the same record, and
 // a section that is flagged excluded while carrying act:"restore" would be
@@ -1946,7 +1965,7 @@ function cellClass(uid){
   return S[uid]?.fav ? cls + " fav" : cls;
 }
 function cellTag(uid){
-  const s=S[uid], n=s?.pairs?.length||0;
+  const s=S[uid], n=nRoi(uid);
   if(isExcl(uid)) return "excluded";
   // Said on the cell, because a reinstated section is curatable but is NOT in
   // the index yet, and nothing else on the strip distinguishes it.
@@ -2239,11 +2258,14 @@ function exportCsv(){
     // to the section.
     // Background discs are work too, so a section carrying only those is
     // reported rather than dropped for having made no other decision.
-    if(!s || !(s.assigned || s.fav || s.excl || s.pairs.length)) continue;
+    if(!hasRoiWork(s)) continue;
     const P=PLATES[s.plate], n=roiPairs(s).length, nBg=bgPairs(s).length;
     const T=transform(s.pairs);
     const chosen = s.assigned || n>0;   // is the plate a decision, or still the default?
-    const status = s.excl ? "excluded"
+    // isExcl(), not s.excl: a Review-mode reinstatement beats the flag, and the
+    // strip already honours that. The two must not disagree.
+    const excl = isExcl(d.uid);
+    const status = excl ? "excluded"
                  : s.noroi ? "no_roi" : n>=3 ? "registered"
                  : chosen ? "plate_only" : "favourite_only";
     // Blank rather than plate_001 when no plate was ever chosen - otherwise a
@@ -2251,7 +2273,7 @@ function exportCsv(){
     pl.push([d.uid,d.animal,d.m,d.sub,d.order,PLATE_SET, chosen?P.id:"", chosen?s.plate:"",
              chosen?(P.labelled?1:0):"", n, nBg, T?T.kind:"", status,
              s.fav?1:0, (s.rot||0).toFixed(1),
-             s.excl?1:0]);
+             excl?1:0]);
     // Gate on the landmarks themselves, NOT on status - a section that was
     // landmarked and then excluded still has that work, and keying this on
     // status would silently drop it from both files the moment the exclude
@@ -2342,7 +2364,7 @@ try { if(!localStorage.getItem(KEY) && Object.keys(S).length) save(); } catch(e)
 (function(){
   const seedN = Object.keys(SEED_STATE || {}).length;
   if(!seedN) return;
-  const missing = Object.keys(SEED_STATE).filter(u => !S[u]).length;
+  const missing = Object.keys(SEED_STATE).filter(u => hasDecision(SEED_STATE[u]) && !hasDecision(S[u])).length;
   if(!missing) return;
   const el2 = el("seedOffer");
   el2.style.display = "";
@@ -2356,7 +2378,8 @@ try { if(!localStorage.getItem(KEY) && Object.keys(S).length) save(); } catch(e)
 // what it does not have. Replacing would make the button a way to lose work.
 function adoptSeed(){
   const before = Object.keys(S).length;
-  for(const [uid, v] of Object.entries(SEED_STATE || {})) if(!S[uid]) S[uid] = v;
+  for(const [uid, v] of Object.entries(SEED_STATE || {}))
+    if(hasDecision(v) && !hasDecision(S[uid])) S[uid] = v;
   save();
   el("seedOffer").style.display = "none";
   render(); status();
