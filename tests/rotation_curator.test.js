@@ -28,4 +28,13 @@ chk("nothing to export -> only the header line", blobs[0].split("\n").length, 1)
 chk("export header", blobs[0].split("\n")[0],
     "scene_uid,extra_rotation,flip,excluded,rotation_source,decision,reason");
 
+// ---- attribute escaping ---------------------------------------------------
+note("");
+X.AUTO[u] = {reason: 'no tissue" onmouseover="alert(1)', mm2: 1};
+X.render();
+chk("a reason cannot break out of the title attribute",
+    els["wall"].innerHTML.includes('onmouseover="alert'), false);
+chk("...it is entity-escaped", els["wall"].innerHTML.includes("&quot; onmouseover=&quot;"), true);
+delete X.AUTO[u];
+
 done();

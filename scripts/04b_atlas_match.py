@@ -390,6 +390,11 @@ const KEY = "ls_atlas_curator_v1";
 let marks = JSON.parse(localStorage.getItem(KEY) || "{}");
 let i = 0;
 const el = id => document.getElementById(id);
+const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g,
+  c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+el("cands").addEventListener("click", e => {
+  const c = e.target.closest && e.target.closest(".cand"); if(c) setMark(c.dataset.plate);
+});
 
 function render(){
   const d = DATA[i];
@@ -405,10 +410,10 @@ function render(){
   const chosen = marks[d.scene_uid];
   el("decision").textContent = chosen || "-";
   el("cands").innerHTML = d.candidates.map((c,k) => `
-    <div class="cand ${chosen===c.plate_id?'chosen':''}" onclick="setMark('${c.plate_id}')">
-      <img src="${c.img}" alt="">
-      <div class="cap"><b>${k+1}. ${c.plate_id}</b> p${c.page} &middot; IoU ${c.score}
-      ${c.regions ? '<br>'+c.regions : ''}</div>
+    <div class="cand ${chosen===c.plate_id?'chosen':''}" data-plate="${esc(c.plate_id)}">
+      <img src="${esc(c.img)}" alt="">
+      <div class="cap"><b>${k+1}. ${esc(c.plate_id)}</b> p${esc(c.page)} &middot; IoU ${c.score}
+      ${c.regions ? '<br>'+esc(c.regions) : ''}</div>
     </div>`).join("");
 
   const n = Object.keys(marks).length;

@@ -29,4 +29,14 @@ chk("export header", lines[0],
     "scene_uid,animal,section_order,plate_set,plate_id,plate_index,source,regions");
 chk("one row per section of the anchored animal", lines.length - 1, list.length);
 
+// ---- escaping and delegated clicks ---------------------------------------
+note("");
+X.render();
+chk("the strip carries no inline handlers", els["strip"].innerHTML.includes("onclick="), false);
+chk("...cells are addressed by data-uid", els["strip"].innerHTML.includes(`data-uid="${list[0].uid}"`), true);
+X.PLATES[0].regions = "Dm|<b>x</b>";
+X.showPlate(0);
+chk("region labels are escaped before the pipe becomes a dot",
+    els["plateRegions"].innerHTML, "Dm &middot; &lt;b&gt;x&lt;/b&gt;");
+
 done();

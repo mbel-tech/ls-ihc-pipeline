@@ -103,4 +103,8 @@ chk("export subsets are per row",
 chk("the excluded section is exported with excluded=1",
     body.find(r=>r[0]===victim)[xi], 1);
 
+// ---- no inline handlers on the strip ---------------------------------------
+X.render();
+chk("strip cells carry data-uid, not onclick", els["strip"].innerHTML.includes("onclick="), false);
+
 done();

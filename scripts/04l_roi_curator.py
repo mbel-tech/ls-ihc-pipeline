@@ -912,6 +912,14 @@ el("marker").innerHTML =
   MARKERS.map(m=>`<option value="${m.id}">${m.label} - ${m.n}</option>`).join("")
   + (MARKERS.length>1 ? `<option value="both">both channels - ${DATA.length}</option>` : "");
 el("marker").value = DEFAULT_MARKER;
+// One listener per container instead of an onclick string per cell: the uid
+// never has to survive being pasted into a JS string literal.
+el("strip").addEventListener("click", e => {
+  const c = e.target.closest && e.target.closest(".cell"); if(c) select(c.dataset.uid);
+});
+el("revGrid").addEventListener("click", e => {
+  const c = e.target.closest && e.target.closest(".rc"); if(c) revPick(c.dataset.uid);
+});
 const D_BY = Object.fromEntries(DATA.map(d=>[d.uid,d]));
 // Which channel is on screen. `both` is a real option - useful for reading
 // progress across the pair - but the two are still independent sections; nothing
@@ -2106,7 +2114,7 @@ function render(){
   counts();
   el("strip").innerHTML = list.map(d=>
     `<div class="cell ${cellClass(d.uid)} ${active===d.uid?"active":""}"
-      data-uid="${d.uid}" onclick="select('${d.uid}')">
+      data-uid="${esc(d.uid)}">
       <img src="${d.img}" loading="lazy" alt="" style="transform:${rotCss(rotOf(d.uid))}">
       <div class="cap">${d.order}<br>${cellTag(d.uid)}</div></div>`).join("");
   if(active && !list.some(d=>d.uid===active)) active=null;
@@ -3250,8 +3258,7 @@ function revCell(p){
   // excluded ones an image too. The fallback stays for a section that somehow
   // has neither.
   const src = revSrc(p, "section") || revSrc(p, "overview");
-  return `<div class="${cls.join(" ")}" data-uid="${p.scene_uid}" `
-       + `onclick="revPick('${p.scene_uid}')" `
+  return `<div class="${cls.join(" ")}" data-uid="${esc(p.scene_uid)}" `
        + `title="${esc(p.scene_uid)} - ${esc(p.status)}">`
        + (src ? `<img loading="lazy" src="${esc(src)}" alt="">`
               : `<div style="aspect-ratio:1"></div>`)

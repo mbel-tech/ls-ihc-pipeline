@@ -176,6 +176,8 @@ let reviewOnly = false;
 let active = null;
 
 const el = id => document.getElementById(id);
+const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g,
+  c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
 document.getElementById("wall").style.gridTemplateColumns =
   `repeat(auto-fill,minmax(${THUMB}px,1fr))`;
 
@@ -357,12 +359,13 @@ function render(){
       </div>
       <div class="cap">${d.order} &middot; ${d.uid.split('_').slice(1).join('_')}
         ${d.plate ? '&middot; ' + d.plate : ''} <span class="tag"></span>
-        ${AUTO[d.uid] ? `<div class="why" title="${AUTO[d.uid].reason}">${AUTO[d.uid].reason}</div>` : ""}
+        ${AUTO[d.uid] ? `<div class="why" title="${esc(AUTO[d.uid].reason)}">${esc(AUTO[d.uid].reason)}</div>` : ""}
       </div>
     </div>`).join("");
   counts();
   rows.forEach(d => {
     const cell = document.querySelector(`[data-uid="${CSS.escape(d.uid)}"]`);
+    if(!cell) return;
     const stack = cell.querySelector(".stack");
     stack.addEventListener("pointerdown", e => onDown(e, d.uid));
     stack.addEventListener("pointermove", onMove);

@@ -180,6 +180,11 @@ let anchors = JSON.parse(localStorage.getItem(KEY) || "{}");   // uid -> plate i
 let active = null;
 
 const el = id => document.getElementById(id);
+const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g,
+  c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+el("strip").addEventListener("click", e => {
+  const c = e.target.closest && e.target.closest(".cell"); if(c) select(c.dataset.uid);
+});
 const animals = [...new Set(DATA.map(d => d.animal))].sort((a,b)=>+a.slice(2)-+b.slice(2));
 el("animal").innerHTML = animals.map(a => `<option>${a}</option>`).join("");
 el("slider").max = PLATES.length - 1;
@@ -229,7 +234,7 @@ function render(){
     const a = asg[i];
     const lbl = a.plate===null ? "-" : PLATES[a.plate].id.replace("plate_","");
     return `<div class="cell ${a.kind==="anchor"?"anchor":""} ${a.kind==="extrap"?"extrap":""}
-                 ${active===d.uid?"active":""}" data-uid="${d.uid}" onclick="select('${d.uid}')">
+                 ${active===d.uid?"active":""}" data-uid="${esc(d.uid)}">
       <img src="${d.img}" loading="lazy" alt="">
       <div class="cap">${d.order}<br><b>${lbl}</b></div></div>`;
   }).join("");
@@ -262,7 +267,7 @@ function showPlate(i){
   el("plateName").textContent = p.id;
   el("plateIdx").textContent = `(${i+1} of ${PLATES.length})`;
   el("plateRegions").innerHTML = p.regions
-    ? p.regions.replace(/\\|/g, " &middot; ")
+    ? esc(p.regions).replace(/\\|/g, " &middot; ")
     : "<span class='unlab'>no region labels on this plate</span>";
 }
 
