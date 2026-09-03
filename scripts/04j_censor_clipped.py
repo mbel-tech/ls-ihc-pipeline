@@ -151,7 +151,19 @@ _spec = importlib.util.spec_from_file_location(
     "_rf", os.path.join(os.path.dirname(os.path.abspath(__file__)), "04a_reformat.py"))
 RF = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(RF)
+
+_lsio = importlib.util.spec_from_file_location(
+    "_lsio", os.path.join(os.path.dirname(os.path.abspath(__file__)), "ls_io.py"))
+IO = importlib.util.module_from_spec(_lsio)
+_lsio.loader.exec_module(IO)
+
 TOLERANCE = 0.01         # section-level: 1% of TISSUE pixels at the ceiling
+# The analysis-set columns, pinned rather than read off rows[0]: an empty
+# result must still leave a file with a header behind.
+ANALYSIS_KEYS = ["scene_uid", "animal", "section_order", "censored_fraction",
+                 "censored_fraction_in_tissue", "recorded_saturated_fraction",
+                 "recorded_saturated_fraction_raw", "in_analysis_set", "gate",
+                 "reason"]
 RAW_MASK_DIR = os.path.join(OUT_ROOT, "qc", "censor_raw")
 TISSUE_DIR = os.path.join(OUT_ROOT, "tissue")   # 04p --tissue-masks, overview frame
 
@@ -310,10 +322,7 @@ def main():
               f"and none could be built from the DAPI overview); their verdict was")
         print(f"     decided on the FRAME fraction (gate = frame). First few: {no_tissue[:5]}")
 
-    with open(out_csv, "w", newline="", encoding="utf-8") as fh:
-        w = csv.DictWriter(fh, fieldnames=list(rows[0].keys()))
-        w.writeheader()
-        w.writerows(rows)
+    IO.atomic_write_csv(out_csv, rows, ANALYSIS_KEYS)
 
     keep = [r for r in rows if r["in_analysis_set"]]
     drop = [r for r in rows if not r["in_analysis_set"]]

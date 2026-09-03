@@ -73,6 +73,11 @@ _spec = importlib.util.spec_from_file_location(
 G4M = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(G4M)
 
+_lsio = importlib.util.spec_from_file_location(
+    "_lsio", os.path.join(os.path.dirname(os.path.abspath(__file__)), "ls_io.py"))
+IO = importlib.util.module_from_spec(_lsio)
+_lsio.loader.exec_module(IO)
+
 def write_tissue_masks(rows, force=False):
     """One tissue mask per section, in the OVERVIEW frame.
 
@@ -379,10 +384,7 @@ def main():
                 r["tissue_img"] = f"../tissue/{r['scene_uid']}_tissue.png"
 
     os.makedirs(REFORMAT_DIR, exist_ok=True)
-    with open(OUT_CSV, "w", newline="", encoding="utf-8") as fh:
-        w = csv.DictWriter(fh, fieldnames=COLUMNS)
-        w.writeheader()
-        w.writerows(rows)
+    IO.atomic_write_csv(OUT_CSV, rows, COLUMNS)
 
     st = Counter(r["status"] for r in rows)
     print("=" * 72)

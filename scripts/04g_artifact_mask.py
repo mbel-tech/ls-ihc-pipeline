@@ -67,6 +67,12 @@ _SPEC = importlib.util.spec_from_file_location(
     "reformat_mod", os.path.join(os.path.dirname(os.path.abspath(__file__)), "04a_reformat.py"))
 _RF = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(_RF)
+
+_lsio = importlib.util.spec_from_file_location(
+    "_lsio", os.path.join(os.path.dirname(os.path.abspath(__file__)), "ls_io.py"))
+IO = importlib.util.module_from_spec(_lsio)
+_lsio.loader.exec_module(IO)
+
 tissue_mask, WORK = _RF.tissue_mask, _RF.WORK_SIZE
 
 # LS_CONFIG names the file explicitly; the file-relative path is the fallback.
@@ -81,6 +87,11 @@ OVERVIEW_DIR = os.path.join(OUT_ROOT, "overviews")
 REFORMAT_DIR = os.path.join(OUT_ROOT, "reformatted")
 QC_CSV = os.path.join(OUT_ROOT, "qc", "focus.csv")
 MASK_DIR = os.path.join(OUT_ROOT, "artifacts")
+# summary_row()'s columns, pinned so an empty run still writes a header.
+SUMMARY_KEYS = ["scene_uid", "animal", "section_order", "excluded", "tissue_mm2",
+                "n_compact", "n_elongated", "compact_mm2", "elongated_mm2",
+                "artifact_mm2", "artifact_pct_of_tissue", "measurable_mm2",
+                "saturated_fraction", "saturated_fraction_raw"]
 REPORT_DIR = os.path.join(OUT_ROOT, "qc", "artifacts")
 
 UM_PX = 5.20e-3
@@ -380,10 +391,7 @@ def main():
 
     out = os.path.join(MASK_DIR, "artifact_summary.csv" if args.marker == "AF488"
                        else f"artifact_summary_{args.marker}.csv")
-    with open(out, "w", newline="", encoding="utf-8") as fh:
-        w = csv.DictWriter(fh, fieldnames=list(rows[0].keys()))
-        w.writeheader()
-        w.writerows(rows)
+    IO.atomic_write_csv(out, rows, SUMMARY_KEYS)
 
     pct = np.array([r["artifact_pct_of_tissue"] for r in rows])
     aff = sum(1 for r in rows if r["n_compact"] or r["n_elongated"])

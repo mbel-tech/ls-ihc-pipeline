@@ -78,6 +78,12 @@ _SPEC = importlib.util.spec_from_file_location(
     "reformat_mod", os.path.join(os.path.dirname(os.path.abspath(__file__)), "04a_reformat.py"))
 _RF = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(_RF)
+
+_lsio = importlib.util.spec_from_file_location(
+    "_lsio", os.path.join(os.path.dirname(os.path.abspath(__file__)), "ls_io.py"))
+IO = importlib.util.module_from_spec(_lsio)
+_lsio.loader.exec_module(IO)
+
 tissue_mask, WORK = _RF.tissue_mask, _RF.WORK_SIZE
 
 # LS_CONFIG names the file explicitly; the file-relative path is the fallback.
@@ -251,10 +257,7 @@ def main():
     out = os.path.join(REFORMAT_DIR, "exclusion_candidates.csv")
     keys = ["uid", "animal", "section_order", "proposed", "artifact_class", "reason",
             "largest_mm2", "total_mm2", "n_pieces", "focus_score", "frame_mm2"]
-    with open(out, "w", newline="", encoding="utf-8") as fh:
-        w = csv.DictWriter(fh, fieldnames=keys, extrasaction="ignore")
-        w.writeheader()
-        w.writerows(sorted(rows, key=lambda r: (-r["proposed"], r["animal"], r["section_order"])))
+    IO.atomic_write_csv(out, sorted(rows, key=lambda r: (-r["proposed"], r["animal"], r["section_order"])), keys)
     print(f"wrote {out}")
 
     montage(rows, args.montage)

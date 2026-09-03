@@ -73,6 +73,11 @@ _spec = importlib.util.spec_from_file_location("_rf", os.path.join(_HERE, "04a_r
 RF = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(RF)
 
+_lsio = importlib.util.spec_from_file_location(
+    "_lsio", os.path.join(os.path.dirname(os.path.abspath(__file__)), "ls_io.py"))
+IO = importlib.util.module_from_spec(_lsio)
+_lsio.loader.exec_module(IO)
+
 CONFIG = RF.CONFIG
 OUT_ROOT = RF.OUT_ROOT
 REFORMAT_DIR = RF.REFORMAT_DIR
@@ -790,10 +795,7 @@ def main():
     # is what was read: the point is that a second marker cannot overwrite the
     # first, and that only holds once both live under their own names.
     for path, rows in ((geom_csv(marker), geom), (box_csv(marker), boxes)):
-        with open(path, "w", newline="", encoding="utf-8") as fh:
-            w = csv.DictWriter(fh, fieldnames=list(rows[0].keys()))
-            w.writeheader()
-            w.writerows(rows)
+        IO.atomic_write_csv(path, rows, list(rows[0].keys()))
 
     # Keep the export these boxes were built from, beside them.
     #

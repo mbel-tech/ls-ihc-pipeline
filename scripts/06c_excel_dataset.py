@@ -65,6 +65,11 @@ _spec6b = importlib.util.spec_from_file_location(
 G6B = importlib.util.module_from_spec(_spec6b)
 _spec6b.loader.exec_module(G6B)
 
+_lsio = importlib.util.spec_from_file_location(
+    "_lsio", os.path.join(os.path.dirname(os.path.abspath(__file__)), "ls_io.py"))
+IO = importlib.util.module_from_spec(_lsio)
+_lsio.loader.exec_module(IO)
+
 CONFIG = G5.CONFIG
 OUT_ROOT = G5.OUT_ROOT
 RESULTS = os.path.join(OUT_ROOT, "results")
@@ -124,7 +129,8 @@ def write_workbook(path, sheets):
             width = max(len(str(col)), *(len(str(r[col])) for r in data)) + 2
             ws.column_dimensions[get_column_letter(c)].width = min(width, 30)
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    wb.save(path)
+    with IO.atomic_save(path) as tmp:
+        wb.save(tmp)
 
 
 def main(argv=None):

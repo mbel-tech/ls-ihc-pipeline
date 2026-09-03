@@ -34,10 +34,16 @@ Run:  python 04m_sections_dataset.py
 """
 
 import csv
+import importlib.util
 import json
 import os
 import re
 from collections import Counter
+
+_lsio = importlib.util.spec_from_file_location(
+    "_lsio", os.path.join(os.path.dirname(os.path.abspath(__file__)), "ls_io.py"))
+IO = importlib.util.module_from_spec(_lsio)
+_lsio.loader.exec_module(IO)
 
 # LS_CONFIG names the file explicitly; the file-relative path is the fallback.
 # Frozen, the scripts sit inside _internal/ while config.json is beside the
@@ -170,10 +176,7 @@ def main():
         })
     rows.sort(key=lambda r: (r["animal"], int(r["section_order"] or 0)))
 
-    with open(OUT_CSV, "w", newline="", encoding="utf-8") as fh:
-        w = csv.DictWriter(fh, fieldnames=COLUMNS)
-        w.writeheader()
-        w.writerows(rows)
+    IO.atomic_write_csv(OUT_CSV, rows, COLUMNS)
 
     st = Counter(r["status"] for r in rows)
     excl = Counter(r["exclusion_class"] for r in rows if r["status"] == "excluded")

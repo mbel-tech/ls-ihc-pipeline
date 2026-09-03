@@ -43,7 +43,6 @@ Run:  python 06a_roi_dataset.py
 """
 
 import collections
-import csv
 import importlib.util
 import os
 import statistics as st
@@ -54,6 +53,11 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _spec = importlib.util.spec_from_file_location("_g5", os.path.join(_HERE, "05a_roi_geometry.py"))
 G5 = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(G5)
+
+_lsio = importlib.util.spec_from_file_location(
+    "_lsio", os.path.join(os.path.dirname(os.path.abspath(__file__)), "ls_io.py"))
+IO = importlib.util.module_from_spec(_lsio)
+_lsio.loader.exec_module(IO)
 
 CONFIG = G5.CONFIG
 OUT_ROOT = G5.OUT_ROOT
@@ -322,10 +326,7 @@ def main(argv=None):
                 os.remove(path)
                 print(f"  nothing to write - removed the previous {os.path.basename(path)}")
             continue
-        with open(path, "w", newline="", encoding="utf-8") as fh:
-            w = csv.DictWriter(fh, fieldnames=list(data[0].keys()))
-            w.writeheader()
-            w.writerows(data)
+        IO.atomic_write_csv(path, data, list(data[0].keys()))
 
     print("=" * 72)
     print(f"{len(real)} ROIs and {len(rows) - len(real)} background discs -> {MEAS_CSV}")

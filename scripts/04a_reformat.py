@@ -36,12 +36,18 @@ Run:  python 04a_reformat.py
 
 import argparse
 import csv
+import importlib.util
 import json
 import os
 
 import numpy as np
 from PIL import Image
 from scipy import ndimage
+
+_lsio = importlib.util.spec_from_file_location(
+    "_lsio", os.path.join(os.path.dirname(os.path.abspath(__file__)), "ls_io.py"))
+IO = importlib.util.module_from_spec(_lsio)
+_lsio.loader.exec_module(IO)
 
 # LS_CONFIG names the file explicitly; the file-relative path is the fallback.
 # Frozen, the scripts sit inside _internal/ while config.json is beside the
@@ -713,10 +719,7 @@ def main():
     out_csv = paths["index"]
     keys = ["kind", "id", "angle", "fill", "animal", "section_order", "regions",
             "manual_rotation", "manual_flip"]
-    with open(out_csv, "w", newline="", encoding="utf-8") as fh:
-        w = csv.DictWriter(fh, fieldnames=keys, extrasaction="ignore")
-        w.writeheader()
-        w.writerows(rows)
+    IO.atomic_write_csv(out_csv, rows, keys)
 
     if args.preview:
         preview(rows, sec_dir, plate_dir, args.preview)

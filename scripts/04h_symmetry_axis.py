@@ -67,12 +67,18 @@ Run:  python 04h_symmetry_axis.py --validate 24    # synthetic recovery test
 
 import argparse
 import csv
+import importlib.util
 import json
 import os
 
 import numpy as np
 from PIL import Image
 from scipy import ndimage
+
+_lsio = importlib.util.spec_from_file_location(
+    "_lsio", os.path.join(os.path.dirname(os.path.abspath(__file__)), "ls_io.py"))
+IO = importlib.util.module_from_spec(_lsio)
+_lsio.loader.exec_module(IO)
 
 # LS_CONFIG names the file explicitly; the file-relative path is the fallback.
 # Frozen, the scripts sit inside _internal/ while config.json is beside the
@@ -86,6 +92,8 @@ REFORMAT_DIR = os.path.join(OUT_ROOT, "reformatted")
 SEC_DIR = os.path.join(REFORMAT_DIR, "sections")
 CANDIDATES_CSV = os.path.join(REFORMAT_DIR, "exclusion_candidates.csv")
 OUT_CSV = os.path.join(REFORMAT_DIR, "symmetry_proposals.csv")
+SYM_KEYS = ["scene_uid", "animal", "section_order", "proposed_rotation",
+            "sym_score", "margin", "confidence"]
 REPORT_DIR = os.path.join(OUT_ROOT, "qc", "symmetry")
 
 SPAN = 30.0          # degrees either side of 04a's orientation
@@ -258,10 +266,7 @@ def main():
             print(f"\r  {i + 1}/{len(rows)}", end="")
     print(f"\r  measured {len(out)} sections        ")
 
-    with open(OUT_CSV, "w", newline="", encoding="utf-8") as fh:
-        w = csv.DictWriter(fh, fieldnames=list(out[0].keys()))
-        w.writeheader()
-        w.writerows(out)
+    IO.atomic_write_csv(OUT_CSV, out, SYM_KEYS)
 
     live = [r for r in out if r["confidence"] in ("high", "low")]
     hi = [r for r in live if r["confidence"] == "high"]

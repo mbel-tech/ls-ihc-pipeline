@@ -65,6 +65,9 @@ REFORMAT_DIR = os.path.join(OUT_ROOT, "reformatted")
 SEC_DIR = os.path.join(REFORMAT_DIR, "sections")
 PAIRS_CSV = os.path.join(OUT_ROOT, "pairs.csv")
 OUT_CSV = os.path.join(REFORMAT_DIR, "perk_overrides.csv")
+OVERRIDE_KEYS = ["perk_scene_uid", "pcna_scene_uid", "animal", "extra_rotation", "flip",
+                 "excluded", "align_iou", "final_iou_256", "flip_margin", "confidence",
+                 "reason"]
 REPORT_DIR = os.path.join(OUT_ROOT, "qc", "perk")
 
 PHYS_DS = 4           # downsample both overviews by this -> 20.8 um/px, shared
@@ -82,6 +85,11 @@ _SPEC = importlib.util.spec_from_file_location(
     "reformat_mod", os.path.join(os.path.dirname(os.path.abspath(__file__)), "04a_reformat.py"))
 _RF = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(_RF)
+
+_lsio = importlib.util.spec_from_file_location(
+    "_lsio", os.path.join(os.path.dirname(os.path.abspath(__file__)), "ls_io.py"))
+IO = importlib.util.module_from_spec(_lsio)
+_lsio.loader.exec_module(IO)
 
 
 def physical_mask(png_path, canvas):
@@ -342,10 +350,7 @@ def main():
             print(f"\r  aligned {i}/{len(todo)}", end="")
     print(f"\r  aligned {len(todo)} sections            ")
 
-    with open(OUT_CSV, "w", newline="", encoding="utf-8") as fh:
-        w = csv.DictWriter(fh, fieldnames=list(rows[0].keys()))
-        w.writeheader()
-        w.writerows(rows)
+    IO.atomic_write_csv(OUT_CSV, rows, OVERRIDE_KEYS)
 
     live = [r for r in rows if not r["excluded"] and r["align_iou"] != ""]
     s = np.array([r["align_iou"] for r in live], dtype=float)
