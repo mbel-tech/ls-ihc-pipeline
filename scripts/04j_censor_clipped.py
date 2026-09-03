@@ -251,10 +251,46 @@ def section_verdict(frac_frame, frac_tissue, tolerance):
     }
 
 
+def unmeasured_row(uid, animal, section_order):
+    """A section 01k has no raw mask for. Present in the file with a BLANK
+    in_analysis_set, so 04m can say "unmeasured" rather than reading an absent
+    row as censored - which is a false statement about clipping."""
+    return {"scene_uid": uid, "animal": animal, "section_order": section_order,
+            "censored_fraction": "", "censored_fraction_in_tissue": "",
+            "recorded_saturated_fraction": "", "recorded_saturated_fraction_raw": "",
+            "in_analysis_set": "", "gate": "",
+            "reason": "no raw clipping mask - run 01k_saturation_raw.py"}
+
+
+def is_complete(rows):
+    return all(r["in_analysis_set"] != "" for r in rows)
+
+
+def guard_partial(out_csv, rows, allow):
+    """Refuse to replace a COMPLETE analysis set with a partial one.
+
+    A 04j run on a half-built censor_raw/ used to shrink the set silently and
+    every section it lacked became "censored" downstream. Now it stops, unless
+    --allow-partial says the shrink is meant.
+    """
+    if allow or is_complete(rows) or not os.path.exists(out_csv):
+        return None
+    with open(out_csv, newline="", encoding="utf-8") as fh:
+        old = list(csv.DictReader(fh))
+    if old and is_complete(old):
+        n_un = sum(1 for r in rows if r["in_analysis_set"] == "")
+        raise SystemExit(f"{out_csv} is complete ({len(old)} rows) but this run has "
+                         f"{n_un} unmeasured section(s). Run 01k_saturation_raw.py "
+                         f"first, or pass --allow-partial to write anyway.")
+    return None
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--tolerance", type=float, default=TOLERANCE,
                     help="section is set aside at or above this clipped fraction")
+    ap.add_argument("--allow-partial", action="store_true",
+                    help="write the analysis set even if it has unmeasured sections "
+                         "and the file on disk is complete")
     ap.add_argument("--marker", default="AF568", choices=["AF568", "AF488"],
                     help="AF568 = pERK (default), AF488 = PCNA")
     args = ap.parse_args()
@@ -277,6 +313,7 @@ def main():
         cen = censor_mask(uid)
         if cen is None:
             missing.append(uid)
+            rows.append(unmeasured_row(uid, animal, r["section_order"]))
             continue
         tis = load_tissue_mask(uid, dapi)
         if tis is not None and tis.shape != cen.shape:
@@ -315,17 +352,20 @@ def main():
         # indistinguishable from a section with no clipping, which is
         # the difference between "measured zero" and "never measured".
         print(f"  !! {len(missing)} sections have no raw clipping mask in "
-              f"{RAW_MASK_DIR} and were SKIPPED.")
+              f"{RAW_MASK_DIR} and are in the file as UNMEASURED "
+              f"(blank in_analysis_set).")
         print(f"     Run 01k_saturation_raw.py first. First few: {missing[:5]}")
     if no_tissue:
         print(f"  !! {len(no_tissue)} sections have no tissue mask (none in {TISSUE_DIR} "
               f"and none could be built from the DAPI overview); their verdict was")
         print(f"     decided on the FRAME fraction (gate = frame). First few: {no_tissue[:5]}")
 
+    guard_partial(out_csv, rows, args.allow_partial)
     IO.atomic_write_csv(out_csv, rows, ANALYSIS_KEYS)
 
-    keep = [r for r in rows if r["in_analysis_set"]]
-    drop = [r for r in rows if not r["in_analysis_set"]]
+    keep = [r for r in rows if r["in_analysis_set"] == 1]
+    drop = [r for r in rows if r["in_analysis_set"] == 0]
+    unmeasured = [r for r in rows if r["in_analysis_set"] == ""]
     cf = np.array([r["censored_fraction_in_tissue"] for r in keep if r["gate"] == "tissue"])
     print()
     print("=" * 74)
@@ -333,6 +373,7 @@ def main():
     print(f"  in the analysis set (< {100 * args.tolerance:.0f}% of TISSUE clipped) : "
           f"{len(keep)} ({100 * len(keep) / len(rows):.0f}%)")
     print(f"  set aside                                : {len(drop)}")
+    print(f"  unmeasured (no raw mask)                 : {len(unmeasured)}")
     print(f"  decided on the frame (no tissue mask)    : {len(no_tissue)}")
     print(f"  censor masks written to {CENSOR_DIR}/<uid>_censor.png")
     if len(cf):
@@ -345,7 +386,7 @@ def main():
     for r in rows:
         d = per.setdefault(r["animal"], [0, 0])
         d[0] += 1
-        d[1] += r["in_analysis_set"]
+        d[1] += 1 if r["in_analysis_set"] == 1 else 0
     print()
     print(f"  {'animal':<8}{label:>7}{'in set':>8}{'%':>6}")
     for a in sorted(per, key=lambda x: int(x[2:])):

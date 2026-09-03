@@ -1,11 +1,13 @@
 """Stage 4m - every pERK section, with what happened to it and why.
 
 One row per pERK section in the whole universe - 1191 of them - each joined to
-its PCNA partner. `status` says which of three fates it met:
+its PCNA partner. `status` says which of four fates it met:
 
     analysis_set   454   measurable
     censored_out   264   reformatted, then failed the 1% clipped-pixel tolerance
     excluded       473   never reformatted; the operator or a measurement rejected it
+    unmeasured           no 04j row yet, or no raw clipping mask - not a statement
+                         about clipping
 
 Keeping the rejected sections in the table rather than in a separate file is the
 point. The exclusion rate varies a great deal by animal, that variation is itself
@@ -85,7 +87,11 @@ def classify(reason):
     0.30 mm2" - and for a rejected section that string is the only surviving
     record of it, so it is parsed back out rather than dropped.
     """
-    if reason.startswith("manually excluded"):
+    # Three spellings of one decision: the curator export's prefix, 04a's
+    # default when the export carried no reason (04a:469), and the Review
+    # mode's default (04a:446).
+    if (reason.startswith("manually excluded") or reason == "too damaged to measure"
+            or reason == "excluded on review"):
         return "tissue_damaged", None
     m = re.match(r"no resolvable nuclear detail \(focus ([\d.]+)", reason)
     if m:
@@ -95,6 +101,18 @@ def classify(reason):
         return "no_tissue", float(m.group(1))
     return "unparsed", None
 
+
+def fate(a):
+    """(status, reason) for a section that is NOT excluded, from its analysis-set
+    row. No row, or a blank in_analysis_set, is UNMEASURED - 04j has not seen a
+    raw mask for it - and must not be reported as censored."""
+    if a is None:
+        return "unmeasured", "no analysis-set row - 04j has not measured this section"
+    if a["in_analysis_set"] == "":
+        return "unmeasured", a["reason"]
+    if a["in_analysis_set"] == "1":
+        return "analysis_set", ""
+    return "censored_out", a["reason"]
 
 def main():
     man = {r["scene_uid"]: r for r in load(MANIFEST_CSV)}
@@ -129,11 +147,9 @@ def main():
             klass, value = classify(src) if src else ("", None)
             if klass == "unparsed":
                 unparsed.append(src)
-        elif a and a["in_analysis_set"] == "1":
-            status, klass, value, reason = "analysis_set", "", None, ""
         else:
-            status, klass, value = "censored_out", "", None
-            reason = a["reason"] if a else ""
+            status, reason = fate(a)
+            klass, value = "", None
 
         c = cand.get(lk["pcna_scene_uid"]) if lk else None
         if c:
@@ -191,12 +207,14 @@ def main():
     if unparsed:
         print(f"  UNPARSED reasons: {len(unparsed)} e.g. {unparsed[:2]}")
     print()
-    print(f"  {'animal':8s} {'total':>6} {'analysis':>9} {'censored':>9} {'excluded':>9}   excl%")
+    print(f"  {'animal':8s} {'total':>6} {'analysis':>9} {'censored':>9} {'excluded':>9}"
+          f" {'unmeasured':>11}   excl%")
     for an in sorted(set(r["animal"] for r in rows)):
         g = [r for r in rows if r["animal"] == an]
         c = Counter(r["status"] for r in g)
         print(f"  {an:8s} {len(g):>6} {c['analysis_set']:>9} {c['censored_out']:>9} "
-              f"{c['excluded']:>9}   {100 * c['excluded'] / len(g):5.1f}%")
+              f"{c['excluded']:>9} {c['unmeasured']:>11}   "
+              f"{100 * c['excluded'] / len(g):5.1f}%")
     print("=" * 72)
 
 
