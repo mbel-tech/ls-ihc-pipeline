@@ -9,6 +9,41 @@ where things landed, not which plausible-looking route was tried and abandoned, 
 
 ---
 
+## 2026-09-03 - The ROI ellipse was measured along the wrong axes
+
+**Changed:** `05a_roi_geometry.py` gains `ellipse_axes(M, sr)` and `anisotropy(M)`;
+the `anisotropy` column of `roi_geometry_<MARKER>.csv` and the `axis_a_um` /
+`axis_b_um` columns of `roi_boxes_<MARKER>.csv` now come from them. Column names
+are unchanged; `axis_a_um` is now always the larger. `tests/test_roi_geometry.py`
+pins the rotated case.
+
+**Why:** 05a described the ellipse a curator circle becomes on the slide by the
+norms of the two columns of the linear part of the grid-to-CZI matrix. The columns
+are the images of the grid's unit vectors, and their lengths are the semi-axes only
+while they stay orthogonal - at a rotation of 0, 90, 180 or 270 degrees, which is
+where every fixture in the test suite sat. Sections are rotated by whatever angle
+the mask decided (296, 320, 314 degrees on the first three checked), and at any
+other angle the two columns are the same length regardless of how stretched the
+section is: at 45 degrees on a 944x1632 box both norms are 5.21 px, `anisotropy`
+read 1.00 - "a circle stays a circle" - and the product of the two axes came out
+15.4% larger than the ellipse's true area. The semi-axes are the singular values of
+the linear part, 6.375 and 3.6875 px per grid px for that box at every angle, and
+their product is |det A|, which is what the area has to be.
+
+Measured by building the same tall box at angle 0 and 45 through the module's own
+`grid_to_overview` and comparing column norms against `np.linalg.svd`: identical at
+0, disagreeing at 45 by the numbers above. The new test asserts both.
+
+**What moves:** every `axis_a_um`, `axis_b_um` and `anisotropy` value written so far,
+by an amount that depends on the section's angle. `06a_roi_dataset.py` takes the ROI
+area as pi*a*b from those two columns, so densities per ROI were off by the same
+per-section factor. 05a and 06a must be re-run - the operator's call, not done here.
+05c need not: membership is decided per nucleus by mapping the centroid back to the
+256 grid, and the bounding box comes from the mapped 128-point outline, neither of
+which ever read the axes.
+
+---
+
 ## 2026-09-03 - The app covers the workflow figure; stages find config through LS_CONFIG
 
 **Changed:** `app/stages.py` rewritten to the bands of Figure 1; `app/runner.py`,
@@ -61,7 +96,7 @@ later row.
     seeded back so the landmark radius survives a reload.
 
 Verified: the three new suites and `test_config_example` pass; `python -m app
---self-test` passes with the new list (window, server, 58 rows, a curator page
+--self-test` passes with the new list (window, server, 55 rows, a curator page
 rendered). Nothing under `out_root` was touched.
 
 ---

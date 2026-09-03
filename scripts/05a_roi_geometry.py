@@ -204,6 +204,28 @@ def invert_affine(M):
     return np.hstack([inv, t.reshape(2, 1)])
 
 
+def ellipse_axes(M, sr):
+    """The two semi-axes, larger first, of the ellipse a grid circle of radius
+    `sr` becomes under `M`, in the units of M's output.
+
+    They are the singular values of the linear part, not the norms of its
+    columns. The columns are the images of the grid's unit vectors, and their
+    lengths equal the semi-axes only while they stay orthogonal - angle 0, 90,
+    180 or 270. Rotate the same rectangular box by 45 degrees and the two
+    columns come out the SAME length while the section is exactly as stretched
+    as before: the column-norm reading says "circle" and overstates the area
+    by 15% on a 944x1632 box. The singular values do not move with the angle.
+    """
+    s = np.linalg.svd(np.asarray(M, float)[:, :2], compute_uv=False)
+    return float(s[0] * sr), float(s[1] * sr)
+
+
+def anisotropy(M):
+    """s_max / s_min of the linear part: 1.0 means a circle stays a circle."""
+    a, b = ellipse_axes(M, 1.0)
+    return a / b
+
+
 def grid_to_overview(rep):
     """Map a point on the normalised 256 grid back to a pixel of the overview PNG.
 
@@ -450,10 +472,10 @@ def build(regions_csv, limit=None, plates_csv=None, require_background=True):
             # grid (u,v) -> CZI absolute pixel (x,y)
             "m00": M[0, 0], "m01": M[0, 1], "m02": M[0, 2],
             "m10": M[1, 0], "m11": M[1, 1], "m12": M[1, 2],
-            # How anisotropic this section is: the ratio of the two column
-            # norms. 1.0 would mean a circle stays a circle.
-            "anisotropy": round(float(np.linalg.norm(M[:, 1]) /
-                                      np.linalg.norm(M[:, 0])), 4),
+            # How anisotropic this section is: the ratio of the two singular
+            # values of the linear part (see `ellipse_axes` for why not the
+            # column norms). 1.0 would mean a circle stays a circle.
+            "anisotropy": round(anisotropy(M), 4),
         })
 
         for r in regions:
@@ -468,6 +490,7 @@ def build(regions_csv, limit=None, plates_csv=None, require_background=True):
             cx, cy = apply_affine(M, sx, sy)
             x0, x1 = int(np.floor(X.min())), int(np.ceil(X.max()))
             y0, y1 = int(np.floor(Y.min())), int(np.ceil(Y.max()))
+            ax_a, ax_b = ellipse_axes(M, sr)
             box_rows.append({
                 "scene_uid": uid, "animal": f["animal"], "marker": f["marker_channel"],
                 "roi_kind": r.get("roi_kind") or "roi",
@@ -477,10 +500,11 @@ def build(regions_csv, limit=None, plates_csv=None, require_background=True):
                 "czi_cx": round(float(cx), 2), "czi_cy": round(float(cy), 2),
                 "czi_x0": x0, "czi_y0": y0,
                 "czi_w": x1 - x0, "czi_h": y1 - y0,
-                # The two semi-axes in um, so a glance says how big the ROI
-                # really is and how far from circular the mapping made it.
-                "axis_a_um": round(float(np.linalg.norm(M[:, 0]) * sr * BASE_PX_UM), 1),
-                "axis_b_um": round(float(np.linalg.norm(M[:, 1]) * sr * BASE_PX_UM), 1),
+                # The two semi-axes in um, larger first, so a glance says how
+                # big the ROI really is and how far from circular the mapping
+                # made it. 06a takes pi*a*b from these as the ROI area.
+                "axis_a_um": round(ax_a * BASE_PX_UM, 1),
+                "axis_b_um": round(ax_b * BASE_PX_UM, 1),
             })
 
         if n % 25 == 0:

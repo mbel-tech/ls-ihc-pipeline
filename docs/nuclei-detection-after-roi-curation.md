@@ -917,8 +917,8 @@ over the box would mix in whatever sits in the corners.
 
 ### 10.6 NumPy 2.5.2, Pillow 12.3.0, SciPy 1.18.1
 
-- **NumPy** carries the affine algebra in 05a (`np.linalg.inv` for the inverse map, column
-  norms for the anisotropy and the ROI semi-axes), the 128-point circle that becomes the
+- **NumPy** carries the affine algebra in 05a (`np.linalg.inv` for the inverse map, singular
+  values for the anisotropy and the ROI semi-axes), the 128-point circle that becomes the
   bounding box, and the `.npy` artifact and censor masks 05c looks nuclei up in.
 - **Pillow** and **SciPy** are there because 05a does not *recompute* the section geometry,
   it **replays** it: `04a_reformat.reformat()` is imported and re-run, so the same
