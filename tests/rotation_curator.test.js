@@ -74,4 +74,36 @@ X.onDown(ev(200, 100), v);
 X.onUp();
 chk("a press that never moved changes nothing", X.state[v].r, 90);
 
+// ---- tri-state rotation ---------------------------------------------------
+note("");
+const w = X.DATA[2].uid;
+delete X.state[w];
+X.SYM[w] = {r: 30, score: 0.9, conf: "high"};
+chk("a proposal is applied", X.get(w).r, 30);
+chk("...and reads as auto", X.isSymAuto(w), true);
+X.toggleExclude(w);
+chk("excluding does not adopt the proposal", X.state[w].r, undefined);
+chk("...it is still auto", X.isSymAuto(w), true);
+chk("...and the exclusion is recorded", X.state[w].x, true);
+X.toggleExclude(w);
+chk("restoring is an explicit keep", X.state[w].x, false);
+X.setState(w, 0, false, undefined);
+chk("0 on a proposed section is a decision", X.get(w).r, 0);
+chk("...that is stored", X.state[w].r, 0);
+chk("...and is no longer auto", X.isSymAuto(w), false);
+
+blobs.length = 0; X.exportCsv();
+const rowsOut = blobs[0].split("\n").slice(1).map(l => l.split(","));
+const rw = rowsOut.find(r => r[0] === w);
+chk("the export carries the explicit 0", rw[1], "0");
+chk("...sourced as an overruled proposal", rw[4], "manual_overrode_auto");
+const w2 = X.DATA[3].uid;
+delete X.state[w2]; X.SYM[w2] = {r: 12, score: 0.9, conf: "high"};
+blobs.length = 0; X.exportCsv();
+const rw2 = blobs[0].split("\n").slice(1).map(l => l.split(",")).find(r => r[0] === w2);
+chk("an untouched proposal exports as auto_symmetry", rw2[4], "auto_symmetry");
+delete X.SYM[w]; delete X.SYM[w2];
+X.setState(X.DATA[4].uid, 0, false, undefined);
+chk("0 with no proposal stores nothing", X.DATA[4].uid in X.state, false);
+
 done();

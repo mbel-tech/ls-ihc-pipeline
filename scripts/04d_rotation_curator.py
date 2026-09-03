@@ -198,13 +198,15 @@ const AUTO = __AUTO__;
 const SYM = __SYM__;
 
 const symOf = uid => (SYM[uid] ? SYM[uid].r : 0);
-// The user's own rotation wins; with none, the symmetry proposal stands.
-const isSymAuto = uid => !!SYM[uid] && !(state[uid] && state[uid].r !== undefined);
+// TRI-STATE, like `x`. `r` ABSENT from the record means "no rotation decided,
+// use the proposal"; `r` present - including an explicit 0 - is the user's.
+const hasOwnR   = uid => !!(state[uid] && state[uid].r !== undefined);
+const isSymAuto = uid => !!SYM[uid] && !hasOwnR(uid);
 
 const save = () => localStorage.setItem(KEY, JSON.stringify(state));
 // Effective rotation: the user's if they have set one, otherwise 04h's proposal.
-// Dragging writes into `state` and takes over from then on.
-const get  = uid => state[uid] || {r: symOf(uid), f:false};
+const get  = uid => ({r: hasOwnR(uid) ? state[uid].r : symOf(uid),
+                      f: !!(state[uid] && state[uid].f)});
 
 // Tri-state. The user's explicit decision wins; with no decision the proposal
 // stands. `x` is absent, not false, until they actually click.
@@ -213,22 +215,29 @@ const isExcluded = uid =>
 const isAuto     = uid => !!AUTO[uid] && !(state[uid] && state[uid].x !== undefined);
 const isRestored = uid => !!AUTO[uid] && state[uid] && state[uid].x === false;
 
+// `r` undefined = leave the rotation decision as it is (absent stays absent).
 function setState(uid, r, f, x){
-  r = ((Math.round(r) % 360) + 360) % 360;
   const prev = state[uid];
   if(x === undefined) x = prev ? prev.x : undefined;   // keep "no decision yet"
-  // Drop the entry only when it carries no information at all - no rotation, no
-  // flip, and no decision that differs from what the proposal already says.
-  if(r === 0 && !f && x === undefined) delete state[uid];
-  else { state[uid] = {r, f}; if(x !== undefined) state[uid].x = x; }
+  let rOwn = r === undefined ? (prev ? prev.r : undefined)
+                             : ((Math.round(r) % 360) + 360) % 360;
+  // 0 with no proposal says nothing, so it is not stored; 0 AGAINST a proposal
+  // is the user overruling it, and must survive.
+  if(rOwn === 0 && !SYM[uid]) rOwn = undefined;
+  if(rOwn === undefined && !f && x === undefined) delete state[uid];
+  else {
+    state[uid] = {f: !!f};
+    if(rOwn !== undefined) state[uid].r = rOwn;
+    if(x !== undefined) state[uid].x = x;
+  }
   save(); paint(uid); counts();
 }
 
 function toggleExclude(uid){
-  const s = get(uid);
   // Flips against the *effective* state, so the first right-click on a proposal
-  // restores it rather than appearing to do nothing.
-  setState(uid, s.r, s.f, !isExcluded(uid));
+  // restores it rather than appearing to do nothing. The rotation decision is
+  // passed through untouched: excluding a section is not rotating it.
+  setState(uid, undefined, get(uid).f, !isExcluded(uid));
 }
 
 function counts(){
@@ -415,7 +424,7 @@ function exportCsv(){
                  "rotation_source","decision","reason"]];
   DATA.filter(d => seen.has(d.uid)).forEach(d => {
     const s = get(d.uid), excl = isExcluded(d.uid);
-    if(!s.r && !s.f && !excl && !AUTO[d.uid]) return;
+    if(!s.r && !s.f && !excl && !AUTO[d.uid] && !hasOwnR(d.uid)) return;
     const decision = excl ? (isAuto(d.uid) ? "auto" : "manual")
                           : (AUTO[d.uid] ? "restored" : "");
     const reason = excl && AUTO[d.uid] ? AUTO[d.uid].reason
@@ -424,9 +433,8 @@ function exportCsv(){
     // no way to report how often 04h's proposal was accepted, and "the operator
     // rotated 1,278 sections" and "the operator accepted 1,150 proposals" are
     // different claims in a methods section.
-    const rsrc = !s.r ? ""
-               : isSymAuto(d.uid) ? "auto_symmetry"
-               : (SYM[d.uid] ? "manual_overrode_auto" : "manual");
+    const rsrc = hasOwnR(d.uid) ? (SYM[d.uid] ? "manual_overrode_auto" : "manual")
+               : (s.r ? "auto_symmetry" : "");
     rows.push([d.uid, s.r||0, s.f?1:0, excl?1:0, rsrc, decision,
                '"'+reason.replace(/"/g,"'")+'"']);
   });
