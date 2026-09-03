@@ -293,21 +293,32 @@ function onDown(e, uid){
   if(e.button !== 0) return;
   const stack = e.currentTarget;
   const rect = stack.getBoundingClientRect();
-  drag = {uid, rect, start: angleOf(e, rect), base: get(uid).r, moved:false};
+  drag = {uid, rect, start: angleOf(e, rect), base: get(uid).r, r: get(uid).r,
+          moved:false};
   setActive(uid);
   stack.setPointerCapture(e.pointerId);
   e.preventDefault();
 }
+// The angle is a DRAFT until the pointer is released. Writing state on every
+// pointermove serialised the whole store to localStorage and repainted the
+// cell per event; now only the transform moves, and one setState() lands on
+// release - so a drag that is cancelled leaves the record exactly as it was.
 function onMove(e){
   if(!drag) return;
   let delta = angleOf(e, drag.rect) - drag.start;
   if(Math.abs(delta) > 0.5) drag.moved = true;
   let r = drag.base + delta;
   if(e.shiftKey) r = Math.round(r/15)*15;
-  setState(drag.uid, r, get(drag.uid).f);
-  el("live").textContent = `${drag.uid}: ${get(drag.uid).r}\\u00B0`;
+  drag.r = ((Math.round(r) % 360) + 360) % 360;
+  const cell = document.querySelector(`[data-uid="${CSS.escape(drag.uid)}"] .sec`);
+  if(cell) cell.style.transform = `rotate(${drag.r}deg) scaleX(${get(drag.uid).f ? -1 : 1})`;
+  el("live").textContent = `${drag.uid}: ${drag.r}\\u00B0`;
 }
-function onUp(){ drag = null; }
+function onUp(){
+  if(drag && drag.moved) setState(drag.uid, drag.r, get(drag.uid).f);
+  else if(drag) paint(drag.uid);       // put an un-moved cell back exactly
+  drag = null;
+}
 
 function setActive(uid){
   document.querySelectorAll(".cell.active").forEach(c => c.classList.remove("active"));

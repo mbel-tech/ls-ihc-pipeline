@@ -53,4 +53,25 @@ chk("plain x excludes", X.isExcluded(u), true);
 key("x");
 chk("...and toggles back", X.isExcluded(u), false);
 
+// ---- drag: a draft until release ------------------------------------------
+note("");
+const ev = (x, y) => ({clientX: x, clientY: y, button: 0, pointerId: 1, preventDefault() {},
+  currentTarget: {getBoundingClientRect: () => ({left: 0, top: 0, width: 200, height: 200}),
+                  setPointerCapture() {}}});
+const v = X.DATA[1].uid;
+delete X.state[v];
+X.onDown(ev(200, 100), v);                     // 0 deg from the centre (100,100)
+X.onMove({clientX: 100, clientY: 200, shiftKey: false});   // 90 deg
+chk("mid-drag: nothing in the record", v in X.state, false);
+chk("...nothing on disk", disk(v), undefined);
+chk("...but the draft is live", Math.round(X.drag.r), 90);
+X.onUp();
+chk("release commits the angle", X.state[v].r, 90);
+chk("...to disk", disk(v).r, 90);
+chk("...and ends the drag", X.drag, null);
+
+X.onDown(ev(200, 100), v);
+X.onUp();
+chk("a press that never moved changes nothing", X.state[v].r, 90);
+
 done();
