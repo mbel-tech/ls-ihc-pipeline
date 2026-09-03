@@ -67,6 +67,7 @@ QC_KEYS = ["scene_uid", "file", "animal", "slide", "variant", "marker_channel",
            "scene_index", "section_order", "width", "height", "um_px",
            "tissue_threshold", "tissue_fraction", "tissue_area_mm2", "tissue_mean",
            "background_mean", "contrast", "focus_score", "saturated_fraction",
+           "saturated_fraction_raw", "saturated_fraction_dapi_raw",
            "tilefield_applied", "reader"]
 
 
@@ -280,8 +281,18 @@ def export(scenes, fields, ranges, zoom, limit, force):
                         failed += 1
                         continue
 
-                    dapi = apply_tile_field(read_scene(czidoc, rects[s], 0, zoom), fields.get(0), 1 / zoom)
-                    mark = apply_tile_field(read_scene(czidoc, rects[s], 1, zoom), fields.get(1), 1 / zoom)
+                    dapi_raw = read_scene(czidoc, rects[s], 0, zoom)
+                    mark_raw = read_scene(czidoc, rects[s], 1, zoom)
+                    # Clipping is measured HERE, before the field is applied.
+                    # Dividing by a gain above 1 lifts a pixel off the 16-bit
+                    # ceiling and it stops counting as clipped - but the value is
+                    # still gone, because no correction puts back what the sensor
+                    # never recorded. tilefield_c1 exceeds 1.0 over 54% of its
+                    # area, which halved every clipping number reported here.
+                    sat_mark_raw = float((mark_raw >= 65535).mean())
+                    sat_dapi_raw = float((dapi_raw >= 65535).mean())
+                    dapi = apply_tile_field(dapi_raw, fields.get(0), 1 / zoom)
+                    mark = apply_tile_field(mark_raw, fields.get(1), 1 / zoom)
                     h, w = dapi.shape
                     um_px = BASE_PX_UM / zoom
 
@@ -319,7 +330,13 @@ def export(scenes, fields, ranges, zoom, limit, force):
                         "contrast": "" if (np.isnan(bg_mean) or bg_mean <= 0)
                                     else f"{tissue_mean / bg_mean:.3f}",
                         "focus_score": f"{focus_score(dapi, mask):.4f}",
+                        # Kept as-is so nothing downstream breaks, and so the
+                        # pair stays directly comparable. It measures clipping
+                        # AFTER correction and is therefore an undercount; the
+                        # _raw columns are the honest number.
                         "saturated_fraction": f"{float((mark >= 65535).mean()):.6f}",
+                        "saturated_fraction_raw": f"{sat_mark_raw:.6f}",
+                        "saturated_fraction_dapi_raw": f"{sat_dapi_raw:.6f}",
                         "tilefield_applied": int(bool(fields)),
                         "reader": "pylibCZIrw",
                     })

@@ -1,6 +1,6 @@
-"""Stage 4j - censor clipped pERK pixels and fix the pERK analysis set.
+"""Stage 4j - censor clipped pixels and fix the analysis set, per marker.
 
-AF568 clipping is information loss, not miscalibration: a pixel pinned at the
+Clipping is information loss, not miscalibration: a pixel pinned at the
 16-bit ceiling has lost its value and no normalisation recovers it. See LOGS.md -
 restricted to clip-free sections the two apparent "staining batches" turn out to
 be identical, so the whole 1.86x background gap is produced by the clipping
@@ -33,23 +33,67 @@ Getting that backwards would turn a data-quality problem into a group difference
 Where the mask comes from
 -------------------------
 
-The AF568 display range recorded in `qc/display_ranges.json` is `lo 1070,
-hi 65535` - the display high **is** the 16-bit ceiling. So in the exported 8-bit
-marker overview, value 255 corresponds to 16-bit >= 65535, which is exactly the
-clipped set. Verified against `saturated_fraction` in `focus.csv`, computed
-independently on the 16-bit data at export: median absolute difference over 12
-random sections is **0.00000**.
+`qc/censor_raw/<uid>_clipped.png`, written by `01k_saturation_raw.py` off the
+**raw** 16-bit marker plane.
 
-This does not generalise. DAPI (hi 27993) and AF488 (hi 37263) have display highs
-below the ceiling, so 255 there means "at or above the display high", not
-"clipped". The trick works for AF568 and only because its display high saturated.
+**It used to come from the 8-bit overview, and that was wrong.** The AF568
+display high is 65535, so value 255 in `_MARK.png` looks like exactly the clipped
+set - and the docstring here used to defend it by reporting a median absolute
+difference of 0.00000 against `saturated_fraction` in `focus.csv`. That agreement
+was real and it proved nothing, because **both sides were measured after
+`apply_tile_field()`**. Dividing by a gain above 1 lifts a pixel off the ceiling
+and it stops reading as clipped, while its value is exactly as lost as before -
+the field cannot restore what the sensor never recorded. `tilefield_c1` runs
+0.812-1.097 and exceeds 1.0 over **54%** of its area, so the old mask held only
+about **46%** of the clipped pixels:
+
+    LS45_1a.czi sc14   raw 0.28314   corrected 0.13611   (focus.csv: 0.13611)
+    LS53_2b.czi sc11   raw 0.42662   corrected 0.20842
+    median raw / corrected = 1.97 over the corpus
+
+The missing half did not merely go uncounted. After division each of those
+pixels carries a plausible-looking `65535/gain` value, so it entered every
+intensity statistic as an ordinary measurement - which is the precise failure
+this stage exists to prevent.
+
+**What it did and did not change.** The section-level tolerance barely moves: the
+split is strongly bimodal - the analysis set sits at p99 0.33% clipped against a
+censored-out median of 10.6% - so the correction crosses only 4 of 454 sections.
+The pixel-level mask is where it matters, because `05c_detect_rois.py` samples it
+into the per-nucleus `censored` column and `06a_roi_dataset.py` decides
+positive-but-unusable from that.
+
+Correcting the mask means the per-nucleus flags must be recomputed;
+`06f_recensor_nuclei.py` does that from the stored positions rather than by
+re-running StarDist.
+
+Both markers, because AF488 was never actually checked
+------------------------------------------------------
+
+This stage used to be pERK-only, on the stated grounds that "AF488 cannot clip,
+so there is nothing to censor". That was an inference from the same broken test,
+not a measurement. AF488's display high is 37,263, so a value of 255 in its 8-bit
+overview means "at or above the display high" - it cannot distinguish a bright
+pixel from a clipped one, and the question was unanswerable rather than answered.
+
+Measured on the raw 16-bit plane, **AF488 does clip**: on most sections, at a
+median of 0.000007 of frame, reaching **1.3%** on the worst. Small, and far below
+the 1% section tolerance almost everywhere - but not zero, and a clipped PCNA
+pixel is right-censored for exactly the reasons set out above. `--marker AF488`
+writes `pcna_analysis_set.csv` alongside the same shared censor directory; scene
+uids carry the pass letter, so the two cannot collide.
+
+For a future `05c` run to pick the AF488 masks up in the 256 frame, `04a_reformat
+--censor --marker AF488` has to run as well - `05c` reads the `.npy`, not the PNG.
 
 Run:  python 04j_censor_clipped.py
+      python 04j_censor_clipped.py --marker AF488
       python 04j_censor_clipped.py --tolerance 0.005
 """
 
 import argparse
 import csv
+import importlib.util
 import json
 import os
 
@@ -65,47 +109,74 @@ OVERVIEW_DIR = os.path.join(OUT_ROOT, "overviews")
 REFORMAT_DIR = os.path.join(OUT_ROOT, "reformatted")
 QC_CSV = os.path.join(OUT_ROOT, "qc", "focus.csv")
 CENSOR_DIR = os.path.join(OUT_ROOT, "censor")
-OUT_CSV = os.path.join(REFORMAT_DIR, "perk_analysis_set.csv")
+# Per-marker output. AF568 keeps the name every downstream stage already reads.
+ANALYSIS_SET = {"AF568": os.path.join(REFORMAT_DIR, "perk_analysis_set.csv"),
+                "AF488": os.path.join(REFORMAT_DIR, "pcna_analysis_set.csv")}
+LABEL = {"AF568": "pERK", "AF488": "PCNA"}
 
-MARKER = "AF568"
-CEILING_8BIT = 255       # only valid because the AF568 display high is 65535
+_spec = importlib.util.spec_from_file_location(
+    "_rf", os.path.join(os.path.dirname(os.path.abspath(__file__)), "04a_reformat.py"))
+RF = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(RF)
 TOLERANCE = 0.01         # section-level: 1% of pixels at the ceiling
+RAW_MASK_DIR = os.path.join(OUT_ROOT, "qc", "censor_raw")
 
 
-def censor_mask(png_path):
-    """Right-censored pixels: at the 16-bit ceiling, value unknown but >= it."""
+def censor_mask(uid):
+    """Right-censored pixels: at the 16-bit ceiling, value unknown but >= it.
+
+    Read from 01k_saturation_raw.py, which measures the RAW plane. This used to
+    threshold the exported 8-bit `_MARK.png` at 255, which is a post-tile-field
+    image: dividing by a gain above 1 lifts a pixel off the ceiling so it stops
+    reading as clipped, even though its value is just as gone. `tilefield_c1`
+    exceeds 1.0 over 54% of its area, so that mask missed roughly half the
+    clipped pixels - and they went on into `05c_detect_rois.py`'s per-nucleus
+    `censored` column carrying a fabricated 65535/gain value.
+    """
+    p = os.path.join(RAW_MASK_DIR, uid + "_clipped.png")
+    if not os.path.exists(p):
+        return None
     try:
-        m = np.asarray(Image.open(png_path).convert("L"))
+        return np.asarray(Image.open(p).convert("L")) > 0
     except OSError:
         return None
-    return m >= CEILING_8BIT
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--tolerance", type=float, default=TOLERANCE,
                     help="section is set aside at or above this clipped fraction")
+    ap.add_argument("--marker", default="AF568", choices=["AF568", "AF488"],
+                    help="AF568 = pERK (default), AF488 = PCNA")
     args = ap.parse_args()
+    marker = args.marker
+    label = LABEL[marker]
+    out_csv = ANALYSIS_SET[marker]
     os.makedirs(CENSOR_DIR, exist_ok=True)
+    # Scene uids carry the pass letter (..._s03a_ vs ..._s03b_), so both markers
+    # can share one censor directory without colliding.
+    print(f"{label} ({marker}) -> {out_csv}")
 
     foc = {r["scene_uid"]: r for r in csv.DictReader(open(QC_CSV, encoding="utf-8"))}
-    with open(os.path.join(REFORMAT_DIR, f"reformat_index_{MARKER}.csv"),
-              newline="", encoding="utf-8") as fh:
+    with open(RF.marker_paths(marker)["index"], newline="", encoding="utf-8") as fh:
         kept = [r for r in csv.DictReader(fh) if r["kind"] == "section"]
 
-    rows = []
+    rows, missing = [], []
     for i, r in enumerate(kept, 1):
         uid, animal = r["id"], r["animal"]
-        mark = os.path.join(OVERVIEW_DIR, animal, MARKER, uid + "_MARK.png")
-        dapi = os.path.join(OVERVIEW_DIR, animal, MARKER, uid + "_DAPI.png")
-        cen = censor_mask(mark)
+        dapi = os.path.join(OVERVIEW_DIR, animal, marker, uid + "_DAPI.png")
+        cen = censor_mask(uid)
         if cen is None:
+            missing.append(uid)
             continue
         tis = np.asarray(Image.open(dapi).convert("L")) > 0 if os.path.exists(dapi) else None
 
         frac_frame = float(cen.mean())
         frac_tissue = float(cen[tis].mean()) if tis is not None and tis.any() else float("nan")
+        # Both, so the size of the old undercount stays visible in the output
+        # rather than only in a log entry.
         recorded = float(foc.get(uid, {}).get("saturated_fraction", "nan") or "nan")
+        recorded_raw = float(foc.get(uid, {}).get("saturated_fraction_raw", "nan") or "nan")
 
         # Written for every section, including the ones set aside - a later stage
         # may want to know what it is missing.
@@ -117,6 +188,7 @@ def main():
             "censored_fraction": round(frac_frame, 6),
             "censored_fraction_in_tissue": round(frac_tissue, 6),
             "recorded_saturated_fraction": recorded,
+            "recorded_saturated_fraction_raw": recorded_raw,
             "in_analysis_set": int(frac_frame < args.tolerance),
             "reason": "" if frac_frame < args.tolerance
                       else f"{100 * frac_frame:.1f}% of pixels at the 16-bit ceiling "
@@ -124,9 +196,16 @@ def main():
         })
         if i % 100 == 0:
             print(f"\r  {i}/{len(kept)}", end="")
-    print(f"\r  measured {len(rows)} pERK sections        ")
+    print(f"\r  measured {len(rows)} {label} sections        ")
+    if missing:
+        # Loud, not silent. A missing raw mask used to be
+        # indistinguishable from a section with no clipping, which is
+        # the difference between "measured zero" and "never measured".
+        print(f"  !! {len(missing)} sections have no raw clipping mask in "
+              f"{RAW_MASK_DIR} and were SKIPPED.")
+        print(f"     Run 01k_saturation_raw.py first. First few: {missing[:5]}")
 
-    with open(OUT_CSV, "w", newline="", encoding="utf-8") as fh:
+    with open(out_csv, "w", newline="", encoding="utf-8") as fh:
         w = csv.DictWriter(fh, fieldnames=list(rows[0].keys()))
         w.writeheader()
         w.writerows(rows)
@@ -136,7 +215,7 @@ def main():
     cf = np.array([r["censored_fraction"] for r in keep])
     print()
     print("=" * 74)
-    print(f"{len(rows)} pERK sections -> {OUT_CSV}")
+    print(f"{len(rows)} {label} sections -> {out_csv}")
     print(f"  in the analysis set (< {100 * args.tolerance:.0f}% clipped) : "
           f"{len(keep)} ({100 * len(keep) / len(rows):.0f}%)")
     print(f"  set aside                                : {len(drop)}")
@@ -153,14 +232,14 @@ def main():
         d[0] += 1
         d[1] += r["in_analysis_set"]
     print()
-    print(f"  {'animal':<8}{'pERK':>7}{'in set':>8}{'%':>6}")
+    print(f"  {'animal':<8}{label:>7}{'in set':>8}{'%':>6}")
     for a in sorted(per, key=lambda x: int(x[2:])):
         t, k = per[a]
         print(f"  {a:<8}{t:>7}{k:>8}{100 * k / t:>5.0f}%")
     lost = [a for a, (t, k) in per.items() if k == 0]
     if lost:
         print(f"\n  ANIMALS WITH NOTHING LEFT: {', '.join(sorted(lost))}")
-        print("  They cannot contribute to the pERK analysis at any tolerance that")
+        print("  They cannot contribute to the marker analysis at any tolerance that")
         print("  excludes them; that is a decision about n, not about thresholds.")
     print()
     print("Censored != masked. A clipped pixel is real signal whose value is lost:")

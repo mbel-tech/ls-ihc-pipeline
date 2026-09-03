@@ -9,6 +9,203 @@ where things landed, not which plausible-looking route was tried and abandoned, 
 
 ---
 
+## 2026-09-02 - Nuclei were being quantified off the section
+
+**Changed:** `05c_detect_rois.py` records a new `off_tissue` column; `06a_roi_dataset.py`
+drops those nuclei the way it already drops artifact ones; new `06g_flag_off_tissue.py`
+backfills the column onto a `roi_nuclei.csv` written before the column existed.
+
+**Why:** 05c decided membership on the ROI **disc alone** - a nucleus was kept if its
+centroid mapped inside the disc on the 256 grid. Nothing checked that it was on the
+tissue, or even inside the scanned scene. A disc overhanging the silhouette therefore
+contributed objects segmented on glass or mounting medium, and they were quantified like
+any other nucleus.
+
+**How much.** Of the 895,548 nuclei present today, **2,576 (0.29%)** sit outside the DAPI
+silhouette: 1,969 of 621,906 in ROI discs (0.32%) and 607 of 273,642 in background discs
+(0.22%), spread over **87 of 130** sections. **430 are not merely off the tissue but
+outside the 256 frame entirely** - 429 of them a single background disc in
+`LS37_s05a_sc06` sitting about **2.6 mm above the top edge of its own scene**, i.e.
+measured on an area the scanner never visited. That disc is 429 of that section's 4,813
+background nuclei, so **8.9% of the population setting its positivity cut** was found
+outside the scan.
+
+**Background discs are where this costs something**, and the direction is the bad one.
+06a sets each section's cut from its own background discs as
+`median + 3 * 1.4826 * MAD`. Objects found on glass are dim, so they pull the median and
+the cut **down**, and a lower cut makes that section look **more positive**.
+
+**What it moved.** 06a now drops 947 nuclei on an artifact and 2,576 off the tissue,
+quantifying 892,025. Against the previous run: `n_nuclei` changes on **311 of 2,069 ROIs**
+(median -2, worst -429); `frac_positive` on **273 of 2,054** (median +0.0004, range -0.082
+to +0.022); the per-section `positivity_cut` on **28 of 130** (median -0.04%, max +2.30%);
+`bg_nuclei` on 31 (max -8.91%); `false_positive_rate` on 19 (max +7.61%). Small in
+aggregate, and not small on the sections that had the problem.
+
+**The tissue definition is deliberately the one everything else uses** - 04a's
+`tissue_mask()` silhouette carried through the same rotation and crop into the 256 frame
+as `<uid>_mask.npy`. A different definition here would let 05c reject a nucleus the
+operator had placed a disc over in the curator, which displays that very mask. Its
+resolution is a real limit and is not hidden: the 256 frame is ~31 um per cell against a
+7 um nucleus, so a nucleus within about one cell of the silhouette edge is judged by which
+cell its centroid lands in. That is coarse at the boundary and exact in the interior,
+which is where the problem cases are - `LS37_s05a_sc06` is off by **69 cells**, not one.
+
+**Recorded, not dropped at source**, following `artifact`: 05c writes the flag and 06a
+decides. The QC overlay can still show what was found, and the decision is one line to
+reverse. A section with no silhouette is **skipped with a loud message** rather than
+measured, because silently calling every nucleus on-tissue is the failure this check
+exists to stop.
+
+**A bug this introduced and the fix for it.** The first backfill corrupted
+`roi_nuclei.csv`: 05c writes it with `csv.writer` on Windows, so lines end **CRLF**, and
+`line.rstrip("\n")` leaves a bare CR on the last field. Appending a column after that put
+the CR mid-line, Python's universal-newline reader treated it as a line break, and 06a saw
+1,791,097 rows and a `None`. Restored from `_pre_06g_backup/` (verified byte-identical to
+the original) before anything downstream ran; 06a had crashed before writing, so no result
+file was touched. Both `06f` and `06g` now detect the terminator and write it back
+unchanged. **06f had the same latent bug** and was only accidentally safe, because it
+rewrites a middle column and passes unchanged lines through verbatim.
+
+---
+
+## 2026-09-02 - Clipping was measured after the tile field, and the censor mask inherited it
+
+**Changed:** `01_overviews.py` measures clipping **before** `apply_tile_field()` and adds
+`saturated_fraction_raw` / `saturated_fraction_dapi_raw`; new `01k_saturation_raw.py`
+backfills those columns and writes a raw clipping mask per section;
+`04j_censor_clipped.py` and `01g_saturation_map.py` read that mask instead of thresholding
+the 8-bit overview; 04j gains `--marker`; new `06f_recensor_nuclei.py` recomputes the
+per-nucleus flag without re-running StarDist.
+
+**Why:** `01_overviews.py` divided by the tile field and *then* counted pixels at 65535.
+`tilefield_c1` runs **0.812-1.097 and exceeds 1.0 over 54% of its area**, so a pixel
+recorded at the sensor ceiling was lifted off it and stopped counting as clipped - while
+its value was exactly as lost, because no correction restores what the sensor never
+recorded. The column was `clipping x ~0.46`.
+
+Measured in one run, both numbers by the same code on the same data - which is the control
+the old comparison never had:
+
+    LS45_1a.czi sc14   raw 0.283137   corrected 0.136108   (focus.csv held 0.136108)
+    AF568 sections clipping >1% of frame, n=441:
+        raw / corrected   median 1.989   p05 1.798   p95 2.182
+
+**It also runs the other way, which nobody had looked for.** Where the gain is below 1,
+division pushes a sub-ceiling pixel past 65535 and `np.clip(...).astype(np.uint16)` pins
+it there. **165 of 1,191 AF568 sections recorded more clipping after correction than they
+had, and 10 recorded some when the raw plane had none.** So the old column was not a
+consistent undercount; it was a count of "pixels that were clipped **and** happened to
+land where the gain was at most 1".
+
+**The old validation was circular, and it was mine to notice because it reads as rigorous.**
+04j's docstring reported a median absolute difference of 0.00000 against `saturated_fraction`
+in `focus.csv`. True, and worth nothing: both sides were measured after the same correction.
+
+**Resolution is a second understatement and it is scale-dependent** - measured with
+`--native-sample`, not assumed. Downsampling only loses a clipped pixel whose neighbours
+were not clipped, so sparse clipping dilutes hard and dense clipping barely at all: over
+30 sections the native/overview ratio is a median 1.73 overall but **1.09** where clipping
+exceeds 0.1% of frame. On the sections that matter the combined understatement is
+therefore about **2.2x**, not the 3.4x that multiplying the two medians suggests.
+
+### What the corrected census says, and what it does not
+
+Regenerated `qc/saturation/saturation_AF568.csv`. The **fraction of sections** above 2%
+clipped barely moves - 36.3% to 36.6% - because the distribution is bimodal and doubling
+does not carry many across the line. **The severity roughly doubles**: the worst section
+goes from 24.0% to **50.6%** of frame, and per-animal maxima follow (LS69 24.0 to 50.6,
+LS53 20.8 to 42.7, LS105 13.6 to 29.5). The old "35% of sections, up to 47%" line was
+right in its first half largely by luck.
+
+**Attributed with a same-code control, because the naive comparison lies.** Comparing
+against the stored pre-fix CSV showed 248 sections changing verdict - but that file dates
+from 2026-08-12 and the comparison mixes the mask change with three weeks of drift in this
+module. `01g --proxy` was added to measure clipping the old way with *today's* code, so the
+two runs differ in exactly one thing. Against that control: the >2% fraction moves 36.3% to
+36.6%, p95 0.140 to 0.259, max 0.256 to 0.506, raw/proxy median **1.884** on sections above
+1% - and **only 3 sections change verdict**, all of them out of `negligible`. The mask was
+badly wrong and the *classification* barely cared, because the verdicts here are dominated
+by contrast inversion, which this did not touch.
+
+The proxy ratio (1.884) is slightly below the direct one (1.989) for a reason worth
+recording: the old proxy thresholded at `>= 254`, not 255, so it caught a sliver of
+sub-ceiling pixels and **accidentally compensated for part of its own undercount**. That is
+how a wrong measurement passed inspection for three weeks.
+
+**And the clipping is still almost all outside the brain.** A median of **1%** of clipped
+pixels fall inside the DAPI mask, covering a median 1.5% of tissue area. That is consistent
+with the PAP pen stroke measured on 2026-09-01 - present in 54 of 60 sampled pERK sections
+at a median 7.5% of frame - and it is why doubling a frame-level number does not double
+anything biological.
+
+### What it changed downstream
+
+**Section level: 4 sections, exactly as predicted.** The pERK analysis set goes 454 to
+**450** of 718. The four are `LS105_s05a_sc03` (0.0095 -> 0.0238), `LS105_s05a_sc11`
+(0.0052 -> 0.0111), `LS105_s05a_sc09` (0.0063 -> 0.0111) and `LS61_s03a_sc11` (0.0051 ->
+0.0106). The split is bimodal - the analysis set sits at p99 0.33% against a censored-out
+median of 10.6% - so it was never going to be more.
+
+**Pixel level: nothing today, and that is the honest answer.** `06f` recensored all
+895,548 nuclei and the count went 0 to 0; the rewritten file is **byte-identical** to its
+backup. Not a plumbing failure - `roi_nuclei.csv` covers **130 of 454** analysis-set
+sections because 05c is still partway through, and the sections that clip heavily have not
+been detected yet. The fix is preventive: it will bite on the remaining 324.
+
+### AF488 was never actually checked
+
+`LOGS.md` said "AF488 cannot clip, so there is nothing to censor". That was an inference
+from the same broken test, not a measurement: AF488's display high is 37,263, so 255 in its
+8-bit overview means "at or above the display high", and the question was unanswerable
+rather than answered. On the raw plane **AF488 clips on 58.9% of sections**, median
+0.000005 of frame, **max 0.0252**. Censoring it costs **one section** - `LS37_s01b_sc03` at
+1.31%, of 788 reformatted PCNA sections - because most of the worst offenders are not in
+the reformat index. Unlike AF568 the tile field does not halve it consistently; AF488's
+clipping is sparse, so the old proxy scattered it both ways.
+
+### Still outstanding: the corrected masks have not reached the frame 05c reads
+
+**This applies to both markers and it is the one thing left undone.** 04j writes
+`censor/<uid>_censor.png` in the overview frame; `05c_detect_rois.py` does not read that.
+It reads `reformatted/sections_<marker>/<uid>_censor.npy` in the 256 frame, which only
+`04a_reformat.py --censor` produces. Today's corrected PNGs are timestamped 2026-09-02
+14:06; the `.npy` files beside them are **2026-09-01 13:40**. So:
+
+  * the 895,548 nuclei already in `roi_nuclei.csv` are correct - `06f` sampled the raw
+    overview-frame mask directly and bypassed the 256 frame entirely;
+  * **every future 05c run would censor from the stale, undercounting masks**, and 05c is
+    only 130 of 454 analysis-set sections in.
+
+For AF488 it is worse than stale: `reformatted/sections/` holds **zero** `*_censor.npy`,
+so PCNA has never been censored in that frame at all.
+
+Fixing it means `04a_reformat.py --censor` for AF568 and `--censor --marker AF488`. That is
+a full reformat pass which rewrites every section PNG, so it is left for a deliberate
+go-ahead rather than folded into this change. **Until it runs, do not start a new 05c
+pass** - or the nuclei it adds will carry the old flags while the ones already in the table
+carry the new.
+
+### Two things about the run itself
+
+**D: went away again.** At 15:43-15:52 on 2026-09-01 both `01g` and `01k` died with
+`FileNotFoundError` on paths that exist, which is what a vanished volume looks like from
+inside `open()`. Same failure as 2026-08-12. Nothing was lost - 01k checkpoints per file
+and resumed at 1,392 of 2,572 - but it *died* rather than waiting, so `atomic_write` now
+retries five times over ~31 s and only then propagates.
+
+**The `tilefield_c1` marker bug is still live and deliberately untouched.**
+`01_overviews.py:165` loads one field per channel *index*, so AF568 and AF488 files get the
+same correction despite measurably different fields (found 2026-08-12, never fixed). It
+sets the exact size of the undercount above. It must not be fixed by promoting the existing
+per-marker fields: at `--tiles 60` the raw AF568 field spans **0.386-3.641**, an unconverged
+median rather than an illumination profile, and swapping a mild +-10% error for an
+unconverged +-264% one would make the data worse. The route is more tiles, then the
+`01c_measure_tile_artifact.py` gate (median pitch prominence < 2.0x), then a re-export -
+and only with someone looking at the gate result.
+
+---
+
 ## 2026-09-01 - The pen stroke nothing masks, and the 473 that had no picture
 
 **Changed:** `--render-excluded` in `04a_reformat.py`; the pen stroke measured and

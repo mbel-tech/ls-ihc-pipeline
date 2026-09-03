@@ -158,12 +158,40 @@ python scripts/05a_roi_geometry.py
 python scripts/05a_roi_geometry.py path/to/roi_regions.csv    # explicit input
 ```
 
-Outputs, both into `<out_root>/reformatted/`:
+**The marker is not passed in.** 05a reads it from the export's own `marker` column and
+names its outputs accordingly, so running the same command against a pERK export and then
+a PCNA export writes two separate sets rather than one overwriting the other (§1).
 
-- **`roi_geometry.csv`** — one row per section: the six reformat parameters, the CZI
-  scene rectangle, the composed matrix `m00…m12`, and an `anisotropy` column.
-- **`roi_boxes.csv`** — one row per ROI: its CZI pixel bounding box (`czi_x0`, `czi_y0`,
-  `czi_w`, `czi_h`) and the two semi-axes in µm.
+Four files, all into `<out_root>/reformatted/`, with `<MARKER>` being `AF568` or `AF488`:
+
+| File | Contents |
+|---|---|
+| **`roi_geometry_<MARKER>.csv`** | one row per section: the six reformat parameters, the CZI scene rectangle, the composed matrix `m00…m12`, and an `anisotropy` column |
+| **`roi_boxes_<MARKER>.csv`** | one row per ROI: its CZI pixel bounding box (`czi_x0`, `czi_y0`, `czi_w`, `czi_h`) and the two semi-axes in µm |
+| **`roi_regions_used_<MARKER>.csv`** | a verbatim copy of the curator export these boxes were built from |
+| **`roi_regions_used_<MARKER>.txt`** | a four-line provenance note: source path, its modification time, when it was consumed, and how many boxes over how many sections came out |
+
+The last two exist because the export itself lives in a download folder and gets
+overwritten. Keeping the copy means "which curation pass produced these boxes" stays
+answerable months later, and the `.txt` answers it without opening anything:
+
+```
+source   : C:\Users\marti\Downloads\roi_regions(7).csv
+modified : 2026-08-31 12:51:43
+consumed : 2026-09-01 09:51:52
+produced : 2069 boxes over 130 sections
+```
+
+**Legacy files.** Anything written before 2026-09-01 has no suffix — `roi_geometry.csv`
+and `roi_boxes.csv` — and is all AF568. `resolve_paths()` falls back to that pair for
+AF568 only, and only when **both** legacy files exist and **neither** suffixed one does.
+They are read, never written to again.
+
+**They are gone from this out_root.** `roi_boxes.csv` and `roi_geometry.csv` were verified
+byte-identical to their `_AF568` counterparts (MD5) and deleted on 2026-09-02. The fallback
+code stays, because it costs nothing and an older `out_root` may still have them — but on
+this dataset it is now unreachable. If you restore them from the Recycle Bin, note that
+`resolve_paths()` still prefers the suffixed files, so nothing changes.
 
 ### 3.4 A circle in the curator is an ellipse on the slide
 
@@ -173,7 +201,7 @@ axis ratio. Anything that carries `sec_r` forward as a radius in slide pixels is
 
 That is why 05a writes a bounding **box** and 05c decides membership per nucleus by
 mapping the centroid back to the 256 grid. No ellipse algebra, and no assumption that
-the map is a similarity. `axis_a_um` and `axis_b_um` in `roi_boxes.csv` let you see at a
+the map is a similarity. `axis_a_um` and `axis_b_um` in `roi_boxes_<MARKER>.csv` let you see at a
 glance how far from circular a given ROI became.
 
 ### 3.5 Sections 05a refuses
@@ -229,7 +257,7 @@ already present in `roi_nuclei.csv` are skipped and the file is appended to.
 
 ### 4.2 What it does to each ROI
 
-For every box in `roi_boxes.csv`:
+For every box in `roi_boxes_<MARKER>.csv`:
 
 1. **Read.** Open the CZI with pylibCZIrw and read the box at native 0.65 µm/px — DAPI
    (`C=0`) and the marker (`C=1`), same rectangle, same resolution. Boxes narrower than
@@ -284,20 +312,116 @@ difference between a 75-minute run and a 62-hour one. **Nothing about the answer
 changes.** Past 2×2 the per-tile overhead takes over again, which is why the target is
 roughly 300k px per tile with a 2×2 floor.
 
-### 4.5 Two decisions worth understanding
+### 4.5 Segment on DAPI, never on the marker
 
-**Segment on DAPI, never on the marker.** Detecting on the marker channel would define
-"number of pERK+ cells" by the threshold twice over: once to find the object and again to
-call it positive, so the count and the cut could never be varied independently. Here
-nuclei come from the counterstain, the marker is measured afterwards, and positivity is
-decided last — in 06a, on a table, with no CZI re-read.
+Nuclei come from the counterstain, the marker is measured afterwards, and positivity is
+decided last — in 06a, on a table, with no CZI re-read. This is the single most
+consequential design decision in the stage, so it is worth setting out what the
+alternative would actually cost.
 
-**StarDist rather than threshold-and-watershed.** Not a general preference. Watershed
-under-segments where nuclei touch, and Vv, Vd and POA are periventricular. The error
-would be worst in exactly those ROIs and mild in Dm and Dl — a region-correlated counting
-bias that survives into the results looking like an anatomical finding.
+#### The circularity
 
-### 4.6 What a background disc is
+Segmentation asks *is there an object here?* Positivity asks *is this object bright?* On
+the marker channel those are the same question answered by the same number. An object
+exists only where the marker is bright enough to see; that object is then called positive
+because the marker is bright. **The threshold that found it is the threshold that
+classified it.**
+
+So "number of pERK+ cells" would not be a measurement plus a decision about a cut. It
+would be one number wearing two hats, and no analysis could separate them afterwards —
+not through carelessness, but because the two quantities were never distinct in the data.
+
+#### What that would cost, concretely
+
+**1. There would be no denominator.** Marker-based detection yields `n_positive` and
+nothing else: cells that are present but not activated were never objects. You could not
+form a fraction, only positive objects per mm² — which confounds *more cells activated*
+with *more cells present*. That is fatal here, because Vv, Vd and POA are periventricular
+and far more cellular than Dm or Dl, so a packing difference would read as an activation
+difference. DAPI supplies 621,269 ROI nuclei as the denominator regardless of how bright
+any of them are.
+
+**2. Object size would become a function of staining.** Any intensity-driven segmentation
+puts the boundary where signal fades below detectability, so a brighter cell is a bigger
+object. That contaminates `area_um2` and `equiv_diam_um` — and those feed `h` in the
+Abercrombie correction (§5.2). Brighter staining would give larger `h`, smaller
+`T/(T+h)`, and a density correction driven by antibody rather than by cells.
+
+Measured on all 621,269 ROI nuclei with `artifact = 0`, the current pipeline has the
+property that requires:
+
+| Marker-intensity quintile | Q1 (dimmest) | Q2 | Q3 | Q4 | Q5 (brightest) |
+|---|---|---|---|---|---|
+| mean nucleus diameter (µm) | 9.25 | 9.04 | 8.78 | 8.62 | 9.03 |
+
+Pearson r between `equiv_diam_um` and `marker_median` is **0.026** — flat. Size is set by
+the counterstain, so `h` is a property of the nuclei and not of the antibody. This is a
+positive control for the design rather than a measurement of the counterfactual, but it is
+exactly the property marker segmentation could not have produced.
+
+**3. The background discs would stop being a check.** Their entire value is that the *same
+detector* runs over tissue the operator called empty (§4.7). Under marker segmentation the
+detector would find almost nothing there by construction, and the false-positive rate
+would collapse toward zero for reasons having nothing to do with specificity. As things
+stand the discs yield 273,332 real nuclei with real intensities, and how many clear the cut
+is an outcome:
+
+| cut | ROI nuclei called + | background called + |
+|---|---|---|
+| median + 2×MAD | 20.4% | **6.5%** |
+| median + 3×MAD | 13.3% | **2.2%** |
+| median + 4×MAD | 9.2% | **0.9%** |
+| median + 5×MAD | 6.8% | **0.4%** |
+
+**4. The cut would become unrevisable.** That whole sweep is **0.4 s** of arithmetic over
+`roi_nuclei.csv` — about 20 s end to end including reading the file. Under marker
+segmentation each row would mean re-segmenting 2,036 ROIs across 130 CZI scenes: hours per
+threshold. A sensitivity analysis nobody can afford to run is one nobody runs, and the cut
+quietly stops being a choice and becomes an assumption.
+
+**5. The independent size check would be lost.** §5.2 — 7.33 µm measured against 7.0 µm
+assumed — means something only because the segmentation knew nothing about the marker. If
+objects were marker-defined their size would reflect staining, and agreement with an
+expected nuclear diameter would confirm nothing.
+
+#### Two reasons specific to this dataset
+
+**The marker is a poor silhouette.** StarDist's `2D_versatile_fluo` is trained on nuclei:
+compact, roughly star-convex, size-consistent. pERK signal is sparse and patchy with no
+consistent boundary, so fitting 32-ray star-convex polygons to it is off-distribution.
+`04a_reformat` derives all its geometry from DAPI for the same reason — "the marker
+channel is a sparse signal and a poor silhouette".
+
+**The separation here is 1.23×.** With ROI nuclei only modestly brighter than background
+nuclei (§5.3), threshold placement dominates the answer. That is precisely the regime
+where the cut has to be movable, and precisely the regime where a self-defining count
+would mislead most.
+
+#### The same logic, one level down
+
+This is also why the cut is `median + 3×MAD` and not a percentile. A percentile collapses
+the check the same way segmenting on the marker collapses the count:
+
+| percentile cut | ROI called + | background called + |
+|---|---|---|
+| 90th | 24.8% | **10.0%** |
+| 95th | 18.9% | **5.0%** |
+| 97.7th | 13.9% | **2.3%** |
+| 99th | 10.2% | **1.0%** |
+
+The right-hand column is `100 − p` every time, carrying no information about the antibody,
+the sections or the tissue. The MAD column above varies with the data because it was not
+defined into existence. Same principle in both places: **never let the quantity you want
+to measure be fixed by the definition of the instrument measuring it.**
+
+### 4.6 StarDist rather than threshold-and-watershed
+
+Not a general preference. Watershed under-segments where nuclei touch, and Vv, Vd and POA
+are periventricular. The error would be worst in exactly those ROIs and mild in Dm and Dl
+— a region-correlated counting bias that survives into the results looking like an
+anatomical finding.
+
+### 4.7 What a background disc is
 
 A background disc is measured by this stage **identically** to a real ROI — same read,
 same segmentation, same statistics — and is distinguished only by `roi_kind`. That gives
@@ -350,7 +474,7 @@ The pERK pass is **complete**. `roi_nuclei.csv` holds:
   flagged `artifact` and leave the analysis in 06a, so **894,601** are analysable
 - 621,906 in real ROIs, 273,642 in background discs
 - all `AF568` (pERK) — the PCNA pass has not been run
-- 2,069 ROI boxes in `roi_boxes.csv` (1,483 ROIs, 586 background discs)
+- 2,069 ROI boxes in `roi_boxes_AF568.csv` (1,483 ROIs, 586 background discs)
 - **0** nuclei flagged `censored` (see §5.4)
 
 > Updated 2026-09-01. It read 883,077 over 128 sections until then, and that was 128 of
@@ -473,7 +597,7 @@ Worth knowing before citing it as a safeguard that did something here. It did no
 Worth doing before trusting anything downstream:
 
 1. **Sections finished vs. sections expected.** Compare the distinct `scene_uid` count in
-   `roi_nuclei.csv` against the distinct count in `roi_boxes.csv`.
+   `roi_nuclei.csv` against the distinct count in `roi_boxes_<MARKER>.csv`.
 2. **Every finished section has background rows.** A section with `roi` rows but no
    `background` rows will produce no positivity cut in 06a.
 3. **`equiv_diam_um` sits near the expected nuclear size.** `config.detection.nucleus_diameter_um`
@@ -652,7 +776,7 @@ DAPI, and it would stop holding the moment any geometry was computed on the mark
   only 1.23× brighter than background nuclei (§5.3), absolute positivity rates are not
   defensible; relative comparisons between groups at matched anatomical levels are,
   because the non-specific component is shared.
-- **Background discs are a false-positive rate, not a zero.** See §4.6 and §5.3.
+- **Background discs are a false-positive rate, not a zero.** See §4.7 and §5.3.
 - **The atlas covers the telencephalon and preoptic area only** — 77 of 101 plates carry no
   region identification, so regional quantification does not currently extend to the
   caudal two-thirds of the brain.

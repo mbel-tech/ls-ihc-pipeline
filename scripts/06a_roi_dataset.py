@@ -104,6 +104,11 @@ def main(argv=None):
         r["_v"] = float(r[STAT])
         r["_cen"] = r["censored"] == "1"
         r["_art"] = r["artifact"] == "1"
+        # .get, because a roi_nuclei.csv written before 2026-09-02 has no such
+        # column. Absent reads as False, which reproduces the old behaviour
+        # exactly rather than silently reinterpreting an old file - run
+        # 06g_flag_off_tissue.py to backfill it.
+        r["_off"] = r.get("off_tissue") == "1"
         r["_d"] = float(r["equiv_diam_um"])
 
     # Artifact pixels are not tissue and leave the analysis entirely. Censored
@@ -111,7 +116,19 @@ def main(argv=None):
     # stay in the count and are excluded only from the intensity statistics.
     # Reversing those two would bias positive rates down in exactly the
     # brightest-staining animals (LOGS.md 2026-08-12).
-    nuc = [r for r in nuc if not r["_art"]]
+    #
+    # `off_tissue` joins the artifact side, for the same reason and more
+    # bluntly: the nucleus is not on the section at all. 05c accepted a nucleus
+    # on disc membership alone, so a disc overhanging the silhouette - or, in
+    # one case, sitting 2.6 mm off the scanned scene entirely - contributed
+    # objects found on glass. Those are worst in a BACKGROUND disc, where they
+    # enter median + 3*1.4826*MAD and drag the positivity cut down, making a
+    # section look more positive than it is.
+    n_art = sum(1 for r in nuc if r["_art"])
+    n_off = sum(1 for r in nuc if r["_off"] and not r["_art"])
+    nuc = [r for r in nuc if not r["_art"] and not r["_off"]]
+    print(f"  dropped {n_art} on an artifact, {n_off} off the tissue "
+          f"-> {len(nuc)} nuclei quantified")
 
     # ONE PASS over the nuclei, building every index at once.
     #

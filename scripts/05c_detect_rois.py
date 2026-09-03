@@ -67,7 +67,7 @@ COLUMNS = ["scene_uid", "animal", "marker", "roi_kind", "region", "seed_n",
            "czi_x", "czi_y", "sec_x", "sec_y",
            "area_um2", "equiv_diam_um",
            "dapi_mean", "marker_mean", "marker_median", "marker_p90",
-           "censored", "artifact"]
+           "censored", "artifact", "off_tissue"]
 
 
 def load_model():
@@ -336,6 +336,7 @@ def main():
 
     px_area = BASE_PX_UM ** 2
     total_nuc = 0
+    no_tissue_mask = []
     for n, uid in enumerate(todo, 1):
         g = geom[uid]
         M = np.array([[float(g["m00"]), float(g["m01"]), float(g["m02"])],
@@ -343,6 +344,16 @@ def main():
         Minv = G5.invert_affine(M)              # CZI px -> 256 grid
         art = mask_at(uid, "artifact")
         cen = mask_at(uid, "censor")
+        # The DAPI tissue silhouette 04a_reformat.py carried into this same 256
+        # frame - the tissue definition every other stage and the curator use.
+        # Without it there is no way to tell a nucleus on the section from one
+        # on the glass, so a section with no mask is skipped rather than
+        # measured: silently calling every nucleus on-tissue is the failure this
+        # check exists to stop.
+        tis = mask_at(uid, "mask")
+        if tis is None:
+            no_tissue_mask.append(uid)
+            continue
         path = os.path.join(CONFIG["source_dir"], g["czi_file"])
         rows = []
         with pyczi.open_czi(path) as doc:
@@ -390,6 +401,13 @@ def main():
                     ix, iy = int(round(gx)), int(round(gy))
                     inb = lambda m: (m is not None and 0 <= iy < m.shape[0]
                                      and 0 <= ix < m.shape[1] and bool(m[iy, ix]))
+                    # Outside the silhouette, or off the frame entirely, means
+                    # the nucleus is not on the section - glass, mounting
+                    # medium, or a neighbouring scene. `inb` is False for an
+                    # out-of-bounds index, so both cases land here. Recorded
+                    # rather than dropped, the way `artifact` is: 06a decides,
+                    # and the QC overlay can still show what was found.
+                    off_tis = int(not inb(tis))
                     rows.append([
                         uid, b["animal"], b["marker"], b["roi_kind"], b["region"],
                         b["seed_n"], bi, p.label,
@@ -402,7 +420,7 @@ def main():
                         round(float(vals.mean()), 1),
                         round(float(np.median(vals)), 1),
                         round(float(np.percentile(vals, 90)), 1),
-                        int(inb(cen)), int(inb(art))])
+                        int(inb(cen)), int(inb(art)), off_tis])
                 if args.qc:
                     write_overlay(uid, bi, b, dapi, labels, kept)
         w.writerows(rows)
@@ -412,6 +430,10 @@ def main():
               f"({total_nuc} total)          ", end="")
     fh.close()
     print(f"\n{total_nuc} nuclei -> {NUCLEI_CSV}")
+    if no_tissue_mask:
+        print(f"!! {len(no_tissue_mask)} sections SKIPPED for want of a tissue "
+              f"mask in reformatted/: {no_tissue_mask[:5]}")
+        print("   Run 04a_reformat.py for them before trusting any count.")
     return 0
 
 
