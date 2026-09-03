@@ -117,6 +117,7 @@ def load_qc():
                 r[key] = float(r[key])
             except (TypeError, ValueError):
                 r[key] = 0.0
+        r["saturated_fraction_raw"] = saturation(r)
         r["section_order"] = int(r["section_order"] or 0)
         r["slide"] = int(r["slide"] or 0)
     return rows
@@ -130,6 +131,30 @@ def quantile(values, q):
     return ordered[idx]
 
 
+def saturation(row):
+    """The clipped fraction to judge a section on.
+
+    focus.csv carries two: `saturated_fraction` is measured after the tile-field
+    correction, `saturated_fraction_raw` before it. Clipping happens in the
+    camera, before any correction exists, so the raw column is the one that
+    says whether pixels were lost - the corrected one undercounts by about 2x,
+    because flattening the field pulls clipped values back under the ceiling
+    and they stop looking clipped. Older focus.csv files have only the
+    corrected column, and a row from one still needs a number, so that is the
+    fallback rather than an error. Accepts either strings from the CSV or
+    floats already parsed.
+    """
+    for key in ("saturated_fraction_raw", "saturated_fraction"):
+        v = row.get(key)
+        if v is None or v == "":
+            continue
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            continue
+    return 0.0
+
+
 def flag(row, focus_floor):
     """Short QC tag, or empty when the section is fine."""
     tags = []
@@ -137,7 +162,7 @@ def flag(row, focus_floor):
         tags.append("EMPTY")
     if row["focus_score"] < focus_floor:
         tags.append("BLUR?")
-    if row["saturated_fraction"] > MAX_SATURATED_FRACTION:
+    if saturation(row) > MAX_SATURATED_FRACTION:
         tags.append("SAT")
     return "/".join(tags)
 

@@ -495,8 +495,8 @@ STAGES = [
           curator=REF + "level_curator.html", operator=True,
           needs=["reformat_pcna_final", "atlas_extract"],
           blurb="Anchor a few sections to plates and interpolate the rest. "
-                "Superseded by the ROI curator's own plate slider, and reads "
-                "atlas/plates rather than the configured set; kept for the record."),
+                "Superseded by the ROI curator's own plate slider; kept for "
+                "the record. Reads config.atlas_plate_set like 04l."),
 
     # ---- Quantification (blind) --------------------------------------------
     Stage("roi_geometry_verify", "05a  Verify the inverse transform", "Quantification",

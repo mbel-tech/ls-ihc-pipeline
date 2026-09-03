@@ -59,6 +59,19 @@ R_SCRIPTS = [os.path.join(_REPO, "analysis", n) for n in
              ("plot_roi_figures.R", "plot_by_sample.R", "plot_by_slide.R")]
 
 
+def r_command(rscript, script, results_dir):
+    """The argv for one R script.
+
+    The results directory goes on the command line, LAST. All three scripts
+    take it as their first trailing argument and, given none, fall back to a
+    default hard-coded in roi_plots.R - so a loop that called them bare drew
+    every figure from that default no matter what config.json's out_root said.
+    Passing it explicitly is what makes the figures land beside the workbooks
+    this loop just rebuilt.
+    """
+    return [rscript, script, results_dir]
+
+
 def find_rscript(explicit=None):
     """Where R is, in decreasing order of how much someone meant it.
 
@@ -153,11 +166,13 @@ def refresh(rscript, quiet=True):
     # The markers come from what 06a actually wrote, so this follows the data
     # rather than a list that has to be kept in step.
     markers = marker_list()
+    results_dir = os.path.join(G5.OUT_ROOT, "results")
     for mk in markers:
         env = dict(os.environ, LS_MARKER=mk)
         for script in R_SCRIPTS:
             name = os.path.basename(script)
-            r = subprocess.run([rscript, script], cwd=_REPO, env=env,
+            r = subprocess.run(r_command(rscript, script, results_dir),
+                               cwd=_REPO, env=env,
                                capture_output=quiet, text=True)
             if r.returncode:
                 print(f"  {name} FAILED for {mk}:")

@@ -59,7 +59,14 @@ with open(CONFIG_PATH, encoding="utf-8") as _fh:
 OUT_ROOT = CONFIG["out_root"]
 REFORMAT_DIR = os.path.join(OUT_ROOT, "reformatted")
 INDEX_CSV = os.path.join(REFORMAT_DIR, "reformat_index.csv")
-PLATES_CSV = os.path.join(OUT_ROOT, "atlas", "plates", "plates.csv")
+# Which plate set, from config - the same key 04l_roi_curator.py and
+# 04e_register_elastix.py read. The sets reuse plate_NNN names for different
+# images, so a level anchored here against a hard-coded `plates/` while the ROI
+# curator worked on `plates_final/` would carry an id that names the wrong
+# picture, and nothing would show it.
+PLATE_SET = CONFIG.get("atlas_plate_set", {}).get("dir", "plates")
+PLATE_DIR = os.path.join(OUT_ROOT, "atlas", PLATE_SET)
+PLATES_CSV = os.path.join(PLATE_DIR, "plates.csv")
 CURATOR_HTML = os.path.join(REFORMAT_DIR, "level_curator.html")
 
 PAGE = """<!doctype html>
@@ -81,7 +88,11 @@ button.primary{background:var(--accent);border-color:var(--accent);color:#04121f
 #big{position:relative;aspect-ratio:1;background:#0e1014;border:1px solid var(--line);
      border-radius:9px;overflow:hidden;max-height:56vh;margin:auto;width:100%}
 #big img{position:absolute;inset:0;margin:auto;max-width:100%;max-height:100%}
-#big .plate{filter:sepia(1) saturate(6) hue-rotate(-30deg);opacity:.5}
+/* The plate is the ORIGINAL from the atlas set - Nissl, dark on white - not the
+   DAPI-polarity copy 04a writes into reformatted/plates (that copy exists only
+   for the old `plates/` set). invert() first puts it into the section's
+   polarity; the sepia tint after that reads as before. */
+#big .plate{filter:invert(1) sepia(1) saturate(6) hue-rotate(-30deg);opacity:.5}
 #side{display:flex;flex-direction:column;gap:10px}
 .card{border:1px solid var(--line);border-radius:9px;padding:10px;background:#0e1014}
 .card h2{font-size:12px;margin:0 0 6px;color:var(--dim);font-weight:600;letter-spacing:.04em}
@@ -283,15 +294,18 @@ addEventListener("keydown", e => {
   else if(e.key==="d"){ dropAnchor(); }
 });
 
+// Stamped into every exported row: plate ids collide between sets, so a level
+// without its set is not identifiable.
+const PLATE_SET = __PLATESET__;
 function exportCsv(){
-  const out = [["scene_uid","animal","section_order","plate_id","plate_index","source","regions"]];
+  const out = [["scene_uid","animal","section_order","plate_set","plate_id","plate_index","source","regions"]];
   for(const a of animals){
     const list = DATA.filter(d=>d.animal===a).sort((x,y)=>x.order-y.order);
     const asg = assign(list);
     list.forEach((d,i) => {
       if(asg[i].plate === null) return;      // animal not curated yet
       const p = PLATES[asg[i].plate];
-      out.push([d.uid, a, d.order, p.id, asg[i].plate, asg[i].kind, '"'+(p.regions||"")+'"']);
+      out.push([d.uid, a, d.order, PLATE_SET, p.id, asg[i].plate, asg[i].kind, '"'+(p.regions||"")+'"']);
     });
   }
   const b = new Blob([out.map(r=>r.join(",")).join("\\n")], {type:"text/csv"});
@@ -316,18 +330,23 @@ def main():
         rows = [r for r in rows if r["animal"] == args.animal]
     rows.sort(key=lambda r: (r["animal"], int(r["section_order"] or 0)))
 
+    if not os.path.exists(PLATES_CSV):
+        raise SystemExit(f"{PLATES_CSV} not found - check atlas_plate_set.dir in config.json")
     with open(PLATES_CSV, newline="", encoding="utf-8") as fh:
         plates = [p for p in csv.DictReader(fh)
-                  if os.path.exists(os.path.join(REFORMAT_DIR, "plates", p["plate_id"] + ".png"))]
+                  if os.path.exists(os.path.join(PLATE_DIR, p["image_file"]))]
     plates.sort(key=lambda p: p["plate_id"])
 
     data = [{"uid": r["id"], "animal": r["animal"], "order": int(r["section_order"] or 0),
              "img": f"sections/{r['id']}.png"} for r in rows]
-    pl = [{"id": p["plate_id"], "img": f"plates/{p['plate_id']}.png",
+    # Original plate from the configured set, as 04l does - relative to the
+    # page, which lives in reformatted/.
+    pl = [{"id": p["plate_id"], "img": f"../atlas/{PLATE_SET}/{p['image_file']}",
            "regions": p.get("regions", "")} for p in plates]
 
     page = (PAGE.replace("__DATA__", json.dumps(data))
-                .replace("__PLATES__", json.dumps(pl)))
+                .replace("__PLATES__", json.dumps(pl))
+                .replace("__PLATESET__", json.dumps(PLATE_SET)))
     with open(CURATOR_HTML, "w", encoding="utf-8") as fh:
         fh.write(page)
 

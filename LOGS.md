@@ -9,6 +9,42 @@ where things landed, not which plausible-looking route was tried and abandoned, 
 
 ---
 
+## 2026-09-03 - Refresh loop tells R where results/ is; SAT flags read the raw clipping; level curator reads the configured plate set
+
+**Changed:** `scripts/06e_refresh_loop.py`, `scripts/01d_contactsheets.py`,
+`scripts/04g_artifact_mask.py`, `scripts/04k_level_curator.py`; new
+`tests/test_small_fixes.py`. Three independent fixes from the 2026-09-03 review.
+
+**06e.** The loop called all three figure scripts with no argument, and every one
+falls back to `RESULTS_DEFAULT <- "D:/LS-analysis/results"`. On this machine that
+happens to be the right directory, which is the only reason it worked; on any
+other `out_root` the loop would rebuild the workbooks in one place and draw the
+figures from another, and report success. The R side already read
+`commandArgs(trailingOnly = TRUE)[1]`, so the fix is entirely on the caller: a
+new `r_command()` passes `<out_root>/results`, and the test pins it as the last
+argv element.
+
+**01d and 04g.** `qc/focus.csv` now measures clipping twice: `saturated_fraction`
+after the tile-field correction and `saturated_fraction_raw` before it. Clipping
+is a camera event, so only the raw count says how many pixels were lost; the
+corrected column undercounts by about 2x because dividing by a gain above 1
+pulls clipped values back under the ceiling (2026-09-02 entry). Both the
+contact-sheet SAT tag and the artifact summary were judging on the corrected
+number. `saturation(row)` prefers the raw column and falls back to the old one,
+so an older focus.csv still works; the summary keeps the old column and adds
+the raw one so nothing joining on it breaks.
+
+**04k.** The path was hard-coded to `atlas/plates/` while config has said
+`plates_final` since 2026-08-19, and plate ids collide between the sets. A level
+anchored here was therefore a `plate_NNN` naming a different image from the one
+the ROI curator works on, and no file recorded which. `PLATE_SET` now comes from
+`atlas_plate_set.dir` as in 04l and 04e; the page shows the original plate from
+the configured set (04a's DAPI-polarity copies in `reformatted/plates/` exist
+only for the old set), with `invert(1)` added to the overlay filter so it still
+reads as before; the exported `atlas_levels.csv` gains a `plate_set` column.
+
+---
+
 ## 2026-09-03 - The ROI ellipse was measured along the wrong axes
 
 **Changed:** `05a_roi_geometry.py` gains `ellipse_axes(M, sr)` and `anisotropy(M)`;

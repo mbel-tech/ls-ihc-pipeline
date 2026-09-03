@@ -245,6 +245,35 @@ def load_tissue(im):
         (im.shape[1], im.shape[0]), Image.NEAREST)) > 127
 
 
+def summary_row(uid, r, recs, tissue_mm2, satur, satur_raw):
+    """One artifact_summary row. Pure, so the columns can be pinned by a test."""
+    a_c = sum(x["area_mm2"] for x in recs if x["label"] == LBL_COMPACT)
+    a_e = sum(x["area_mm2"] for x in recs if x["label"] == LBL_ELONGATED)
+    return {
+        "scene_uid": uid, "animal": r["animal"], "section_order": r["section_order"],
+        # Which rows describe the analysis set and which describe sections
+        # that were thrown out. Without it a consumer joining on this file
+        # would silently gain the rejects.
+        "excluded": r.get("excluded", 0),
+        "tissue_mm2": round(tissue_mm2, 3),
+        "n_compact": sum(1 for x in recs if x["label"] == LBL_COMPACT),
+        "n_elongated": sum(1 for x in recs if x["label"] == LBL_ELONGATED),
+        "compact_mm2": round(a_c, 4), "elongated_mm2": round(a_e, 4),
+        "artifact_mm2": round(a_c + a_e, 4),
+        "artifact_pct_of_tissue": round(100 * (a_c + a_e) / max(tissue_mm2, 1e-9), 3),
+        # Tissue that survives masking - the denominator any later density
+        # should use.
+        "measurable_mm2": round(tissue_mm2 - a_c - a_e, 3),
+        # Channel-specific and NOT masked here; carried so the two can be
+        # joined later without recomputing. Both columns from focus.csv:
+        # `saturated_fraction` is after the tile-field correction and
+        # undercounts clipping by about 2x; `_raw` is measured before it and is
+        # the one to judge on. The old column stays so nothing reading it breaks.
+        "saturated_fraction": satur.get(uid, ""),
+        "saturated_fraction_raw": satur_raw.get(uid, ""),
+    }
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--preview", type=int, default=0, help="render N overlays and stop")
@@ -259,12 +288,16 @@ def main():
     os.makedirs(MASK_DIR, exist_ok=True)
     os.makedirs(REPORT_DIR, exist_ok=True)
 
-    chan, satur = {}, {}
+    chan, satur, satur_raw = {}, {}, {}
     with open(QC_CSV, newline="", encoding="utf-8") as fh:
         for r in csv.DictReader(fh):
             chan[r["scene_uid"]] = r["marker_channel"]
             try:
                 satur[r["scene_uid"]] = float(r["saturated_fraction"])
+            except (KeyError, ValueError):
+                pass
+            try:
+                satur_raw[r["scene_uid"]] = float(r["saturated_fraction_raw"])
             except (KeyError, ValueError):
                 pass
 
@@ -331,27 +364,7 @@ def main():
         Image.fromarray(mask).save(os.path.join(MASK_DIR, uid + "_artifact.png"))
 
         tissue_mm2 = float(tis.sum()) * UM_PX ** 2
-        a_c = sum(x["area_mm2"] for x in recs if x["label"] == LBL_COMPACT)
-        a_e = sum(x["area_mm2"] for x in recs if x["label"] == LBL_ELONGATED)
-        rows.append({
-            "scene_uid": uid, "animal": r["animal"], "section_order": r["section_order"],
-            # Which rows describe the analysis set and which describe sections
-            # that were thrown out. Without it a consumer joining on this file
-            # would silently gain the rejects.
-            "excluded": r.get("excluded", 0),
-            "tissue_mm2": round(tissue_mm2, 3),
-            "n_compact": sum(1 for x in recs if x["label"] == LBL_COMPACT),
-            "n_elongated": sum(1 for x in recs if x["label"] == LBL_ELONGATED),
-            "compact_mm2": round(a_c, 4), "elongated_mm2": round(a_e, 4),
-            "artifact_mm2": round(a_c + a_e, 4),
-            "artifact_pct_of_tissue": round(100 * (a_c + a_e) / max(tissue_mm2, 1e-9), 3),
-            # Tissue that survives masking - the denominator any later density
-            # should use.
-            "measurable_mm2": round(tissue_mm2 - a_c - a_e, 3),
-            # Channel-specific and NOT masked here; carried so the two can be
-            # joined later without recomputing.
-            "saturated_fraction": satur.get(uid, ""),
-        })
+        rows.append(summary_row(uid, r, recs, tissue_mm2, satur, satur_raw))
         if args.preview and len(previews) < args.preview and recs:
             previews.append((uid, im, tis, mask))
         if (i + 1) % 100 == 0:
