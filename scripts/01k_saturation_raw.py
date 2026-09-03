@@ -57,6 +57,11 @@ _spec = importlib.util.spec_from_file_location("_ov", os.path.join(_HERE, "01_ov
 OV = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(OV)
 
+_lsio = importlib.util.spec_from_file_location(
+    "_lsio", os.path.join(os.path.dirname(os.path.abspath(__file__)), "ls_io.py"))
+IO = importlib.util.module_from_spec(_lsio)
+_lsio.loader.exec_module(IO)
+
 SOURCE_DIR = OV.SOURCE_DIR
 OUT_ROOT = OV.OUT_ROOT
 QC_DIR = OV.QC_DIR
@@ -85,40 +90,6 @@ KEYS = ["scene_uid", "file", "animal", "slide", "variant", "marker_channel",
         "saturated_fraction_raw", "saturated_fraction_dapi_raw",
         "saturated_fraction_corrected", "raw_over_corrected",
         "mask_path", "tilefield_applied", "reader"]
-
-
-def atomic_write(path, rows, keys, attempts=5):
-    """tmp-then-replace, the idiom from 01_overviews.write_qc(), plus a retry.
-
-    A half-written checkpoint is worse than no checkpoint, hence tmp-then-replace.
-    The retry is there because D: does not merely drop writes - it goes away.
-    A dropout on 2026-09-01 killed this script and 01g within nine minutes of
-    each other, both with `FileNotFoundError` on a path that exists, which is
-    what a vanished volume looks like from inside `open()`. The run had 1,392 of
-    2,572 sections done and resumed fine, so nothing was lost; but the right
-    behaviour for a transient dropout is to wait, not to die.
-
-    Five attempts over ~31 s. If the drive is still gone after that it is not a
-    blip, and the exception should propagate rather than be swallowed.
-    """
-    if not rows:
-        return
-    tmp = path + ".tmp"
-    for attempt in range(attempts):
-        try:
-            with open(tmp, "w", newline="", encoding="utf-8") as fh:
-                w = csv.DictWriter(fh, fieldnames=keys, extrasaction="ignore")
-                w.writeheader()
-                w.writerows(rows)
-            os.replace(tmp, path)
-            return
-        except OSError as exc:
-            if attempt == attempts - 1:
-                raise
-            wait = 2 ** attempt
-            print("\n  !! write to %s failed (%s); retrying in %ds"
-                  % (path, exc, wait))
-            time.sleep(wait)
 
 
 def measure(czidoc, rect, fields, zoom, want_mask):
@@ -292,7 +263,8 @@ def main():
                     mask_path = ""
                     if want:
                         mask_path = os.path.join(MASK_DIR, uid + "_clipped.png")
-                        Image.fromarray((m["mask"] * 255).astype(np.uint8)).save(mask_path)
+                        with IO.atomic_save(mask_path) as tmp:
+                            Image.fromarray((m["mask"] * 255).astype(np.uint8)).save(tmp, format="PNG")
 
                     h, w = m["shape"]
                     ratio = m["raw"] / m["corrected"] if m["corrected"] > 0 else None
@@ -320,12 +292,12 @@ def main():
             failed += len(rs)
 
         # Checkpoint per file, like 01_overviews.py, for the same reason.
-        atomic_write(OUT_CSV, rows, KEYS)
+        IO.atomic_write_csv(OUT_CSV, rows, KEYS)
         rate = measured / max(time.time() - t0, 1e-9)
         print("\r  measured %d/%d  failed %d  (%.1f/s, %.1f min)"
               % (measured, total, failed, rate, (time.time() - t0) / 60), end="")
     print()
-    atomic_write(OUT_CSV, rows, KEYS)
+    IO.atomic_write_csv(OUT_CSV, rows, KEYS)
 
     raw = np.array([float(r["saturated_fraction_raw"]) for r in rows])
     dap = np.array([float(r["saturated_fraction_dapi_raw"]) for r in rows])
