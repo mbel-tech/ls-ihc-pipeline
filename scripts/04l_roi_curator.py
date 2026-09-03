@@ -3669,6 +3669,10 @@ def main():
                     help="show the two-colour composites from 04o_section_rgb.py "
                          "(DAPI blue + marker) instead of the greyscale DAPI the "
                          "geometry was computed on. Same frame either way.")
+    ap.add_argument("--out", default=CURATOR_HTML, metavar="HTML",
+                    help="where to write the page (default: the live curator under "
+                         "out_root). tests/run.sh points this at tests/build/ so a "
+                         "test run never rewrites the page being curated in")
     args = ap.parse_args()
 
     # Both channels go into one page. They are separate physical sections and
@@ -3833,11 +3837,11 @@ def main():
         "__SEED__": seed, "__PROV__": load_provenance(), "__DATA__": data,
         "__PLATES__": pl, "__PLATESET__": PLATE_SET, "__MARKERS__": markers,
         "__MARKER__": args.marker, "__SECGRID__": SEC_GRID, "__GROUPS__": GROUPS})
-    with open(CURATOR_HTML, "w", encoding="utf-8") as fh:
+    with open(args.out, "w", encoding="utf-8") as fh:
         fh.write(page)
 
     lab = [p for p in pl if p["labelled"]]
-    print(f"wrote {CURATOR_HTML}")
+    print(f"wrote {args.out}")
     # Loud, because a page that can lay itself out by treatment is a page that
     # is no longer blind, and that should never be discovered by accident.
     if GROUPS["by_animal"] and GROUPS["order"]:

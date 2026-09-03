@@ -326,6 +326,10 @@ render();
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--animal", default=None)
+    ap.add_argument("--out", default=CURATOR_HTML, metavar="HTML",
+                    help="where to write the page (default: the live curator under "
+                         "out_root). tests/run.sh points this at tests/build/ so a "
+                         "test run never rewrites the page being curated in")
     args = ap.parse_args()
 
     if not os.path.exists(INDEX_CSV):
@@ -352,11 +356,11 @@ def main():
 
     page = IO.fill(PAGE, {"__DATA__": data, "__PLATES__": pl,
                           "__PLATESET__": PLATE_SET})
-    with open(CURATOR_HTML, "w", encoding="utf-8") as fh:
+    with open(args.out, "w", encoding="utf-8") as fh:
         fh.write(page)
 
     labelled = sum(1 for p in pl if p["regions"])
-    print(f"wrote {CURATOR_HTML}")
+    print(f"wrote {args.out}")
     print(f"  {len(data)} sections, {len({d['animal'] for d in data})} animals, {len(pl)} plates")
     print(f"  {labelled} of {len(pl)} plates carry region labels")
     print()

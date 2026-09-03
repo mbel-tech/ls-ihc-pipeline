@@ -31,21 +31,32 @@ const perk = X.DATA.filter(d => d.m === "AF568");
 const pcna = X.DATA.filter(d => d.m === "AF488");
 const byAnimal = a => perk.filter(d => d.animal === a);
 
+// The fixture needs six animals: one control with twelve sections (the
+// overflow), one control with a PCNA section, one control with two sections,
+// two exercise animals, and one outside the key. They are picked from whatever
+// the page carries rather than named, so the suite does not depend on which
+// animals were scanned.
+const A = [...new Set(perk.map(d => d.animal))].sort((a, b) => +a.slice(2) - +b.slice(2));
+const CTRL_BIG = A.find(a => byAnimal(a).length >= 12);
+const rest = A.filter(a => a !== CTRL_BIG && byAnimal(a).length >= 2 && pcna.some(d => d.animal === a));
+chk("an animal with twelve pERK sections exists", !!CTRL_BIG, true);
+chk("five more animals with two sections and a PCNA side", rest.length >= 5, true);
+const [CTRL_A, CTRL_C, EX_A, EX_B, OUT] = rest;
+// Two distinct plates are all the layout needs; which two does not matter.
+const PA = 0, PB = Math.min(3, X.PLATES.length - 1);
+chk("the page carries at least two plates", PA < PB, true);
+
 // GROUPS is a const in the page, so it is emptied and refilled rather than
 // replaced. CLEARED FIRST, for the same reason S is above: the page embeds
 // whatever groups.by_animal config.json holds, and config.json is gitignored -
 // it differs per machine and changes the day somebody fills in the real
-// unblinding key. Appending to it, which is what this used to do, made five
-// assertions here depend on that file: the real key put twelve animals in
-// scope, so "an animal outside the key" was no longer outside it, and
-// order became ["control","exercise","control","exercise"] which split every
-// slide four ways.
+// unblinding key.
 X.GROUPS.order.length = 0;
 for (const k of Object.keys(X.GROUPS.by_animal)) delete X.GROUPS.by_animal[k];
 X.GROUPS.order.push("control", "exercise");
 Object.assign(X.GROUPS.by_animal, {
-  LS22: "control", LS45: "control", LS61: "control",
-  LS69: "exercise", LS85: "exercise", LS105: "exercise",
+  [CTRL_A]: "control", [CTRL_BIG]: "control", [CTRL_C]: "control",
+  [EX_A]: "exercise", [EX_B]: "exercise",
 });
 
 const fav = (d, plate, extra) => {
@@ -55,19 +66,19 @@ const fav = (d, plate, extra) => {
   return d;
 };
 
-// plate 9: one section per treatment, the simplest slide there is.
-const a9 = fav(byAnimal("LS22")[0], 9);
-const b9 = fav(byAnimal("LS69")[0], 9);
-// plate 12: twelve control sections, so one half overflows and the other does not.
-const twelve = byAnimal("LS45").slice(0, 12);
-twelve.forEach(d => fav(d, 12));
-fav(byAnimal("LS85")[0], 12);
-// plate 9 again, other channel: a separate slide, never mixed in with the pERK one.
-const pcna9 = fav(pcna.filter(d => d.animal === "LS22")[0], 9);
+// plate PA: one section per treatment, the simplest slide there is.
+const a9 = fav(byAnimal(CTRL_A)[0], PA);
+const b9 = fav(byAnimal(EX_A)[0], PA);
+// plate PB: twelve control sections, so one half overflows and the other does not.
+const twelve = byAnimal(CTRL_BIG).slice(0, 12);
+twelve.forEach(d => fav(d, PB));
+fav(byAnimal(EX_B)[0], PB);
+// plate PA again, other channel: a separate slide, never mixed in with the pERK one.
+const pcna9 = fav(pcna.filter(d => d.animal === CTRL_A)[0], PA);
 // the ones that must NOT come through
-const noPlate = X.st(byAnimal("LS61")[0].uid);   noPlate.fav = true;
-const dropped = fav(byAnimal("LS61")[1], 9, {excl: true});
-const ungrouped = fav(byAnimal("LS120")[0], 9);  // animal not in the key
+const noPlate = X.st(byAnimal(CTRL_C)[0].uid);   noPlate.fav = true;
+const dropped = fav(byAnimal(CTRL_C)[1], PA, {excl: true});
+const ungrouped = fav(byAnimal(OUT)[0], PA);     // animal not in the key
 
 // ---- the gate ---------------------------------------------------------------
 chk("group key present -> enabled", X.shotWhyNot(), "");
@@ -114,18 +125,18 @@ chk("every selection carries its treatment",
 // ---- slides -------------------------------------------------------------------
 note("");
 const slides = X.shotSlides(pick.take);
-chk("plate 9 pERK, plate 9 PCNA, plate 12 over two pages", slides.length, 4);
+chk("plate A pERK, plate A PCNA, plate B over two pages", slides.length, 4);
 chk("ordered by plate then marker",
     slides.map(s => s.plate + s.marker).join(" "),
-    "9AF568 9AF488 12AF568 12AF568");
+    `${PA}AF568 ${PA}AF488 ${PB}AF568 ${PB}AF568`);
 chk("pERK before PCNA on the same plate",
     slides[0].marker + " " + slides[1].marker, "AF568 AF488");
 
 const p9 = slides[0];
-chk("plate 9: one each side", p9.halves.map(h => h.length).join("/"), "1/1");
+chk("plate A: one each side", p9.halves.map(h => h.length).join("/"), "1/1");
 chk("left half is groups.order[0]", p9.halves[0][0].g, "control");
 chk("right half is groups.order[1]", p9.halves[1][0].g, "exercise");
-chk("left half is the control animal", p9.halves[0][0].d.animal, "LS22");
+chk("left half is the control animal", p9.halves[0][0].d.animal, CTRL_A);
 
 const p12a = slides[2], p12b = slides[3];
 chk("overflow: two pages", p12a.pages, 2);
@@ -170,7 +181,7 @@ X.shotBuild().then(res => {
   chk("one rels part per slide", names.filter(n => /slide\d+\.xml\.rels$/.test(n)).length, 4);
   chk("no duplicate part names", new Set(names).size, names.length);
 
-  // Four slides, each showing a plate, but only two DISTINCT plates: plate 9 on
+  // Four slides, each showing a plate, but only two DISTINCT plates: plate A on
   // the pERK and the PCNA slide, plate 12 on both of its pages. Storing per
   // slide would put two extra copies of a megabyte-sized plate in the file.
   const media = names.filter(n => n.startsWith("ppt/media/"));
@@ -192,7 +203,7 @@ X.shotBuild().then(res => {
   chk("every picture reference resolves", unresolved, 0);
 
   const s1 = text(res.files.find(f => f.name === "ppt/slides/slide1.xml"));
-  chk("slide names its plate", s1.includes(X.PLATES[9].id), true);
+  chk("slide names its plate", s1.includes(X.PLATES[PA].id), true);
   chk("slide names both treatments", s1.includes("CONTROL") && s1.includes("EXERCISE"), true);
   chk("continuation slide says so",
       text(res.files.find(f => f.name === "ppt/slides/slide4.xml")).includes("(2 of 2)"), true);
@@ -246,8 +257,8 @@ X.shotBuild().then(res => {
 // of this file already documents.
 function region() {
   note("");
-  X.PLATES[9].seeds = [{region: "Dm"}, {region: "Dl"}];
-  X.PLATES[12].seeds = [{region: "Dm"}, {region: "Vv"}];
+  X.PLATES[PA].seeds = [{region: "Dm"}, {region: "Dl"}];
+  X.PLATES[PB].seeds = [{region: "Dm"}, {region: "Vv"}];
   const seed = (d, n) => X.st(d.uid).pairs.push([10, 10, 20, 20, n, 5]);
   seed(a9, 1); seed(a9, 2);              // one control section in two regions
   seed(b9, 1);                           // its exercise counterpart, in one
@@ -257,7 +268,7 @@ function region() {
   chk("regions come from the seeds the ROIs answer",
       X.secRegions(X.st(a9.uid)).join(","), "Dm,Dl");
   chk("a free-clicked ROI has no region",
-      X.secRegions({plate: 9, pairs: [[1, 1, 2, 2]]}).length, 0);
+      X.secRegions({plate: PA, pairs: [[1, 1, 2, 2]]}).length, 0);
   chk("no seeded ROI -> no region", X.secRegions(X.st(pcna9.uid)).length, 0);
 
   const pick = X.shotPick();
@@ -290,10 +301,10 @@ function region() {
     const text = f => Buffer.from(f.bytes).toString("utf8");
     const s1 = text(res.files.find(f => f.name === "ppt/slides/slide1.xml"));
     chk("the slide names its region", s1.includes("Dl"), true);
-    chk("...and not a plate it does not have", s1.includes(X.PLATES[9].id), false);
+    chk("...and not a plate it does not have", s1.includes(X.PLATES[PA].id), false);
     // The level moved from the title to the captions; it must not just vanish.
     chk("every cell carries its own plate",
-        s1.includes(X.PLATES[9].id.replace("plate_", "p")), true);
+        s1.includes(X.PLATES[PA].id.replace("plate_", "p")), true);
 
     let unresolved = 0;
     for (let i = 1; i <= 3; i++) {

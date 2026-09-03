@@ -427,6 +427,10 @@ def main():
                     help="build the curator with nothing pre-marked")
     ap.add_argument("--thumb", type=int, default=170,
                     help="thumbnail size in px; bigger gives finer drag control")
+    ap.add_argument("--out", default=CURATOR_HTML, metavar="HTML",
+                    help="where to write the page (default: the live curator under "
+                         "out_root). tests/run.sh points this at tests/build/ so a "
+                         "test run never rewrites the page being curated in")
     args = ap.parse_args()
 
     if not os.path.exists(INDEX_CSV):
@@ -499,11 +503,11 @@ def main():
 
     page = IO.fill(PAGE, {"__DATA__": data, "__AUTO__": auto, "__SYM__": sym,
                           "__THUMB__": args.thumb})
-    with open(CURATOR_HTML, "w", encoding="utf-8") as fh:
+    with open(args.out, "w", encoding="utf-8") as fh:
         fh.write(page)
 
     with_ref = sum(1 for d in data if d["ref"])
-    print(f"wrote {CURATOR_HTML}")
+    print(f"wrote {args.out}")
     print(f"  {len(data)} sections, {len({d['animal'] for d in data})} animals, "
           f"{with_ref} with a reference plate")
     print()

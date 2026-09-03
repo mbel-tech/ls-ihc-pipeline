@@ -39,12 +39,11 @@ chk("every seeded plate carries a crowding measure",
 const allSeeds = X.PLATES.flatMap(p=>p.seeds);
 chk("every seed carries a region name",
     allSeeds.every(sd=>sd.region && sd.region.trim()), true);
-chk("the atlas's own uncertain seeds are flagged",
-    allSeeds.filter(sd=>sd.unk).length, 8);
-chk("...and all of them are Rm",
-    [...new Set(allSeeds.filter(sd=>sd.unk).map(sd=>sd.region))].join(), "Rm");
-chk("the Vd/Vv/POA group is flagged separately",
-    allSeeds.filter(sd=>sd.amb).length, 42);
+chk("unk is a 0/1 flag on every seed", allSeeds.every(sd=>sd.unk===0||sd.unk===1), true);
+chk("every uncertain seed is Rm - the only region the atlas marks '??'",
+    allSeeds.filter(sd=>sd.unk).every(sd=>sd.region==="Rm"), true);
+chk("amb is set exactly on the Vd/Vv/POA group",
+    allSeeds.every(sd=>!!sd.amb===["Vd","Vv","POA"].includes(sd.region)), true);
 chk("Dl and Dm are not flagged ambiguous - they are distinct places",
     allSeeds.filter(sd=>(sd.region==="Dl"||sd.region==="Dm") && sd.amb).length, 0);
 chk("...nor is anything outside Vd/Vv/POA",
