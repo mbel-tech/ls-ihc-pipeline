@@ -3618,7 +3618,8 @@ function exportReview(){
                r.act === "drop" ? 1 : 0,
                r.act === "restore" ? "restored" : r.act === "drop" ? "manual" : "",
                r.act === "unmask" ? 1 : 0,
-               csvq(r.why || ""), r.status || ""]);
+               // dl() quotes every cell now; quoting here too would double it.
+               r.why || "", r.status || ""]);
   }
   dl(rows, "section_review.csv");
 }
