@@ -614,6 +614,8 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
   <button id="guideBtn" class="btn-guide" onclick="toggleGuided()">Guided</button>
   <button id="skipBtn" class="btn-guide" onclick="skipSeed()">Skip seed</button>
   <button class="btn-edit" onclick="undoPt()">Undo point</button>
+  <button id="undoBtn" class="btn-rot" onclick="undoLast()" disabled
+          title="Nothing to undo (b)">Undo</button>
   <button class="btn-edit" onclick="clearPts()">Clear points</button>
   <span class="deliver">
     <button id="revBtn" class="btn-guide" onclick="toggleReview()">Review</button>
@@ -783,7 +785,7 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
   <kbd>f</kbd> favourite &middot; <kbd>x</kbd> exclude this section &middot;
   <kbd>g</kbd> guided (walk the plate's numbered seeds, one click each) &middot;
   <kbd>s</kbd> skip a seed that is not on this section &middot;
-  <kbd>b</kbd> background: mark tissue with NO signal, 2-3 per section - it is
+  <kbd>d</kbd> background disc: mark tissue with NO signal, 2-3 per section - it is
   measured by the same detector, so it reports the false-positive rate here
   (it takes no seed number and does not move the guided cursor) &middot;
   <kbd>Review</kbd> every scanned section and what each stage decided about it -
@@ -794,7 +796,8 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
   in red, <kbd>c</kbd> censored pixels in cyan, <kbd>m</kbd> apply the mask to see
   what 04a removed, <kbd>f</kbd> fullscreen (or double-click the image) &middot;
   <kbd>[</kbd><kbd>]</kbd> ROI size (or drag as you place one) &middot;
-  3 pairs for an affine, 6 for a spline &middot;
+  <kbd>b</kbd> undo the last thing, whatever it was (<kbd>z</kbd> stays
+  point-only) &middot;
   <span style="color:#7c5cff">purple</span> = registered &middot;
   <span style="color:#4da3ff">blue</span> = plate assigned only &middot;
   <span style="color:#e3b341">gold edge</span> = favourite &middot;
@@ -1485,6 +1488,9 @@ function toggleBgMode(){
 }
 
 function commitPoint(ix, iy, r){
+  // One mark for all three landings - background disc, guided, and the free
+  // pair below - because they are one action to whoever placed it.
+  undoMark(active, bgMode ? "background disc" : "place point");
   const s=st(active);
   if(bgMode){
     // No plate coordinate, and deliberately no seed number: the guided cursor
@@ -1526,13 +1532,87 @@ function clickPl(e){
   pending=null;
   save(); drawSec(); drawPl(); status(); paintCell(active);
 }
+// GENERAL UNDO - one step back, whatever the last thing was.
+//
+// `z` / "Undo point" is narrow on purpose: it takes back the last landmark and
+// nothing else, which is right in the middle of placing a row of them. It does
+// nothing about the other eight ways a section's record changes - plate,
+// assigned, favourite, no-ROI, exclude, rotation, background disc, a cleared
+// set of points - and those are exactly the ones that are easy to hit by
+// accident and awkward to reconstruct by hand.
+//
+// SNAPSHOTS, NOT INVERSE OPERATIONS. Every action here is a small edit to one
+// section's record, so storing the record as it was is both simpler and safer
+// than writing an inverse for each one: a missing inverse silently half-undoes,
+// while a snapshot cannot. `prev: null` records that the section had NO entry,
+// so undoing the first edit to an untouched section removes the record rather
+// than leaving an empty one the export would report.
+const UNDO = [];
+const UNDO_MAX = 80;
+let undoAt = 0;
+
+function undoMark(uid, label){
+  if(!uid) return;
+  // COALESCE A DRAG. The slider fires oninput per pixel, so a single scrub from
+  // plate 12 to plate 30 would otherwise bury everything else under eighteen
+  // identical-looking steps. Same section, same label, within a moment: keep the
+  // OLDEST snapshot, because that is the state the drag started from.
+  const last = UNDO[UNDO.length - 1];
+  const now = Date.now();
+  if(last && last.uid === uid && last.label === label && now - last.at < 900){
+    last.at = now;
+    return;
+  }
+  UNDO.push({uid, label, at: now,
+             prev: Object.prototype.hasOwnProperty.call(S, uid)
+                   ? JSON.stringify(S[uid]) : null});
+  if(UNDO.length > UNDO_MAX) UNDO.shift();
+  undoState();
+}
+
+function undoLast(){
+  const e = UNDO.pop();
+  if(!e){ undoState(); return; }
+  // ORDER MATTERS HERE, and getting it wrong silently dropped the plate.
+  //
+  // select() writes s.plate as a side effect - the slider deliberately does not
+  // follow the section, so selecting one records whatever plate is on screen.
+  // Restoring first and selecting second therefore undid everything EXCEPT the
+  // plate, which select() promptly overwrote again. So the section is shown
+  // first, and the record put back afterwards.
+  if(DATA.some(d => d.uid === e.uid)) select(e.uid);
+  if(e.prev === null) delete S[e.uid];
+  else {
+    S[e.uid] = JSON.parse(e.prev);
+    // and move the slider to what the restored record says, rather than leaving
+    // it pointing at a plate the section no longer claims.
+    if(active === e.uid){
+      el("slider").value = S[e.uid].plate;
+      onSlide(S[e.uid].plate);
+    }
+  }
+  save();
+  syncReinstated();       // a reinstatement undone has to leave the strip again
+  render(); status(); undoState();
+}
+
+function undoState(){
+  const b = el("undoBtn");
+  if(!b) return;
+  const e = UNDO[UNDO.length - 1];
+  b.disabled = !e;
+  b.title = e ? `Undo: ${e.label} on ${e.uid}  (b)`
+              : "Nothing to undo (b)";
+}
+
 function undoPt(){
   if(!active) return;
+  undoMark(active, "undo point");
   if(pending){ pending=null; } else st(active).pairs.pop();
   gSync();                       // the cursor follows the pairs, both ways
   save(); drawSec(); drawPl(); status(); paintCell(active);
 }
-function clearPts(){ if(!active) return; st(active).pairs=[]; pending=null; save();
+function clearPts(){ if(!active) return; undoMark(active, "clear points"); st(active).pairs=[]; pending=null; save();
   gSync(); drawSec(); drawPl(); status(); paintCell(active); }
 
 function status(){
@@ -1612,8 +1692,7 @@ function status(){
     el("fit").innerHTML = T.kind==="tps"
       ? `<b style="color:#7c5cff">thin-plate spline</b> on ${nRoi} points `
         + `&middot; residual is 0 by construction`
-      : `<b>affine</b> &middot; mean residual <b>${(tot/nRoi).toFixed(1)} px</b>`
-        + ` &middot; ${TPS_MIN - nRoi} more point${TPS_MIN-nRoi===1?"":"s"} for a spline`;
+      : `<b>affine</b> &middot; mean residual <b>${(tot/nRoi).toFixed(1)} px</b>`;
     const P=PLATES[s.plate];
     // Ambiguous regions are listed as their group and flagged, so the summary
     // never reads as a firmer claim than the section supports.
@@ -1636,8 +1715,7 @@ function status(){
       : "<span class='unlab'>this plate has no region seeds</span>";
   } else {
     el("fit").textContent = "";
-    el("regInfo").innerHTML = `needs 3 pairs for an affine, ${TPS_MIN} for a spline `
-      + `(have ${nRoi})`
+    el("regInfo").innerHTML = `${nRoi} landmark${nRoi === 1 ? "" : "s"} placed`
       + bgLine(s);
     roiPairs(s).forEach((_,i)=>html+=`<div><span>#${i+1}</span><span>-</span></div>`);
   }
@@ -1674,18 +1752,21 @@ function status(){
 // distinction between "the operator chose this plate" and "this section has
 // never been looked at" reliable.
 function onSlideUser(v){
+  undoMark(active, "plate");
   const s=st(active); s.assigned=true; save(); onSlide(v); paintCell(active);
 }
-function markAssigned(){ if(active){ st(active).assigned=true; save(); paintCell(active); status(); } }
+function markAssigned(){ if(active){ undoMark(active, "assign plate"); st(active).assigned=true; save(); paintCell(active); status(); } }
 // Favourite marks the subset chosen for actual quantification. It is ORTHOGONAL
 // to the plate assignment - a section can be worth quantifying before anyone has
 // landmarked it - so it sets no other flag and the export carries it on its own.
 function toggleFav(){
   if(!active) return;
+  undoMark(active, "favourite");
   const s=st(active); s.fav=!s.fav; save(); paintCell(active); status();
 }
 function toggleNoRoi(){
   if(!active) return;
+  undoMark(active, "no ROI");
   const s=st(active); s.noroi=!s.noroi; if(s.noroi) s.assigned=true;
   save(); paintCell(active); status();
 }
@@ -1696,6 +1777,7 @@ function toggleNoRoi(){
 // whoever reads the export.
 function toggleExcl(){
   if(!active) return;
+  undoMark(active, "exclude");
   const s=st(active);
   s.excl = !s.excl;
   save(); paintCell(active); status();
@@ -1744,9 +1826,30 @@ function onSlide(v){
 }
 
 function select(uid, keep){
+  // THE SECTION MAY NOT BE IN THE FILTERED VIEW, and this used to be a crash
+  // that left the tool lying about what was selected.
+  //
+  // `rows()` is the strip AFTER the filters. Ticking "hide excluded" or
+  // "favourites only" while a section is active drops it out, and the next
+  // select() found i = -1, took list[-1] as undefined, and threw on `d.uid` -
+  // but `active` had already been reassigned on the line above. So the big view
+  // still showed the PREVIOUS section while every subsequent edit went to the
+  // hidden one: assigning a plate wrote plate and assigned=true onto a section
+  // that was not on screen, which reads as "this section will not take a plate".
+  //
+  // So the row is looked up in the unfiltered set when the filtered one does not
+  // have it, and the position line says the filter is hiding it rather than
+  // claiming a place in a list it is not in. Nothing is reassigned before we
+  // know the section can actually be drawn.
+  const list = rows();
+  const i = list.findIndex(d => d.uid === uid);
+  const d = i >= 0 ? list[i] : DATA.find(x => x.uid === uid);
+  if(!d) return;                  // not a section this page has at all
   active = uid; pending = null; gSync();
-  const list=rows(), i=list.findIndex(d=>d.uid===uid), d=list[i], s=st(uid);
-  el("secInfo").innerHTML = `<b>${d.uid}</b><br>section ${d.order} &middot; ${i+1} of ${list.length}`;
+  const s = st(uid);
+  el("secInfo").innerHTML = `<b>${d.uid}</b><br>section ${d.order} &middot; `
+    + (i >= 0 ? `${i + 1} of ${list.length}`
+              : `<span style="color:var(--warn,#d29922)">hidden by the current filter</span>`);
   // The plate slider does NOT follow the section. Serial sections sit at
   // neighbouring atlas levels, so the plate just scrubbed to is nearly always
   // still the right one; reloading each section's stored plate meant every z/x
@@ -2027,7 +2130,11 @@ addEventListener("keydown", e=>{
   else if(e.key==="x" || e.key==="X"){ toggleExcl(); }
   else if(e.key==="z" || e.key==="Z"){ undoPt(); }
   else if(e.key==="r" || e.key==="R"){ restoreTilt(); }
-  else if(e.key==="b" || e.key==="B"){ toggleBgMode(); }
+  // b is the general undo and d is the background DISC. b used to be the disc
+  // mode; it was moved rather than shared, because a key that sometimes undoes
+  // and sometimes arms a placement mode is worse than either.
+  else if(e.key==="b" || e.key==="B"){ undoLast(); }
+  else if(e.key==="d" || e.key==="D"){ toggleBgMode(); }
   else if(e.key==="g" || e.key==="G"){ toggleGuided(); }
   else if(e.key==="s" || e.key==="S"){ skipSeed(); }
   else if(e.key==="[" || e.key==="]"){
