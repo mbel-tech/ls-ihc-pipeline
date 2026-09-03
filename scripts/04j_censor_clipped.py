@@ -9,9 +9,11 @@ itself.
 Two mechanisms, and they are deliberately separate because they mean different
 things:
 
-**Section level - a 1% tolerance.** Sections with 1% or more of pixels at the
-ceiling are set aside. Not deleted: recorded in `perk_analysis_set.csv` with
-`in_analysis_set = 0`, so the decision is visible and reversible.
+**Section level - a 1% tolerance, on tissue.** Sections with 1% or more of
+their *tissue* pixels at the ceiling are set aside. Not deleted: recorded in
+`perk_analysis_set.csv` with `in_analysis_set = 0`, so the decision is visible
+and reversible. The frame fraction is kept beside it as `censored_fraction`, and
+`gate` records which of the two decided.
 
 **Pixel level - censoring, not masking.** Within the sections that stay, clipped
 pixels are marked as **right-censored**: their true value is unknown but at least
@@ -86,6 +88,34 @@ uids carry the pass letter, so the two cannot collide.
 For a future `05c` run to pick the AF488 masks up in the 256 frame, `04a_reformat
 --censor --marker AF488` has to run as well - `05c` reads the `.npy`, not the PNG.
 
+What "tissue" means here, and what it used to mean
+---------------------------------------------------
+
+The gate used to be decided on the **frame** fraction, and
+`censored_fraction_in_tissue` was measured against `DAPI overview > 0`. Neither
+was tissue. `01_overviews.py` stretches the 8-bit overview from the frame's 1st
+percentile (`LO_PCT = 1.0`), so `> 0` is simply the frame minus its darkest
+percent - measured, 81-93% of the frame on five sections, against 23-41% for
+the pipeline's own tissue mask. The "in tissue" column therefore tracked the
+frame fraction (ratio in_tissue/frame median 1.17 on disk), and the gate set
+sections aside for clipping that never touched a nucleus: with the real mask,
+**96.6% of censored pixels are outside the tissue**, on the PAP pen ring
+(`04p_section_provenance.py` had already put the figure at 82% and built
+`tissue/<uid>_tissue.png` for exactly this reason).
+
+Now: the tissue mask is `tissue/<uid>_tissue.png` (04p `--tissue-masks`,
+overview frame) when present, else rebuilt the way 04p builds it -
+`04a_reformat.tissue_mask` on the DAPI overview squashed to the work grid, the
+log-space Otsu every other stage uses. The section verdict is
+`censored_fraction_in_tissue < tolerance`. Where no tissue mask can be built
+the frame fraction decides, `gate = frame`, and the count is printed - that is
+the old behaviour, kept only as a fallback and made visible.
+
+Recomputed read-only against the same censor masks, this moves 184 of 718 pERK
+sections from set-aside to kept (450 -> 634); none go the other way. LS53 goes
+from 0 measurable sections to 9 and LS85 from 3 to 45. The pixel-level
+censoring is untouched - a clipped pixel on tissue is as censored as it ever was.
+
 Run:  python 04j_censor_clipped.py
       python 04j_censor_clipped.py --marker AF488
       python 04j_censor_clipped.py --tolerance 0.005
@@ -121,8 +151,9 @@ _spec = importlib.util.spec_from_file_location(
     "_rf", os.path.join(os.path.dirname(os.path.abspath(__file__)), "04a_reformat.py"))
 RF = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(RF)
-TOLERANCE = 0.01         # section-level: 1% of pixels at the ceiling
+TOLERANCE = 0.01         # section-level: 1% of TISSUE pixels at the ceiling
 RAW_MASK_DIR = os.path.join(OUT_ROOT, "qc", "censor_raw")
+TISSUE_DIR = os.path.join(OUT_ROOT, "tissue")   # 04p --tissue-masks, overview frame
 
 
 def censor_mask(uid):
@@ -145,6 +176,69 @@ def censor_mask(uid):
         return None
 
 
+def build_tissue_mask(dapi_path):
+    """Tissue mask in the overview frame, built the way 04p.write_tissue_masks
+    builds it: `04a_reformat.tissue_mask` (log-space Otsu, dark background) on
+    the DAPI overview squashed to the WORK_SIZE grid, then stretched back with
+    nearest-neighbour. Same function, same grid, so this is the pipeline's own
+    opinion of tissue and not a fresh one. None when it cannot be built."""
+    try:
+        im = np.asarray(Image.open(dapi_path).convert("L")).astype(np.float32)
+    except OSError:
+        return None
+    small = np.asarray(Image.fromarray(im).resize(
+        (RF.WORK_SIZE, RF.WORK_SIZE), Image.BILINEAR)).astype(np.float32)
+    t = RF.tissue_mask(small, light_background=False)
+    if t is None:
+        return None
+    big = Image.fromarray(t.astype(np.uint8) * 255).resize(
+        (im.shape[1], im.shape[0]), Image.NEAREST)
+    return np.asarray(big) > 0
+
+
+def load_tissue_mask(uid, dapi_path, tissue_dir=TISSUE_DIR):
+    """`tissue/<uid>_tissue.png` when 04p has written it, else rebuilt from the
+    DAPI overview. None when neither is possible - the caller falls back to the
+    frame and says so."""
+    p = os.path.join(tissue_dir, uid + "_tissue.png")
+    if os.path.exists(p):
+        try:
+            return np.asarray(Image.open(p).convert("L")) > 0
+        except OSError:
+            pass
+    if not os.path.exists(dapi_path):
+        return None
+    return build_tissue_mask(dapi_path)
+
+
+def tissue_fraction(cen, tissue_mask):
+    """Fraction of TISSUE pixels that are censored; nan without a tissue mask."""
+    if tissue_mask is None or not tissue_mask.any():
+        return float("nan")
+    return float(cen[tissue_mask].mean())
+
+
+def section_verdict(frac_frame, frac_tissue, tolerance):
+    """The section-level decision, as the columns it is written out with.
+
+    Decided on the in-tissue fraction. The frame fraction is recorded but does
+    not decide unless there is no tissue mask at all, and `gate` says which."""
+    if frac_tissue == frac_tissue:      # not nan
+        gate, deciding, where = "tissue", frac_tissue, "of tissue pixels"
+    else:
+        gate, deciding, where = "frame", frac_frame, "of frame pixels (no tissue mask)"
+    keep = deciding < tolerance
+    return {
+        "censored_fraction": round(frac_frame, 6),
+        "censored_fraction_in_tissue": round(frac_tissue, 6),
+        "in_analysis_set": int(keep),
+        "gate": gate,
+        "reason": "" if keep
+                  else f"{100 * deciding:.1f}% {where} at the 16-bit ceiling "
+                       f"(tolerance {100 * tolerance:.0f}%)",
+    }
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--tolerance", type=float, default=TOLERANCE,
@@ -164,7 +258,7 @@ def main():
     with open(RF.marker_paths(marker)["index"], newline="", encoding="utf-8") as fh:
         kept = [r for r in csv.DictReader(fh) if r["kind"] == "section"]
 
-    rows, missing = [], []
+    rows, missing, no_tissue = [], [], []
     for i, r in enumerate(kept, 1):
         uid, animal = r["id"], r["animal"]
         dapi = os.path.join(OVERVIEW_DIR, animal, marker, uid + "_DAPI.png")
@@ -172,10 +266,14 @@ def main():
         if cen is None:
             missing.append(uid)
             continue
-        tis = np.asarray(Image.open(dapi).convert("L")) > 0 if os.path.exists(dapi) else None
+        tis = load_tissue_mask(uid, dapi)
+        if tis is not None and tis.shape != cen.shape:
+            tis = None
+        if tis is None:
+            no_tissue.append(uid)
 
         frac_frame = float(cen.mean())
-        frac_tissue = float(cen[tis].mean()) if tis is not None and tis.any() else float("nan")
+        frac_tissue = tissue_fraction(cen, tis)
         # Both, so the size of the old undercount stays visible in the output
         # rather than only in a log entry.
         recorded = float(foc.get(uid, {}).get("saturated_fraction", "nan") or "nan")
@@ -186,16 +284,16 @@ def main():
         Image.fromarray((cen * 255).astype(np.uint8)).save(
             os.path.join(CENSOR_DIR, uid + "_censor.png"))
 
+        v = section_verdict(frac_frame, frac_tissue, args.tolerance)
         rows.append({
             "scene_uid": uid, "animal": animal, "section_order": r["section_order"],
-            "censored_fraction": round(frac_frame, 6),
-            "censored_fraction_in_tissue": round(frac_tissue, 6),
+            "censored_fraction": v["censored_fraction"],
+            "censored_fraction_in_tissue": v["censored_fraction_in_tissue"],
             "recorded_saturated_fraction": recorded,
             "recorded_saturated_fraction_raw": recorded_raw,
-            "in_analysis_set": int(frac_frame < args.tolerance),
-            "reason": "" if frac_frame < args.tolerance
-                      else f"{100 * frac_frame:.1f}% of pixels at the 16-bit ceiling "
-                           f"(tolerance {100 * args.tolerance:.0f}%)",
+            "in_analysis_set": v["in_analysis_set"],
+            "gate": v["gate"],
+            "reason": v["reason"],
         })
         if i % 100 == 0:
             print(f"\r  {i}/{len(kept)}", end="")
@@ -207,6 +305,10 @@ def main():
         print(f"  !! {len(missing)} sections have no raw clipping mask in "
               f"{RAW_MASK_DIR} and were SKIPPED.")
         print(f"     Run 01k_saturation_raw.py first. First few: {missing[:5]}")
+    if no_tissue:
+        print(f"  !! {len(no_tissue)} sections have no tissue mask (none in {TISSUE_DIR} "
+              f"and none could be built from the DAPI overview); their verdict was")
+        print(f"     decided on the FRAME fraction (gate = frame). First few: {no_tissue[:5]}")
 
     with open(out_csv, "w", newline="", encoding="utf-8") as fh:
         w = csv.DictWriter(fh, fieldnames=list(rows[0].keys()))
@@ -215,19 +317,20 @@ def main():
 
     keep = [r for r in rows if r["in_analysis_set"]]
     drop = [r for r in rows if not r["in_analysis_set"]]
-    cf = np.array([r["censored_fraction"] for r in keep])
+    cf = np.array([r["censored_fraction_in_tissue"] for r in keep if r["gate"] == "tissue"])
     print()
     print("=" * 74)
     print(f"{len(rows)} {label} sections -> {out_csv}")
-    print(f"  in the analysis set (< {100 * args.tolerance:.0f}% clipped) : "
+    print(f"  in the analysis set (< {100 * args.tolerance:.0f}% of TISSUE clipped) : "
           f"{len(keep)} ({100 * len(keep) / len(rows):.0f}%)")
     print(f"  set aside                                : {len(drop)}")
+    print(f"  decided on the frame (no tissue mask)    : {len(no_tissue)}")
     print(f"  censor masks written to {CENSOR_DIR}/<uid>_censor.png")
     if len(cf):
         print()
-        print(f"  within the analysis set, censored fraction: median {np.median(cf):.5f}, "
+        print(f"  within the analysis set, censored fraction of tissue: median {np.median(cf):.5f}, "
               f"p95 {np.percentile(cf, 95):.5f}, max {cf.max():.5f}")
-        print(f"  sections with NO censored pixels at all   : {int((cf == 0).sum())}")
+        print(f"  sections with NO censored pixels on tissue: {int((cf == 0).sum())}")
 
     per = {}
     for r in rows:

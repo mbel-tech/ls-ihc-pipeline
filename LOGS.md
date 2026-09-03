@@ -9,6 +9,55 @@ where things landed, not which plausible-looking route was tried and abandoned, 
 
 ---
 
+## 2026-09-03 - 04j section gate decided on tissue, not on the frame
+
+**Changed:** `scripts/04j_censor_clipped.py` - the section-level 1% tolerance is
+now applied to `censored_fraction_in_tissue`, measured against the pipeline's own
+tissue mask (`tissue/<uid>_tissue.png` from 04p `--tissue-masks`, else rebuilt
+with `04a_reformat.tissue_mask` the way 04p builds it). `censored_fraction`
+(frame) stays as a column; a new `gate` column says which fraction decided
+(`tissue`, or `frame` when no mask could be built - counted and printed). New
+`tests/test_censor_gate.py`. Column names and file names unchanged.
+
+**Why.** "Tissue" in 04j was `DAPI overview > 0`. The overview is stretched from
+the frame's 1st percentile (`01_overviews.py`, `LO_PCT = 1.0`), so `> 0` is the
+frame minus its darkest percent: 81-93% of the frame on five sections checked,
+against 23-41% for the real mask. `censored_fraction_in_tissue` was therefore a
+second copy of the frame fraction (ratio median 1.17 on disk) and never used for
+the verdict anyway - `in_analysis_set` gated on the frame. Measured against the
+04p masks, **96.6% of censored pixels lie outside the tissue**, on the PAP pen
+ring. A section was being set aside for clipping that no nucleus in it will ever
+see, while the nuclei that will be measured sat under a mask 04p had already
+written for exactly this purpose and 04j never read.
+
+The rebuild path is byte-identical to 04p's masks on the sections checked, so
+there is still one definition of tissue in the pipeline, not a fourth.
+
+**Consequence - the analysis set changes.** Recomputed read-only against the
+existing `qc/censor_raw` masks, 184 of 718 pERK sections move from set-aside to
+kept (450 -> 634); none move the other way. LS53 goes from 0 measurable sections
+to 9, LS85 from 3 to 45 - the two animals the 2026-08 entry said could not
+support a per-animal estimate. Per animal (old -> new in set): LS37 67 -> 85,
+LS45 55 -> 70, LS69 24 -> 45, LS105 25 -> 65, LS136 27 -> 36, LS138 16 -> 44;
+LS22, LS61, LS87, LS120 essentially unchanged. The unevenness of censoring
+across animals, which the 04m entry flagged as a biology-unrelated axis, shrinks
+accordingly. Pixel-level censoring is untouched: a clipped pixel on tissue is
+right-censored exactly as before.
+
+One thing this does not settle: the 1% figure was chosen (2026-08-12) while the
+denominator was the frame. It now divides by tissue pixels, which is the
+quantity the rule was always meant to bound, but whether 1% of tissue is the
+right tolerance is a fresh decision, and the bimodality argument in the
+2026-08-12 entry should be re-checked on the new column before it is kept.
+
+Nothing has been re-run. To take effect: `04j_censor_clipped.py` (both markers),
+then `04m_sections_dataset.py`, `04n_roi_worklist.py`, and the pERK final
+reformat (`04a_reformat --censor --marker AF568`) so `05c` reads a mask set that
+matches the new analysis set. That is the operator's call, because it changes
+n per animal.
+
+---
+
 ## 2026-09-03 - Refresh loop tells R where results/ is; SAT flags read the raw clipping; level curator reads the configured plate set
 
 **Changed:** `scripts/06e_refresh_loop.py`, `scripts/01d_contactsheets.py`,
