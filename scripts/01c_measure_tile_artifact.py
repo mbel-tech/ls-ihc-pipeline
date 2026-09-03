@@ -268,6 +268,9 @@ def plot(path, result, panels):
 
 def main():
     targets = [a for a in sys.argv[1:] if not a.startswith("--")]
+    # Expand globs here: the app runs this in-process with a literal
+    # ".../test_sections_corrected/*.tif", which no shell has expanded.
+    targets = [p for t in targets for p in (sorted(glob.glob(t)) or [t])]
     if not targets:
         targets = sorted(glob.glob(os.path.join(TEST_DIR, "*.tif")))
     if not targets:

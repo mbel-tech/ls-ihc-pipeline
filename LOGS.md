@@ -9,6 +9,63 @@ where things landed, not which plausible-looking route was tried and abandoned, 
 
 ---
 
+## 2026-09-03 - The app covers the workflow figure; stages find config through LS_CONFIG
+
+**Changed:** `app/stages.py` rewritten to the bands of Figure 1; `app/runner.py`,
+`app/main_window.py`, `app/curator_view.py`, `app/state.py`; every stage's
+`CONFIG_PATH`; `scripts/run_all.sh`; new `tests/test_stages.py`,
+`tests/test_runner.py`, `tests/test_config_resolver.py`.
+
+**The frozen build could not run a single stage.** Every script located
+`config.json` as `dirname(dirname(__file__))/config.json`. From source that is
+the repo root. Frozen, the scripts ship in `_internal/scripts/` and `config.json`
+sits beside the executable, so the path resolved to `_internal/config.json`,
+which `lsapp.spec` never bundles (only `config.example.json`). Every stage failed
+at import; the self-test did not notice because it loads a curator page and runs
+nothing. `LS_CONFIG` now names the file and the file-relative path is the
+fallback, in all 34 scripts that read config at import; the runner exports it,
+and `run_all.sh` already did for the Groovy stages, so one variable now reaches
+everything.
+
+**The sidebar covered 15 of the figure's 27 boxes.** It was a transcription of
+`run_all.sh` plus the ROI-curation chain and stopped there: 04f, 04g, 04j, 06f,
+06g, 04i, 04h, 04m, 04q, the atlas chain 04a2-04a4 and most of 01c-01k had no
+row, and 01k - now a hard input to 04j and 01g - was run by nothing, not even
+`run_all.sh`. Two listed rows could never show done, because their declared
+outputs were the product of commands they did not run: "reformat" ran the PCNA
+default and declared the pERK index, "atlas_extract" declared `plates_final`,
+which only 04a4 writes. 05c was CLI-only unconditionally, though `work/appenv`
+- the interpreter `run_app.bat` uses - has StarDist; only the .exe lacks it.
+
+The list now mirrors the figure's bands, one row per invocation actually used to
+build this dataset (three reformat passes per marker, because that is what the
+`--apply-overrides` / `--mask-artifacts` / `--censor` history in this file
+records), with `operator` and `reader` carried as data and shown in the window.
+`tests/test_stages.py` pins it: every numbered script is a stage or in
+`NOT_LISTED` with a reason (04b, 04c, 04e and the two retired Groovy files), every
+row's script exists and has `main()`, every figure box has an id, no row needs a
+later row.
+
+**Three smaller things found on the way.**
+
+  * `run_all.sh` built step 4's list and step 8's glob under `$ROOT` - the repo -
+    while every stage writes under `config.out_root`. Fiji was handed a list
+    that did not exist, 01c a glob that matched nothing, and `|| true` hid it.
+    Both now use `out_root`, read from `LS_CONFIG`; 01k is step 10.
+  * The runner's log tee emitted only on `\n`; the stages report progress with
+    `\r` and `end=""`, so a 12-minute export showed nothing and then one line.
+  * Export downloads all landed in `reformatted/`; the plate reframer's
+    `plate_boxes.csv` belongs in `atlas/`, where 04a3b and 04a4 look. Exports now
+    land beside the page. Settings changes re-root the server and the curation
+    store, which used to keep serving the old tree; `ls_roi_curator_v1_size` is
+    seeded back so the landmark radius survives a reload.
+
+Verified: the three new suites and `test_config_example` pass; `python -m app
+--self-test` passes with the new list (window, server, 58 rows, a curator page
+rendered). Nothing under `out_root` was touched.
+
+---
+
 ## 2026-09-02 - Nuclei were being quantified off the section
 
 **Changed:** `05c_detect_rois.py` records a new `off_tissue` column; `06a_roi_dataset.py`

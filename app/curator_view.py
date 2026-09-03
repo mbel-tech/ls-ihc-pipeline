@@ -157,19 +157,38 @@ class CuratorView(QWidget):
     # ---- downloads --------------------------------------------------------
 
     def _on_download(self, item: QWebEngineDownloadRequest):
-        """Send Export straight to reformatted/, and say where it went.
+        """Send Export to the folder the page lives in, and say where it went.
 
         Accepting without a directory would drop the file in the profile's
-        default download path, which is not anywhere the pipeline reads.
+        default download path, which is not anywhere the pipeline reads. The
+        page's own folder is where its consumers look: the ROI curator's three
+        CSVs in reformatted/, the plate reframer's plate_boxes.csv in atlas/.
         """
         name = item.downloadFileName() or "export.csv"
-        target = os.path.join(self.out_root, "reformatted")
+        target = os.path.join(self.out_root, os.path.dirname(self.rel or "reformatted/"))
         os.makedirs(target, exist_ok=True)
         item.setDownloadDirectory(target)
         item.setDownloadFileName(name)
         item.accept()
-        item.isFinishedChanged.connect(
-            lambda: self.logged.emit(f"exported  {os.path.join(target, name)}"))
+
+        def finished():
+            # isFinishedChanged also fires for a cancelled or failed download,
+            # and "exported" would then name a file that is not there.
+            done = QWebEngineDownloadRequest.DownloadState.DownloadCompleted
+            if item.state() == done:
+                self.logged.emit(f"exported  {os.path.join(target, name)}")
+            else:
+                self.logged.emit(f"export of {name} did not complete ({item.state().name})")
+        item.isFinishedChanged.connect(finished)
+
+    def rebase(self, server, out_root):
+        """Point at a different out_root after Settings changed it."""
+        self.server = server
+        self.out_root = out_root
+        self.store.dir = os.path.join(out_root, "curation")
+        self.refresh_seed()
+        if self.rel:
+            self.show_page(self.rel, self.title.text())
 
     def _open_external(self):
         import webbrowser

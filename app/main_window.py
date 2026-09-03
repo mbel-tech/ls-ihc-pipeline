@@ -154,8 +154,15 @@ class MainWindow(QMainWindow):
     def _settings(self):
         if ConfigDialog(self.repo_root, self).exec():
             self.out_root = self._config()["out_root"]
+            # The server, the curator view and the curation store were all
+            # rooted at the old out_root; without this they keep serving and
+            # saving into the tree that was just moved away from.
+            self.server.stop()
+            self.server = LocalServer(self.out_root)
+            self.curator.rebase(self.server, self.out_root)
             self.refresh()
-            self._log("config updated - stage modules will reload on next run")
+            self._log(f"config updated - out_root {self.out_root}, serving on "
+                      f"127.0.0.1:{self.server.port}; stage modules reload on next run")
 
     def _import_state(self):
         """Take over curation done in a browser, once.
@@ -205,16 +212,23 @@ class MainWindow(QMainWindow):
 
     def _build_list(self):
         self.list.clear()
+
+        def header(text):
+            head = QListWidgetItem(text.upper())
+            head.setFlags(Qt.NoItemFlags)
+            hf = head.font(); hf.setPointSize(max(7, hf.pointSize() - 1)); head.setFont(hf)
+            head.setForeground(Qt.gray)
+            self.list.addItem(head)
+
+        # The figure's first band. Add slides is a screen rather than a stage,
+        # so it is the one row with no script behind it.
+        header("Acquisition")
         add = QListWidgetItem("  Add slides")
         add.setData(Qt.UserRole, "__import__")
         f = add.font(); f.setBold(True); add.setFont(f)
         self.list.addItem(add)
         for group in S.GROUPS:
-            head = QListWidgetItem(group.upper())
-            head.setFlags(Qt.NoItemFlags)
-            hf = head.font(); hf.setPointSize(max(7, hf.pointSize() - 1)); head.setFont(hf)
-            head.setForeground(Qt.gray)
-            self.list.addItem(head)
+            header(group)
             for st in S.in_group(group):
                 it = QListWidgetItem("   " + st.title)
                 it.setData(Qt.UserRole, st.sid)
@@ -223,7 +237,7 @@ class MainWindow(QMainWindow):
     def _state_of(self, st):
         if self._states.get(st.sid) in ("running", "failed"):
             return self._states[st.sid]
-        if st.cli_only:
+        if st.cli_reason():
             return "cli"
         return "done" if st.done(self.out_root) else "todo"
 
@@ -236,9 +250,13 @@ class MainWindow(QMainWindow):
                 continue
             st = S.BY_ID[sid]
             state = self._state_of(st)
-            it.setText(f"  ● {st.title}")
+            # The figure's red outline: a person decides here. And the one
+            # stage that reads the group key, marked so it cannot be run by
+            # accident while the analysis is meant to be blind.
+            mark = "  ✎" if st.operator else ("  ⚠ unblinds" if st.unblinds else "")
+            it.setText(f"  ● {st.title}{mark}")
             it.setForeground(QColor(DOT[state]))
-            it.setToolTip(st.cli_only or st.blurb)
+            it.setToolTip(st.cli_reason() or st.blurb)
         self.statusBar().showMessage(f"out_root  {self.out_root}")
 
     # ---- selection --------------------------------------------------------
@@ -268,18 +286,34 @@ class MainWindow(QMainWindow):
             self.stack.setCurrentIndex(0)
 
         blocked = S.blocked_by(st, self.out_root)
+        reason = st.cli_reason()
         bits = [f"<b>{st.title}</b>", st.blurb]
-        if st.cli_only:
-            bits.append(f"<span style='color:#bc8cff'><b>Not run here.</b> "
-                        f"{st.cli_only}</span>")
+        if st.operator:
+            bits.append("<span style='color:#f85149'><b>An operator decides here.</b> "
+                        "The page opens on the right; Export writes beside it.</span>")
+        if st.unblinds:
+            bits.append("<span style='color:#f85149'><b>Reads the treatment group.</b> "
+                        "Nothing before this stage may.</span>")
+        if reason:
+            bits.append(f"<span style='color:#bc8cff'><b>Not run here.</b> {reason}</span>")
         elif blocked:
             names = ", ".join(S.BY_ID[b].title for b in blocked)
             bits.append(f"<span style='color:#d29922'>Usually run after: {names}"
                         "</span>")
+        # The right-hand column of the figure: the file each stage leaves
+        # behind, and which reader touched pixels to make it.
+        if st.outputs:
+            missing = set(st.missing(self.out_root))
+            files = ", ".join(
+                (f"<span style='color:#d29922'>{o}</span>" if o in missing else o)
+                for o in st.outputs)
+            bits.append(f"<span style='color:#9aa0a8'>leaves: {files}</span>")
+        if st.reader != "none":
+            bits.append(f"<span style='color:#9aa0a8'>pixels read by {st.reader}</span>")
         if st.script:
             bits.append(f"<code>{st.script} {' '.join(st.argv)}</code>")
         self.blurb.setText("<br>".join(b for b in bits if b))
-        self.run_btn.setEnabled(bool(st.script) and not st.cli_only)
+        self.run_btn.setEnabled(bool(st.script) and not reason)
         self.run_btn.setText("Regenerate" if st.curator else "Run stage")
 
     # ---- running ----------------------------------------------------------

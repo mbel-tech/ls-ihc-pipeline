@@ -76,7 +76,8 @@ Every stage is resumable — re-running skips completed work.
 | 0b | `00b_verify_extraction.py` | Verifies extracted CZIs against the zip central directories; `--crc` checks content, not just size |
 | 0c | `00c_channel_identity.py` | Infers which fluorophore carries which marker from spatial signature |
 | 1 | `01_overviews.py` | Exports every section at exactly 5.20 µm/px with a frozen display range, plus per-section QC |
-| 1b | `01e`, `01f`, `01c`, `01g` | Tile geometry, illumination field, artifact measurement, saturation mapping |
+| 1b | `01e`, `01f`, `01c`, `01g`, `01h` | Tile geometry, illumination field, artifact measurement, saturation mapping |
+| 1k | `01k_saturation_raw.py` | Clipping measured on the raw plane, before the tile field; writes the masks `04j` censors from |
 | 1c | `01d_contactsheets.py` | Per-animal montages in rostro-caudal order, plus an HTML gallery |
 | 2 | `02_pair_passes.py` | Pairs the two marker passes onto the same physical sections via stage coordinates |
 | 4a | `04a_atlas_extract.py` | Extracts labelled plates and region seed points from the atlas PDF |
@@ -233,13 +234,37 @@ browser's storage, which no other application can read: open
 `<out_root>/reformatted/export_curation_state.html` in that browser, save the
 JSON, then use **Pipeline → Import curation state**.
 
+### The sidebar is the workflow figure
+
+`app/stages.py` lists every stage in the bands of Figure 1 in
+`docs/pipeline-methods.md` — Ingest and QC, Instrument characterisation, Atlas,
+Normalisation and curation, Quantification, Beyond blinding — with the two facts
+the figure encodes: a pencil marks a stage where an operator decides (the red
+outline), and the detail pane names the files each stage leaves behind and which
+reader touched pixels to make them. `tests/test_stages.py` holds the list to the
+figure: every numbered script is a stage or is named in `NOT_LISTED` with a
+reason, and every box on the figure has a stage id, so the two cannot drift
+apart again silently.
+
+The stages that take absolute paths get them through `{out_root}` in their argv,
+expanded by the runner from the same `config.json` the stage reads. The stages
+find that file through `LS_CONFIG`, which the runner sets — frozen, the scripts
+live inside `_internal/` while `config.json` sits beside the executable, and the
+file-relative guess pointed at nothing.
+
 ### What the app does not run
 
-The Fiji tile-field chain — steps 3–8 of `run_all.sh`. Those are a one-time
-instrument characterisation, they are already complete for this dataset
+The Fiji export — step 4 of `run_all.sh`. It is a one-time instrument
+characterisation, already complete for this dataset
 (`qc/flatfield/tilefield_c*.npy`), and `01_overviews` applies the field it finds
-and works without one. They stay in `run_all.sh`, and the app lists them greyed
-out with the reason rather than hiding them.
+and works without one. It stays in `run_all.sh`, and the app lists it greyed out
+with the reason rather than hiding it; the Python halves of that chain (01e, 01f,
+01c, 01h) run from the app like any other stage.
+
+Nuclei detection (05c) runs from the app when the interpreter can import
+StarDist — `work/appenv` can — and is greyed out with the reason in the frozen
+build, which does not carry TensorFlow. The refresh loop (06e) stays a `.bat`,
+because it runs for hours.
 
 ### Python version
 
