@@ -107,10 +107,18 @@ function makeEnv() {
     setItem: (k, v) => { store[k] = v; },
     removeItem: k => { delete store[k]; },
   };
+  // Every image is 768 square unless a suite says otherwise. The page shows a
+  // 768 px composite where one exists and the 256 px greyscale where it does
+  // not, and both frames can be on one page - so a suite that cares sets
+  // env.imgSize to a function of the src the page assigned (null keeps 768).
+  // The stub never fires onload; a suite drives drawSec() itself.
+  const imgSize = img => ret.imgSize ? ret.imgSize(img._src || "") : 768;
   global.Image = function () {
     return {
-      addEventListener() {}, set src(v) {},
-      get naturalWidth() { return 768 }, get naturalHeight() { return 768 },
+      _src: "", addEventListener() {},
+      set src(v) { this._src = String(v); }, get src() { return this._src; },
+      get naturalWidth() { return imgSize(this); },
+      get naturalHeight() { return imgSize(this); },
     };
   };
   // Kept as a string for the CSV suites, which read env.blobs and compare text.
@@ -138,7 +146,8 @@ function makeEnv() {
   // Dispatch a window-level event the page registered for. The page listens on
   // window for mousemove/mouseup, so a drag has to be delivered this way.
   const fire = (ev, o) => (win[ev] || []).forEach(f => f(o));
-  return { store, win, els, blobs, blobParts, fire, concat };
+  const ret = { store, win, els, blobs, blobParts, fire, concat, imgSize: null };
+  return ret;
 }
 
 const env = makeEnv();

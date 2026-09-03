@@ -1128,6 +1128,7 @@ function markerOnly(img){
 
 function drawSec(){
   const c=el("cSec"), x=c.getContext("2d"); if(!secImg.naturalWidth) return;
+  syncFrame(active);          // pairs drawn in the frame of the image on screen
   const g=secGeom();
   c.width=g.D; c.height=g.D;
   x.clearRect(0,0,g.D,g.D);
@@ -1330,6 +1331,7 @@ function secDown(e){
     rotDrag={x:e.clientX, rot:effRot(), live:false}; e.preventDefault();
     return;
   }
+  syncFrame(active);
   const [ix,iy] = can2img(...canvasXY(el("cSec"), e), secGeom());
   ptDrag = {ix, iy, r: defaultR()};
   e.preventDefault(); drawSec(); status();
@@ -1451,6 +1453,36 @@ function onRoiSize(v){
 }
 const imgK = () => (secImg.naturalWidth || SEC_GRID) / SEC_GRID;
 const defaultR = () => PT_R_CANON * imgK();
+// ---- the frame a section's pairs are in ------------------------------------
+// Every pair is stored in the pixels of the image the section was SHOWN with,
+// and that is not one number per page: a section with a colour composite is
+// shown at 768 (04o renders at 3x the canonical grid), one without falls back
+// to the 256 greyscale. Both kinds sit on one page. So the frame is recorded on
+// the section's record the moment a pair is stored, and export divides each
+// section by its OWN frame rather than by whatever happens to be on screen.
+//
+// A record with no frame predates this. Its pairs were placed on whatever image
+// the page showed for that section, which is what the rgb flag says - the same
+// rule 04q_import_curation.py uses when it rebuilds a store from the CSVs.
+const RGB_FRAME = 3 * SEC_GRID;
+const frameOf = uid => D_BY[uid]?.rgb ? RGB_FRAME : SEC_GRID;
+const frameIn = (s, uid) => s.frame || frameOf(uid);
+// A store written without --rgb holds 256-frame pairs; opened under --rgb the
+// section is 768 wide and the pairs would sit in the top-left ninth of it. So
+// when the image on screen is not the frame the record says, the pairs are
+// lifted into it - positions and radii, so nothing moves relative to the
+// tissue - and the record updated. Export reads canonical either way.
+function syncFrame(uid){
+  const s = S[uid], w = secImg.naturalWidth;
+  if(!s || !w || !s.pairs.length) return;
+  const have = frameIn(s, uid);
+  if(have === w) { if(!s.frame){ s.frame = w; } return; }
+  const k = w / have;
+  s.pairs.forEach(p => { p[0]*=k; p[1]*=k; if(p[5]) p[5]*=k; });
+  s.frame = w; save();
+}
+// Called wherever a pair is pushed: the frame is the image it was clicked on.
+const stampFrame = (s, uid) => { syncFrame(uid); s.frame = secImg.naturalWidth || frameOf(uid); };
 const pairR = p => p[5] || defaultR();      // 4- and 5-element pairs predate this
 let ptDrag = null;                          // {ix, iy, r} while the button is down
 
@@ -1495,6 +1527,7 @@ function commitPoint(ix, iy, r){
   // pair below - because they are one action to whoever placed it.
   undoMark(active, bgMode ? "background disc" : "place point");
   const s=st(active);
+  stampFrame(s, active);
   if(bgMode){
     // No plate coordinate, and deliberately no seed number: the guided cursor
     // must not advance, or placing a background disc would silently consume the
@@ -1531,6 +1564,7 @@ function clickPl(e){
     return;
   }
   if(!pending) return;
+  stampFrame(st(active), active);
   st(active).pairs.push([pending[0],pending[1],px,py,0,pending[2]||defaultR()]);
   pending=null;
   save(); drawSec(); drawPl(); status(); paintCell(active);
@@ -2205,12 +2239,19 @@ function exportCsv(){
     // status would silently drop it from both files the moment the exclude
     // button was pressed. The exclusion is recorded in roi_plates.csv; dropping
     // a section is a filter on that, not a hole in this one.
-    // Coordinates are captured in the pixels of whatever image is on screen, and
-    // 04o can render that at a multiple of the canonical grid. Divide by the
-    // multiple on the way out so sec_x/sec_y always mean canonical-frame pixels -
-    // the same frame the masks and every other reformatted product live in.
-    // Residuals are a length in the same space, so they scale too.
-    const K = (secImg.naturalWidth || SEC_GRID) / SEC_GRID;
+    // Coordinates are captured in the pixels of the image the SECTION was shown
+    // with, and 04o renders that at a multiple of the canonical grid only where
+    // it has built a composite. Divide by each section's own multiple on the
+    // way out so sec_x/sec_y always mean canonical-frame pixels - the same
+    // frame the masks and every other reformatted product live in. Residuals
+    // are a length in the same space, so they scale too.
+    //
+    // This used to read the image on screen once and divide every row by it,
+    // which was right only while every section on the page had the same frame.
+    // With composites for some sections and greyscale for the rest, the rows
+    // of whichever kind was not active were three times too large or too
+    // small, and nothing on screen said so.
+    const K = frameIn(s, d.uid) / SEC_GRID;
 
     // Background discs need neither a transform nor three landmarks: they are
     // positions on the section, full stop. Emitting them ABOVE the gate means a
@@ -2263,8 +2304,13 @@ function exportCsv(){
   dl(lm,"roi_landmarks.csv");
   dl(rg,"roi_regions.csv");
 }
+// Every cell goes through csvq: a field with a comma, a quote or a newline is
+// RFC-4180 quoted, anything else is written as it was. Region names like
+// "Rm (Raphe) ??" and subsets like roi_worklist:core are already in these
+// files, and the first name to carry a comma would have shifted every column
+// after it - in a file whose readers index columns by header.
 function dl(rowsArr,name){
-  const b=new Blob([rowsArr.map(r=>r.join(",")).join("\\n")],{type:"text/csv"});
+  const b=new Blob([rowsArr.map(r=>r.map(csvq).join(",")).join("\\n")],{type:"text/csv"});
   const a=document.createElement("a"); a.href=URL.createObjectURL(b); a.download=name; a.click();
 }
 // Write the seed through on first load, so this browser holds it like any other

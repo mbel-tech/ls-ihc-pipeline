@@ -9,6 +9,42 @@ where things landed, not which plausible-looking route was tried and abandoned, 
 
 ---
 
+## 2026-09-03 - Export scale is per section, and CSV fields are quoted
+
+**Changed:** `scripts/04l_roi_curator.py` (JS: `frameOf`/`frameIn`/`syncFrame`/
+`stampFrame`, per-section `K` in `exportCsv`, `csvq` on every cell in `dl`),
+`tests/harness.js` (per-src Image size via `env.imgSize`),
+`tests/export_frame.test.js` (new).
+
+Landmarks are stored in the pixels of the image the section was shown with, and
+that is not one number per page: a section with a colour composite is shown at
+768, one 04o has not built yet falls back to the 256 greyscale, and both kinds
+sit on one page. Export read `secImg.naturalWidth` once - the image on screen -
+and divided every row by it, so on a mixed page the rows of whichever kind was
+not active were three times too large or too small. Nothing on screen said so,
+and no suite saw it because the harness's Image was 768 for everything.
+
+The frame is now stamped on the section's record when a pair is stored, export
+divides each section by its own frame, and a record with no frame is read in
+the frame its rgb flag implies - the same rule 04q_import_curation.py uses when
+it rebuilds a store. A store written without --rgb and opened under --rgb has
+its pairs lifted into the 768 frame on draw, so it no longer lands in the
+top-left ninth of the composite. The CSVs are canonical 256-px units either
+way; columns unchanged.
+
+dl() also joined with "," and quoted nothing - csvq existed but only
+exportReview used it. Region names like "Rm (Raphe) ??" were one comma away
+from shifting every column after them. Every cell of the three ROI exports now
+goes through csvq; plain fields are byte-identical.
+
+roi_regions_used_AF568.csv on disk is unaffected: all 153 landmarked pERK
+sections had a composite (dated 2026-08-24) before the export, so K was 3 for
+every row, and no field contains a comma. app/import_exports.py still assumes
+k=3 for every section - unchanged in meaning by this, but it would mis-scale a
+greyscale-only section on rebuild; noted for the Tier 3 plan.
+
+---
+
 ## 2026-09-03 - Three quiet ways roi_nuclei.csv could go wrong on a resume
 
 **Changed:** `05c_detect_rois.py` gains `check_header()` and `drop_rows()`; a resume onto a
