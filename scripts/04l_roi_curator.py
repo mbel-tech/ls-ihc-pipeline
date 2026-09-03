@@ -615,7 +615,7 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
   <button id="skipBtn" class="btn-guide" onclick="skipSeed()">Skip seed</button>
   <button class="btn-edit" onclick="undoPt()">Undo point</button>
   <button id="undoBtn" class="btn-rot" onclick="undoLast()" disabled
-          title="Nothing to undo (b)">Undo</button>
+          title="Nothing to undo (u)">Undo</button>
   <button class="btn-edit" onclick="clearPts()">Clear points</button>
   <span class="deliver">
     <button id="revBtn" class="btn-guide" onclick="toggleReview()">Review</button>
@@ -796,7 +796,7 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
   in red, <kbd>c</kbd> censored pixels in cyan, <kbd>m</kbd> apply the mask to see
   what 04a removed, <kbd>f</kbd> fullscreen (or double-click the image) &middot;
   <kbd>[</kbd><kbd>]</kbd> ROI size (or drag as you place one) &middot;
-  <kbd>b</kbd> undo the last thing, whatever it was (<kbd>z</kbd> stays
+  <kbd>u</kbd> undo the last thing, whatever it was (<kbd>z</kbd> stays
   point-only) &middot;
   <span style="color:#7c5cff">purple</span> = registered &middot;
   <span style="color:#4da3ff">blue</span> = plate assigned only &middot;
@@ -1601,8 +1601,8 @@ function undoState(){
   if(!b) return;
   const e = UNDO[UNDO.length - 1];
   b.disabled = !e;
-  b.title = e ? `Undo: ${e.label} on ${e.uid}  (b)`
-              : "Nothing to undo (b)";
+  b.title = e ? `Undo: ${e.label} on ${e.uid}  (u)`
+              : "Nothing to undo (u)";
 }
 
 function undoPt(){
@@ -2130,10 +2130,11 @@ addEventListener("keydown", e=>{
   else if(e.key==="x" || e.key==="X"){ toggleExcl(); }
   else if(e.key==="z" || e.key==="Z"){ undoPt(); }
   else if(e.key==="r" || e.key==="R"){ restoreTilt(); }
-  // b is the general undo and d is the background DISC. b used to be the disc
-  // mode; it was moved rather than shared, because a key that sometimes undoes
-  // and sometimes arms a placement mode is worse than either.
-  else if(e.key==="b" || e.key==="B"){ undoLast(); }
+  // u is the general undo, d is the background DISC, and b is deliberately
+  // unbound: it was the disc for long enough to be muscle memory, and a key
+  // that used to place something and now undoes is the worst of both. Leaving
+  // it dead is the safe end of that trade.
+  else if(e.key==="u" || e.key==="U"){ undoLast(); }
   else if(e.key==="d" || e.key==="D"){ toggleBgMode(); }
   else if(e.key==="g" || e.key==="G"){ toggleGuided(); }
   else if(e.key==="s" || e.key==="S"){ skipSeed(); }
