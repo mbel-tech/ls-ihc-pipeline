@@ -176,6 +176,33 @@ def load_tile_fields():
     return fields
 
 
+def load_ceilings():
+    """file name -> clip ceiling, from the manifest.
+
+    Recorded rather than assumed: 65535 is right here only because every channel
+    of every file is genuinely 16-bit. A manifest written before 00_manifest
+    recorded the column falls back to 65535 with a warning, so an old output
+    directory still runs.
+    """
+    path = os.path.join(OUT_ROOT, "manifest", "manifest_files.csv")
+    out = {}
+    if os.path.exists(path):
+        with open(path, newline="", encoding="utf-8") as fh:
+            for r in csv.DictReader(fh):
+                try:
+                    out[r["file"]] = int(r["clip_ceiling"])
+                except (KeyError, TypeError, ValueError):
+                    continue
+    if not out:
+        print("  !! no clip_ceiling in the manifest - falling back to 65535; "
+              "re-run 00_manifest.py to record it")
+    return out
+
+
+def ceiling_for(ceilings, fname):
+    return ceilings.get(fname, 65535)
+
+
 def write_qc(rows):
     """Atomic write, so an interrupted write cannot truncate the checkpoint."""
     if not rows:
@@ -248,7 +275,7 @@ def channel_range(ranges, name):
     return ranges[name]["lo"], ranges[name]["hi"]
 
 
-def export(scenes, fields, ranges, zoom, limit, force):
+def export(scenes, fields, ranges, ceilings, zoom, limit, force):
     done_uids = set()
     qc_rows = []
     if os.path.exists(QC_CSV) and not force:
@@ -276,6 +303,7 @@ def export(scenes, fields, ranges, zoom, limit, force):
             continue
 
         marker = rows[0]["marker_channel"]
+        ceiling = ceiling_for(ceilings, fname)
         out_dir = os.path.join(OVERVIEW_DIR, rows[0]["animal"], marker)
         os.makedirs(out_dir, exist_ok=True)
         d_lo, d_hi = channel_range(ranges, "DAPI")
@@ -300,8 +328,8 @@ def export(scenes, fields, ranges, zoom, limit, force):
                     # still gone, because no correction puts back what the sensor
                     # never recorded. tilefield_c1 exceeds 1.0 over 54% of its
                     # area, which halved every clipping number reported here.
-                    sat_mark_raw = float((mark_raw >= 65535).mean())
-                    sat_dapi_raw = float((dapi_raw >= 65535).mean())
+                    sat_mark_raw = float((mark_raw >= ceiling).mean())
+                    sat_dapi_raw = float((dapi_raw >= ceiling).mean())
                     dapi = apply_tile_field(dapi_raw, fields.get(0), 1 / zoom)
                     mark = apply_tile_field(mark_raw, fields.get(1), 1 / zoom)
                     h, w = dapi.shape
@@ -345,7 +373,7 @@ def export(scenes, fields, ranges, zoom, limit, force):
                         # pair stays directly comparable. It measures clipping
                         # AFTER correction and is therefore an undercount; the
                         # _raw columns are the honest number.
-                        "saturated_fraction": f"{float((mark >= 65535).mean()):.6f}",
+                        "saturated_fraction": f"{float((mark >= ceiling).mean()):.6f}",
                         "saturated_fraction_raw": f"{sat_mark_raw:.6f}",
                         "saturated_fraction_dapi_raw": f"{sat_dapi_raw:.6f}",
                         "tilefield_applied": int(bool(fields)),
@@ -380,9 +408,10 @@ def main():
     scenes = load_manifest()
     print(f"manifest: {len(scenes)} sections")
     fields = load_tile_fields()
+    ceilings = load_ceilings()
 
     ranges = sample_display_ranges(scenes, fields, zoom, args.force)
-    exported, failed, total_rows = export(scenes, fields, ranges, zoom, args.limit, args.force)
+    exported, failed, total_rows = export(scenes, fields, ranges, ceilings, zoom, args.limit, args.force)
 
     print()
     print("=" * 72)

@@ -70,6 +70,9 @@ OUT_CSV = os.path.join(QC_DIR, "saturation_raw.csv")
 MASK_DIR = os.path.join(QC_DIR, "censor_raw")
 NATIVE_CSV = os.path.join(QC_DIR, "saturation_raw_native.csv")
 
+# Fallback only. The real value is per-file, from the manifest's clip_ceiling
+# column, via OV.ceiling_for() - see load_ceilings()'s docstring in
+# 01_overviews.py for why 65535 cannot just be assumed.
 CEILING = 65535
 # Masks are written for BOTH markers.
 #
@@ -92,22 +95,22 @@ KEYS = ["scene_uid", "file", "animal", "slide", "variant", "marker_channel",
         "mask_path", "tilefield_applied", "reader"]
 
 
-def measure(czidoc, rect, fields, zoom, want_mask):
+def measure(czidoc, rect, fields, zoom, want_mask, ceiling=CEILING):
     """Raw clipping for both channels, and the corrected figure for comparison."""
     dapi_raw = OV.read_scene(czidoc, rect, 0, zoom)
     mark_raw = OV.read_scene(czidoc, rect, 1, zoom)
-    clipped = mark_raw >= CEILING
+    clipped = mark_raw >= ceiling
     corrected = OV.apply_tile_field(mark_raw, fields.get(1), 1 / zoom)
     return {
         "raw": float(clipped.mean()),
-        "dapi_raw": float((dapi_raw >= CEILING).mean()),
-        "corrected": float((corrected >= CEILING).mean()),
+        "dapi_raw": float((dapi_raw >= ceiling).mean()),
+        "corrected": float((corrected >= ceiling).mean()),
         "shape": mark_raw.shape,
         "mask": clipped if want_mask else None,
     }
 
 
-def native_sample(scenes, n, seed=20260901):
+def native_sample(scenes, n, ceilings, seed=20260901):
     """Measure the resolution-dilution factor instead of assuming it.
 
     A clipped pixel survives downsampling only if its whole neighbourhood was
@@ -133,6 +136,7 @@ def native_sample(scenes, n, seed=20260901):
         path = os.path.join(SOURCE_DIR, fname)
         if not os.path.exists(path):
             continue
+        ceiling = OV.ceiling_for(ceilings, fname)
         with pyczi.open_czi(path) as czidoc:
             rects = czidoc.scenes_bounding_rectangle
             for r in rs:
@@ -143,11 +147,11 @@ def native_sample(scenes, n, seed=20260901):
                     continue
                 roi = (rects[s].x, rects[s].y, rects[s].w, rects[s].h)
                 low = np.squeeze(czidoc.read(roi=roi, plane={"C": 1}, zoom=0.125))
-                f_low = float((low >= CEILING).mean())
+                f_low = float((low >= ceiling).mean())
                 if f_low <= 0:
                     continue
                 hi = np.squeeze(czidoc.read(roi=roi, plane={"C": 1}, zoom=1.0))
-                f_hi = float((hi >= CEILING).mean())
+                f_hi = float((hi >= ceiling).mean())
                 rows.append({
                     "scene_uid": r["scene_uid"], "file": fname,
                     "frac_at_5_20um": round(f_low, 6),
@@ -232,6 +236,7 @@ def main():
     zoom = OV.BASE_PX_UM / OV.TARGET_UM
     scenes = OV.load_manifest()
     fields = OV.load_tile_fields()
+    ceilings = OV.load_ceilings()
     os.makedirs(MASK_DIR, exist_ok=True)
     print("manifest: %d sections at zoom %.4f (%s um/px)" % (len(scenes), zoom, OV.TARGET_UM))
 
@@ -283,7 +288,8 @@ def main():
                         continue
                     uid = r["scene_uid"]
                     want = r["marker_channel"] in MASK_MARKERS
-                    m = measure(czidoc, rects[s], fields, zoom, want)
+                    ceiling = OV.ceiling_for(ceilings, fname)
+                    m = measure(czidoc, rects[s], fields, zoom, want, ceiling)
 
                     mask_path = ""
                     if want:
@@ -343,7 +349,7 @@ def main():
     if args.native_sample:
         print()
         print("measuring the resolution-dilution factor on %d sections ..." % args.native_sample)
-        native_sample(scenes, args.native_sample)
+        native_sample(scenes, args.native_sample, ceilings)
 
 
 if __name__ == "__main__":
