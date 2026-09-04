@@ -116,6 +116,32 @@ chk("fallback finds the loose objective", loose["objective_mag"], "10")
 chk("missing bit count is None", loose["component_bit_count"], None)
 chk("missing bit count gives no ceiling", loose["clip_ceiling"], None)
 
+# --- camera precedence: real ZEN files never populate
+# Instrument/Detectors/Detector/CameraName - the value actually lives at
+# Scaling/AutoScaling/CameraName. Path 1 stays first for a file that does
+# populate it; these two fixtures pin that order so it does not silently
+# invert. ------------------------------------------------------------------
+AUTOSCALING_ONLY = """<ImageDocument><Metadata>
+<Information><Instrument><Detectors><Detector></Detector></Detectors></Instrument>
+<Image><Dimensions><Channels><Channel Name="DAPI"/></Channels></Dimensions></Image>
+</Information>
+<Scaling><AutoScaling><CameraName>Orca Flash 4.0</CameraName></AutoScaling></Scaling>
+</Metadata></ImageDocument>"""
+autoscaling_only = CM.summarise(ET.fromstring(AUTOSCALING_ONLY))
+chk("camera falls through to AutoScaling when Detector has none",
+    autoscaling_only["camera"], "Orca Flash 4.0")
+
+BOTH_CAMERAS = """<ImageDocument><Metadata>
+<Information><Instrument><Detectors><Detector>
+  <CameraName>Instrument Cam</CameraName></Detector></Detectors></Instrument>
+<Image><Dimensions><Channels><Channel Name="DAPI"/></Channels></Dimensions></Image>
+</Information>
+<Scaling><AutoScaling><CameraName>AutoScaling Cam</CameraName></AutoScaling></Scaling>
+</Metadata></ImageDocument>"""
+both_cameras = CM.summarise(ET.fromstring(BOTH_CAMERAS))
+chk("camera prefers Instrument/Detector over AutoScaling when both present",
+    both_cameras["camera"], "Instrument Cam")
+
 # --- nominal_ceiling hardening (carried forward from Task 1's code review) --
 chk("nominal_ceiling(16)", CM.nominal_ceiling(16), 65535)
 chk("nominal_ceiling(0) is None", CM.nominal_ceiling(0), None)

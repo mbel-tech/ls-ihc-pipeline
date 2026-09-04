@@ -167,8 +167,18 @@ def summarise(root):
         "objective_na": _first(root,
                                ".//Information/Instrument/Objectives/Objective/LensNA",
                                ".//Objectives/Objective/LensNA"),
+        # Verified against the real dataset (LS22_1a.czi and 5 others under
+        # D:\SLIDES HE DEC 2025 LS): Instrument/Detectors/Detector exists but
+        # carries no CameraName child on any file checked - the value always
+        # actually lives at Scaling/AutoScaling/CameraName instead. Path 1 is
+        # kept first because it is the semantically correct home and a future
+        # file may populate it; path 2 is the one this dataset resolves
+        # through today. Do not delete either as dead/redundant without
+        # re-checking a real file - see tests/test_czi_meta.py for the
+        # precedence pin.
         "camera": _first(root,
                          ".//Information/Instrument/Detectors/Detector/CameraName",
+                         ".//Scaling/AutoScaling/CameraName",
                          ".//CameraName"),
         "shading_reference_mode": root.findtext(".//SelectedShadingReferenceMode"),
         "online_stitching": root.findtext(".//IsOnlineStitchingEnabled"),
