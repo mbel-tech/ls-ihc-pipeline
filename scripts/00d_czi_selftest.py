@@ -36,10 +36,17 @@ are measured and reported prominently, but never fail the run.
                         layer, not a fresh resample of layer 0. Clipping
                         measured on such a read is diluted by whatever
                         averaging produced that layer.
-    observed maxima     A native-resolution (zoom=1.0), per-channel sample of
-                        the largest scene, checked against the nominal
+    strip maxima        A native-resolution (zoom=1.0), per-channel sample of
+                        the top STRIP_ROWS rows of the largest scene - a strip,
+                        not the whole scene - checked against the nominal
                         ceiling and against the signature of a sensor shallower
                         than ComponentBitCount declares.
+    bit count range     `BitCountRange` in the display settings is a second,
+                        independent statement of the sensor depth. Compared
+                        against ComponentBitCount and reported when the two
+                        disagree, but not gated: it is a display setting, so a
+                        disagreement is metadata worth a human's eye rather
+                        than something that breaks a read.
 
 Run:  work/appenv/Scripts/python.exe scripts/00d_czi_selftest.py
       ... --limit 20            check only the first 20 files
@@ -69,18 +76,38 @@ _lsio = importlib.util.spec_from_file_location(
 IO = importlib.util.module_from_spec(_lsio)
 _lsio.loader.exec_module(IO)
 
-# One strip, not the whole scene: bounds the memory of a native-resolution
-# (zoom=1.0) read regardless of how tall the scene is.
+# One strip off the TOP of the scene, not the whole scene: bounds the memory of
+# a native-resolution (zoom=1.0) read regardless of how tall the scene is. It is
+# a minority of the scene - about 27% on the files sampled here, less on taller
+# ones - and it comes off the TOP edge, which on a slide scan is often bare
+# glass. So every number derived from it is a lower bound on the scene value,
+# not the scene value. Everything it feeds is named `strip_*` for that reason,
+# and `summarise()` states the coverage per file so the bound is visible.
 STRIP_ROWS = 4096
+
+# A strip maximum only carries a shallow-bit signature if it lands within this
+# many bits of the declared depth. Two reasons for a floor, both consequences of
+# reading a strip rather than a scene. First, a background-only strip maxes out
+# at a few hundred counts, and a maximum that happens to be 255 or 1023 is
+# exactly 2**n - 1 by coincidence: without a floor the stage prints a shallow-bit
+# signature for a perfectly healthy 16-bit sensor. Second, four bits brackets the
+# depths that can physically hide inside a wider container: CZI offers Gray8 and
+# Gray16 and nothing between, so a shallow sensor in a Gray16 file is a 12- or
+# 14-bit camera, never a 4-bit one. The cost is that a genuine 8- or
+# 10-bit-in-Gray16 file would not be flagged - its low strip_max_by_channel is
+# still in the CSV, where it is conspicuous next to a nominal ceiling of 65535.
+SHALLOW_MAX_BITS_BELOW = 4
 
 KEYS = ["file", "error", "violations",
         "n_scenes", "overlapping_pairs", "scenes_in_overlap", "max_overlap_frac",
         "pyramid_levels",
         "frames_compared", "frame_key_mismatch", "origin_drift", "extent_drift",
         "image_bit_count", "channel_bit_counts", "channel_pixel_types",
-        "bit_count_disagreement", "nominal_ceiling", "bitcount_ranges",
+        "bit_count_disagreement", "nominal_ceiling",
+        "bitcount_ranges", "bitcount_range_mismatch",
         "shading", "online_stitching",
-        "observed_max_by_channel", "clipped_at_ceiling_by_channel",
+        "strip_rows", "strip_frac_of_scene",
+        "strip_max_by_channel", "clipped_at_ceiling_by_channel",
         "shallow_signature_by_channel"]
 
 
@@ -111,6 +138,9 @@ def scene_overlaps(rects):
             px = rect_overlap(a, b)
             if px:
                 smaller = min(a[2] * a[3], b[2] * b[3])
+                # `if smaller` is belt-and-braces, not a case that reaches here:
+                # a zero-area rectangle cannot intersect anything, so rect_overlap
+                # would have returned 0 and `if px` would already have skipped it.
                 hits.append({"a": ka, "b": kb, "px": px,
                              "frac_of_smaller": px / smaller if smaller else 0.0})
     return hits
@@ -201,6 +231,27 @@ def bit_count_disagreement(image_bc, channel_bcs):
     return f"image={image_bc} channels={','.join(str(c) for c in channel_bcs)}"
 
 
+def bitcount_range_disagreement(image_bc, ranges):
+    """None when every `BitCountRange` matches the image ComponentBitCount.
+
+    `BitCountRange` lives in the display settings and is a second, independent
+    statement of the same fact the audit checks ComponentBitCount for. Comparing
+    them is the whole value of recording it: agreement is corroboration, and a
+    disagreement means the file contradicts itself about its own sensor depth.
+
+    Reported, not gated. A display setting does not decide what any read
+    returns, so a mismatch is a "look at this file" rather than a broken
+    structural assumption, and gating on it would let a cosmetic metadata quirk
+    turn a whole run red.
+    """
+    if image_bc is None or not ranges:
+        return None
+    odd = sorted({r for r in ranges if r != str(image_bc)})
+    if not odd:
+        return None
+    return f"image={image_bc} BitCountRange={','.join(odd)}"
+
+
 def shallow_bit_signature(observed_max, declared_bits):
     """The n < declared_bits such that observed_max == 2**n - 1, or None.
 
@@ -209,6 +260,9 @@ def shallow_bit_signature(observed_max, declared_bits):
     direction. A maximum that lands exactly on a lower power-of-two-minus-one
     ceiling is the signature of a sensor whose true depth is n bits, stored
     inside a wider container than it fills.
+
+    `observed_max` here is a STRIP maximum, so n is also floored at
+    `declared_bits - SHALLOW_MAX_BITS_BELOW`; see that constant for why.
     """
     if not isinstance(declared_bits, int) or declared_bits <= 0:
         return None
@@ -217,7 +271,7 @@ def shallow_bit_signature(observed_max, declared_bits):
     k = observed_max + 1
     if k > 0 and (k & (k - 1)) == 0:
         n = k.bit_length() - 1
-        if 0 < n < declared_bits:
+        if declared_bits - SHALLOW_MAX_BITS_BELOW <= n < declared_bits and n > 0:
             return n
     return None
 
@@ -265,6 +319,13 @@ def inspect(path, pyczi, want_pixels):
         row["frames_compared"] = len(common)
         row["frame_key_mismatch"] = int(set(sr) != set(sr0))
         row["origin_drift"] = sum(1 for k in common if sr[k][:2] != sr0[k][:2])
+        # Recorded and summarised, but deliberately NOT gated: every coordinate
+        # mapping in 05a_roi_geometry.py is anchored on the rectangle's ORIGIN,
+        # so a few pixels of pyramid padding at the far edge misplaces nothing.
+        # Audit finding 5 saw 0-28 px over the 496 scene rectangles it checked
+        # by hand; this stage checks all 2572 and the worst is 40 px. Surfaced
+        # in the FRAME DRIFT line so a dataset where it jumps gets noticed
+        # rather than sitting unread in a CSV column.
         row["extent_drift"] = max(
             (max(abs(sr[k][2] - sr0[k][2]), abs(sr[k][3] - sr0[k][3])) for k in common),
             default=0)
@@ -293,6 +354,8 @@ def inspect(path, pyczi, want_pixels):
         row["nominal_ceiling"] = nominal_ceiling(image_bc)
         disagreement = bit_count_disagreement(image_bc, channel_bcs)
         row["bit_count_disagreement"] = disagreement or ""
+        row["bitcount_range_mismatch"] = bitcount_range_disagreement(
+            image_bc, bd["bitcount_ranges"]) or ""
 
         violations = []
         if row["origin_drift"]:
@@ -310,6 +373,8 @@ def inspect(path, pyczi, want_pixels):
             largest = max(sr, key=lambda k: sr[k][2] * sr[k][3])
             x, y, w, h = sr[largest]
             strip_h = min(h, STRIP_ROWS)
+            row["strip_rows"] = strip_h
+            row["strip_frac_of_scene"] = round(strip_h / h, 5) if h else ""
             n_channels = len(bd["channels"]) or 1
             maxima, clipped, shallow = [], [], []
             for c_idx in range(n_channels):
@@ -324,7 +389,7 @@ def inspect(path, pyczi, want_pixels):
                 clipped.append(str(n_at_ceiling))
                 shallow.append(str(sig) if sig is not None else "")
                 del arr
-            row["observed_max_by_channel"] = ",".join(maxima)
+            row["strip_max_by_channel"] = ",".join(maxima)
             row["clipped_at_ceiling_by_channel"] = ",".join(clipped)
             row["shallow_signature_by_channel"] = ",".join(shallow)
     return row
@@ -381,7 +446,10 @@ def summarise(rows):
                       f"{sum(r['frames_compared'] for r in ok_rows)}, "
                       f"origin drift: {sum(r['origin_drift'] for r in ok_rows)}, "
                       f"key mismatches: "
-                      f"{sum(1 for r in ok_rows if r['frame_key_mismatch'])}")
+                      f"{sum(1 for r in ok_rows if r['frame_key_mismatch'])}, "
+                      f"worst extent drift: "
+                      f"{max((r['extent_drift'] or 0 for r in ok_rows), default=0)} px "
+                      f"(not gated - only the origin anchors coordinates)")
 
         ceilings = sorted({r["nominal_ceiling"] for r in ok_rows if r["nominal_ceiling"] is not None})
         bit_counts = sorted({r["image_bit_count"] for r in ok_rows if r["image_bit_count"] is not None})
@@ -389,14 +457,33 @@ def summarise(rows):
         shadings = sorted({r["shading"] for r in ok_rows if r["shading"] is not None})
         stitching = sorted({r["online_stitching"] for r in ok_rows if r["online_stitching"] is not None})
         lines.append(f"                shading {shadings}, online stitching {stitching}")
+        range_rows = [r for r in ok_rows if r["bitcount_range_mismatch"]]
+        with_ranges = [r for r in ok_rows if r["bitcount_ranges"]]
+        if range_rows:
+            lines.append(f"                !! BitCountRange disagrees with ComponentBitCount "
+                          f"in {len(range_rows)} file(s) - reported, not gated:")
+            for r in range_rows[:20]:
+                lines.append(f"                   {r['file']}: {r['bitcount_range_mismatch']}")
+        elif with_ranges:
+            lines.append(f"                BitCountRange corroborates ComponentBitCount in all "
+                          f"{len(with_ranges)} file(s) carrying one")
 
-        maxima_rows = [r for r in ok_rows if r["observed_max_by_channel"]]
+        maxima_rows = [r for r in ok_rows if r["strip_max_by_channel"]]
         if maxima_rows:
-            lines.append("OBSERVED MAX    native resolution (zoom=1.0), largest scene, per channel:")
+            lines.append(f"STRIP MAX       native resolution (zoom=1.0), per channel, over the top "
+                          f"{STRIP_ROWS} rows at most")
+            lines.append("                of the largest scene - a STRIP, not the whole scene, so "
+                          "each max is a lower")
+            lines.append("                bound on the scene max: a top edge of bare glass biases "
+                          "it down. Coverage")
+            lines.append("                of the scene is stated per file below.")
             for r in maxima_rows:
                 sig = r["shallow_signature_by_channel"]
-                lines.append(f"                {r['file']}: max={r['observed_max_by_channel']}  "
-                              f"at-ceiling={r['clipped_at_ceiling_by_channel']}"
+                frac = r["strip_frac_of_scene"]
+                cover = f"{float(frac):.1%}" if frac != "" else "?"
+                lines.append(f"                {r['file']}: max={r['strip_max_by_channel']}  "
+                              f"at-ceiling={r['clipped_at_ceiling_by_channel']}  "
+                              f"strip={r['strip_rows']} rows = {cover} of the scene"
                               + (f"  !! shallow-bit signature: {sig}" if sig.strip(",") else ""))
 
     if error_rows:
@@ -450,8 +537,17 @@ def main():
     print("\n".join(lines))
     if exit_code:
         print(f"\n  !! self-test FAILED - exit {exit_code}")
-    return exit_code
+    # RAISE, never return. app/runner.py:205 runs stages in-process as `mod.main()`
+    # and treats any plain return as SUCCESS; it learns about failure only by
+    # catching SystemExit. A returned exit code therefore gates the CLI and not
+    # the GUI - and app/stages.py's `done()` is existence-only over a CSV this
+    # function has already written, so the app would show the stage green on a
+    # dataset that broke a structural assumption. That is the exact hazard this
+    # gate exists to close.
+    raise SystemExit(exit_code)
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    # Bare call: main() raises SystemExit itself, on success as well as failure,
+    # so both entry points get the same verdict from the same line of code.
+    main()

@@ -106,13 +106,35 @@ chk("no image-level count -> None (handled as bit_count_missing instead)",
     ST.bit_count_disagreement(None, [16, 14]), None)
 chk("no channel counts at all -> None", ST.bit_count_disagreement(16, [None, None]), None)
 
+# --- bitcount_range_disagreement: the display-setting cross-check ------------
+chk("BitCountRange matching the image count -> None",
+    ST.bitcount_range_disagreement(16, ["16"]), None)
+chk("no ranges recorded -> None", ST.bitcount_range_disagreement(16, []), None)
+chk("no image-level count -> None", ST.bitcount_range_disagreement(None, ["16"]), None)
+chk("a disagreeing range is reported",
+    ST.bitcount_range_disagreement(16, ["14"]) is None, False)
+chk("the report names both sides",
+    ST.bitcount_range_disagreement(16, ["14"]), "image=16 BitCountRange=14")
+chk("only the odd ones out are named",
+    ST.bitcount_range_disagreement(16, ["16", "12"]), "image=16 BitCountRange=12")
+
 # --- shallow_bit_signature ---------------------------------------------------
+# The floor (SHALLOW_MAX_BITS_BELOW) exists because the input is a STRIP maximum:
+# a strip of bare glass maxes at a few hundred counts, and 255 or 1023 is
+# 2**n - 1 by coincidence, not because the sensor is 8- or 10-bit.
 chk("14-bit ceiling under a 16-bit declaration", ST.shallow_bit_signature(16383, 16), 14)
+chk("12-bit ceiling under 16 is still within the floor",
+    ST.shallow_bit_signature(4095, 16), 12)
 chk("full-scale max is not a shallow signature", ST.shallow_bit_signature(65535, 16), None)
 chk("a max that isn't 2**n - 1 at all", ST.shallow_bit_signature(50000, 16), None)
 chk("no declared bit count -> None", ST.shallow_bit_signature(16383, None), None)
 chk("no observed max -> None", ST.shallow_bit_signature(None, 16), None)
-chk("8-bit ceiling under 16", ST.shallow_bit_signature(255, 16), 8)
+chk("a background-only strip maxing at 1023 does not fire",
+    ST.shallow_bit_signature(1023, 16), None)
+chk("nor one maxing at 255", ST.shallow_bit_signature(255, 16), None)
+chk("nor an all-zero strip", ST.shallow_bit_signature(0, 16), None)
+chk("the floor is relative to the declaration, not absolute",
+    ST.shallow_bit_signature(255, 8 + ST.SHALLOW_MAX_BITS_BELOW), 8)
 
 # --- pick_sample_indices: spreads across the file list, not the first N ----
 chk("4 of 222 spreads out", sorted(ST.pick_sample_indices(222, 4)), [0, 55, 111, 166])
@@ -298,9 +320,78 @@ row = ST.inspect("x.czi", _FakePyczi(c), True)
 chk("pixel sample: reads the larger scene", c.read_calls[0]["scene"], 1)
 chk("pixel sample: native zoom", c.read_calls[0]["zoom"], 1.0)
 chk("pixel sample: reads both channels", len(c.read_calls), 2)
-chk("pixel sample: observed max per channel", row["observed_max_by_channel"], "65535,16383")
+chk("pixel sample: strip max per channel", row["strip_max_by_channel"], "65535,16383")
 chk("pixel sample: pixels at ceiling per channel", row["clipped_at_ceiling_by_channel"], "2,0")
 chk("pixel sample: shallow signature per channel", row["shallow_signature_by_channel"], ",14")
+# The strip is what was actually read, and the row must say so: the column names
+# and the summary claim a strip, not a scene, and these two make that auditable.
+chk("pixel sample: strip height recorded", row["strip_rows"], 1000)
+chk("pixel sample: strip height is what was read", c.read_calls[0]["roi"][3], 1000)
+chk("pixel sample: strip coverage of the scene recorded", row["strip_frac_of_scene"], 1.0)
+
+# 10. a scene taller than STRIP_ROWS - coverage is a fraction, not 100%
+tall = {0: _Rect(0, 0, 100, ST.STRIP_ROWS * 4)}
+c = _FakeCzi(tall, tall, [], _xml(), channel_arrays={0: np.zeros((2, 2), np.uint16),
+                                                      1: np.zeros((2, 2), np.uint16)})
+row = ST.inspect("x.czi", _FakePyczi(c), True)
+chk("tall scene: read is capped at STRIP_ROWS", c.read_calls[0]["roi"][3], ST.STRIP_ROWS)
+chk("tall scene: coverage is a quarter of the scene", row["strip_frac_of_scene"], 0.25)
+
+# 11. bitcount_range_mismatch: recorded per row, and not a gating violation
+BCR_XML = _xml().replace(
+    "</Metadata>",
+    "<DisplaySetting><Channels><Channel><BitCountRange>14</BitCountRange>"
+    "</Channel></Channels></DisplaySetting></Metadata>")
+c = _FakeCzi({0: _Rect(0, 0, 10, 10)}, {0: _Rect(0, 0, 10, 10)}, [], BCR_XML)
+row = ST.inspect("x.czi", _FakePyczi(c), False)
+chk("BitCountRange mismatch: recorded", row["bitcount_range_mismatch"] != "", True)
+chk("BitCountRange mismatch: not a gating violation", row["violations"], "")
+_, code = ST.summarise([row])
+chk("BitCountRange mismatch: does not change the exit code", code, 0)
+
+# --- the gate must fire in-process, not only from the command line ----------
+# app/runner.py runs a stage as `mod.main()` and calls a plain return SUCCESS;
+# it detects failure only by catching SystemExit. A main() that RETURNS its exit
+# code therefore gates `python scripts/00d_czi_selftest.py` and not the GUI, and
+# app/stages.py's existence-only done() over an already-written CSV then shows
+# the stage green on a dataset that broke a structural assumption. This asserts
+# the in-process path, so that regression cannot happen silently again.
+try:
+    import pylibCZIrw                                        # noqa: F401
+    _HAVE_PYCZI = True
+except Exception:                                            # noqa: BLE001
+    _HAVE_PYCZI = False
+
+if _HAVE_PYCZI:
+    import contextlib
+    import io
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as _tmp:
+        _empty = os.path.join(_tmp, "empty-source")
+        os.makedirs(_empty)
+        # SOURCE_DIR/QC_DIR/OUT_CSV are redirected so this never reads the real
+        # dataset nor overwrites the real qc/czi_selftest.csv.
+        _saved = (ST.SOURCE_DIR, ST.QC_DIR, ST.OUT_CSV, sys.argv)
+        ST.SOURCE_DIR = _empty
+        ST.QC_DIR = os.path.join(_tmp, "qc")
+        ST.OUT_CSV = os.path.join(ST.QC_DIR, "czi_selftest.csv")
+        sys.argv = ["00d_czi_selftest.py"]
+        raised, returned = None, "did not return"
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                returned = ST.main()
+        except SystemExit as _e:
+            raised = _e.code
+        finally:
+            ST.SOURCE_DIR, ST.QC_DIR, ST.OUT_CSV, sys.argv = _saved
+
+    chk("in-process main() on an empty source dir RAISES SystemExit", raised is None, False)
+    chk("in-process main() raises exit code 2", raised, 2)
+    chk("in-process main() never falls through to a return", returned, "did not return")
+else:
+    print("note  pylibCZIrw absent, in-process gate check skipped")
+
 
 # --- dataset checks skip when the images are not present --------------------
 if not os.path.isdir(ST.SOURCE_DIR):
