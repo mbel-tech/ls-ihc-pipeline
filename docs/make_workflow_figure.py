@@ -88,8 +88,8 @@ STAGES = [
         C_NONE, False, False, "pairs.csv"),
 
     (2, "04a  Atlas extraction",
-        "101 plates and 356 region seed points pulled out of the\n"
-        "salmon atlas PDF; markers found by size, not by colour",
+        "47 plates and 362 region seed points pulled out of the\n"
+        "salmon atlas PDF; markers by size, not colour; 66 by raster",
         C_NONE, False, False, "atlas/plates_final/\nseeds.csv"),
 
     (2, "04a  Section reformatting",

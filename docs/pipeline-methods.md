@@ -77,7 +77,9 @@ anatomical ROIs and 586 background reference discs — yielding 892,025 individu
 measured nuclei, of which 619,300 fall in the anatomical ROIs and the remainder in the
 background discs. Eleven atlas regions are represented, of which Dl (575 ROIs) and Dm (489)
 dominate, with POA, Vv, Vd, Vl, Vs, Vc, the anterior tuberal nucleus, the posterior tuberculum
-and Rm contributing the remainder.
+and Rm contributing the remainder. This ROI set was curated against the atlas as it stood before
+2026-09-06; the revision described in §7.1 renames two of those regions and adds three more, and
+those changes reach the dataset only when the ROIs are re-curated.
 
 The PCNA (AF488) arm has been curated but detection has not been started. Its scope is the full
 788 curatable sections rather than the pERK partners, because the clipped-pixel censoring of §8
@@ -233,19 +235,58 @@ vector document rather than a scan: every region marker is a vector dot with a d
 colour, and each page carries a legend mapping colours to region names, which makes the whole
 document machine-readable. Plates and region markers were extracted with PyMuPDF.
 
-Markers are located by size rather than by colour, which is the non-obvious part: two of the
-atlas's own region colours defeat a colour filter, because black is used for the posterior
-tuberculum and the hatched anterior tuberal nucleus is a pattern fill that also reports as
-black. Filtering on colour discarded both, which removed every labelled plate caudal to a
-certain point.
+Markers are located by size rather than by colour, and grouped by overlap. Size, because a
+colour filter is not safe here: in the atlas as it stood before 2026-09 black was the posterior
+tuberculum, and the hatched anterior tuberal nucleus was a pattern fill that also reported as
+black, so filtering on colour discarded both and removed every labelled plate caudal to a
+certain point. The 2026-09 revision redrew both regions in solid colour, so neither case is
+live, but the size rule is kept because it does not depend on that remaining true.
 
-Extraction yields 101 raw plates from 31 pages. After merging figures that carry more than one
-section and reframing plate boundaries, the working set is 64 plates carrying 356 region seed
-points across 11 named regions, on 30 of those plates. The atlas labels the telencephalon and
-preoptic area; the majority of plates carry no region identification, which bounds regional
-quantification to the forebrain (§15). Extending the labelling caudally to the remaining
-social-behaviour-network nodes is guided by Wullimann et al. (1996) and Nieuwenhuys (1982),
-which are the comparative references the atlas itself is read against.
+Overlap, because a marker is not one path. The 2026-09 atlas was re-exported from PowerPoint,
+which draws each marker as three stacked paths spread over about 9.5 pt where the previous
+export drew two coincident to within 0.08 pt. Grouping paths whose centres fall within half the
+larger one's diameter recovers one marker per dot; the path closest to the nominal 22.7 pt
+marker size is taken as the marker itself, which reproduces the previous extraction's seed
+positions to 0.00 pt on the pages whose layout did not change.
+
+That re-export also flattened parts of some plates into bitmap overlays, taking 66 vector
+markers on pages 5 to 8 with them — a third of the telencephalic seeds. Those are recovered from
+a render of the page by matching the page's own legend colours inside the flattened areas at
+marker size. The recovery is reported per run, and is restricted to colours the page already
+names, so it can restore a marker the export lost but cannot introduce a region.
+
+Extraction yields 47 raw plates from 31 pages. After reframing plate boundaries, the working set
+is 64 plates carrying 362 region seed points across 13 named regions, on 31 of those plates.
+
+The atlas labels the telencephalon and preoptic area (Dl, Dm, Vd, Vl, Vv, Vs, Vc, POA), the
+raphe (Rm), and — added in the 2026-09 revision — four tuberal regions: the nucleus anterior
+tuberal, the nucleus lateral tuberal, the migrated posterior tuberal nucleus and the nucleus
+posterior tuberal. Region names are recorded exactly as the atlas writes them, so the anatomy
+stays the atlas author's statement rather than this pipeline's. Two changes in that revision are
+not additions: the region labelled "posterior tuberculum" on pages 18 to 20 of the previous
+atlas is absent, its territory now labelled nucleus lateral tuberal, and posterior tuberal has
+moved to a page of its own. That was read as a correction by the atlas author and the previous
+label is not carried forward.
+
+Half the plates still carry no region identification, which bounds regional quantification to
+the forebrain and the tuberal hypothalamus (§15). The periaqueductal grey, the remaining
+social-behaviour-network node on the original list, is still unlabelled. Extending the labelling
+is guided by Wullimann et al. (1996) and Nieuwenhuys (1982), which are the comparative
+references the atlas itself is read against.
+
+### Exports
+
+Each export writes into its own folder under `config.export_dir`, named for the minute it was
+taken - `DD.MM.YYYY_HH.MM` - with the same stamp on every file inside it. One export is one
+folder, so the three CSVs that describe a single set of decisions stay together and a later
+export cannot overwrite an earlier one.
+
+Where a browser supports the File System Access API the page writes into a directory the
+operator picked, and remembers it. Where it does not - Firefox, Safari, and the QtWebEngine
+view inside the app - the file is downloaded with the stamp in its name and the host files it;
+the app reads the stamp back off the name and rebuilds the same folder, so both routes produce
+the same layout. A folder that has become unwritable falls back to the download rather than
+losing the export.
 
 ## 7.2 Section reformatting
 
@@ -374,14 +415,39 @@ deformation between them, which needs enough real correspondences to be worth ha
 affine genuinely cannot follow the local distortion that sectioning and mounting introduce.
 BigWarp and VisuAlign use a thin-plate spline for exactly this task.
 
-From three pairs onward the atlas region seeds are warped live onto the section in their atlas
-colours. That display is the actual deliverable of the stage — it shows immediately whether the
-registration is placing Dl, Dm, Vv and POA where they belong, which is the only check that
-matters — and the per-landmark residual is shown so a mis-clicked pair is visible as a large
-error rather than quietly degrading the fit. The operator then places circular regions of
-interest, and additionally places background reference discs on tissue judged to carry no real
-signal; §11 explains what those are for. Sections are exported with their plate assignment,
-their landmark pairs and residuals, and their ROIs in the normalised 256 px frame.
+The per-landmark residual is shown, so a mis-clicked pair is visible as a large error rather than
+quietly degrading the fit. Nothing is warped onto the section: an earlier version drew every atlas
+seed through the fit, which turned ten placed ROIs into thirty on screen and twenty-seven in the
+export, and the ones nobody had touched were extrapolation past the edge of the landmarks that
+read as measurement.
+
+**A region of interest is an area, and the atlas numbers the areas.** The atlas marks each region
+with several vector dots — 142 for Dl across its plates, five or six per lobe — and measuring each
+dot as its own small circle measured circles rather than the region. The dots of one region on one
+side of the brain are therefore grouped into a single ROI, every dot carries that ROI's number, and
+the operator outlines the area as a polygon: each corner clicked in turn, closed on the first corner
+or with a keystroke. The atlas plate shows each ROI as a shaded shape in the atlas's own colour for
+it, so what is being asked for is visible rather than inferred from a scatter of numbered dots.
+There are 139 such ROIs over the 31 seeded plates, a median of four per plate against eleven dots.
+
+Grouping splits a region's dots by lobe before shaping them, because these regions are bilateral
+and one shape over both lobes spans the midline gap — the same failure documented for section
+solidity in §8. Without the split the widest shape covers 0.90 of a plate; with it, 0.20. The
+numbering follows the reading order the dots already had, down each column and columns left to
+right, so an ROI's number is stable across runs and across every export.
+
+A finished outline stays editable — corners moved, added and removed — for as long as no new one is
+being drawn. Circular ROIs are no longer placed for anatomy at all; the disc survives only for the
+background reference regions of §11, which are measured by the same detector and report its
+false-positive rate, and are a different quantity rather than a different shape of the same one.
+
+Landmarks are placed separately, by clicking a point on the section and the matching point on the
+plate. Nothing positions an ROI by the transform, so the landmarks exist for the plate assignment
+and the residual rather than for placing anything.
+
+Sections are exported with their plate assignment, their landmark pairs and residuals, and their
+ROIs — each as a vertex list with the number of the atlas ROI it answers — in the normalised 256 px
+frame.
 
 **An affine and B-spline registration with elastix** (Klein et al., 2010), following BrainJ and
 paralleling AnNoBrainer's registration stage, is implemented and was evaluated, including a
@@ -422,11 +488,18 @@ over every pixel of the frame. Agreement is 0.04 to 0.15 px, and that residual i
 downscale filter rather than an error in the inverse: the same filter deviates from an ideal
 centre-aligned mapping by 0.12 px on a plain linear ramp with no composition involved at all.
 
-One consequence is worth stating because it affects the reported areas: a circle drawn in the
-curator is an **ellipse** on the slide, because the composed transform is not isotropic. ROI
-area is therefore computed from the two semi-axes the affine implies, never from πr² in curator
-pixels. The stage writes one affine matrix per section and one bounding box in native CZI pixels
-per ROI, refusing sections whose geometry cannot be reconstructed rather than guessing at them.
+Two consequences are worth stating because they affect the reported areas. A circle drawn in the
+curator is an **ellipse** on the slide, because the composed transform is not isotropic, so a
+disc's area is computed from the two semi-axes the affine implies and never from πr² in curator
+pixels. A drawn region is a polygon on the slide, and its area is the shoelace over its mapped
+vertices — which is the same statement, since an affine multiplies every area by |det A|.
+
+Neither shape is mapped by its radius. The stage already turned a disc into a 128-point outline
+before mapping it, precisely because mapping a radius would assume the transform is a similarity;
+a polygon arrives as an outline already, so it takes the same path. The stage writes one affine
+matrix per section and one bounding box in native CZI pixels per ROI, together with the measured
+area for either shape, refusing sections whose geometry cannot be reconstructed — and ROI rows
+carrying neither a radius nor a vertex list — rather than guessing at them.
 
 # 11. Nuclei detection and marker measurement
 
@@ -434,6 +507,13 @@ This is the quantification step. For each region of interest, stage 05c reads th
 box out of the CZI at native 0.65 µm/px with pylibCZIrw, one read per channel, requesting only
 that box — a few hundred kilobytes out of a 1–2 GB file, which is what makes several thousand
 ROIs tractable. There is no downsampling and no pyramid-level snapping.
+
+The box is a rectangle and the ROI is not, so a nucleus found inside the box is kept only if it
+falls inside the ROI itself. That is decided by mapping the nucleus centroid back to the 256 px
+frame and testing it there — against the radius for a disc, and as a point-in-polygon for a drawn
+region — rather than against any radius in slide pixels, which would assume the transform is a
+similarity. The QC overlay draws the kept nuclei in green and the rejected ones in red, so a box
+that is mostly red says the shape is misplaced relative to what was segmented.
 
 **Nuclei are segmented on DAPI and never on the marker.** Detecting on the marker channel would
 define the number of marker-positive cells by the threshold twice over — once to find the object
@@ -612,9 +692,11 @@ acquired on the instrument.
 unrelated to biology. Two animals yield too few measurable sections to support a per-animal
 estimate at all. This must be checked against experimental group at unblinding.
 
-**The atlas covers the telencephalon and preoptic area only.** Most of its plates carry no
-region identification, so extending regional quantification caudally requires labelling that
-does not yet exist.
+**The atlas covers the forebrain and the tuberal hypothalamus.** The 2026-09 revision added
+four tuberal regions, but 33 of the 64 plates still carry no region identification and the
+periaqueductal grey remains unlabelled, so extending regional quantification further caudally
+still requires labelling that does not yet exist. The quantification reported here predates the
+revision (§7.1).
 
 **Counts are Abercrombie-corrected, not stereological.** See §12.
 

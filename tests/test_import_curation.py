@@ -93,6 +93,24 @@ REGIONS = [
     # again here, or every placed ROI would be duplicated.
     {"scene_uid": "A_s01a_sc00", "roi_kind": "roi", "sec_x": "10.38",
      "sec_y": "97.28", "sec_r": "9.69"},
+    # A DRAWN REGION. This is the one thing roi_regions.csv holds that
+    # roi_landmarks.csv cannot supply, so it is also the one thing a round trip
+    # can silently lose. On the K=3 section, to prove the vertices go through
+    # the same per-section scale as sec_x/sec_y and not some other one.
+    {"scene_uid": "A_s01a_sc00", "roi_kind": "roi", "roi_shape": "polygon",
+     "region": "Dl", "part": "2", "sec_x": "15.00", "sec_y": "15.00",
+     "sec_r": "", "roi_n": "4", "landmarks_at_draw": "2",
+     "sec_poly": "10.00 10.00;20.00 10.00;20.00 20.00;10.00 20.00"},
+]
+
+# Under three corners is not a shape. Kept OUT of the fixture above so that
+# `skipped` stays empty there and goes on meaning "a well-formed export loses
+# nothing" - a refusal folded into that list would have made the assertion pass
+# for the wrong reason ever after.
+BAD_POLY = [
+    {"scene_uid": "B_s01b_sc00", "roi_kind": "roi", "roi_shape": "polygon",
+     "region": "Dm", "part": "1", "sec_x": "0", "sec_y": "0", "sec_r": "",
+     "sec_poly": "1.00 1.00;2.00 2.00"},
 ]
 
 # The scale the real page implies for these two, without touching a disk.
@@ -140,6 +158,55 @@ def main():
     # carried; counting both would double every placed ROI.
     chk("ROI rows in regions are not re-added",
         len(state["A_s01a_sc00"]["pairs"]), 3)   # 2 landmarks + 1 background
+
+    # ---- a drawn region survives the round trip ----------------------------
+    pg = state["A_s01a_sc00"]["polys"]
+    chk("the polygon came back", len(pg), 1)
+    chk("...with its region", pg[0]["region"], "Dl")
+    chk("...and its lobe", pg[0]["part"], 2)
+    chk("...as a flat x,y list, the shape the page stores",
+        pg[0]["v"], [30.0, 30.0, 60.0, 30.0, 60.0, 60.0, 30.0, 60.0])
+    # 10.00 * 3: the vertices ride the SAME per-section K as sec_x and sec_y.
+    # Scaling them by anything else would put a region somewhere the operator
+    # never drew one, on a page that opens without complaint.
+    chk("the vertices took this section's own scale, not a global one",
+        [v / 10.0 for v in pg[0]["v"][:2]], [3.0, 3.0])
+    bad, bad_skip = Q.build(PLATES, [], BAD_POLY, k_of)
+    chk("a two-corner row is refused rather than imported as a shape",
+        bad["B_s01b_sc00"]["polys"], [])
+    chk("...and is reported rather than dropped in silence",
+        [k for k, _u in bad_skip], ["polygon"])
+    # A polygon is not a pair. Adding it to `pairs` would put a shape into the
+    # landmark fit, whose (0, 0) plate point would drag the whole transform.
+    chk("the polygon did not join the pairs",
+        len(state["A_s01a_sc00"]["pairs"]), 3)
+    # An export written before polygons existed has no roi_shape column at all.
+    chk("a pre-polygon import still yields an empty polys list",
+        state["C_s02a_sc00"]["polys"], [])
+
+    # The ROI NUMBER has to survive. It is what the guided cursor reads to know a
+    # re-imported section is already done; without it the walk would ask for
+    # every region again on a section that was finished weeks ago.
+    chk("the polygon's ROI number came back", pg[0]["roi"], 4)
+    noroi, _s = Q.build(PLATES, [], [dict(REGIONS[-1], roi_n="")], k_of)
+    chk("...and a row written before roi_n existed imports as 0",
+        noroi["A_s01a_sc00"]["polys"][0]["roi"], 0)
+
+    # The ORDER STAMP. `z` compares a region's age against the landmarks by it,
+    # and the curator rebuilds polys from this file, so a stamp that does not
+    # survive here does not survive at all.
+    chk("the order stamp came back", pg[0]["n"], 2)
+    zero, _s = Q.build(PLATES, [], [dict(REGIONS[-1], landmarks_at_draw="0")], k_of)
+    chk("...and 0 is a stamp, not a missing one - a region drawn before any "
+        "landmark", zero["A_s01a_sc00"]["polys"][0]["n"], 0)
+    # Absent has to stay absent rather than defaulting: the curator reads an
+    # unstamped region as the newer of the two, and a 0 invented here would
+    # assert the opposite - that it was drawn before every landmark on the
+    # section - about a file that never said so.
+    older = {k: v for k, v in REGIONS[-1].items() if k != "landmarks_at_draw"}
+    pre, _s = Q.build(PLATES, [], [older], k_of)
+    chk("a row written before the column carries no stamp at all",
+        "n" in pre["A_s01a_sc00"]["polys"][0], False)
 
     # ---- the decision flags ------------------------------------------------
     chk("a named plate reads as assigned", state["A_s01a_sc00"]["assigned"], True)
@@ -212,7 +279,11 @@ def main():
 
         pl = dump("p.csv", PLATES, list(PLATES[0]))
         lm = dump("l.csv", LANDMARKS, list(LANDMARKS[0]))
-        rg = dump("r.csv", REGIONS, list(REGIONS[0]))
+        # The UNION of every row's keys, in first-seen order. Taking the first
+        # row's alone was fine while every region row was a disc; a polygon row
+        # carries four columns a disc does not, and DictWriter raises on them.
+        rgf = list(dict.fromkeys(k for r in REGIONS for k in r))
+        rg = dump("r.csv", REGIONS, rgf)
         out = os.path.join(tmp, "written.json")
         argv = ["--plates", pl, "--landmarks", lm, "--regions", rg,
                 "--out", out, "--no-rgb"]

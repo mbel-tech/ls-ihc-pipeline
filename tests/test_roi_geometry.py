@@ -188,6 +188,58 @@ dx, dy = G5.apply_affine(d, 10.0, 20.0)
 close("a pad offset shifts it the other way", dx - ax, -5 * sx, 1e-6)
 close("...on both axes", dy - ay, -7 * sy, 1e-6)
 
+# ------------------------------------------------------- drawn region polygons
+note("\na drawn region is an outline already, so the map does no new work:\n")
+
+chk("a blank cell is no polygon", G5.parse_poly(""), None)
+chk("...and so is a missing one", G5.parse_poly(None), None)
+# Two points enclose nothing. Read as a polygon they would give 05c a ring with
+# no interior and 06a an area of zero, which reaches the dataset as a density of
+# something per nothing.
+chk("two points are not a polygon", G5.parse_poly("1 2;3 4"), None)
+sq = G5.parse_poly("10 10;20 10;20 20;10 20")
+chk("four points are", sq.shape, (4, 2))
+chk("...read in order", sq.tolist(), [[10.0, 10.0], [20.0, 10.0],
+                                      [20.0, 20.0], [10.0, 20.0]])
+chk("a cell that is not numbers is refused", G5.parse_poly("10 10;a b;20 20"), None)
+
+close("the shoelace of a 10x10 square", G5.outline_area(sq[:, 0], sq[:, 1]), 100.0, 1e-9)
+# Wound the other way it is the same square. abs() is not cosmetic: the curator
+# does not constrain which way round an operator clicks the corners, so half of
+# all polygons would otherwise come out with a negative area.
+close("...and the same wound backwards",
+      G5.outline_area(sq[::-1, 0], sq[::-1, 1]), 100.0, 1e-9)
+
+# THE CLAIM THIS MAKES: the area of a mapped polygon is |det A| times its area
+# on the grid, at EVERY angle. This is the polygon's version of the bug fixed in
+# `ellipse_axes` - reading the axes off the column norms was right at 0, 90, 180
+# and 270 and wrong everywhere else, which is where every real section sits.
+for _ang in (0.0, 30.0, 45.0, 137.0):
+    _a = np.radians(_ang)
+    # Deliberately anisotropic, 3x in one axis and 1.7 in the other: an isotropic
+    # matrix would pass a wrong area formula as easily as a right one.
+    _M = np.array([[3.0 * np.cos(_a), -1.7 * np.sin(_a), 11.0],
+                   [3.0 * np.sin(_a), 1.7 * np.cos(_a), -4.0]])
+    _X, _Y = G5.apply_affine(_M, sq[:, 0], sq[:, 1])
+    close(f"area scales by |det A| at {_ang:g} deg",
+          G5.outline_area(_X, _Y), 100.0 * abs(np.linalg.det(_M[:, :2])), 1e-6)
+
+# The bounding box is taken from the MAPPED vertices, so it has to contain them
+# all however the section was rotated - which is the whole reason 05a maps an
+# outline instead of a radius.
+_a = np.radians(45.0)
+_M = np.array([[3.0 * np.cos(_a), -1.7 * np.sin(_a), 11.0],
+               [3.0 * np.sin(_a), 1.7 * np.cos(_a), -4.0]])
+_X, _Y = G5.apply_affine(_M, sq[:, 0], sq[:, 1])
+_x0, _x1 = np.floor(_X.min()), np.ceil(_X.max())
+_y0, _y1 = np.floor(_Y.min()), np.ceil(_Y.max())
+chk("the box contains every mapped vertex",
+    bool(np.all((_X >= _x0) & (_X <= _x1) & (_Y >= _y0) & (_Y <= _y1))), True)
+# A rotated square is not axis-aligned, so its box must be strictly larger than
+# it. A box that matched the area would mean the rotation had been dropped.
+chk("...and is larger than the shape, because the shape is rotated",
+    (_x1 - _x0) * (_y1 - _y0) > G5.outline_area(_X, _Y), True)
+
 # ------------------------------------------------------- against the real data
 note("\nagainst the dataset, if it is present:\n")
 

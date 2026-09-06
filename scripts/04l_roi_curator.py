@@ -81,13 +81,33 @@ Interaction
   Returning to a section that was already assigned or landmarked does show its
   own plate again, because that is a recorded decision rather than a position.
 
-  From three pairs on, the atlas **region seeds are warped live onto the section**
-  in their atlas colours. That is the actual deliverable: it shows immediately
-  whether the registration is placing Dl, Dm, Vv and POA where they belong, which
-  is the only check that matters.
+  **Nothing is warped onto the section.** Warping every seed through the fit and
+  drawing them was tried and removed: ten placed ROIs produced thirty on screen
+  and twenty-seven in the export, and the seventeen nobody had touched were
+  extrapolation that looked like measurement. The check the overlay used to
+  provide is now the residual per landmark, shown for each one so a mis-clicked
+  pair is visible as a large error rather than quietly degrading the fit.
 
-  The residual per landmark is shown, so a mis-clicked pair is visible as a large
-  error rather than quietly degrading the fit.
+Regions, drawn rather than sampled
+----------------------------------
+
+  A region carries several seeds per lobe - Dl 142 over its plates, Dm 114 - and
+  placing a small disc on each measures those discs, not the region. **`Region`
+  mode draws the region itself.** Click its shape on the plate to say which one
+  you are drawing, then click out the outline on the section, corner by corner;
+  the first vertex, Enter or a double-click closes it.
+
+  The plate shows each region as a HULL of its own seeds, one per lobe, so there
+  is a shape to answer rather than a scatter of dots to infer one from. The hulls
+  are convex and computed in `region_hulls` below - splitting a region's seeds
+  before hulling them is the load-bearing part, because these regions are
+  bilateral and a hull over both lobes spans the midline gap, which is the same
+  failure `04f_exclusion_candidates.py` records for section solidity.
+
+  **A polygon claims the seeds it encloses.** Their pairs stay landmarks - the
+  fit wants every one of them, and nothing about placing them changed - but they
+  stop being ROIs of their own, because the region drawn over them already
+  measures that tissue. Exporting both would count the same nuclei twice.
 
 Scope, deliberately bounded
 ---------------------------
@@ -103,12 +123,18 @@ group and `roi_regions.csv` carries `region_ambiguous` and `ambiguity_group`
 beside the atlas's own label. The label itself is never overwritten - pooling
 them stays the reader's decision.
 
-**30 of the 64 plates carry region seeds** - 356 seeds over 11 regions:
+**31 of the 64 plates carry region seeds** - 362 seeds over 13 regions:
 telencephalon and POA on plate_009 to plate_025 (Dl 142, Dm 114, Vv 16, POA 16,
-Vd 10, Vl 10, Vs 4, Vc 4), then the caudal set on plate_037 to plate_057
-(Anterior tuberal nucleus 14, Rm 14, Posterior tuberculum 12). A section assigned
-to any other plate has no regions to receive, so the tool marks those plates and
-there is no reason to place landmarks on such a section.
+Vd 10, Vl 10, Vs 4, Vc 4), the tuberal set on plate_038 to plate_044 (Nucleus
+Anterior tuberal 10, Nucleus Lateral tuberal 10, Nucleus Posterior Tuberal 8,
+Migrated posterior tuberal nucleus 4), then Rm on plate_051 to plate_057 (14).
+A section assigned to any other plate has no regions to receive, so the tool
+marks those plates and there is no reason to place landmarks on such a section.
+
+The tuberal four arrived with the 2026-09 atlas, which also dropped the label
+"Posterior tuberculum" that used to sit on those levels. Names are carried
+exactly as the atlas writes them, long ones included - the curator groups and
+orders by them, it does not parse them.
 
 Affine below six points, thin-plate spline above
 ------------------------------------------------
@@ -241,7 +267,90 @@ COL_BAND, COL_SPAN = 0.08, 0.12
 LOBE_GAP = COL_SPAN
 
 
+def load_seeds(plate_dir=None):
+
+    """Every plate's region seeds, numbered in the fixed click-through order.
+
+    Factored out of `main` so the atlas region tracer (`04a5_atlas_regions.py`)
+    reads them the same way the curator does. Seed 4 has to be the same seed in
+    both tools and in every export, and a second copy of the ordering rule would
+    be a second chance to disagree.
+    """
+    seeds = {}
+    path = os.path.join(plate_dir or PLATE_DIR, "seeds.csv")
+    with open(path, newline="", encoding="utf-8") as fh:
+        for s in csv.DictReader(fh):
+            seeds.setdefault(s["plate_id"], []).append(
+                # TWO different uncertainties, and they are not the same thing.
+                # `amb` is ours: Vd/Vv/POA cannot be told apart without knowing
+                # the section's rostrocaudal level, so the group is shown instead
+                # of a name the data cannot support. `unk` is the ATLAS's own -
+                # eight seeds are labelled "Rm (Raphe) ??" in the source, and
+                # dropping that flag here made the tool report them as settled.
+                {"region": s["region"], "amb": REGION_GROUP.get(s["region"], ""),
+                 "unk": 1 if s.get("is_unknown") == "1" else 0,
+                 "xf": float(s["x_frac"]), "yf": float(s["y_frac"]),
+                 "hex": s.get("colour_hex") or "#4da3ff"})
+    for lst in seeds.values():
+        number_seeds(lst)
+    return seeds
+
+
+def number_seeds(lst):
+    """Set `n` on one plate's seeds, in place, in the click-through order.
+
+    A FIXED order, decided here rather than in the page, so that "seed 4" is the
+    same seed in the tool, in every export and in a re-run. seeds.csv is in
+    extraction order, which is arbitrary and puts bilateral partners far apart.
+    Reading order - down the plate, left to right within a row - can be followed
+    by eye.
+
+    The rows have to be FOUND, not rounded to a grid. Seeds on one visual row sit
+    at y values ~0.001 apart (0.2329, 0.2338, 0.2347 on plate_013) while real
+    rows are ~0.02 apart, so any fixed rounding either splits a row or merges
+    two. Splitting a row is the damaging one: the x tiebreak never fires, and the
+    order zigzags across the midline - 0.39, 0.05, 0.60, 0.94 - which is exactly
+    the thing a fixed order is supposed to stop. So rows are grown greedily by
+    gap, at a threshold between the two scales.
+
+    Left to right every row, not serpentine. Serpentine is 14% less travel and
+    costs more than it saves: these regions are bilateral, and alternating the
+    direction flips which hemisphere the next seed is in on every row. COLUMNS,
+    top to bottom, starting from the left. Not rows: these seeds run in vertical
+    strips - a lateral arc down each side and a medial strip either side of the
+    midline - and reading across rows cut every strip into fragments, so
+    consecutive numbers landed on opposite sides of the brain. Down a column the
+    next number is the next seed in the same structure.
+
+    COL_BAND has to be wide enough to hold a strip that drifts sideways as it
+    descends: the left lateral arc on plate_013 runs x = 0.05, 0.04, 0.07, 0.13
+    while y goes 0.23 -> 0.50. At 0.02 that arc fragments into four one-seed
+    "columns" (74% of all columns were single); at 0.08 plate_013 resolves into
+    the six strips actually present and 22% are single. COL_SPAN caps a column's
+    total width as well as the step between neighbours, so a strip drifting
+    steadily sideways cannot chain across the midline and swallow its bilateral
+    partner. Both live at module level, because `region_hulls` splits a region's
+    lobes at that same COL_SPAN.
+    """
+    if not lst:
+        return lst
+    lst.sort(key=lambda s: (s["xf"], s["yf"]))
+    cols, cur = [], [lst[0]]
+    for s in lst[1:]:
+        if (s["xf"] - cur[-1]["xf"] > COL_BAND
+                or s["xf"] - cur[0]["xf"] > COL_SPAN):
+            cols.append(cur); cur = [s]
+        else:
+            cur.append(s)
+    cols.append(cur)
+    lst[:] = [s for col in cols for s in sorted(col, key=lambda s: s["yf"])]
+    for i, s in enumerate(lst, 1):
+        s["n"] = i
+    return lst
+
+
 def convex_hull(pts):
+
     """Monotone-chain hull of (x, y) pairs, no repeated closing point.
 
     Written out rather than imported. This runs wherever the page is generated
@@ -318,7 +427,40 @@ def region_hulls(sd):
                 "v": [[round(x, 6), round(y, 6)] for x, y in
                       convex_hull([(s["xf"], s["yf"]) for s in part])],
             })
+    # THE ROI NUMBER. An ROI is an area, and this is its identity on the plate:
+    # one number per region per lobe, carried by every seed under it, so the
+    # atlas reads "ROI 1, ROI 2, ROI 3" instead of "seed 1 ... seed 30".
+    #
+    # Ordered by the group's LOWEST seed, which makes the ROI order the same
+    # traversal `number_seeds` already establishes - down each column, columns
+    # left to right - rather than a second, alphabetical one nobody asked for.
+    # On plate_013 that runs Dl-left, Dm-left, Vd, Vv, Vl, then across the
+    # midline and back to Dl-right.
+    #
+    # The seeds keep their own `n`. Only the DISPLAYED number becomes the ROI's,
+    # because `P.seeds[n-1]` is how three places resolve a number back to a seed
+    # and the operator's store holds 268 sections whose pairs carry the old
+    # per-seed numbers. Renumbering the seeds themselves would re-label every one
+    # of them through a scheme with a third as many values, and nothing would
+    # error.
+    out.sort(key=lambda h: min(h["seeds"]))
+    for i, h in enumerate(out, 1):
+        h["roi"] = i
     return out
+
+
+def tag_rois(sd, hulls):
+    """Write each seed's ROI number onto it, from the hulls just computed.
+
+    Separate from `region_hulls` on purpose. Having the hull builder quietly
+    mutate the list it was handed would mean a caller that only wanted the hulls
+    changed the seeds as a side effect, and a caller that wanted the numbers had
+    to know to call it first. Here the dependency is one visible line.
+    """
+    roi_of = {n: h["roi"] for h in hulls for n in h["seeds"]}
+    for s in sd:
+        s["roi"] = roi_of.get(s["n"], 0)
+    return sd
 
 
 def marker_paths(marker):
@@ -350,6 +492,9 @@ def analysis_uids(marker):
 PLATE_SET = CONFIG.get("atlas_plate_set", {}).get("dir", "plates")
 PLATE_DIR = os.path.join(OUT_ROOT, "atlas", PLATE_SET)
 CURATOR_HTML = os.path.join(REFORMAT_DIR, "roi_curator.html")
+# Where exports are filed. Config so the app and this stage cannot disagree
+# about it; one dated folder per export is created inside it.
+EXPORT_DIR = CONFIG.get("export_dir") or os.path.join(OUT_ROOT, "exports")
 PROVENANCE_CSV = os.path.join(REFORMAT_DIR, "section_provenance.csv")
 
 # The Review mode needs one row per SCANNED section - 2,572, against the ~1,242
@@ -490,6 +635,12 @@ canvas{display:block;width:100%;height:100%;object-fit:contain;cursor:crosshair;
 .btn-bg{border-color:#8b3d6b;color:#f778ba}
 .btn-bg:hover{border-color:#f778ba;color:#f778ba}
 .bg-on{border-color:#f778ba !important;background:#33132a;color:#ffb3d9 !important}
+/* Region mode. Green rather than pink, and matching the armed hull's ring on
+   the plate, so the two panes say the same thing about which mode is live. */
+#cSec.regionmode{cursor:crosshair;outline:3px solid #3fb950;outline-offset:-3px}
+.btn-region{border-color:#2d6a3e;color:#7ee787}
+.btn-region:hover{border-color:#3fb950;color:#7ee787}
+.reg-on{border-color:#3fb950 !important;background:#10261a;color:#7ee787 !important}
 #cSec.rotating{cursor:ew-resize}
 button[disabled]{opacity:.4;cursor:default}
 button[disabled]:hover{border-color:var(--line)}
@@ -597,6 +748,12 @@ label.chk{color:var(--dim);font-size:12px;display:flex;align-items:center;gap:4p
    nowrap keeps the pair on one line; the pair still wraps as a unit, which is
    the same rule .filters and .actions already follow. */
 .deliver{display:flex;gap:6px;align-items:center;flex-wrap:nowrap}
+/* The export target, beside the button that changes it. Truncated rather than
+   wrapped: this row must stay one line, and a long path is not worth the
+   header growing a second one. */
+.expdir{font-size:11px;opacity:.75;max-width:150px;overflow:hidden;
+        text-overflow:ellipsis;white-space:nowrap}
+#expStat{font-size:11px;opacity:.75}
 .cell img{width:100%;aspect-ratio:1;object-fit:contain;display:block;border-radius:3px}
 .cap{font-size:9px;color:var(--dim);text-align:center;line-height:1.15;margin-top:1px}
 footer{flex:0 0 auto;background:var(--bg);border-top:1px solid var(--line);
@@ -700,9 +857,9 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
     <select id="marker" onchange="onMarker(); this.blur()"></select>
     <label class="chk"><input type="checkbox" id="favOnly" onchange="render(); this.blur()">favourites only</label>
     <label class="chk"><input type="checkbox" id="hideExcl" onchange="render(); this.blur()">hide excluded</label>
-    <span class="row" style="margin-left:6px">ROI <b id="roiSizeVal"></b> px</span>
+    <span class="row" style="margin-left:6px">bg disc <b id="roiSizeVal"></b> px</span>
     <input type="range" id="roiSize" min="2" max="60" step="1"
-           title="Default radius for a new ROI. Dragging as you place one still overrides it."
+           title="Default radius for a background disc - the only thing still placed as a circle. Dragging as you place one still overrides it."
            oninput="onRoiSize(this.value)" onchange="this.blur()"
            style="width:90px;vertical-align:middle">
   </span>
@@ -726,17 +883,24 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
   <button id="exclBtn" class="btn-kill" onclick="toggleExcl()">Exclude</button>
   <button id="dapiBtn" class="btn-plate" onclick="toggleDapi()">DAPI</button>
   <button id="bgBtn" class="btn-bg" onclick="toggleBgMode()">Background</button>
+  <button id="hullBtn" class="btn-region" onclick="toggleHulls()">Hulls</button>
+  <button id="undoPolyBtn" class="btn-edit" onclick="undoPoly()">Undo region</button>
   <button id="guideBtn" class="btn-guide" onclick="toggleGuided()">Guided</button>
-  <button id="skipBtn" class="btn-guide" onclick="skipSeed()">Skip seed</button>
+  <button id="skipBtn" class="btn-guide" onclick="skipRoi()">Skip ROI</button>
   <button class="btn-edit" onclick="undoPt()">Undo point</button>
   <button id="undoBtn" class="btn-rot" onclick="undoLast()" disabled
           title="Nothing to undo (u)">Undo</button>
-  <button class="btn-edit" onclick="clearPts()">Clear points</button>
+  <button class="btn-edit" onclick="clearPts()"
+          title="take back everything placed on this section - landmarks, an unfinished outline and the regions. u puts it back">Clear section</button>
   <span class="deliver">
     <button id="revBtn" class="btn-guide" onclick="toggleReview()">Review</button>
+    <button id="expDirBtn" class="btn-edit" onclick="chooseExportDir()"
+            title="pick the folder exports are written into">Folder...</button>
+    <span id="expDirLbl" class="expdir"></span>
     <button class="primary" onclick="exportCsv()">Export</button>
     <button id="shotBtn" class="btn-shot" onclick="shotgun()">Shotgun</button>
     <button id="shotRegBtn" class="btn-shot" onclick="shotgun('region')">By region</button>
+    <span id="expStat"></span>
   </span>
   </span>
 </header>
@@ -860,7 +1024,8 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
 </div>
 <div id="panes">
   <div class="pane"><h2 id="secTitle">SECTION - click to place a point</h2>
-    <canvas id="cSec" tabindex="0" onmousedown="secDown(event)"></canvas>
+    <canvas id="cSec" tabindex="0" onmousedown="secDown(event)"
+            ondblclick="if(draft) commitPoly()"></canvas>
     <button class="nav l" id="secPrev" tabindex="-1" title="Previous section (up arrow)"
             onclick="stepSection(-1)">&lsaquo;</button>
     <button class="nav r" id="secNext" tabindex="-1" title="Next section (down arrow)"
@@ -890,19 +1055,26 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
 </div>
 <div id="strip"></div>
 <footer>
-  <kbd>click</kbd> section then plate to add a pair &middot;
-  <kbd>&larr;</kbd><kbd>&rarr;</kbd> plate &middot; <kbd>z</kbd> undo point &middot;
+  <kbd>g</kbd> guided: the plate's ROIs one at a time - <kbd>click</kbd> each
+  corner of the region on the section, then <kbd>Enter</kbd>, a double-click or
+  the first corner to close it &middot;
+  <kbd>z</kbd> drops a corner &middot;
+  <kbd>s</kbd> skip an ROI that is not on this section &middot;
+  once closed a region stays live: <kbd>drag</kbd> a corner to move it, click an
+  edge to add one, <kbd>Delete</kbd> removes the one under the cursor - any time
+  you are not part-way through drawing another &middot;
+  <kbd>h</kbd> hides the shapes on the plate &middot;
+  with guided OFF, <kbd>click</kbd> section then plate to add a landmark pair &middot;
+  <kbd>&larr;</kbd><kbd>&rarr;</kbd> plate &middot;
   <kbd>&uarr;</kbd>/<kbd>&darr;</kbd> previous / next section (the plate stays put,
   or use the arrows on the panes) &middot;
   <kbd>a</kbd> assign plate &middot;
   <kbd>Rotate</kbd> then drag the section left/right (<kbd>shift</kbd> fine) - kept on release,
   <kbd>r</kbd> restores the original &middot;
   <kbd>f</kbd> favourite &middot; <kbd>x</kbd> exclude this section &middot;
-  <kbd>g</kbd> guided (walk the plate's numbered seeds, one click each) &middot;
-  <kbd>s</kbd> skip a seed that is not on this section &middot;
   <kbd>d</kbd> background disc: mark tissue with NO signal, 2-3 per section - it is
-  measured by the same detector, so it reports the false-positive rate here
-  (it takes no seed number and does not move the guided cursor) &middot;
+  measured by the same detector, so it reports the false-positive rate here. It is
+  the only thing still placed as a circle, and it does not move the ROI cursor &middot;
   <kbd>Review</kbd> every scanned section and what each stage decided about it -
   reinstate one the pipeline excluded, or reject its artifact mask. There,
   <kbd>&uarr;</kbd>/<kbd>&darr;</kbd> step one section at a time through whatever
@@ -910,9 +1082,9 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
   <kbd>d</kbd> DAPI on/off, <kbd>k</kbd> the marker on/off, <kbd>v</kbd> artifacts
   in red, <kbd>c</kbd> censored pixels in cyan, <kbd>m</kbd> apply the mask to see
   what 04a removed, <kbd>f</kbd> fullscreen (or double-click the image) &middot;
-  <kbd>[</kbd><kbd>]</kbd> ROI size (or drag as you place one) &middot;
+  <kbd>[</kbd><kbd>]</kbd> background disc size (or drag as you place one) &middot;
   <kbd>u</kbd> undo the last thing, whatever it was (<kbd>z</kbd> stays
-  point-only) &middot;
+  corner-only) &middot;
   <span style="color:#7c5cff">purple</span> = registered &middot;
   <span style="color:#4da3ff">blue</span> = plate assigned only &middot;
   <span style="color:#e3b341">gold edge</span> = favourite &middot;
@@ -922,7 +1094,11 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
 </footer>
 <script>
 const DATA = __DATA__;      // [{uid, animal, order, img}]
-const PLATES = __PLATES__;  // [{id, img, w, h, labelled, seeds:[{region,xf,yf,hex}]}]
+const PLATES = __PLATES__;  // [{id, img, w, h, labelled, seeds:[{region,xf,yf,hex}],
+                           //   hulls:[{region,part,n_parts,hex,amb,unk,seeds,v:[[xf,yf]]}]}]
+// A hull is what a REGION is on a plate, as opposed to where its seeds are:
+// one per region per lobe, convex, hulled in Python so the lobe split is
+// testable rather than a drawing decision. See `region_hulls` there.
 // Which plate set these ids belong to. plate_012 exists in every set and is a
 // DIFFERENT image in each, so every export carries this and a landmark file can
 // never be silently matched against the wrong plates.
@@ -959,8 +1135,13 @@ const SEED_STATE = __SEED__;
 // "the operator decided something". These two predicates are the only rule:
 // hasRoiWork is what exportCsv reports; hasDecision adds the two things kept
 // but exported elsewhere (a tilt, a Review-mode verdict).
+// A drawn region is work, and this is not only about the export: `decided()`
+// filters the store on every load, so a section curated ENTIRELY with polygons
+// and no landmarks would have been thrown away as an empty record the next time
+// the page opened.
 const hasRoiWork  = r => !!r && !!(r.assigned || r.fav || r.excl || r.noroi
-                                   || (r.pairs && r.pairs.length));
+                                   || (r.pairs && r.pairs.length)
+                                   || (r.polys && r.polys.length));
 const hasDecision = r => hasRoiWork(r) || !!(r && (r.rot || r.rev));
 const decided = obj => Object.fromEntries(
   Object.entries(obj || {}).filter(([, v]) => hasDecision(v)));
@@ -1293,11 +1474,91 @@ function drawSec(){
   // free-mode label, but background discs are interleaved with landmarks, so an
   // index would number the landmarks 1,3,4 the moment one was placed between
   // them. Each kind counts its own.
-  let nRoi=0, nBg=0;
+  // ---- the ROIs drawn on this section ---------------------------------------
+  //
+  // SHADED in the region's own colour, the same colour the atlas draws it in -
+  // reading it off the seed rather than a table is what keeps the two panes from
+  // ever disagreeing. Region names were taken off this pane because on a dense
+  // plate they became a wall of text over exactly the anatomy being judged; the
+  // colour and the ROI number say the same thing without a character of it
+  // landing on the tissue.
+  //
+  // Cased, like the shapes on the plate: Dl is pure yellow and the tissue under
+  // it is pale.
+  const Ppl = PLATES[s.plate];
+  polysOf(s).forEach(pg => {
+    const col = polyCol(Ppl, pg);
+    x.beginPath();
+    for(let i=0;i<pg.v.length;i+=2){
+      const [X,Y]=img2can(pg.v[i],pg.v[i+1],g);
+      i ? x.lineTo(X,Y) : x.moveTo(X,Y);
+    }
+    x.closePath();
+    x.fillStyle=col; x.globalAlpha=.22; x.fill(); x.globalAlpha=1;
+    x.lineJoin="round";
+    x.lineWidth=4.5*u; x.strokeStyle="rgba(4,18,31,.75)"; x.stroke();
+    x.lineWidth=2.5*u; x.strokeStyle=col; x.stroke();
+    // The ROI's number at its centre, so the section can be read against the
+    // plate without counting shapes.
+    let cx=0, cy=0;
+    for(let i=0;i<pg.v.length;i+=2){ cx+=pg.v[i]; cy+=pg.v[i+1]; }
+    const nv=pg.v.length/2;
+    const [CX,CY]=img2can(cx/nv, cy/nv, g);
+    x.save();
+    x.font="bold "+(NUM_PX_SEED*ns*u)+"px system-ui";
+    x.textAlign="center"; x.textBaseline="middle";
+    x.lineWidth=4*u; x.strokeStyle="#04121f"; x.lineJoin="round";
+    x.strokeText(pg.roi||"", CX, CY);
+    x.fillStyle=col; x.fillText(pg.roi||"", CX, CY);
+    x.restore();
+    // The CORNERS, but only while no new ring is being drawn. That is the whole
+    // of the editing rule: with a draft open every click belongs to it, and
+    // handles under the cursor would be a trap rather than an affordance.
+    if(!draft) for(let i=0;i<pg.v.length;i+=2){
+      const [X,Y]=img2can(pg.v[i],pg.v[i+1],g);
+      x.beginPath(); x.arc(X,Y,3.5*u,0,6.284);
+      x.fillStyle="#7ee787"; x.fill();
+      x.lineWidth=1.5*u; x.strokeStyle="#04121f"; x.stroke();
+    }
+    // ...and an edge midpoint to click for a new one.
+    if(!draft) for(let i=0,j=pg.v.length-2;i<pg.v.length;j=i,i+=2){
+      const [X,Y]=img2can((pg.v[i]+pg.v[j])/2, (pg.v[i+1]+pg.v[j+1])/2, g);
+      x.beginPath(); x.arc(X,Y,2*u,0,6.284);
+      x.fillStyle="#04121f"; x.fill();
+      x.lineWidth=1.2*u; x.strokeStyle="#7ee787"; x.stroke();
+    }
+  });
+  // The ring being clicked out. Left OPEN, and dashed, so an unfinished polygon
+  // never looks like a finished one.
+  if(draft && draft.length){
+    const col = (gRoi() || {}).hex || "#d29922";
+    x.save(); x.setLineDash([6*u, 4*u]);
+    x.beginPath();
+    for(let i=0;i<draft.length;i+=2){
+      const [X,Y]=img2can(draft[i],draft[i+1],g);
+      i ? x.lineTo(X,Y) : x.moveTo(X,Y);
+    }
+    x.lineWidth=2.5*u; x.strokeStyle=col; x.stroke();
+    x.restore();
+    // The first vertex gets a ring, because clicking it is what closes the shape
+    // and an invisible target is not a target.
+    const [FX,FY]=img2can(draft[0],draft[1],g);
+    x.beginPath(); x.arc(FX,FY,closeR()*(g.D/(secImg.naturalWidth||SEC_GRID)),0,6.284);
+    x.lineWidth=2*u; x.strokeStyle=col; x.stroke();
+    for(let i=0;i<draft.length;i+=2){
+      const [X,Y]=img2can(draft[i],draft[i+1],g);
+      x.beginPath(); x.arc(X,Y,2.5*u,0,6.284); x.fillStyle=col; x.fill();
+    }
+  }
+  // A landmark is a point now, not a disc. Nothing anatomical is measured by a
+  // radius any more, so the ring shrinks to a marker and the number is the whole
+  // of what it says. Background discs keep their radius: theirs is the area the
+  // detector's false-positive rate is measured over.
+  let nLm=0, nBg=0;
   s.pairs.forEach(p=>{
     const [X,Y]=img2can(p[0],p[1],g);
     if(isBg(p)) mark(x,X,Y,"B"+(++nBg),BG_COL,u,pairR(p),ns);
-    else        mark(x,X,Y,p[4]||(++nRoi),"#4da3ff",u,pairR(p),ns);
+    else        mark(x,X,Y,++nLm,"#4da3ff",u,3*u,ns);
   });
   const nextLabel = bgMode ? "B"+(bgPairs(s).length+1)
                   : guided ? gTarget : roiPairs(s).length+1;
@@ -1313,29 +1574,110 @@ function drawPl(){
   const img=plateImg();
   if(!img.naturalWidth){ img.addEventListener("load", drawPl, {once:true}); return; }
   fit(c,img); x.drawImage(img,0,0);
-  const s=st(active), P=PLATES[s.plate], u=uiScale(c), done=usedSeeds(s);
+  const s=st(active), P=PLATES[s.plate], u=uiScale(c), done=usedRois(s);
   const ns=numScale(P, c, u);
-  // Every seed carries its number, because the number IS the click-through
-  // order - without it the list exists only in the code. Done seeds go hollow
-  // and the current one gets a bright ring, so progress down the plate is
+  // ---- the ROIs, as areas --------------------------------------------------
+  //
+  // An ROI is what is being asked for, so an ROI is what the plate draws: one
+  // shape per region per lobe, shaded in the atlas's own colour for it. Reading
+  // a region's extent off a scatter of separately numbered dots was a job the
+  // reader should never have had.
+  //
+  // The dots stay, smaller, and every dot of an ROI carries THAT ROI's number.
+  // A done ROI goes hollow and the target gets a bright ring, so progress is
   // visible without reading anything.
-  P.seeds.forEach((sd,i)=>{
-    const N=i+1, X=sd.xf*c.width, Y=sd.yf*c.height;
+  const HL = hullsOn ? (P.hulls || []) : [];
+  const isTgtRoi = h => guided && h.roi === gTarget;
+  HL.forEach(h => {
+    if(h.v.length < 3) return;                 // a dot or a segment; drawn below
+    x.beginPath();
+    h.v.forEach((v,i) => { const X=v[0]*c.width, Y=v[1]*c.height;
+                           i ? x.lineTo(X,Y) : x.moveTo(X,Y); });
+    x.closePath();
+    const tgt = isTgtRoi(h), dn = done.has(h.roi);
+    // Colour off the seed, never a table - the same rule the region key follows,
+    // and the reason the two panes cannot drift apart.
+    x.fillStyle = h.hex || "#4da3ff";
+    x.globalAlpha = tgt ? .34 : dn ? .07 : .15; x.fill();
+    x.globalAlpha = 1;
+    // Cased: a dark stroke under the colour. The atlas draws Dl in pure yellow
+    // and prints its own yellow markers on these plates, so an uncased yellow
+    // line on pale tissue is close to invisible - measured on this pane.
+    x.lineJoin = "round";
+    x.lineWidth = (tgt ? 6 : 3.6) * u;
+    x.strokeStyle = "rgba(4,18,31,.75)"; x.stroke();
+    x.lineWidth = (tgt ? 3.5 : 1.8) * u;
+    x.strokeStyle = tgt ? "#7ee787" : (h.hex || "#4da3ff"); x.stroke();
+  });
+  // One- and two-seed ROIs are ordinary - Vs and Vc carry four seeds in the
+  // whole atlas - and a one-vertex shape strokes no pixels at all, so both are
+  // drawn as what they are rather than silently skipped.
+  HL.forEach(h => {
+    if(h.v.length > 2) return;
+    const tgt = isTgtRoi(h);
+    x.lineCap = "round";
+    if(h.v.length === 2){
+      x.beginPath();
+      x.moveTo(h.v[0][0]*c.width, h.v[0][1]*c.height);
+      x.lineTo(h.v[1][0]*c.width, h.v[1][1]*c.height);
+      x.lineWidth = 9*u; x.strokeStyle = "rgba(4,18,31,.75)"; x.stroke();
+      x.lineWidth = 6*u; x.strokeStyle = tgt ? "#7ee787" : (h.hex || "#4da3ff");
+      x.globalAlpha = .8; x.stroke(); x.globalAlpha = 1;
+    } else {
+      x.beginPath(); x.arc(h.v[0][0]*c.width, h.v[0][1]*c.height, 9*u, 0, 6.284);
+      x.lineWidth = 4*u; x.strokeStyle = "rgba(4,18,31,.75)"; x.stroke();
+      x.lineWidth = 2*u; x.strokeStyle = tgt ? "#7ee787" : (h.hex || "#4da3ff");
+      x.stroke();
+    }
+    x.lineCap = "butt";
+  });
+  P.seeds.forEach(sd=>{
+    const N=sd.roi, X=sd.xf*c.width, Y=sd.yf*c.height;
     const isDone=done.has(N), isTgt=guided && N===gTarget;
-    x.beginPath(); x.arc(X,Y,(isTgt?8:5)*u,0,6.284);
+    const base = HL.length ? 3.5 : 5;          // smaller once a shape carries the meaning
+    x.beginPath(); x.arc(X,Y,(isTgt?7:base)*u,0,6.284);
     x.fillStyle=sd.hex||"#4da3ff"; x.globalAlpha=isDone?.25:.85; x.fill();
     x.globalAlpha=1; x.lineWidth=(isTgt?3:1.2)*u;
     x.strokeStyle=isTgt?"#3fb950":"#000"; x.stroke();
+  });
+  // The NUMBER goes once per ROI, not once per dot. Every dot of an ROI carries
+  // the same number now, so drawing it on each of six Dl seeds would print "1"
+  // six times over the anatomy it is meant to label. Once, at the shape's
+  // centre, says the same thing and covers five sixths less tissue.
+  HL.forEach(h => {
+    const N = h.roi;
+    const isDone = done.has(N), isTgt = guided && N === gTarget;
+    const cx = h.v.reduce((a,v)=>a+v[0],0)/h.v.length*c.width;
+    const cy = h.v.reduce((a,v)=>a+v[1],0)/h.v.length*c.height;
     x.save();
     const fs=(isTgt?NUM_PX:NUM_PX_SEED)*ns;
     x.font="bold "+(fs*u)+"px system-ui";
     x.textAlign="center"; x.textBaseline="middle";
     x.lineWidth=4*u; x.strokeStyle="#04121f"; x.lineJoin="round";
-    const off=fs*0.55*u;
-    const lx=X+off, ly=Y-off;
-    x.strokeText(N, lx, ly);
+    x.strokeText(N, cx, cy);
     x.fillStyle = isTgt ? "#7ee787" : isDone ? "#6e7681" : "#fff";
-    x.fillText(N, lx, ly);
+    x.fillText(N, cx, cy);
+    x.restore();
+  });
+  // The region's NAME, under its number. This pane can afford text where the
+  // section cannot: the plate is a drawing with room in it, and knowing an ROI
+  // is number 3 is not the same as knowing it is Dl. One label per lobe, so a
+  // bilateral region says its name twice and reads as two.
+  HL.forEach(h => {
+    if(h.v.length < 3) return;
+    const cx = h.v.reduce((a,v)=>a+v[0],0)/h.v.length*c.width;
+    const cy = h.v.reduce((a,v)=>a+v[1],0)/h.v.length*c.height
+             + NUM_PX_SEED*ns*0.85*u;         // clear of the number above it
+    x.save();
+    x.font = "bold "+(NUM_PX_SEED*ns*0.55*u)+"px system-ui";
+    x.textAlign="center"; x.textBaseline="middle";
+    x.lineWidth=4*u; x.strokeStyle="#04121f"; x.lineJoin="round";
+    // The ambiguity group, not the atlas name, wherever there is one - Vd, Vv
+    // and POA cannot be told apart at this level and the pane must not claim
+    // they can. `?` is the atlas's own doubt, kept separate from ours.
+    const nm = (h.amb || h.region) + (h.unk ? "?" : "");
+    x.strokeText(nm, cx, cy); x.fillStyle = h.hex || "#4da3ff";
+    x.fillText(nm, cx, cy);
     x.restore();
   });
   // ONLY FREE PAIRS get a blue mark here, and the reason is that blue means
@@ -1466,12 +1808,47 @@ function secDown(e){
     rotDrag={x:e.clientX, rot:effRot(), live:false}; e.preventDefault();
     return;
   }
+  // A polygon is CLICKED OUT, vertex by vertex, not dragged. On a 256 px frame
+  // one pixel spans about 25 um, so a lasso would be sketching an outline at a
+  // scale where every pixel is four nuclei wide; clicking puts each corner where
+  // it was meant to go, and leaves it there to be nudged afterwards.
+  // Background mode wins over the guided walk. A background disc is placed with
+  // the press-drag-release gesture below, and if the walk intercepted the click
+  // first the disc could never be placed at all while guided was on - which is
+  // always, since it is the default.
+  if(guided && !bgMode){
+    e.preventDefault();
+    syncFrame(active);
+    const [vx,vy] = can2img(...canvasXY(el("cSec"), e), secGeom());
+    // Not drawing yet: a click may be grabbing a corner of a finished polygon,
+    // or asking for a new one on an edge. Editing wins over starting a ring,
+    // because a click that lands on a handle was aimed at that handle.
+    if(!draft && grabVertex(vx, vy)) return;
+    if(!gTarget){ status(); return; }        // plate finished - nothing to draw
+    addVertex(vx, vy);
+    return;
+  }
   syncFrame(active);
   const [ix,iy] = can2img(...canvasXY(el("cSec"), e), secGeom());
   ptDrag = {ix, iy, r: defaultR()};
   e.preventDefault(); drawSec(); status();
 }
+// Where the pointer last was, in section image pixels. Delete has no
+// coordinates of its own, and asking which corner to remove is the whole
+// question, so it is remembered here rather than guessed at.
+let lastSec = null;
 addEventListener("mousemove", e=>{
+  if(active && secImg.naturalWidth){
+    try { lastSec = can2img(...canvasXY(el("cSec"), e), secGeom()); } catch(err){}
+  }
+  // A corner of a finished polygon, following the cursor. One undoMark was taken
+  // when the grab happened; its 900 ms coalescing makes the whole drag one step.
+  if(vDrag && active){
+    const [mx,my] = can2img(...canvasXY(el("cSec"), e), secGeom());
+    const pg = polysOf(st(active))[vDrag.pi];
+    if(pg){ pg.v[vDrag.vi] = mx; pg.v[vDrag.vi+1] = my; drawSec(); }
+    return;
+  }
   if(ptDrag){
     // radius = how far the mouse has travelled from the point, in image pixels,
     // so the circle follows the cursor and what you see is what is stored
@@ -1497,6 +1874,11 @@ addEventListener("mousemove", e=>{
 // turned. It is stored per section like every other decision, so returning to a
 // section shows it at the angle it was left at.
 addEventListener("mouseup", ()=>{
+  if(vDrag){
+    vDrag = null;
+    save(); drawSec(); status(); paintCell(active);
+    return;
+  }
   if(ptDrag){
     const {ix, iy, r} = ptDrag;
     ptDrag = null;
@@ -1536,30 +1918,49 @@ addEventListener("mouseup", ()=>{
 // get by accident on first load.
 let guided=true, gTarget=0;
 const seedsOf   = s => PLATES[s.plate].seeds;
-const usedSeeds = s => new Set(s.pairs.map(p=>p[4]).filter(n=>n));
-// Resume where the section was left: the pairs record which seeds are done, so
-// the cursor is derived from them rather than kept as a separate fact that could
-// disagree with them.
-function firstUnusedSeed(s){
-  const u=usedSeeds(s), n=seedsOf(s).length;
-  for(let i=1;i<=n;i++) if(!u.has(i)) return i;
+// ---- the guided walk is over ROIs, not seeds ------------------------------
+//
+// An ROI is an AREA - one region, one lobe - and the several atlas dots under it
+// are samples of it, not things to be measured one by one. So the cursor walks
+// the plate's ROIs and asks for a polygon each, and the number it names is the
+// number every dot of that ROI carries.
+//
+// The seeds keep their own numbering underneath; see `region_hulls`. Only what
+// is DRAWN and what a polygon RECORDS is the ROI number.
+const roisOf = s => (PLATES[s.plate].hulls || []);
+// Which ROIs this section already answers. Derived from the polygons rather than
+// kept as a separate fact that could disagree with them - the same reason the
+// seed cursor was derived from the pairs.
+const usedRois = s => new Set(polysOf(s).map(pg => pg.roi).filter(n => n));
+// Resume where the section was left off.
+function firstUnusedRoi(s){
+  const u = usedRois(s), n = roisOf(s).length;
+  for(let i = 1; i <= n; i++) if(!u.has(i)) return i;
   return 0;                                  // 0 = nothing left on this plate
 }
-function gSync(){ gTarget = active ? firstUnusedSeed(st(active)) : 0; }
+function gSync(){ gTarget = active ? firstUnusedRoi(st(active)) : 0; }
 function gAdvance(){
-  const s=st(active), n=seedsOf(s).length, u=usedSeeds(s);
-  let t=gTarget+1; while(t<=n && u.has(t)) t++;
-  gTarget = t<=n ? t : 0;
+  // Bounded by the ROI count, not the seed count. Bounding on seeds would run
+  // the cursor from 1 to 356 over a list of 134 and point it at nothing.
+  const s = st(active), n = roisOf(s).length, u = usedRois(s);
+  let t = gTarget + 1; while(t <= n && u.has(t)) t++;
+  gTarget = t <= n ? t : 0;
 }
+// The ROI the cursor is on, or null once the plate is finished.
+const gRoi = () => {
+  if(!active || !gTarget) return null;
+  return roisOf(st(active)).find(h => h.roi === gTarget) || null;
+};
 function toggleGuided(){
   guided=!guided;
   pending=null;            // a half-made free pair is not a guided one
+  draft=null;              // nor is a half-drawn ring
   if(guided) gSync();
   drawSec(); drawPl(); status();
 }
-// A seed that is not on this section is skipped, not clicked somewhere vague.
-function skipSeed(){ if(!guided || !active || !gTarget) return;
-  gAdvance(); drawPl(); status(); }
+// A region that is not on this section is skipped, not outlined somewhere vague.
+function skipRoi(){ if(!guided || !active || !gTarget) return;
+  draft=null; gAdvance(); drawSec(); drawPl(); status(); }
 
 // ---- placing a landmark: press, size it, release --------------------------
 //
@@ -1609,11 +2010,15 @@ const frameIn = (s, uid) => s.frame || frameOf(uid);
 // tissue - and the record updated. Export reads canonical either way.
 function syncFrame(uid){
   const s = S[uid], w = secImg.naturalWidth;
-  if(!s || !w || !s.pairs.length) return;
+  // Polygons count as something to lift: a section curated entirely with
+  // regions has no pairs at all, and stopping here would leave its vertices in
+  // the old frame - the top-left ninth of the picture, silently.
+  if(!s || !w || !(s.pairs.length || (s.polys && s.polys.length))) return;
   const have = frameIn(s, uid);
   if(have === w) { if(!s.frame){ s.frame = w; } return; }
   const k = w / have;
   s.pairs.forEach(p => { p[0]*=k; p[1]*=k; if(p[5]) p[5]*=k; });
+  (s.polys || []).forEach(pg => { pg.v = pg.v.map(c => c * k); });
   s.frame = w; save();
 }
 // Called wherever a pair is pushed: the frame is the image it was clicked on.
@@ -1657,6 +2062,224 @@ function toggleBgMode(){
   drawSec(); status();
 }
 
+// ---- region polygons ------------------------------------------------------
+//
+// A region drawn as itself, instead of sampled by a ring of discs. Dl is a
+// continuous structure carrying five or six atlas seeds per lobe; five small
+// circles on it measure five small circles, not Dl.
+//
+// A polygon lives BESIDE `pairs`, not inside it, and that separation is the
+// point. A pair is a CORRESPONDENCE - two points that answer each other, one on
+// the section and one on the plate - and a polygon answers no single point on
+// the plate. Keeping them apart is what leaves the landmark fit exactly as it
+// was: `transform()` never sees a polygon, so the affine and the spline are
+// fitted to the same clicks they always were.
+const polysOf = s => (s.polys || (s.polys = []));
+
+// Even-odd ray cast. This runs on a click and a redraw over a dozen vertices,
+// not in a loop over pixels, so the obvious algorithm is the right one.
+function inPoly(px, py, v){
+  let inside = false;
+  for(let i = 0, j = v.length - 2; i < v.length; j = i, i += 2){
+    const xi = v[i], yi = v[i+1], xj = v[j], yj = v[j+1];
+    if((yi > py) !== (yj > py) &&
+       px < (xj - xi) * (py - yi) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+// The seeded pairs a polygon encloses - DERIVED, never stored. A vertex dragged
+// off a landmark has to stop claiming it, and a stored list would go on saying
+// otherwise from the moment the shape changed.
+//
+// Both are in the section's own frame, the one `syncFrame` keeps them in, so
+// this is a plain geometric test with no transform anywhere near it.
+// Shoelace, on a flat vertex list. Used to throw out a warped outline with no
+// interior: three near-collinear seeds hull to a sliver, and a region of no area
+// would reach 06a as a density of something per nothing.
+function polyArea(v){
+  let a = 0;
+  for(let i = 0, j = v.length - 2; i < v.length; j = i, i += 2)
+    a += v[j]*v[i+1] - v[i]*v[j+1];
+  return Math.abs(a) / 2;
+}
+
+// The hull a polygon answers, looked up rather than copied. Colour and the two
+// uncertainty flags are properties of the atlas, and reading them off the plate
+// each time is what stops the panes from ever disagreeing - the same rule the
+// region key already follows. A plate reassigned to one without this region
+// leaves the polygon intact and unhulled; it is still the operator's region.
+const hullOf = (P, pg) => ((P && P.hulls) || []).find(
+  h => h.region === pg.region && h.part === pg.part) || null;
+const polyCol = (P, pg) => (hullOf(P, pg) || {}).hex || "#4da3ff";
+
+let draft = null;        // flat [x,y,x,y,...] of the ring being clicked out
+// {pi, vi} while a corner of a FINISHED polygon is being dragged. Editing and
+// drawing are mutually exclusive by construction: `grabVertex` is only reached
+// when `draft` is null, and `addVertex` only when nothing was grabbed.
+let vDrag = null;
+// The hulls can be taken off the plate. On a crowded plate the shapes overlap
+// the seeds they were built from, and sometimes the numbered list is the thing
+// being read; `h` puts the plate back the way it was.
+let hullsOn = true;
+function toggleHulls(){ hullsOn = !hullsOn; drawPl(); status(); }
+
+// How near the first vertex counts as closing the ring, and how near a corner
+// counts as grabbing it. In image pixels, so it is the same distance on screen
+// whatever frame the section is rendered at.
+const closeR = () => 6 * imgK();
+
+function addVertex(ix, iy){
+  if(!draft) draft = [];
+  // Clicking the first vertex closes the ring. That is how a polygon says it is
+  // finished without reaching for a second control mid-gesture; Enter and a
+  // double-click do the same thing for anyone who would rather not aim.
+  if(draft.length >= 6 &&
+     Math.hypot(ix - draft[0], iy - draft[1]) <= closeR()){ commitPoly(); return; }
+  draft.push(ix, iy);
+  drawSec(); status();
+}
+
+function commitPoly(){
+  // Three vertices is the floor. Two are a line: it encloses no tissue, and 05a
+  // would hand 05c a box with no area in it.
+  if(!draft || draft.length < 6 || !active || !gTarget){ return; }
+  const h = gRoi();
+  if(!h){ return; }
+  // ...and an area, not a sliver. Three collinear clicks pass the count and
+  // still enclose nothing.
+  if(polyArea(draft) < 4 * imgK() * imgK()){ return; }
+  undoMark(active, "region polygon");
+  const s = st(active);
+  stampFrame(s, active);
+  // `n` is how many landmarks the section carried when this outline closed.
+  // That is the whole order stamp: if it still carries that many, nothing has
+  // been placed since and this region is the newer of the two. See undoZ.
+  polysOf(s).push({v: draft.slice(), roi: h.roi, region: h.region, part: h.part,
+                   n: s.pairs.length});
+  draft = null;
+  gAdvance();
+  save(); drawSec(); drawPl(); status(); paintCell(active);
+}
+
+// ---- editing a finished polygon -------------------------------------------
+//
+// A closed outline stays live: its corners can be moved, added to and removed
+// for as long as no new ring is being drawn. That proviso is the whole of the
+// interaction rule - while `draft` is open every click is a corner of the ring
+// being built, and afterwards every click is aimed at an existing one.
+
+/** Grab a corner, or insert one on an edge and grab that. True if it took. */
+function grabVertex(ix, iy){
+  const s = st(active), tol = closeR();
+  const P = polysOf(s);
+  for(let pi = 0; pi < P.length; pi++){
+    const v = P[pi].v;
+    for(let i = 0; i < v.length; i += 2)
+      if(Math.hypot(v[i] - ix, v[i+1] - iy) <= tol){
+        undoMark(active, "move corner");
+        vDrag = {pi, vi: i};
+        return true;
+      }
+  }
+  // Then an edge midpoint, which puts a new corner there and starts dragging it.
+  // Same order the atlas tracer used: a corner beats an edge, because moving one
+  // is much the commoner action and must not be stolen by a hit on the line.
+  for(let pi = 0; pi < P.length; pi++){
+    const v = P[pi].v;
+    for(let i = 0, j = v.length - 2; i < v.length; j = i, i += 2){
+      const mx = (v[i] + v[j]) / 2, my = (v[i+1] + v[j+1]) / 2;
+      if(Math.hypot(mx - ix, my - iy) <= tol){
+        undoMark(active, "add corner");
+        v.splice(i, 0, mx, my);
+        vDrag = {pi, vi: i};
+        save(); drawSec(); status();
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+/** Remove the corner under the cursor. Never below three. */
+function dropCorner(ix, iy){
+  if(draft || !active) return false;
+  const s = st(active), tol = closeR();
+  for(const pg of polysOf(s)){
+    for(let i = 0; i < pg.v.length; i += 2){
+      if(Math.hypot(pg.v[i] - ix, pg.v[i+1] - iy) > tol) continue;
+      // A polygon of two corners is a line and encloses nothing, so the floor is
+      // three. Refusing is better than deleting the shape out from under a
+      // mis-aimed key.
+      if(pg.v.length <= 6) return false;
+      undoMark(active, "remove corner");
+      pg.v.splice(i, 2);
+      save(); drawSec(); status(); paintCell(active);
+      return true;
+    }
+  }
+  return false;
+}
+
+// `z` takes back a vertex of the ring being drawn, because that is what the last
+// thing placed was. With no ring open it falls through to undoPt.
+function dropVertex(){
+  if(!draft || !draft.length) return false;
+  draft.splice(-2, 2);
+  if(!draft.length) draft = null;
+  drawSec(); status();
+  return true;
+}
+
+// True when the last region on the section was placed after the last landmark.
+//
+// A region records `n`, the number of landmarks that existed when it closed, so
+// the two become comparable without a clock: still that many means nothing has
+// been placed since and the region is newer; more means a landmark has. A pair
+// needs no stamp of its own - it is a positional array with nowhere to put one -
+// and there is nothing to keep in step, because `n` lives inside the record that
+// undo snapshots and restores.
+//
+// No `n` means the region predates the stamp, or came back through
+// 04q_import_curation.py, which rebuilds polys from roi_regions.csv and has no
+// column to rebuild it from. Those read as newer: it is what this did before,
+// and it never reaches past an outline to take a landmark instead.
+function regionIsNewer(s){
+  const polys = polysOf(s);
+  if(!polys.length) return false;
+  const n = polys[polys.length - 1].n;
+  if(n === undefined) return true;
+  return s.pairs.length <= n;
+}
+
+// What `z` takes back: the last thing placed, whichever kind it was. A vertex
+// while a ring is open, then whichever of the last region and the last landmark
+// is the newer.
+//
+// What this fixes: with no ring open, `z` used to go straight to undoPt. Finish
+// an outline, press z, and a landmark quietly disappeared while the outline
+// stayed - and since undoPoly is on no key at all, `u` was the only way to take
+// a region back.
+function undoZ(){
+  if(dropVertex()) return;
+  if(!active) return;
+  const s = st(active);
+  if(regionIsNewer(s)){ undoPoly(); return; }
+  // Nothing placed is not an undo. Marking it would put an entry on the stack
+  // that restores the state it was already in.
+  if(pending || s.pairs.length) undoPt();
+}
+
+function undoPoly(){
+  if(!active) return;
+  const s = st(active);
+  if(!polysOf(s).length) return;
+  undoMark(active, "remove region");
+  polysOf(s).pop();
+  gSync();
+  save(); drawSec(); drawPl(); status(); paintCell(active);
+}
+
 function commitPoint(ix, iy, r){
   // One mark for all three landings - background disc, guided, and the free
   // pair below - because they are one action to whoever placed it.
@@ -1671,31 +2294,41 @@ function commitPoint(ix, iy, r){
     save(); drawSec(); drawPl(); status(); paintCell(active);
     return;
   }
-  if(guided){
-    const sd=seedsOf(s)[gTarget-1];
-    if(!sd) return;                          // list finished - nothing to pair
-    const P=PLATES[s.plate];
-    s.pairs.push([ix, iy, sd.xf*P.w, sd.yf*P.h, gTarget, r]);
-    gAdvance(); save(); drawSec(); drawPl(); status(); paintCell(active);
-    return;
-  }
-  pending = [ix, iy, r];                     // free mode still waits for the plate
+  // No guided branch any more. It used to push a pair whose PLATE coordinate
+  // was the seed's own position - `sd.xf*P.w, sd.yf*P.h` - and under ROI
+  // numbering there is no single `sd` to take it from: an ROI is three to six
+  // dots. Picking a representative would quietly change what the affine and the
+  // spline are fitted to, so the branch goes rather than being adapted. Guided
+  // mode draws polygons now; landmarks are placed free, section then plate.
+  pending = [ix, iy, r];                     // free mode waits for the plate
   drawSec(); status();
 }
 function clickPl(e){
   if(!active) return;
   const [px,py]=canvasXY(el("cPl"), e);
+  // RE-AIMING. Clicking a region on the plate points the cursor at it, which is
+  // how you go back to one you skipped or jump ahead to one you can plainly see.
+  // Same gesture the seed walk offered, now over areas.
   if(guided){
-    // The plate point comes from the seed here, so a click RE-AIMS the list at
-    // the nearest one instead of placing anything - that is how you go back to a
-    // seed you skipped, or jump ahead to one you can clearly see.
-    const s=st(active), P=PLATES[s.plate], c=el("cPl");
-    let best=0, bd=Infinity;
-    P.seeds.forEach((sd,i)=>{
-      const d=Math.hypot(sd.xf*c.width-px, sd.yf*c.height-py);
-      if(d<bd){ bd=d; best=i+1; }
-    });
-    if(best){ gTarget=best; drawPl(); status(); }
+    const c=el("cPl"), P=PLATES[st(active).plate], fx=px/c.width, fy=py/c.height;
+    let hit=null;
+    for(const h of (P.hulls||[])){
+      if(h.v.length>=3 && inPoly(fx, fy, h.v.flat())){ hit=h; break; }
+    }
+    // Falling back to the nearest hull matters more than it looks: a one- or
+    // two-seed ROI has no interior to click into at all, and Vl, Vc and Vs are
+    // nothing but those. Without this they could never be aimed at.
+    if(!hit && (P.hulls||[]).length){
+      let bd=Infinity;
+      for(const h of P.hulls){
+        for(const v of h.v){
+          const d=Math.hypot(v[0]-fx, v[1]-fy);
+          if(d<bd){ bd=d; hit=h; }
+        }
+      }
+      if(bd > 0.06) hit = null;          // a click on empty plate aims at nothing
+    }
+    if(hit){ gTarget = hit.roi; draft = null; drawPl(); drawSec(); status(); }
     return;
   }
   if(!pending) return;
@@ -1784,8 +2417,26 @@ function undoPt(){
   gSync();                       // the cursor follows the pairs, both ways
   save(); drawSec(); drawPl(); status(); paintCell(active);
 }
-function clearPts(){ if(!active) return; undoMark(active, "clear points"); st(active).pairs=[]; pending=null; save();
-  gSync(); drawSec(); drawPl(); status(); paintCell(active); }
+// Everything placed on this section goes: the landmarks, a half-made pair, a
+// half-drawn ring and the regions. This cleared only the landmarks and the
+// half-made pair - it was written before regions existed and was never extended
+// for them, while every other place that discards work in progress clears
+// `pending` and `draft` together (toggleGuided, skipRoi). So an outline
+// survived the button that says it clears, and since undoPoly pops one at a
+// time there was no way to clear a section's regions at all.
+//
+// One undo mark covers the lot, so `u` puts the whole section back.
+function clearPts(){
+  if(!active) return;
+  undoMark(active, "clear section");
+  const s = st(active);
+  s.pairs = [];
+  s.polys = [];
+  pending = null;
+  draft = null;
+  save();
+  gSync(); drawSec(); drawPl(); status(); paintCell(active);
+}
 
 function status(){
   if(!active) return;
@@ -1801,28 +2452,40 @@ function status(){
   // half of it is outstanding - counting rings to work out "am I on 4 or 5?" is
   // exactly the bookkeeping the numbers are there to remove.
   const nextN = nRoi + 1;
-  const seeds = seedsOf(s), tgt = gTarget ? seeds[gTarget-1] : null;
+  const roiList = roisOf(s), tgt = gRoi();
+  const nRois = roiList.length, nDone = usedRois(s).size;
+  const nPoly = polysOf(s).length;
 
   el("guideBtn").textContent = guided ? "Guided ✓" : "Guided";
   el("guideBtn").classList.toggle("guide-on", guided);
-  el("guideBtn").disabled = !seeds.length;
-  el("guideBtn").title = seeds.length ? ""
-    : "this plate carries no region seeds, so there is no list to walk";
+  el("guideBtn").disabled = !nRois;
+  el("guideBtn").title = nRois ? ""
+    : "this plate carries no regions, so there is no list to walk";
   el("skipBtn").disabled = !(guided && gTarget);
   if(guided){
-    const nameOf = sd => sd ? (sd.amb || sd.region) : "";
+    // The ambiguity group, not the atlas name, wherever there is one: Vd, Vv and
+    // POA cannot be told apart at this level and the pane must not claim they
+    // can. `?` is the atlas's own doubt, kept separate from ours.
+    const nameOf = h => h ? (h.amb || h.region) + (h.unk ? "?" : "")
+                          + (h.n_parts > 1 ? " lobe " + h.part : "") : "";
+    const nv = draft ? draft.length / 2 : 0;
     el("secTitle").textContent = tgt
-      ? "SECTION - click where seed " + gTarget + " (" + nameOf(tgt) + ") is"
-      : "SECTION - every seed on this plate is placed";
+      ? (draft ? `SECTION - drawing ROI ${gTarget} (${nameOf(tgt)}) - ${nv} corners`
+               : `SECTION - draw ROI ${gTarget} (${nameOf(tgt)})`)
+      : "SECTION - every ROI on this plate is drawn";
     el("plTitle").textContent = tgt
-      ? "ATLAS PLATE - seed " + gTarget + " of " + seeds.length + " is the target"
-      : "ATLAS PLATE - list finished; click a seed to go back to it";
+      ? `ATLAS PLATE - ROI ${gTarget} of ${nRois} is the target`
+      : "ATLAS PLATE - list finished; click an ROI to go back to it";
     el("lmHint").innerHTML = tgt
-      ? `seed <b>${gTarget}</b> of ${seeds.length} &middot; <b>${nameOf(tgt)}</b>`
-        + ` &middot; ${usedSeeds(s).size} placed`
-        + `<br><span style="color:#9aa0a8">click the section to place it &middot; `
-        + `Skip if it is not on this section &middot; click a plate seed to re-aim</span>`
-      : `all ${seeds.length} seeds placed - click one on the plate to redo it`;
+      ? `<b style="color:${tgt.hex||"#4da3ff"}">ROI ${gTarget}</b> &middot; `
+        + `<b>${nameOf(tgt)}</b> &middot; ${nDone} of ${nRois} drawn`
+        + `<br><span style="color:#9aa0a8">click each corner &middot; `
+        + `<b>Enter</b>, a double-click or the first corner closes it &middot; `
+        + `z drops a corner &middot; Skip if it is not on this section</span>`
+      : `all ${nRois} ROIs drawn - click one on the plate to redo it`;
+    if(!draft && nPoly) el("lmHint").innerHTML +=
+      `<br><span style="color:#9aa0a8">drag a corner to move it &middot; click an`
+      + ` edge to add one &middot; Delete removes one</span>`;
   } else {
     el("secTitle").textContent = pending
       ? "SECTION - landmark " + nextN + " placed"
@@ -1844,6 +2507,13 @@ function status(){
       + `<br><span style="color:#9aa0a8">click tissue you judge to carry no real`
       + ` signal &middot; 2-3 per section &middot; b to leave</span>`;
   }
+  // The guided hint says the one thing the picture cannot: WHICH ROI is being
+  // asked for, and how far through the plate you are.
+  el("hullBtn").textContent = hullsOn ? "Hulls \u2713" : "Hulls";
+  el("hullBtn").classList.toggle("reg-on", hullsOn);
+  el("hullBtn").title = "show each ROI on the plate as one shape rather than"
+                      + " loose seeds (h)";
+  el("undoPolyBtn").disabled = !nPoly;
   if(ptDrag){
     el("lmHint").innerHTML =
       `radius <b>${(ptDrag.r/imgK()).toFixed(1)} px</b> `
@@ -1879,7 +2549,7 @@ function status(){
     const shown = names.map(n => gold.has(n)
       ? `<span style="color:#e3b341">${n}</span>` : n).join(", ");
     el("regInfo").innerHTML = P.seeds.length
-      ? `<b>${usedSeeds(s).size}</b> of <b>${P.seeds.length}</b> placed: ${shown}`
+      ? `<b>${usedRois(s).size}</b> of <b>${(P.hulls||[]).length}</b> drawn: ${shown}`
         + bgLine(s)
         + (gold.size ? `<div style="color:#9aa0a8;margin-top:4px">`
                   + `<span style="color:#e3b341">gold</span> is ONE group whose members`
@@ -1906,7 +2576,7 @@ function status(){
   // Outside the transform branch on purpose: the colour key is a fact about
   // the plate on screen, and it is most wanted before three landmarks exist,
   // not after.
-  regionKey(PLATES[st(active).plate]);
+  regionKey(PLATES[st(active).plate], st(active));
   navState();
   dapiBtnState();
   el("rotBtn").textContent = rotMode ? "Rotate ✓" : "Rotate";
@@ -2117,36 +2787,35 @@ function bgLine(s){
   return want;
 }
 
-function regionKey(P){
+function regionKey(P, s){
   const box = el("regKey");
   if(!box) return;
-  if(!P || !P.seeds.length){ box.innerHTML = ""; return; }
-  // Keyed on the atlas's OWN region, not on the ambiguity group. Grouping
-  // Vd, Vv and POA into one row gave them one swatch, and they are drawn in
-  // three different colours - a key that shows red for a grey dot is worse than
-  // no key. The group membership is still flagged, on each member.
-  const by = new Map();
-  for(const sd of P.seeds){
-    const name = sd.region;
-    const e = by.get(name) || {n: 0, hex: sd.hex || "#4da3ff", amb: sd.amb || "",
-                               unk: false, seeds: []};
-    e.n++;
-    e.unk = e.unk || !!sd.unk;
-    e.seeds.push(sd.n);
-    by.set(name, e);
-  }
-  box.innerHTML = [...by.entries()]
-    .sort((a, b) => b[1].n - a[1].n)
-    .map(([name, e]) => {
-      const nums = e.seeds.sort((x, y) => x - y).join(", ");
-      const tip = `ROI ${nums}` + (e.amb ? `  -  one of ${e.amb}, which cannot be`
-                                         + ` told apart without the rostrocaudal level` : "");
-      return `<div title="${tip}"><i style="background:${e.hex}"></i>`
-           + `<b style="${e.amb ? "color:#e3b341" : ""}">${name}${e.unk ? "?" : ""}</b>`
-           + `<span>&times;${e.n}</span>`
-           + (e.amb ? `<span style="color:#e3b341">&#9670;</span>` : "")
-           + `</div>`;
-    }).join("")
+  const HL = (P && P.hulls) || [];
+  if(!HL.length){ box.innerHTML = ""; return; }
+  // One row per ROI, because an ROI is the thing being drawn. It used to be one
+  // row per region with a count of its seeds, which answered "how many dots does
+  // Dl have" - a question nobody asks - instead of "which shapes do I still owe".
+  //
+  // Keyed on the atlas's OWN region name, not the ambiguity group: grouping Vd,
+  // Vv and POA gave them one swatch when they are drawn in three colours, and a
+  // key showing red for a grey dot is worse than no key. Membership is flagged
+  // on each row instead.
+  const done = s ? usedRois(s) : new Set();
+  box.innerHTML = HL.map(h => {
+    const isDone = done.has(h.roi);
+    const tip = `ROI ${h.roi} - ${h.region}`
+              + (h.n_parts > 1 ? `, lobe ${h.part} of ${h.n_parts}` : "")
+              + (h.amb ? `  -  one of ${h.amb}, which cannot be told apart`
+                       + ` without the rostrocaudal level` : "")
+              + (isDone ? "  -  drawn" : "  -  not drawn yet");
+    return `<div title="${tip}"><i style="background:${h.hex}"></i>`
+         + `<b style="${h.amb ? "color:#e3b341" : ""}${isDone ? ";opacity:.45" : ""}">`
+         + `${h.roi}. ${h.region}${h.unk ? "?" : ""}`
+         + `${h.n_parts > 1 ? " /" + h.part : ""}</b>`
+         + `<span>${isDone ? "\u2713" : ""}</span>`
+         + (h.amb ? `<span style="color:#e3b341">&#9670;</span>` : "")
+         + `</div>`;
+  }).join("")
     // Background is not a region on the plate, so it has no seed to read a
     // colour off - but it IS drawn on the section, and a key showing every
     // colour except the pink one would be a key with a hole in it.
@@ -2308,8 +2977,21 @@ addEventListener("keydown", e=>{
   else if(e.key==="a" || e.key==="A"){ markAssigned(); }
   else if(e.key==="f" || e.key==="F"){ toggleFav(); }
   else if(e.key==="x" || e.key==="X"){ toggleExcl(); }
-  else if(e.key==="z" || e.key==="Z"){ undoPt(); }
+  // One key, whichever thing was placed last - vertex, then region, then
+  // landmark. See undoZ.
+  else if(e.key==="z" || e.key==="Z"){ undoZ(); }
   else if(e.key==="r" || e.key==="R"){ restoreTilt(); }
+  // Enter closes the ring, Escape abandons it. Both only while one is open, so
+  // neither steals a key from the rest of the page.
+  else if(e.key==="Enter" && draft){ commitPoly(); e.preventDefault(); }
+  else if(e.key==="Escape" && draft){ draft=null; drawSec(); status(); e.preventDefault(); }
+  // Delete removes the corner under the cursor. Only meaningful with no ring
+  // open, which `dropCorner` enforces rather than trusting the caller.
+  else if(e.key==="Delete" || e.key==="Backspace"){
+    if(active && lastSec) dropCorner(lastSec[0], lastSec[1]);
+    e.preventDefault();
+  }
+  else if(e.key==="h" || e.key==="H"){ toggleHulls(); }
   // u is the general undo, d is the background DISC, and b is deliberately
   // unbound: it was the disc for long enough to be muscle memory, and a key
   // that used to place something and now undoes is the worst of both. Leaving
@@ -2317,7 +2999,7 @@ addEventListener("keydown", e=>{
   else if(e.key==="u" || e.key==="U"){ undoLast(); }
   else if(e.key==="d" || e.key==="D"){ toggleBgMode(); }
   else if(e.key==="g" || e.key==="G"){ toggleGuided(); }
-  else if(e.key==="s" || e.key==="S"){ skipSeed(); }
+  else if(e.key==="s" || e.key==="S"){ skipRoi(); }
   else if(e.key==="[" || e.key==="]"){
     const step = e.key === "]" ? 1 : -1;
     const v = Math.min(60, Math.max(1, PT_R_CANON + step));
@@ -2351,10 +3033,28 @@ function exportCsv(){
   // sec_x/sec_y/sec_r. Everything downstream measures both the same way, which
   // is what makes the background rows a false-positive rate rather than a
   // different quantity that happens to live nearby.
+  // roi_shape is a SECOND AXIS, not a replacement for roi_kind. A row is still
+  // a real ROI or a background reference; what roi_shape adds is whether its
+  // geometry is a radius or a ring of vertices.
+  //
+  // sec_r is BLANK on a polygon row, deliberately. A polygon has no radius, and
+  // writing an equivalent-area one would put a number in a column every reader
+  // treats as a measurement. sec_x/sec_y stay filled with the centroid, because
+  // 06a's nucleus-to-ROI join is positional and wants a position.
+  //
+  // New columns are APPENDED. Every reader of this file indexes by header, and
+  // an older one that has never heard of a polygon keeps working.
   const rg=[["scene_uid","animal","marker","plate_set","plate_id","roi_kind","region",
              "region_ambiguous","ambiguity_group","region_uncertain_in_atlas",
              "sec_x","sec_y","sec_r","seed_n","n_landmarks","transform",
-             "mean_residual_px"]];
+             "mean_residual_px","roi_shape","part","sec_poly","roi_n",
+             // How many landmarks the section carried when this outline was
+             // closed - the order stamp `z` compares against, written out so it
+             // survives 04q_import_curation.py rather than being lost on the way
+             // back in. Named for what it holds: `n_landmarks` two columns over
+             // is the section's count now, this one is the count back then.
+             // Blank on every row that is not a polygon.
+             "landmarks_at_draw"]];
 
   for(const d of DATA){
     const s=S[d.uid];
@@ -2408,10 +3108,13 @@ function exportCsv(){
       rg.push([d.uid,d.animal,d.m,PLATE_SET, chosen?P.id:"", "background","__background__",
                0,"",0,
                (pr[0]/K).toFixed(2),(pr[1]/K).toFixed(2),(pairR(pr)/K).toFixed(2),
-               "", n, "", ""]);
+               "", n, "", "", "disc","","","",""]);
     }
 
-    if(!n) continue;                    // nothing placed - nothing to say
+    // Polygons count. A region drawn over tissue is an ROI whether or not a
+    // single landmark was placed on that section, and gating on `n` alone would
+    // have dropped exactly the sections curated the new way.
+    if(!n && !polysOf(s).length) continue;   // nothing placed - nothing to say
 
     // The residual needs a transform; the POSITION does not. This used to be
     // gated as `n < 3 || !T`, which made a fit the price of admission for both
@@ -2433,19 +3136,36 @@ function exportCsv(){
                px.toFixed(2),py.toFixed(2), r===null ? "" : (r/K).toFixed(2),
                sn||"", sd ? ((sd.amb || sd.region) + (sd.unk ? "?" : "")) : ""]);
     });
+    // T is null below three landmarks, so n is never 0 where this divides.
     const mr = T ? (tot/n/K).toFixed(2) : "";
-    // One row per ROI actually placed, at the position and radius it was placed
-    // with. Nothing here is derived from the transform, so every row is a
-    // measurement rather than a guess about where a region probably is.
-    for(const pr of roiPairs(s)){
-      const sd = pr[4] ? P.seeds[pr[4] - 1] : null;
-      if(!sd) continue;
-      rg.push([d.uid,d.animal,d.m,PLATE_SET,P.id,"roi",sd.region,
-               sd.amb?1:0, sd.amb||"", sd.unk?1:0,
-               (pr[0]/K).toFixed(2),(pr[1]/K).toFixed(2),(pairR(pr)/K).toFixed(2),
-               sd.n, n, T?T.kind:"", mr]);
+    // One row per REGION drawn. The vertex list is the geometry; the centroid
+    // is written into sec_x/sec_y so a positional join still has a position to
+    // work with, and sec_r is left empty because there is no radius to state.
+    //
+    // roi_n is which numbered ROI on the plate this area answers. It is the
+    // identity now - one number per region per lobe, the same number every dot
+    // of that ROI carries on the atlas - and it replaces seed_n, which named a
+    // single dot and cannot name an area.
+    for(const pg of polysOf(s)){
+      const h = hullOf(P, pg);
+      const vs = [];
+      let cx=0, cy=0;
+      for(let i=0;i<pg.v.length;i+=2){
+        cx += pg.v[i]; cy += pg.v[i+1];
+        vs.push((pg.v[i]/K).toFixed(2) + " " + (pg.v[i+1]/K).toFixed(2));
+      }
+      const nv = pg.v.length/2;
+      rg.push([d.uid,d.animal,d.m,PLATE_SET,P.id,"roi",pg.region,
+               h&&h.amb?1:0, (h&&h.amb)||"", h&&h.unk?1:0,
+               (cx/nv/K).toFixed(2),(cy/nv/K).toFixed(2),"",
+               "", n, T?T.kind:"", mr,
+               // Not `pg.n || ""`: the stamp is 0 for a region drawn before
+               // any landmark, and that is a real value, not a missing one.
+               "polygon", pg.part, vs.join(";"), pg.roi || "",
+               pg.n === undefined ? "" : pg.n]);
     }
   }
+  beginExport();
   dl(pl,"roi_plates.csv");
   dl(lm,"roi_landmarks.csv");
   dl(rg,"roi_regions.csv");
@@ -2455,9 +3175,154 @@ function exportCsv(){
 // "Rm (Raphe) ??" and subsets like roi_worklist:core are already in these
 // files, and the first name to carry a comma would have shifted every column
 // after it - in a file whose readers index columns by header.
+// ===========================================================================
+// EXPORT DESTINATION
+//
+// Every export - the five CSVs and the Shotgun deck - goes through saveExport,
+// so where a file lands and what it is called is decided in ONE place instead
+// of at six call sites that each built their own name.
+//
+// The stamp is per ACTION, not per file. exportCsv writes three CSVs that are
+// three views of one set of decisions; they belong in one folder under one
+// name, and a stamp taken per file would scatter them across three folders
+// whenever the clock ticked over mid-export. beginExport() is called once at
+// the top of each export, and every file it writes carries that stamp.
+//
+// Destination, in order:
+//   1. a directory the operator picked, via the File System Access API. The
+//      dated folder is created inside it and the files written into it.
+//   2. a clicked <a download>, everywhere the API is absent - Firefox, Safari,
+//      and QtWebEngine inside the app. Browsers strip path separators from the
+//      download attribute, so the fallback cannot make a folder; the stamp
+//      rides in the filename and the host decides the directory. The app reads
+//      the stamp back off the name and rebuilds the same folder.
+const EXPORT_DIR = __EXPORTDIR__;   // configured target, shown when no folder is picked
+let expStamp = null;                // DD.MM.YYYY_HH.MM for the action in progress
+let expDir = null;                  // chosen directory handle, if there is one
+let expSub = null;                  // the dated folder inside it, for this action
+let expQueue = Promise.resolve();   // writes are serialised - see saveExport
+
+const expPad2 = n => (n < 10 ? "0" : "") + n;
+
+function expStampNow(){
+  const d = new Date();
+  return expPad2(d.getDate()) + "." + expPad2(d.getMonth() + 1) + "." + d.getFullYear()
+       + "_" + expPad2(d.getHours()) + "." + expPad2(d.getMinutes());
+}
+
+function beginExport(){ expStamp = expStampNow(); expSub = null; }
+
+// name.csv -> name_DD.MM.YYYY_HH.MM.csv. The extension stays last so the file
+// still opens by double-click, and 05a's roi_regions*.csv glob still matches.
+function expName(base){
+  const i = base.lastIndexOf(".");
+  const stem = i < 0 ? base : base.slice(0, i);
+  const ext  = i < 0 ? ""   : base.slice(i);
+  return stem + "_" + (expStamp || expStampNow()) + ext;
+}
+
+function expSay(msg){ const e = el("expStat"); if(e) e.textContent = msg; }
+
+function expShow(){
+  const e = el("expDirLbl");
+  if(!e) return;
+  e.textContent = expDir ? expDir.name : (EXPORT_DIR || "Downloads");
+  e.title = expDir ? "exports are written into this folder, in a dated subfolder"
+                   : (EXPORT_DIR ? "where the app files exports; a browser download goes to Downloads"
+                                 : "no folder chosen - exports go to the browser download folder");
+}
+
+// A handle survives a reload, so the folder is chosen once rather than per
+// session. The browser can still drop the permission, which is why every write
+// re-checks it; re-granting needs a user gesture, and an export click is one.
+const EXP_DB = "ls_curator_export", EXP_KEY = "dir";
+function expIdb(run){
+  return new Promise((res, rej) => {
+    let req;
+    try { req = indexedDB.open(EXP_DB, 1); } catch(e){ return rej(e); }
+    req.onupgradeneeded = () => req.result.createObjectStore("h");
+    req.onerror = () => rej(req.error);
+    req.onsuccess = () => {
+      const db = req.result;
+      let inner;
+      try {
+        const tx = db.transaction("h", "readwrite");
+        inner = run(tx.objectStore("h"));
+        tx.oncomplete = () => { db.close(); res(inner ? inner.result : undefined); };
+        tx.onerror = () => { db.close(); rej(tx.error); };
+      } catch(e){ db.close(); rej(e); }
+    };
+  });
+}
+
+async function expGrant(handle){
+  if(!handle.queryPermission) return true;
+  if(await handle.queryPermission({mode: "readwrite"}) === "granted") return true;
+  return await handle.requestPermission({mode: "readwrite"}) === "granted";
+}
+
+async function chooseExportDir(){
+  if(!window.showDirectoryPicker){
+    expSay("this browser cannot choose a folder - exports go to the download folder");
+    return;
+  }
+  let handle;
+  try {
+    handle = await window.showDirectoryPicker({mode: "readwrite", id: "ls-curator-exports"});
+  } catch(err){
+    // Cancelling the picker is not a failure and should not say anything.
+    if(err && err.name !== "AbortError") expSay("folder not chosen: " + (err.message || err));
+    return;
+  }
+  expDir = handle;
+  try { await expIdb(st => st.put(handle, EXP_KEY)); } catch(e){}
+  expShow();
+  expSay("exports will go to " + handle.name + "/<date>/");
+}
+
+async function expRestoreDir(){
+  if(!window.showDirectoryPicker) return;
+  try {
+    const handle = await expIdb(st => st.get(EXP_KEY));
+    if(handle){ expDir = handle; expShow(); }
+  } catch(e){}
+}
+
+// Serialised: exportCsv fires three writes back to back, and letting them race
+// would have three of them create the dated folder at once.
+function saveExport(blob, base){
+  expQueue = expQueue.then(() => expWrite(blob, base)).catch(() => {});
+  return expQueue;
+}
+
+async function expWrite(blob, base){
+  const name = expName(base);
+  if(expDir){
+    try {
+      if(!await expGrant(expDir)) throw new Error("permission not granted");
+      if(!expSub) expSub = await expDir.getDirectoryHandle(expStamp || expStampNow(), {create: true});
+      const fh = await expSub.getFileHandle(name, {create: true});
+      const w = await fh.createWritable();
+      await w.write(blob);
+      await w.close();
+      expSay("wrote " + (expStamp || "") + "/" + name);
+      return;
+    } catch(err){
+      // A dropped permission or a deleted folder must not lose the export.
+      // Fall through to the download, and say why the folder was not used.
+      expSay("could not write to " + expDir.name + " (" + (err.message || err)
+             + ") - downloaded instead");
+    }
+  }
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+}
+
 function dl(rowsArr,name){
   const b=new Blob([rowsArr.map(r=>r.map(csvq).join(",")).join("\\n")],{type:"text/csv"});
-  const a=document.createElement("a"); a.href=URL.createObjectURL(b); a.download=name; a.click();
+  saveExport(b, name);
 }
 // Write the seed through on first load, so this browser holds it like any other
 // decision rather than depending on the page it came from.
@@ -2608,13 +3473,17 @@ function shotPick(){
 // Which regions a section carries, read from the seeds its ROIs answer. A
 // free-clicked ROI has no seed and therefore no region - exactly how exportCsv
 // treats it - so the region deck can say nothing roi_regions.csv does not.
+// Which regions this section actually carries, for the Shotgun "by region" deck.
+//
+// Read off the POLYGONS now. It used to walk the pairs and resolve each one's
+// seed number through `P.seeds[n-1]`, which was right while a landmark was also
+// an ROI; landmarks carry no seed number any more, so that loop would have
+// returned an empty list for every section and the region deck would have come
+// out blank without erroring.
 function secRegions(s){
-  const P = PLATES[s.plate], out = [];
-  if(!P || !P.seeds) return out;
-  for(const p of roiPairs(s)){
-    const sd = p[4] ? P.seeds[p[4] - 1] : null;
-    if(sd && out.indexOf(sd.region) < 0) out.push(sd.region);
-  }
+  const out = [];
+  for(const pg of polysOf(s))
+    if(pg.region && out.indexOf(pg.region) < 0) out.push(pg.region);
   return out;
 }
 
@@ -3061,14 +3930,15 @@ async function shotBuild(by){
   for(const m of media) files.push({name: "ppt/media/" + m.name, bytes: m.bytes});
 
   const now = new Date();
-  const stamp = now.getFullYear() + pad2(now.getMonth() + 1) + pad2(now.getDate())
+  const _unused_stamp = now.getFullYear() + pad2(now.getMonth() + 1) + pad2(now.getDate())
               + "_" + pad2(now.getHours()) + pad2(now.getMinutes());
   const blob = new Blob(zipStore(files, now),
     {type: "application/vnd.openxmlformats-officedocument.presentationml.presentation"});
   // Named apart so a region deck cannot silently overwrite a plate one, and so
   // the pair of files that belong together stay recognisable as a pair.
   const tag = mode === "region" ? "by-region_" : "";
-  shotSave(blob, "shotgun_" + tag + PLATE_SET + "_" + stamp + ".pptx");
+  beginExport();
+  shotSave(blob, "shotgun_" + tag + PLATE_SET + ".pptx");
   dl(manifest, "shotgun_manifest" + (mode === "region" ? "_by-region" : "") + ".csv");
 
   const bits = [slides.length + " slides", take.length + " sections",
@@ -3082,13 +3952,10 @@ async function shotBuild(by){
 
 const pad2 = n => (n < 10 ? "0" : "") + n;
 
-// Same route as the CSV exports: a Blob and a clicked <a download>. In the app
-// that is caught by downloadRequested and lands in out_root/reformatted.
+// Same route as the CSV exports - saveExport decides the folder and the name,
+// so the deck and its manifest land beside the CSVs under one stamp.
 function shotSave(blob, name){
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = name;
-  a.click();
+  saveExport(blob, name);
 }
 
 // ===========================================================================
@@ -3767,6 +4634,7 @@ function exportReview(){
                // dl() quotes every cell now; quoting here too would double it.
                r.why || "", r.status || ""]);
   }
+  beginExport();
   dl(rows, "section_review.csv");
 }
 
@@ -3778,6 +4646,11 @@ syncReinstated();
 scopeLabel();
 shotBtnState();
 render();
+// The picked folder outlives the page; the button is hidden where the browser
+// has no picker, because offering it there would be a lie.
+if(!window.showDirectoryPicker){ const b = el("expDirBtn"); if(b) b.style.display = "none"; }
+expShow();
+expRestoreDir();
 </script>
 """
 
@@ -3809,6 +4682,12 @@ def main():
                     help="show the two-colour composites from 04o_section_rgb.py "
                          "(DAPI blue + marker) instead of the greyscale DAPI the "
                          "geometry was computed on. Same frame either way.")
+    ap.add_argument("--export-dir", default=EXPORT_DIR, metavar="DIR",
+                    help="where exports are filed, one dated DD.MM.YYYY_HH.MM "
+                         "folder per export. Shown in the page; honoured by the "
+                         "app. A browser writes here only once the operator has "
+                         "picked the folder with the page's own Folder... button, "
+                         "because a web page cannot be handed a path")
     ap.add_argument("--out", default=CURATOR_HTML, metavar="HTML",
                     help="where to write the page (default: the live curator under "
                          "out_root). tests/run.sh points this at tests/build/ so a "
@@ -3875,67 +4754,9 @@ def main():
 
     with open(os.path.join(PLATE_DIR, "plates.csv"), newline="", encoding="utf-8") as fh:
         plates = list(csv.DictReader(fh))
-    seeds = {}
-    with open(os.path.join(PLATE_DIR, "seeds.csv"), newline="", encoding="utf-8") as fh:
-        for s in csv.DictReader(fh):
-            seeds.setdefault(s["plate_id"], []).append(
-                # TWO different uncertainties, and they are not the same thing.
-                # `amb` is ours: Vd/Vv/POA cannot be told apart without knowing
-                # the section's rostrocaudal level, so the group is shown instead
-                # of a name the data cannot support. `unk` is the ATLAS's own -
-                # eight seeds are labelled "Rm (Raphe) ??" in the source, and
-                # dropping that flag here made the tool report them as settled.
-                {"region": s["region"], "amb": REGION_GROUP.get(s["region"], ""),
-                 "unk": 1 if s.get("is_unknown") == "1" else 0,
-                 "xf": float(s["x_frac"]), "yf": float(s["y_frac"]),
-                 "hex": s.get("colour_hex") or "#4da3ff"})
-
-    # A FIXED click-through order, decided here rather than in the page, so that
-    # "seed 4" is the same seed in the tool, in every export and in a re-run.
-    # seeds.csv is in extraction order, which is arbitrary and puts bilateral
-    # partners far apart. Reading order - down the plate, left to right within a
-    # row - can be followed by eye.
-    #
-    # The rows have to be FOUND, not rounded to a grid. Seeds on one visual row
-    # sit at y values ~0.001 apart (0.2329, 0.2338, 0.2347 on plate_013) while
-    # real rows are ~0.02 apart, so any fixed rounding either splits a row or
-    # merges two. Splitting a row is the damaging one: the x tiebreak never
-    # fires, and the order zigzags across the midline - 0.39, 0.05, 0.60, 0.94 -
-    # which is exactly the thing a fixed order is supposed to stop. So rows are
-    # grown greedily by gap, at a threshold between the two scales.
-    #
-    # Left to right every row, not serpentine. Serpentine is 14% less travel and
-    # costs more than it saves: these regions are bilateral, and alternating the
-    # direction flips which hemisphere the next seed is in on every row.
-    # COLUMNS, top to bottom, starting from the left. Not rows: these seeds run
-    # in vertical strips - a lateral arc down each side and a medial strip either
-    # side of the midline - and reading across rows cut every strip into
-    # fragments, so consecutive numbers landed on opposite sides of the brain.
-    # Down a column the next number is the next seed in the same structure.
-    #
-    # COL_BAND has to be wide enough to hold a strip that drifts sideways as it
-    # descends: the left lateral arc on plate_013 runs x = 0.05, 0.04, 0.07, 0.13
-    # while y goes 0.23 -> 0.50. At 0.02 that arc fragments into four one-seed
-    # "columns" (74% of all columns were single); at 0.08 plate_013 resolves into
-    # the six strips actually present and 22% are single.
-    #
-    # COL_SPAN caps a column's total width as well as the step between
-    # neighbours, so a strip drifting steadily sideways cannot chain across the
-    # midline and swallow its bilateral partner. Both constants live at module
-    # level, because `region_hulls` splits a region's lobes at that same COL_SPAN.
-    for _lst in seeds.values():
-        _lst.sort(key=lambda s: (s["xf"], s["yf"]))
-        _cols, _cur = [], [_lst[0]]
-        for _s in _lst[1:]:
-            if (_s["xf"] - _cur[-1]["xf"] > COL_BAND
-                    or _s["xf"] - _cur[0]["xf"] > COL_SPAN):
-                _cols.append(_cur); _cur = [_s]
-            else:
-                _cur.append(_s)
-        _cols.append(_cur)
-        _lst[:] = [_s for _col in _cols for _s in sorted(_col, key=lambda s: s["yf"])]
-        for _i, _s in enumerate(_lst, 1):
-            _s["n"] = _i
+    # Loaded and numbered by the shared helpers above, so this tool and the
+    # atlas region tracer agree about which seed is seed 4.
+    seeds = load_seeds()
 
     pl = []
     for p in sorted(plates, key=lambda p: p["plate_id"]):
@@ -3943,6 +4764,9 @@ def main():
         if not os.path.exists(img):
             continue
         sd = seeds.get(p["plate_id"], [])
+        # The ROI grouping, and the number every seed under it carries.
+        hulls = region_hulls(sd)
+        tag_rois(sd, hulls)
         # How much room a label actually has on THIS plate: the median distance
         # from a seed to its nearest neighbour, as a fraction of the plate
         # diagonal. A fraction rather than pixels because the page has to turn it
@@ -3964,7 +4788,7 @@ def main():
                    "labelled": int(bool(sd)), "seeds": sd,
                    # What a REGION is on this plate, as opposed to where its
                    # individual seeds are. One entry per region per lobe.
-                   "hulls": region_hulls(sd)})
+                   "hulls": hulls})
 
     # The curation the app has on file, carried into the page so a browser copy
     # opens with the same work rather than empty. --no-seed leaves it out, which
@@ -3981,7 +4805,8 @@ def main():
     page = IO.fill(PAGE, {
         "__SEED__": seed, "__PROV__": load_provenance(), "__DATA__": data,
         "__PLATES__": pl, "__PLATESET__": PLATE_SET, "__MARKERS__": markers,
-        "__MARKER__": args.marker, "__SECGRID__": SEC_GRID, "__GROUPS__": GROUPS})
+        "__MARKER__": args.marker, "__SECGRID__": SEC_GRID, "__GROUPS__": GROUPS,
+        "__EXPORTDIR__": args.export_dir})
     with open(args.out, "w", encoding="utf-8") as fh:
         fh.write(page)
 
@@ -4009,11 +4834,39 @@ def main():
           f"{sum(len(p['seeds']) for p in pl)} region seeds")
     print(f"  {len(lab)} plates carry seeds"
           + (f": {lab[0]['id']} .. {lab[-1]['id']}" if lab else " - no region can be placed yet"))
+
+    # The lobe split is the one thing about the hulls that can be silently wrong,
+    # so it is reported rather than assumed. A region that comes out in ONE part
+    # on a plate where it is bilateral would be drawn as a band across the whole
+    # brain - the failure `04f_exclusion_candidates.py` documents for solidity -
+    # and the widest hull is what makes that visible at a glance. On the current
+    # atlas: Dl and Dm split in two on all 17 of their plates, POA and the tuberal
+    # regions stay in one at the midline, and the widest hull is 0.20 of a plate
+    # against 0.90 without the split.
+    hulls = [h for p in pl for h in p["hulls"]]
+    if hulls:
+        wide = max((max(v[0] for v in h["v"]) - min(v[0] for v in h["v"]), h)
+                   for h in hulls)
+        multi = sorted({h["region"] for h in hulls if h["n_parts"] > 1})
+        one = sorted({h["region"] for h in hulls if h["n_parts"] == 1})
+        print(f"  {len(hulls)} region hulls, widest {wide[0]:.2f} of a plate "
+              f"({wide[1]['region']})")
+        print(f"    split per lobe: {', '.join(multi) if multi else '(none)'}")
+        print(f"    one part:       {', '.join(one) if one else '(none)'}")
+        if wide[0] > 0.5:
+            print(f"    WARNING: a hull spans more than half the plate. The lobe "
+                  f"split at LOBE_GAP={LOBE_GAP} is not separating hemispheres "
+                  f"on this plate set.")
     print()
     print("Scrub the plate slider until it matches, then click matching points -")
-    print("section first, then plate. From three pairs the atlas regions are warped")
-    print("live onto the section in their atlas colours; that overlay is the check")
-    print("that matters, not the residual number.")
+    print("section first, then plate. From three pairs there is a transform and a")
+    print("per-landmark residual; from six it is a thin-plate spline. Nothing is")
+    print("warped onto the section - the residual is the check.")
+    print()
+    print("Then press e for Region mode: click a region's shape on the plate to")
+    print("say which one you are drawing, and click out its outline on the")
+    print("section. A region drawn over its landmarks takes them over, so they")
+    print("stay landmarks and stop being discs. h hides the hulls.")
     print()
     print("Only the plates listed above have regions to give. A section assigned")
     print("elsewhere gets no ROIs, so there is no reason to place landmarks on it -")
@@ -4024,6 +4877,16 @@ def main():
     print("at - nothing positioned by the transform). Background discs share that")
     print("file and are told apart by roi_kind, because they are measured the")
     print("same way: what the detector finds in them is its false-positive rate.")
+    print()
+    print(f"Exports are filed under {args.export_dir}, one folder per export named")
+    print("DD.MM.YYYY_HH.MM, with the same stamp on every file in it - so a second")
+    print("export an hour later sits beside the first rather than over it.")
+    print()
+    print("In a browser that has the folder picker (Chrome, Edge) the page writes")
+    print("there directly once you have pressed Folder... and chosen it; the choice")
+    print("is remembered. Everywhere else - Firefox, Safari, and the app - the file")
+    print("is downloaded with the stamp in its name and the host files it: the app")
+    print("reads the stamp back off the name and rebuilds the same folder.")
 
 
 if __name__ == "__main__":

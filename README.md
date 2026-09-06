@@ -208,7 +208,47 @@ that case offers a copy and states the size first. The screen flags any filename
 that does not match the manifest's grammar, because such a file is invisible to
 every stage and is otherwise dropped in silence.
 
+### ROIs are areas, and the atlas numbers them
+
+An ROI is a region on one side of the brain, and the atlas marks it with several
+vector dots — Dl carries 142 across its plates, five or six per lobe. Measuring
+each dot as its own small circle measured circles, not Dl. So **every dot of one
+ROI now carries that ROI's number**, the plate shows the ROI as a shaded area in
+the atlas's own colour for it, and the operator draws that area.
+
+**Guided mode walks the ROIs.** Click each corner of the region on the section;
+`Enter`, a double-click, or clicking the first corner closes it. That is ROI 1,
+shaded in the same colour the atlas draws it in. The cursor moves to ROI 2. `s`
+skips one that is not on this section, `z` drops a corner, and clicking a shape on
+the plate re-aims the cursor at it.
+
+Median **4 ROIs to draw per plate**, against 11 seeds to click before.
+
+**A finished region stays live.** Drag a corner to move it, click an edge to add
+one, `Delete` removes the one under the cursor — any time you are not part-way
+through drawing another. While a ring is open every click belongs to it, so a
+handle under the cursor cannot steal one.
+
+The numbering falls out of the reading order the seeds already had — down each
+column, columns left to right. On plate_013 it runs Dl-left, Dm-left, Vd, Vv, Vl,
+then crosses the midline and comes back to Dl-right. The lobe split before
+grouping is what makes that possible: these regions are bilateral, and one shape
+over both lobes would span the midline gap, which is the failure `04f` records for
+section solidity. Without the split the widest shape covers 0.90 of a plate; with
+it, 0.20.
+
+**Landmarks are placed free.** Turn guided off (`g`) and click the section, then
+the matching point on the plate. Nothing positions an ROI by the transform, so
+landmarks are there for the plate assignment and the per-landmark residual.
+
+**Background discs are the only circles left.** They mark tissue judged to carry
+no real signal and are measured by the same detector, so they report its
+false-positive rate. `d` places one; it takes no ROI number and does not move the
+cursor.
+
 ### Curators in a plain browser
+
+
 
 ```bash
 serve_curators.bat                       # or: python scripts/serve_curators.py
@@ -313,9 +353,15 @@ bash tests/run.sh
 ```
 
 Node suites over the ROI curator's own JavaScript, evaluated against a small DOM
-stub. They cover seed ordering, guided placement, the landmark radius, both
-markers in one page, the filters, rotation, and what reaches the exports — 70-odd
-assertions, most of which exist because they caught something.
+stub. They cover seed ordering, guided placement, the landmark radius, the region
+hulls and what a drawn polygon claims, both markers in one page, the filters,
+rotation, and what reaches the exports — 130-odd assertions, most of which exist
+because they caught something.
+
+The hulls are computed in Python and shipped to the page as data, which is what
+makes the lobe split testable at all: canvas calls are swallowed by the stub, so
+a shape drawn on the plate is invisible to a suite, but the vertex list it was
+drawn from is not.
 
 `run.sh` regenerates the curator with `--no-seed` first and extracts its script.
 That matters: the page normally embeds whatever curation is in
@@ -380,7 +426,7 @@ annulus background.
 illumination profile repeats at the tile pitch across every section. Uncorrected, a fixed
 threshold detects materially more objects near tile centres.
 
-**The atlas covers the telencephalon and preoptic area only.** 77 of 101 plates carry no region
+**The atlas covers the forebrain and the tuberal hypothalamus.** 33 of 64 plates carry no region
 identification, so the caudal two-thirds of the brain needs labelling before regional
 quantification extends there.
 

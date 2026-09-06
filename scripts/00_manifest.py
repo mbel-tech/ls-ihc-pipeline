@@ -495,6 +495,15 @@ def main():
                 "n_tiles_m": info["size_m"],
                 "n_scenes": len(info["scenes"]),
                 "pixel_type": info["pixel_type"],
+                "component_bit_count": info["component_bit_count"],
+                # Every stage that asks "is this pixel clipped?" reads this
+                # rather than a literal. It is 65535 on this dataset because
+                # the sensor is genuinely 16-bit, not by assumption.
+                "clip_ceiling": info["clip_ceiling"],
+                "channel_pixel_types": "|".join(
+                    str(c["pixel_type"]) for c in info["channels"]),
+                "channel_bit_counts": "|".join(
+                    str(c["component_bit_count"]) for c in info["channels"]),
                 "px_um": info["px_um_x"],
                 "objective_mag": info["objective_mag"],
                 "objective_na": info["objective_na"],

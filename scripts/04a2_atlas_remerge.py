@@ -29,15 +29,32 @@ approximation anywhere.
 Nothing is overwritten. Output goes to `atlas/plates_merged/`, alongside the
 originals, so the merge can be reviewed before anything is pointed at it.
 
+Update 2026-09-06, `Salmon Atlas full.pdf`: the PowerPoint re-export stores whole
+plates, so there are no strips left to merge and every group here comes out with
+one member. The stage still earns its place - it renders each figure at a chosen
+dpi and carries the seeds across - but the merging is now a no-op, and a run
+reporting "plates assembled from more than one strip: 0" is correct rather than
+broken. What the re-export added instead is overlay insets and marker stamps,
+images that are not plates; which images count is decided in `atlas_pdf.py`, the
+same module 04a uses, because these two stages pair their plates by position and
+a disagreement here silently mismaps every seed on the page.
+
 Run:  python 04a2_atlas_remerge.py --dry-run
       python 04a2_atlas_remerge.py --dpi 300
 """
 
 import argparse
 import csv
+import importlib.util
 import json
 import os
 from collections import Counter
+
+# Which images on a page count as plates is shared with 04a - see atlas_pdf.py.
+_spec = importlib.util.spec_from_file_location(
+    "_atlas_pdf", os.path.join(os.path.dirname(os.path.abspath(__file__)), "atlas_pdf.py"))
+ATLAS = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(ATLAS)
 
 # LS_CONFIG names the file explicitly; the file-relative path is the fallback.
 # Frozen, the scripts sit inside _internal/ while config.json is beside the
@@ -61,15 +78,7 @@ def page_groups(page):
     A group is a run of boxes sharing an x-range and abutting vertically.
     Returned top to bottom, which is how the plates read on the page.
     """
-    boxes = []
-    for it in page.get_images(full=True):
-        try:
-            b = page.get_image_bbox(it)
-        except Exception:                                        # noqa: BLE001
-            continue
-        if b.is_empty or b.width <= 0 or b.height <= 0:
-            continue
-        boxes.append({"bbox": b, "px_w": it[2], "px_h": it[3]})
+    boxes = ATLAS.plate_boxes(page)
     boxes.sort(key=lambda t: (round(t["bbox"].x0, 1), round(t["bbox"].y0, 1)))
 
     used = [False] * len(boxes)

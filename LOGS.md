@@ -9,6 +9,203 @@ where things landed, not which plausible-looking route was tried and abandoned, 
 
 ---
 
+## 2026-09-04 - An ROI is an area: the atlas numbers areas, and the curator draws them
+
+**Changed:** `04l_roi_curator.py` - ROI numbering in `region_hulls` plus `tag_rois`; the guided
+walk rewritten over ROIs (`roisOf`, `usedRois`, `firstUnusedRoi`, `gRoi`, `skipRoi`); polygon
+editing (`grabVertex`, `dropCorner`, `vDrag`); `secRegions` and `regionKey` repointed at polygons.
+`04q` imports `roi_n`. `04a5_atlas_regions.py`, the registration path, `tests/registered.test.js`
+and the `atlas_regions` stage all deleted. `guided`, `polygon` and `background` suites rewritten.
+
+**Why.** The unit was wrong. A region is one continuous area and the atlas's dots are samples of
+it, but every dot had its own number and its own disc, so Dl on a section was five or six small
+circles and the plate read "seed 1 ... seed 30". Now every dot of one region on one side of the
+brain carries that region's ROI number, the plate draws the ROI as a shaded area, and the operator
+outlines it. 356 seeds become **134 ROIs** - a median of 4 to draw per plate against 11 to click.
+
+**The numbering is derived, not invented.** ROIs are ordered by their lowest seed, which makes the
+ROI order the same traversal `number_seeds` already establishes - down each column, columns left to
+right. On plate_013 it runs Dl-left, Dm-left, Vd, Vv, Vl, then crosses the midline and back to
+Dl-right.
+
+**The seeds keep their own numbers, and that is the decision that made this tractable.**
+`P.seeds[n-1]` is how three places resolve a number back to a seed, and the operator's store holds
+268 curated sections whose pairs carry per-seed numbers. Renumbering the seeds themselves would
+have re-labelled every one of those through a scheme with a third as many values, and nothing would
+have errored. Only what is DISPLAYED and what a polygon RECORDS is the ROI number. The
+seed-ordering assertions in `guided.test.js` and the partition assertion in `polygon.test.js`
+therefore survive unchanged, and there is no migration.
+
+**`commitPoint`'s guided branch was deleted rather than adapted.** It pushed a pair whose plate
+coordinate was the seed's own position, `sd.xf*P.w`. Under ROI numbering there is no single `sd` -
+an ROI is three to six dots - and picking a representative would have quietly changed what the
+affine and the spline are fitted to. Landmarks are placed free now, section then plate.
+
+**Two things the tests caught that review would not have.**
+
+*Background mode became unreachable.* The guided branch in `secDown` intercepted every click, and
+guided is the default, so the press-drag-release that places a background disc could never fire.
+`background.test.js` reported the disc simply not stored.
+
+*The claim machinery was dead and had to go.* `claimedSeeds`, `polySeeds`, `nearPoly`, `EDGE_TOL`
+and `seed_ns` existed to stop a polygon and the discs beneath it measuring the same tissue twice.
+With anatomical discs gone and landmarks carrying no seed number, `polySeeds` could only ever
+return an empty list. A guard that cannot fire is worse than no guard, because it reads as one.
+
+**Four rendering faults, found in a browser and not by any suite** - canvas calls are swallowed by
+the stub, so this is the third time in this series that opening the page has been the only way to
+see them. The ROI number was being drawn once per dot, printing "1" six times across Dl; the region
+name collided with it at the same centroid; the polygon fill was a tint rather than a shade; and
+the footer legend and the size slider still described walking numbered seeds and sizing ROIs.
+
+**What the export says now.** `roi_regions.csv` gains `roi_n` and loses `seed_ns` and `roi_source`.
+Polygon rows carry the ROI number, the region, the lobe and the vertex list, with `seed_n` and
+`sec_r` blank. **No anatomical disc row is produced at all**; `roi_kind = background` rows keep
+their radius and are the only circles left. `05a` drops the `roi_source` column it briefly carried.
+
+**Reverses** the 2026-09-04 atlas-tracing entry above, which is kept: that work was measured and
+built, and the reason it is not wanted is that annotating the atlas is not the workflow. The
+polygon feature it was built on top of stays.
+
+**Still outstanding:** the 130 measured sections carry 1,483 disc ROIs. They need re-drawing as
+areas, after which 05a, 05c and 06a must be re-run - 05c is StarDist over every ROI and is the
+expensive one. A disc is not an area and deriving one from the other would invent a boundary nobody
+drew, so nothing is converted automatically. The operator's call.
+
+---
+
+## 2026-09-04 - Regions traced once on the atlas, registered onto every section, and refused where the fit cannot reach
+
+**Changed:** new `04a5_atlas_regions.py` and `tests/registered.test.js`;
+`04l_roi_curator.py` gains `load_region_outlines`, `REG_TOL`, `registered()`, `lmHull()`,
+`nearPoly()`, `polyArea()` and an Atlas layer (`t`); `04q` refuses to import a registered
+row; `05a` carries `roi_source`. `load_seeds`/`number_seeds` factored out of 04l's `main`
+so 04a5 numbers seeds identically.
+
+**Why.** Drawing a region on every section is one anatomical judgement made hundreds of
+times. Tracing it once on the plate and carrying it through the operator's own landmarks is
+what SHARCQ automates, and the last part of its workflow this pipeline had not rebuilt.
+
+**This is the overlay that was removed, and the difference is a gate.** The old one warped
+every atlas seed through the fit and drew them all - "ten placed ROIs produced thirty on
+screen and twenty-seven in the export ... They looked like measurements." Three refusals
+now stand between an outline and a row, and every one fails silently if it stops working:
+
+*Not traced.* 04a5 proposes a convex hull for every part; only `source=traced` registers.
+Running `--propose` therefore changes nothing about what 04l exports. The chain lights up
+when a person traces, and not before.
+
+*Out of reach.* Measured before it was built, over the 115 curated sections, taking each
+region hull dilated 25% about its centroid as a stand-in for a traced boundary and asking
+how far outside the convex hull of that section's own clicked plate points it reaches:
+
+| | median | p90 | max |
+|---|---|---|---|
+| region carries a placed landmark | 0.027 | 0.049 | 0.195 |
+| region carries none | 0.359 | - | 0.621 |
+
+An order of magnitude apart. `REG_TOL = 0.08` of the plate admits 96.8% of the first and
+refuses 89% of the second, and 0.08 and 0.10 behave identically - a plateau, not a
+knife-edge. **It is a distance, not a containment test**, and that is the whole design: a
+traced boundary lies outside its own seeds by construction, so "inside the landmark hull"
+would have refused nearly every traced region. What is being asked is whether the warp there
+is a short step past the fitted points or a leap.
+
+A refusal names the region and the seed that would fix it, because a refusal nobody can act
+on is just a missing region.
+
+*No area.* A hull of three near-collinear seeds is a sliver, and warping does not give it an
+interior; refused rather than exported as a region 06a would divide by.
+
+**A registered region claims its landmarks, and that needed a tolerance.** Until a part is
+traced its outline IS the hull of its own seeds, so the warped vertices land exactly on the
+landmarks that produced them - and a strict point-in-polygon test calls a vertex outside.
+Every registered region would have claimed nothing and its seeds would have exported their
+discs alongside it: the same tissue measured twice, silently, on every section. `nearPoly`
+counts within 2 canonical px (about 50 um) as inside. Caught by `background.test.js`
+reporting four region rows where three were placed.
+
+**A drawn region beats a registered one.** The operator looked at this section; the
+registration only looked at the plate. And `04q` will not import a registered row - it is
+derived, recomputed every load, and a frozen copy would outrank every later registration
+including one from a better-traced atlas.
+
+**What the tracing costs.** 30 seeded plates, 134 region parts. 71 of those (53%) carry
+fewer than three seeds and have no proposal to adjust - Rm, Vl, Vd, Vc, Vs and the posterior
+tuberculum have none at all - 29 open as a bare triangle, and only 34 as a usable polygon.
+It is bounded and it is one-time, but it is drawing rather than nudging for half of them.
+
+**Still outstanding:** nothing traced yet, so nothing registers yet. When it is, 05a, 05c
+and 06a must be re-run over the 130 measured sections - a dataset mixing discs with traced
+regions cannot be pooled - and 05c is StarDist over every ROI. The operator's call.
+
+---
+
+## 2026-09-03 - Regions are drawn as polygons; the atlas shows them as hulls, not dots
+
+**Changed:** `04l_roi_curator.py` gains `convex_hull`, `region_hulls`, a `Region` mode
+(`e`) and a hull toggle (`h`); `04q_import_curation.py` round-trips the shapes;
+`05a_roi_geometry.py` gains `parse_poly` and `outline_area`; `05c_detect_rois.py` gains
+`point_in_poly`; `06a_roi_dataset.py` reads the measured area. New `tests/polygon.test.js`.
+
+**Why.** A region was a scatter of discs. Dl carries 142 seeds and Dm 114 across their
+plates, so guided placement put five or six small circles on a continuous structure and
+measured those circles. The atlas pane showed the same region as five or six numbered
+dots, leaving its extent to be inferred.
+
+**The lobe split is the load-bearing part, not the hull.** These regions are bilateral, and
+a hull over all of a region's seeds spans the midline gap - the failure
+`04f_exclusion_candidates.py` already documents for section solidity, and rejected that
+metric over. Measured on this atlas: without the split the widest hull covers **0.896** of a
+plate (Dl on plate_013, reaching from one hemisphere to the other) and 17 hulls exceed half
+a plate. Splitting a region's seeds at every x-gap wider than `COL_SPAN` first, the widest
+is **0.198** and none exceed half. Dl and Dm come out in two parts on all 17 of their
+plates; POA stays in one on the plates where it is midline, which is the check that the rule
+reads the data rather than cutting everything in half. 356 seeds become 134 hulls.
+
+`COL_SPAN` is reused rather than a new threshold. It is already tuned to sit between the two
+real scales - wide enough to hold a strip that drifts sideways as it descends (plate_013's
+left lateral arc runs x = 0.05 to 0.13), narrow enough that a strip cannot chain across the
+midline (plate_013's bilateral partners sit at 0.05 and 0.94). Both constants moved to module
+level so the reuse is visible rather than coincidental.
+
+**A polygon claims the seeds it encloses**, and that is the whole of the decoupling. The
+enclosed pairs stay landmarks - the affine and the spline see every correspondence they
+always did, and `guided.test.js` passes unchanged - but they stop emitting a disc row,
+because the region drawn over them measures that tissue. Exporting both would count the same
+nuclei twice, and the double count would grow with how carefully the section was landmarked.
+The claim is derived from the geometry on every read rather than stored, so dragging a vertex
+off a landmark stops claiming it.
+
+**Nothing is warped onto the section.** The docstring, the epilogue, `app/stages.py` and
+`docs/pipeline-methods.md` all still promised a live warped overlay that was removed months
+ago for producing thirty ROIs on screen from ten placed. Four stale copies of one claim, now
+corrected. The hull is shown on the ATLAS pane only; the operator answers it by eye.
+
+**Three things it turned out not to need.** `05a` already mapped a disc as a 128-point
+outline before bounding it, precisely because mapping a radius assumes a similarity - so a
+polygon takes the same path with its own vertices. `05c` already decided membership by
+mapping the centroid back to the 256 grid, so only the test changed. And `analysis_set`
+already keys on `roi_kind`, which a polygon keeps, so the background-disc gate counts drawn
+regions without being touched.
+
+**What is new in the files.** `roi_regions.csv` gains `roi_shape`, `part`, `sec_poly` and
+`seed_ns`, appended so a reader indexing by header is unaffected. A polygon row carries its
+centroid in `sec_x`/`sec_y` - 06a's nucleus join is positional - and a BLANK `sec_r`, because
+a polygon has no radius and an equivalent-area one would be a number that reads as a
+measurement. `roi_boxes_<MARKER>.csv` gains `area_um2` (pi*a*b for a disc, the shoelace over
+the mapped vertices for a region), `roi_shape` and `sec_poly`; `axis_a_um`/`axis_b_um` are
+blank on polygon rows because they describe an ellipse. Verified that a mapped polygon's area
+is |det A| times its grid area at 0, 30, 45 and 137 degrees - the polygon's version of the
+`ellipse_axes` bug, which was right only at multiples of 90.
+
+**Still outstanding:** the hull is the shape of the seed cloud, not of the anatomy. Three
+seeds per lobe support a convex hull and nothing better. Tracing the real region boundary once
+per plate would give a true reference shape and could be reused across every section at that
+level; it is a separate curation pass and is not started here.
+
+---
+
 ## 2026-09-03 - 04i was subtracting angles from two different frames
 
 **Changed:** `04i_propagate_to_perk.py` converts between `04a`'s per-scan squashed frame and the

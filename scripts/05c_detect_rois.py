@@ -70,6 +70,31 @@ COLUMNS = ["scene_uid", "animal", "marker", "roi_kind", "region", "seed_n",
            "censored", "artifact", "off_tissue"]
 
 
+def point_in_poly(px, py, v):
+    """Is (px, py) inside the ring `v`, an (N, 2) array of canonical-grid points?
+
+    Even-odd ray cast, in plain Python. It is called once per detected nucleus
+    over a ring of a dozen or so vertices, which is nothing beside the
+    segmentation that produced the nucleus, and keeping it here means the
+    membership rule is one readable function rather than a matplotlib Path whose
+    boundary convention would have to be looked up to be trusted.
+
+    A nucleus exactly on the boundary is not worth a rule of its own: the ROI is
+    drawn at 25 um per pixel and a nucleus is 7 um, so the boundary is thicker
+    than the question.
+    """
+    inside = False
+    n = len(v)
+    j = n - 1
+    for i in range(n):
+        xi, yi = v[i][0], v[i][1]
+        xj, yj = v[j][0], v[j][1]
+        if (yi > py) != (yj > py) and px < (xj - xi) * (py - yi) / (yj - yi) + xi:
+            inside = not inside
+        j = i
+    return inside
+
+
 def check_header(path, columns):
     """Refuse to append to a roi_nuclei.csv whose header is not `columns`.
 
@@ -258,9 +283,11 @@ def write_overlay(uid, bi, b, dapi, labels, kept):
     judged, which is whether the outline follows the nucleus.
 
     GREEN is a nucleus that was COUNTED. RED is one StarDist found inside the
-    bounding box but outside the disc, so it was dropped. Drawing the rejects is
-    the point - a box that is mostly red means the disc is small or misplaced
-    relative to what was segmented, and that is invisible in any table.
+    bounding box but outside the ROI itself, so it was dropped. Drawing the
+    rejects is the point - a box that is mostly red means the shape is small or
+    misplaced relative to what was segmented, and that is invisible in any
+    table. It is the direct check on a drawn region too: a polygon traced off
+    the anatomy shows as a crescent of red down one side.
     """
     from PIL import Image
 
@@ -439,17 +466,28 @@ def main():
                 if labels.max() == 0:
                     continue
 
-                # Which nuclei are actually IN the ROI. The disc is a circle on
-                # the 256 grid and an ellipse here, so membership is decided by
-                # mapping the centroid back rather than by any radius in CZI px.
-                sx, sy, sr = float(b["sec_x"]), float(b["sec_y"]), float(b["sec_r"])
+                # Which nuclei are actually IN the ROI. The shape is drawn on
+                # the 256 grid and is something else here - a circle becomes an
+                # ellipse, a polygon a differently-proportioned polygon - so
+                # membership is decided by mapping the centroid BACK to the grid
+                # and testing it there, never against a radius in CZI px.
+                #
+                # That is why a drawn region needs no new machinery: the test
+                # changes from "inside this circle" to "inside this ring", and
+                # everything either side of it stays as it was.
+                sx, sy = float(b["sec_x"]), float(b["sec_y"])
+                sr = float(b["sec_r"] or 0)
+                poly = G5.parse_poly(b.get("sec_poly", ""))
+                inside = ((lambda gx, gy: point_in_poly(gx, gy, poly))
+                          if poly is not None else
+                          (lambda gx, gy: (gx - sx) ** 2 + (gy - sy) ** 2 <= sr * sr))
                 props = regionprops(labels, intensity_image=mark)
                 dprops = {p.label: p for p in regionprops(labels, intensity_image=dapi)}
                 kept = set()
                 for p in props:
                     cy, cx = p.centroid
                     gx, gy = G5.apply_affine(Minv, x0 + cx, y0 + cy)
-                    if (gx - sx) ** 2 + (gy - sy) ** 2 > sr * sr:
+                    if not inside(gx, gy):
                         continue
                     kept.add(p.label)
                     vals = p.image_intensity[p.image]

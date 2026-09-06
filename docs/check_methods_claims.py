@@ -82,11 +82,14 @@ def main():
     final = rows("atlas", "plates_final", "plates.csv")
     seeds = rows("atlas", "plates_final", "seeds.csv")
     if plates and final and seeds:
-        check("101 raw atlas plates", len(plates), 101)
+        check("47 raw atlas plates", len(plates), 47)
         check("64 plates in the working set", len(final), 64)
-        check("356 region seed points", len(seeds), 356)
-        check("seeds on 30 plates", len({r["plate_id"] for r in seeds}), 30)
-        check("11 named atlas regions", len({r["region"] for r in seeds}), 11)
+        check("362 region seed points", len(seeds), 362)
+        check("seeds on 31 plates", len({r["plate_id"] for r in seeds}), 31)
+        check("13 named atlas regions", len({r["region"] for r in seeds}), 13)
+        check("no seed left unnamed", sum(r["region"] == "UNMAPPED" for r in seeds), 0)
+        check("66 seeds recovered from flattened insets",
+              sum(int(r.get("from_raster") or 0) for r in seeds), 66)
 
     # ---- exclusion, artifact and censoring, from the provenance table ------
     prov = rows("reformatted", "section_provenance.csv")

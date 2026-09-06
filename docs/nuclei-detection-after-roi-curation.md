@@ -777,7 +777,7 @@ DAPI, and it would stop holding the moment any geometry was computed on the mark
   defensible; relative comparisons between groups at matched anatomical levels are,
   because the non-specific component is shared.
 - **Background discs are a false-positive rate, not a zero.** See §4.7 and §5.3.
-- **The atlas covers the telencephalon and preoptic area only** — 77 of 101 plates carry no
+- **The atlas covers the forebrain and the tuberal hypothalamus** — 33 of 64 plates carry no
   region identification, so regional quantification does not currently extend to the
   caudal two-thirds of the brain.
 

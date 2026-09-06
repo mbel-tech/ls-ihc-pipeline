@@ -81,6 +81,9 @@ _lsio.loader.exec_module(IO)
 CONFIG = RF.CONFIG
 OUT_ROOT = RF.OUT_ROOT
 REFORMAT_DIR = RF.REFORMAT_DIR
+# Where the curator files its exports, one DD.MM.YYYY_HH.MM folder per export.
+# Same key 04l and the app read, so all three look in one place.
+EXPORT_DIR = CONFIG.get("export_dir") or os.path.join(OUT_ROOT, "exports")
 OVERVIEW_DIR = RF.OVERVIEW_DIR
 FOCUS_CSV = os.path.join(OUT_ROOT, "qc", "focus.csv")
 MANIFEST_CSV = os.path.join(OUT_ROOT, "manifest", "manifest_scenes.csv")
@@ -209,6 +212,42 @@ def invert_affine(M):
     return np.hstack([inv, t.reshape(2, 1)])
 
 
+def parse_poly(text):
+    """The `sec_poly` cell as an (N, 2) array of canonical-grid points, or None.
+
+    The curator writes `"x y;x y;..."` at 2dp in the canonical 256 frame - one
+    cell rather than one row per vertex, so `roi_regions.csv` keeps its promise
+    of one row per ROI and every downstream join by (scene_uid, roi_index) goes
+    on meaning what it meant.
+
+    Under three points is not a polygon and is treated as no polygon at all, so
+    the caller refuses the row rather than bounding a shape with no interior.
+    """
+    if not text:
+        return None
+    pts = []
+    for vtx in str(text).split(";"):
+        xy = vtx.split()
+        if len(xy) != 2:
+            continue
+        try:
+            pts.append((float(xy[0]), float(xy[1])))
+        except ValueError:
+            return None
+    return np.asarray(pts, float) if len(pts) >= 3 else None
+
+
+def outline_area(X, Y):
+    """Shoelace area of a closed outline, in the units of X and Y.
+
+    Taken AFTER the map rather than before it and scaled: an affine multiplies
+    every area by |det A|, so both routes agree, but doing it here means the
+    same function measures a mapped circle and a mapped polygon and there is no
+    second formula to keep in step.
+    """
+    return 0.5 * abs(float(np.dot(X, np.roll(Y, -1)) - np.dot(Y, np.roll(X, -1))))
+
+
 def ellipse_axes(M, sr):
     """The two semi-axes, larger first, of the ellipse a grid circle of radius
     `sr` becomes under `M`, in the units of M's output.
@@ -287,19 +326,31 @@ def load_csv(path):
 
 
 def find_regions_csv(explicit):
-    """Where the ROIs come from.
+    """Where the ROIs come from. The newest export wins.
 
-    The curator runs in a browser and exports to the download folder, so that is
-    where a fresh export lives - and a second export lands as
-    `roi_regions(1).csv`, which is exactly when it matters. The newest wins.
+    The curator runs in a browser and cannot be handed a path, so an export
+    turns up in one of three places: the folder the operator picked for it, the
+    reformat directory when the app filed it, or the download folder. Since
+    2026-09-06 each export goes into its own `DD.MM.YYYY_HH.MM` folder and every
+    file in it carries that stamp, so the search runs one level deep as well as
+    flat - `roi_regions*.csv` still matches the stamped name, but not through a
+    directory.
+
+    Every candidate is collected and the newest mtime wins, rather than the
+    reformat directory short-circuiting the search. That mattered the moment
+    exports stopped writing an unsuffixed file there: the copy left over from
+    the previous run is still on disk, and taking it because it exists would
+    quietly analyse the old curation while a fresh export sat unread.
     """
     if explicit:
         return explicit
-    local = os.path.join(REFORMAT_DIR, "roi_regions.csv")
-    if os.path.exists(local):
-        return local
-    home = os.path.expanduser("~")
-    cand = glob.glob(os.path.join(home, "Downloads", "roi_regions*.csv"))
+    roots = [REFORMAT_DIR, EXPORT_DIR, os.path.join(os.path.expanduser("~"), "Downloads")]
+    cand = []
+    for root in roots:
+        if not root:
+            continue
+        cand += glob.glob(os.path.join(root, "roi_regions*.csv"))
+        cand += glob.glob(os.path.join(root, "*", "roi_regions*.csv"))
     if cand:
         return max(cand, key=os.path.getmtime)
     return None
@@ -395,6 +446,7 @@ def build(regions_csv, limit=None, plates_csv=None, require_background=True):
         uids = uids[:limit]
 
     geom_rows, box_rows, skipped = [], [], []
+    shapeless = []          # ROI rows carrying no geometry at all - see below
     rect_cache = {}
 
     for n, uid in enumerate(uids, 1):
@@ -488,14 +540,38 @@ def build(regions_csv, limit=None, plates_csv=None, require_background=True):
                 continue
             sx, sy = float(r["sec_x"]), float(r["sec_y"])
             sr = float(r["sec_r"] or 0)
+            poly = parse_poly(r.get("sec_poly", ""))
             # The ROI outline mapped point by point, then bounded. Mapping a
-            # radius would assume the map is a similarity, and it is not.
-            t = np.linspace(0, 2 * np.pi, 128, endpoint=False)
-            X, Y = apply_affine(M, sx + sr * np.cos(t), sy + sr * np.sin(t))
+            # radius would assume the map is a similarity, and it is not - and
+            # that is exactly why a polygon needs nothing new here. A disc was
+            # already being turned into a 128-point outline before it was
+            # mapped; a drawn region arrives as an outline already.
+            if poly is not None:
+                U, V = poly[:, 0], poly[:, 1]
+            elif sr > 0:
+                t = np.linspace(0, 2 * np.pi, 128, endpoint=False)
+                U, V = sx + sr * np.cos(t), sy + sr * np.sin(t)
+            else:
+                # Neither a radius nor a ring. Refused rather than guessed at,
+                # the same way a section whose geometry cannot be reconstructed
+                # is refused: a zero-area ROI would reach 06a as a division by
+                # zero, or worse, as a density of nothing per nothing.
+                #
+                # Counted apart from `skipped`, which everywhere else in this
+                # stage means a whole SECTION was dropped. Folding a bad row
+                # into that number would report a section as lost when it was
+                # measured perfectly well.
+                shapeless.append((uid, r.get("region", "")))
+                continue
+            X, Y = apply_affine(M, U, V)
             cx, cy = apply_affine(M, sx, sy)
             x0, x1 = int(np.floor(X.min())), int(np.ceil(X.max()))
             y0, y1 = int(np.floor(Y.min())), int(np.ceil(Y.max()))
-            ax_a, ax_b = ellipse_axes(M, sr)
+            # A polygon has no semi-axes. They describe the ellipse a CIRCLE
+            # becomes, and leaving them blank is the honest way to say the
+            # question does not apply - writing the bounding box's half-widths
+            # there would put a number in a column 06a reads as an area.
+            ax_a, ax_b = ellipse_axes(M, sr) if poly is None else (None, None)
             box_rows.append({
                 "scene_uid": uid, "animal": f["animal"], "marker": f["marker_channel"],
                 "roi_kind": r.get("roi_kind") or "roi",
@@ -508,14 +584,32 @@ def build(regions_csv, limit=None, plates_csv=None, require_background=True):
                 # The two semi-axes in um, larger first, so a glance says how
                 # big the ROI really is and how far from circular the mapping
                 # made it. 06a takes pi*a*b from these as the ROI area.
-                "axis_a_um": round(ax_a * BASE_PX_UM, 1),
-                "axis_b_um": round(ax_b * BASE_PX_UM, 1),
+                "axis_a_um": "" if ax_a is None else round(ax_a * BASE_PX_UM, 1),
+                "axis_b_um": "" if ax_b is None else round(ax_b * BASE_PX_UM, 1),
+                # The area as measured, whatever the shape. pi*a*b for a disc,
+                # the shoelace over the mapped vertices for a polygon - which is
+                # the true area of the mapped shape, since an affine scales
+                # every area by |det A| and the shoelace is taken AFTER the map.
+                "area_um2": round(outline_area(X, Y) * BASE_PX_UM ** 2, 1)
+                            if poly is not None
+                            else round(np.pi * ax_a * ax_b * BASE_PX_UM ** 2, 1),
+                # The shape carried through, so 05c can decide membership with
+                # the same outline this box was cut from.
+                "roi_shape": "polygon" if poly is not None else "disc",
+                "sec_poly": r.get("sec_poly", "") or "",
             })
 
         if n % 25 == 0:
             print(f"\r  {n}/{len(uids)} sections", end="")
 
     print(f"\r  {len(uids)} sections                    ")
+    if shapeless:
+        print(f"  REFUSED {len(shapeless)} ROI rows carrying neither sec_r nor "
+              f"sec_poly - no shape, so no area and no box:")
+        for _u, _reg in shapeless[:10]:
+            print(f"    {_u} {_reg}")
+        if len(shapeless) > 10:
+            print(f"    ... and {len(shapeless) - 10} more")
     return geom_rows, box_rows, skipped
 
 

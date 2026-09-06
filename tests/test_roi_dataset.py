@@ -507,6 +507,41 @@ def main():
         close("area is pi*a*b, not pi*r^2 in curator pixels",
               float(s1["roi_area_um2"]), math.pi * AXIS * AXIS, 0.5)
 
+        # ---- a drawn region reports the area 05a measured, not an ellipse
+        #
+        # A polygon has no semi-axes, so the two columns 06a used to read are
+        # blank on its rows. Reading them would be a crash at best; falling back
+        # to them silently would be a wrong number. `area_um2` is what 05a writes
+        # for either shape, and it wins wherever it is present.
+        chk("roi_area_um2 prefers area_um2 when 05a wrote one",
+            G6A.roi_area_um2({"area_um2": "1234.5",
+                              "axis_a_um": "1", "axis_b_um": "1"}), 1234.5)
+        close("...and falls back to pi*a*b for a pre-polygon boxes file",
+              G6A.roi_area_um2({"axis_a_um": "10", "axis_b_um": "4"}),
+              math.pi * 40, 1e-9)
+        chk("a polygon row, whose semi-axes are blank, still gives an area",
+            G6A.roi_area_um2({"area_um2": "900.0",
+                              "axis_a_um": "", "axis_b_um": ""}), 900.0)
+
+        # ---- membership in a drawn region is a ring test on the 256 grid
+        #
+        # The same rule the disc always used - map the centroid back, decide
+        # there - with "inside this circle" swapped for "inside this ring". A
+        # concave shape is the case worth pinning: an operator tracing a lobe
+        # produces one, and a convex-only test would quietly count the notch.
+        sq = [(10, 10), (20, 10), (20, 20), (10, 20)]
+        chk("a point in the middle is in", G5C.point_in_poly(15, 15, sq), True)
+        chk("a point outside is out", G5C.point_in_poly(25, 15, sq), False)
+        chk("...and one beyond a corner too", G5C.point_in_poly(21, 21, sq), False)
+        # An L, notch on the top right. (18, 18) sits inside the bounding box and
+        # outside the shape - exactly what an even-odd cast is for.
+        ell = [(0, 0), (20, 0), (20, 10), (10, 10), (10, 20), (0, 20)]
+        chk("a concave shape excludes its notch",
+            G5C.point_in_poly(18, 18, ell), False)
+        chk("...and still includes the arms",
+            (G5C.point_in_poly(15, 5, ell), G5C.point_in_poly(5, 15, ell)),
+            (True, True))
+
         # ---- a section one background nucleus short gets NO cut, and blanks
         s2 = by[("S2", "roi")]
         chk("S2 gets no cut", s2["section_positivity_cut"], "")

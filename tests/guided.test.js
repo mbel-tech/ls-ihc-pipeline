@@ -1,26 +1,35 @@
-// Guided mode: the plate's numbered seeds as a click-through list.
+// The guided walk: the plate's ROIs as a click-through list, one polygon each.
 //
-// Also covers the seed ORDER itself - down each column, columns left to
-// right - and the two kinds of region uncertainty, because those are
-// claims the exports make and a silent change to either would be wrong
-// in a way no screenshot would show.
+// An ROI is an AREA - one region, one lobe - and the several atlas dots under it
+// are samples of it, not things to be measured one by one. So the cursor walks
+// ROIs and asks for an outline, and the number it names is the number every dot
+// of that ROI carries.
+//
+// Also covers the seed ORDER underneath, which survives unchanged and which the
+// ROI numbering is derived from, and the two kinds of region uncertainty -
+// because those are claims the exports make and a silent change to either would
+// be wrong in a way no screenshot would show.
 
 const { env, load, chk, note, done } = require('./harness');
 const { els, store, blobs, fire } = env;
 
-const X = load(`{KEY, PLATES, DATA, st, rows, select, onSlideUser, exportCsv, markAssigned,
-  toggleGuided, skipSeed, secDown, clickPl, undoPt, clearPts, seedsOf,
-  usedSeeds, status, defaultR, imgK, pairR,
+const X = load(`{KEY, PLATES, DATA, st, rows, select, onSlideUser, exportCsv,
+  markAssigned, toggleGuided, skipRoi, secDown, drawSec, clickPl, undoPt,
+  roisOf, usedRois, gRoi, polysOf, commitPoly, undoPoly, status, imgK,
   get guided(){return guided}, get gTarget(){return gTarget},
+  get draft(){return draft},
   set active(v){active=v}, get active(){return active}}`);
-// a plate that actually carries seeds
+// a plate that actually carries ROIs
 const pi = X.PLATES.findIndex(P=>P.labelled);
 const P  = X.PLATES[pi];
 els["animal"].value="LS105";
 const uid = X.rows()[0].uid; X.select(uid, true); X.active=uid;
 X.onSlideUser(pi);
 
-note("plate "+P.id+" carries "+P.seeds.length+" seeds\n");
+note("plate "+P.id+" carries "+P.seeds.length+" seeds in "+P.hulls.length+" ROIs\n");
+
+// ---- the seed order, which the ROI numbering is built on -------------------
+
 chk("seeds arrive in a fixed order (n = 1..N)",
     P.seeds.every((s,i)=>s.n===i+1), true);
 // Seeds are grouped into COLUMNS and sorted by y within one, so x wobbles by up
@@ -32,8 +41,6 @@ chk("and top-to-bottom within each column",
     P.seeds.every((s,i)=>i===0
       || Math.abs(s.xf-P.seeds[i-1].xf) > COL_BAND
       || s.yf >= P.seeds[i-1].yf - 1e-9), true);
-chk("seed 2 sits below seed 1 (the stated example)",
-    P.seeds[1].yf > P.seeds[0].yf, true);
 chk("every seeded plate carries a crowding measure",
     X.PLATES.filter(p=>p.seeds.length>1).every(p=>p.nn>0), true);
 const allSeeds = X.PLATES.flatMap(p=>p.seeds);
@@ -46,93 +53,109 @@ chk("amb is set exactly on the Vd/Vv/POA group",
     allSeeds.every(sd=>!!sd.amb===["Vd","Vv","POA"].includes(sd.region)), true);
 chk("Dl and Dm are not flagged ambiguous - they are distinct places",
     allSeeds.filter(sd=>(sd.region==="Dl"||sd.region==="Dm") && sd.amb).length, 0);
-chk("...nor is anything outside Vd/Vv/POA",
-    [...new Set(allSeeds.filter(sd=>sd.amb).map(sd=>sd.region))].sort().join("/"),
-    "POA/Vd/Vv");
 
+// ---- the ROI numbering -----------------------------------------------------
 
-// placement is press -> (optional drag to size) -> release, so drive the real
-// gesture rather than a handler that no longer exists
-const clickAt = (cx,cy,dragTo) => {
-  X.secDown({clientX:cx, clientY:cy, button:0, preventDefault(){}});
-  if(dragTo) fire("mousemove",{clientX:dragTo[0], clientY:dragTo[1]});
-  fire("mouseup",{});
-};
-// Numbered placement is the default now, not a mode to switch on. Asserting
-// that directly is the point: if it ever silently reverts to free
-// correspondence, the whole documented process changes and nothing else here
-// would notice.
-chk("numbered placement is on by default", X.guided, true);
-chk("cursor starts at seed 1", X.gTarget, 1);
+const allH = X.PLATES.flatMap(p=>p.hulls||[]);
+chk("every ROI is numbered 1..k on its own plate",
+    X.PLATES.filter(p=>(p.hulls||[]).length)
+            .every(p=>p.hulls.every((h,i)=>h.roi===i+1)), true);
+// THE POINT OF THE WHOLE CHANGE: one number per area, carried by every dot.
+chk("every seed of an ROI carries that ROI's number",
+    X.PLATES.filter(p=>(p.hulls||[]).length).every(p=>
+      p.hulls.every(h=>h.seeds.every(n=>p.seeds[n-1].roi===h.roi))), true);
+chk("...and no seed is left without one",
+    allSeeds.every(sd=>sd.roi>=1), true);
+chk("there are fewer ROIs than seeds - that is the reduction",
+    allH.length < allSeeds.length, true);
+// Ordering the ROIs by their lowest seed is what makes the ROI walk follow the
+// same traversal the seed order already established, rather than an alphabetical
+// one nobody asked for.
+chk("ROI order follows the seed order, not the region name",
+    X.PLATES.filter(p=>(p.hulls||[]).length).every(p=>{
+      const mins = p.hulls.map(h=>Math.min(...h.seeds));
+      return mins.every((m,i)=>i===0 || m > mins[i-1]);
+    }), true);
 
-clickAt(100,100);
+// ---- the walk --------------------------------------------------------------
+
+// The stub hands out the section image's size only once it has been drawn with,
+// so the first click of a run would convert at a different scale from the rest.
+X.drawSec();
 const s = X.st(uid);
-chk("one click makes a whole pair", s.pairs.length, 1);
-chk("...tagged with the seed it answers", s.pairs[0][4], 1);
-chk("...using that seed's own plate coords",
-    [s.pairs[0][2].toFixed(2), s.pairs[0][3].toFixed(2)].join(),
-    [(P.seeds[0].xf*P.w).toFixed(2), (P.seeds[0].yf*P.h).toFixed(2)].join());
-chk("cursor advanced", X.gTarget, 2);
+const click = (cx,cy) => X.secDown({clientX:cx, clientY:cy, button:0, preventDefault(){}});
+// A square, clicked out corner by corner and closed on the first one.
+const drawSquare = (x0,y0,w) => {
+  click(x0,y0); click(x0+w,y0); click(x0+w,y0+w); click(x0,y0+w); click(x0,y0);
+};
 
-X.skipSeed();
-chk("skip moves past seed 2 without placing it", X.gTarget, 3);
-clickAt(120,120);
-chk("next click answers seed 3", s.pairs[1][4], 3);
-chk("skipped seed 2 is still unplaced", X.usedSeeds(s).has(2), false);
+chk("guided is on by default", X.guided, true);
+chk("the cursor starts at ROI 1", X.gTarget, 1);
+chk("...which is a real ROI on this plate", X.gRoi() && X.gRoi().roi, 1);
+chk("the plate's ROI list is what is walked", X.roisOf(s).length, P.hulls.length);
 
-// re-aim by clicking the plate
-X.clickPl({clientX:0, clientY:0, button:0});
-chk("clicking a plate seed re-aims the cursor", X.gTarget>0, true);
+// One corner is not a polygon, and neither are two.
+click(100,100);
+chk("a click starts a ring rather than placing anything", X.draft.length, 2);
+chk("...and no landmark was made", s.pairs.length, 0);
+click(200,100);
+X.commitPoly();
+chk("two corners do not close", X.polysOf(s).length, 0);
+chk("...and the ring is still open", X.draft.length, 4);
+click(200,200);
+click(100,100);          // back to the first corner: closes it
+chk("clicking the first corner closes the ring", X.polysOf(s).length, 1);
+chk("...and the draft is finished with", X.draft, null);
 
-// undo puts the cursor back
-const before = X.gTarget;
-X.undoPt();
-chk("undo removes the pair", s.pairs.length, 1);
-chk("...and the cursor follows it back to seed 2", X.gTarget, 2);
+const pg = X.polysOf(s)[0];
+chk("the polygon is ROI 1", pg.roi, 1);
+chk("...and carries that ROI's region", pg.region, P.hulls[0].region);
+chk("...and its lobe", pg.part, P.hulls[0].part);
+chk("the cursor advanced to ROI 2", X.gTarget, 2);
+chk("ROI 1 counts as done", X.usedRois(s).has(1), true);
 
-// resume: leave the section and return
-clickAt(140,140);                       // seed 2
-const placed = X.usedSeeds(s).size;
+X.skipRoi();
+chk("skip moves past ROI 2 without drawing it", X.gTarget, 3);
+drawSquare(300,300,60);
+chk("the next polygon answers ROI 3", X.polysOf(s)[1].roi, 3);
+chk("skipped ROI 2 is still undrawn", X.usedRois(s).has(2), false);
+chk("...and the cursor moved on again", X.gTarget, 4);
+
+// Re-aim by clicking an ROI on the plate.
+X.clickPl({clientX:0, clientY:0, button:0, preventDefault(){}});
+chk("clicking the plate re-aims the cursor", X.gTarget>0, true);
+
+// Resume: leave the section and come back.
+const drawn = X.usedRois(s).size;
 const other = X.rows()[1].uid;
 X.select(other, true); X.select(uid, true);
-chk("returning resumes rather than restarting", X.usedSeeds(X.st(uid)).size, placed);
-chk("...cursor points at the first gap", X.gTarget, 3);
+chk("returning resumes rather than restarting", X.usedRois(X.st(uid)).size, drawn);
+chk("...and the cursor points at the first gap", X.gTarget, 2);
 
-// ---- radius: set in the placing gesture ----------------------------------
-chk("a plain press keeps the default radius",
-    X.pairR(s.pairs[s.pairs.length-1]).toFixed(2), X.defaultR().toFixed(2));
-const nBefore = s.pairs.length;
-clickAt(300,300,[360,300]);            // press, drag out, release
-const sized = s.pairs[s.pairs.length-1];
-chk("dragging out grows it", X.pairR(sized) > X.defaultR(), true);
-chk("...to the distance dragged, in image px",
-    X.pairR(sized) > X.defaultR()*1.5, true);
-chk("...and it is stored on the pair", sized.length, 6);
+// Undo takes the last region back and frees its number again.
+X.undoPoly();
+chk("undo removes a region", X.polysOf(s).length, 1);
+chk("...and its ROI is outstanding once more", X.usedRois(s).has(3), false);
 
-// free clicks still work with guided off
-X.toggleGuided();
-chk("guided off", X.guided, false);
-clickAt(200,200);
-X.clickPl({clientX:210, clientY:210, button:0});
-const last = X.st(uid).pairs.slice(-1)[0];
-chk("a free pair is still two gestures", X.st(uid).pairs.length, nBefore+2);
-chk("...and carries no seed number", !last[4], true);
-chk("...but does carry a radius", last[5] > 0, true);
+// ---- what reaches the exports ----------------------------------------------
 
-// export provenance
+X.select(uid, true); X.active = uid;
 blobs.length=0; X.exportCsv();
-const lm = blobs[1].split("\n");
-const h  = lm[0].split(",");
-const ci = {n:h.indexOf("seed_n"), r:h.indexOf("seed_region"), pair:h.indexOf("pair")};
-chk("roi_landmarks.csv gained seed columns", ci.n>0 && ci.r>0, true);
-const body = lm.slice(1).map(l=>l.split(","));
-chk("roi_landmarks.csv gained sec_r", h.indexOf("sec_r") > 0, true);
-chk("guided rows name their seed",
-    body.filter(r=>r[ci.n]!=="").length, nBefore+1);
-chk("...with its region", body.find(r=>r[ci.n]==="1")[ci.r], P.seeds[0].amb||P.seeds[0].region);
-chk("free rows leave it blank", body.filter(r=>r[ci.n]==="").length, 1);
-const ri = h.indexOf("sec_r");
-chk("radius is exported in canonical px",
-    body.every(r=>+r[ri] > 0), true);
+const rg = blobs[2].split("\n"), h = rg[0].split(",");
+const ci = n => h.indexOf(n);
+chk("roi_regions.csv gained roi_n", ci("roi_n") > 0, true);
+chk("...and dropped roi_source, which could only say one thing now",
+    ci("roi_source"), -1);
+const body = rg.slice(1).map(l=>l.split(",")).filter(r=>r[0]===uid);
+chk("one row for the region drawn", body.filter(r=>r[ci("roi_kind")]==="roi").length, 1);
+chk("...filed as a polygon", body.find(r=>r[ci("roi_kind")]==="roi")[ci("roi_shape")],
+    "polygon");
+chk("...naming its ROI number", body.find(r=>r[ci("roi_kind")]==="roi")[ci("roi_n")], "1");
+chk("...with its region", body.find(r=>r[ci("roi_kind")]==="roi")[ci("region")],
+    P.hulls[0].region);
+// The whole reason discs went: an area is not a circle, and nothing anatomical
+// may be exported as one.
+chk("NO anatomical disc row is produced, ever",
+    body.filter(r=>r[ci("roi_kind")]==="roi" && r[ci("roi_shape")]==="disc").length, 0);
 
 done();

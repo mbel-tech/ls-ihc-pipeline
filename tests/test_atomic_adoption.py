@@ -40,6 +40,7 @@ SITES = {
                            "IO.atomic_write_csv(path, data, list(data[0].keys()))"),
     "06c_excel_dataset.py": ("    wb.save(path)", "with IO.atomic_save(path) as tmp:\n        wb.save(tmp)"),
     "01k_saturation_raw.py": (".save(mask_path)", "with IO.atomic_save(mask_path) as tmp:"),
+    "00d_czi_selftest.py": ('with open(OUT_CSV, "w"', "IO.atomic_write_csv(OUT_CSV, rows, KEYS)"),
 }
 
 for name, (gone, present) in SITES.items():
