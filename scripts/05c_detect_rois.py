@@ -28,11 +28,13 @@ autofluorescence, not zero.
 
 Writes `results/roi_nuclei.csv`, one row per nucleus. That is the artefact that
 matters - with per-nucleus intensities on disk the positivity cut becomes a
-decision about a table rather than a reason to re-read 128 CZI scenes.
+decision about a table rather than a reason to re-read 130 CZI scenes.
 
 Run:  python 05c_detect_rois.py
       python 05c_detect_rois.py --limit 5
-      python 05c_detect_rois.py --qc            # also write overlay crops
+      python 05c_detect_rois.py --qc            # also write overlay crops to
+                                                # qc/roi_detections/ - green =
+                                                # counted, red = outside the disc
 """
 
 import argparse
@@ -65,7 +67,72 @@ COLUMNS = ["scene_uid", "animal", "marker", "roi_kind", "region", "seed_n",
            "czi_x", "czi_y", "sec_x", "sec_y",
            "area_um2", "equiv_diam_um",
            "dapi_mean", "marker_mean", "marker_median", "marker_p90",
-           "censored", "artifact"]
+           "censored", "artifact", "off_tissue"]
+
+
+def check_header(path, columns):
+    """Refuse to append to a roi_nuclei.csv whose header is not `columns`.
+
+    This stage appends positionally, and the file is shared across runs and
+    both markers. COLUMNS gained `off_tissue` on 2026-09-02; a resume against a
+    file written before that appended 21-field rows under a 20-field header,
+    and nothing failed: csv.DictReader maps the extra field to key None, so in
+    06a every NEW nucleus read `off_tissue` as None - the same as absent - and
+    06g_flag_off_tissue.py cannot backfill a file that is half old and half
+    new. Order is checked too, not just the set: a permuted header would take
+    every appended row scrambled.
+    """
+    with open(path, newline="", encoding="utf-8") as rf:
+        header = next(csv.reader(rf), None) or []
+    if header == list(columns):
+        return
+    missing = [c for c in columns if c not in header]
+    extra = [c for c in header if c not in columns]
+    why = (f"missing {missing}" if missing else "") + \
+          (f" extra {extra}" if extra else "") or "same columns, different order"
+    raise SystemExit(
+        f"!! {path} has a different header from the one this stage writes "
+        f"({why}). Appending to it would give the new rows a different layout "
+        f"from the old ones. If `off_tissue` is what is missing, run "
+        f"06g_flag_off_tissue.py to backfill it first; otherwise re-run "
+        f"05c_detect_rois.py --force to rewrite the file.")
+
+
+def drop_rows(path, marker, uids):
+    """Rewrite `path` without the rows of `marker` whose scene_uid is in `uids`.
+
+    THE ONLY PATH IN THE PIPELINE THAT DELETES MEASURED DATA, so it is exact:
+    other markers' rows and this marker's other sections are kept as they are.
+    `--force --limit N` used to drop EVERY row of the marker and then
+    re-measure N sections, silently discarding the rest; the caller now passes
+    its todo list and nothing outside it is touched.
+
+    Through a temp file and one atomic replace, because this stage runs against
+    a drive that has dropped writes and a half-written roi_nuclei.csv is the
+    whole dataset. Returns (dropped, kept).
+    """
+    uids = set(uids)
+    tmp = path + ".tmp"
+    dropped = kept = 0
+    with open(path, newline="", encoding="utf-8") as rf, \
+            open(tmp, "w", newline="", encoding="utf-8") as tf:
+        rd, tw = csv.reader(rf), csv.writer(tf)
+        header = next(rd, None)
+        if not header or "marker" not in header or "scene_uid" not in header:
+            tf.close()
+            os.remove(tmp)
+            raise SystemExit(f"!! {path} has no marker/scene_uid column - "
+                             f"cannot tell whose rows to drop")
+        tw.writerow(header)
+        mi, ui = header.index("marker"), header.index("scene_uid")
+        for row in rd:
+            if row and row[mi] == marker and row[ui] in uids:
+                dropped += 1
+                continue
+            tw.writerow(row)
+            kept += 1
+    os.replace(tmp, path)
+    return dropped, kept
 
 
 def load_model():
@@ -177,6 +244,51 @@ def mask_at(uid, kind):
     return np.load(p) if os.path.exists(p) else None
 
 
+def write_overlay(uid, bi, b, dapi, labels, kept):
+    """One PNG per ROI: the DAPI crop with the segmentation drawn on it.
+
+    What this is for. The nucleus-diameter check in the docs says the
+    segmentation is finding objects of about the right SIZE; it cannot say they
+    are in the right PLACES, that touching nuclei were split rather than merged,
+    or that a disc landed where the operator meant it to. Those are visual
+    facts, and until now the only way to see one was to re-read the box in a
+    notebook - so in practice nobody looked.
+
+    Boundaries, not filled labels: a filled overlay hides the very thing being
+    judged, which is whether the outline follows the nucleus.
+
+    GREEN is a nucleus that was COUNTED. RED is one StarDist found inside the
+    bounding box but outside the disc, so it was dropped. Drawing the rejects is
+    the point - a box that is mostly red means the disc is small or misplaced
+    relative to what was segmented, and that is invisible in any table.
+    """
+    from PIL import Image
+
+    lo, hi = np.percentile(dapi, (1, 99.8))
+    g = np.clip((dapi - lo) / max(hi - lo, 1e-6), 0, 1)
+    rgb = np.repeat((g * 255).astype(np.uint8)[:, :, None], 3, axis=2)
+
+    # A boundary pixel is one whose label differs from a neighbour. Computed
+    # with shifts rather than skimage.find_boundaries so this adds no import
+    # that the frozen build would have to carry.
+    lab = labels
+    edge = np.zeros(lab.shape, bool)
+    edge[:-1, :] |= lab[:-1, :] != lab[1:, :]
+    edge[1:, :] |= lab[1:, :] != lab[:-1, :]
+    edge[:, :-1] |= lab[:, :-1] != lab[:, 1:]
+    edge[:, 1:] |= lab[:, 1:] != lab[:, :-1]
+    edge &= lab > 0
+
+    keep_mask = np.isin(lab, list(kept)) if kept else np.zeros(lab.shape, bool)
+    rgb[edge & keep_mask] = (0, 255, 0)
+    rgb[edge & ~keep_mask] = (255, 0, 0)
+
+    os.makedirs(QC_DIR, exist_ok=True)
+    name = f"{uid}_roi{bi:02d}_{b['roi_kind']}_{b['region'] or 'na'}.png"
+    name = name.replace(" ", "_").replace("/", "_")
+    Image.fromarray(rgb).save(os.path.join(QC_DIR, name))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, help="only the first N sections")
@@ -184,13 +296,22 @@ def main():
                     help="balanced alternates treatment and control, one section "
                          "at a time, so a partial run is still a comparison; "
                          "uid is plain scene_uid order")
-    ap.add_argument("--qc", action="store_true", help="write overlay crops")
+    ap.add_argument("--qc", action="store_true",
+                    help="write one overlay PNG per ROI to qc/roi_detections: "
+                         "DAPI with nucleus boundaries, green counted, red "
+                         "found but outside the disc")
+    ap.add_argument("--marker", choices=G5.MARKERS, default="AF568",
+                    help="which marker's boxes to measure (default AF568). "
+                         "Appends to the same roi_nuclei.csv - the two markers "
+                         "have disjoint sections.")
     ap.add_argument("--force", action="store_true", help="redo finished sections")
     args = ap.parse_args()
 
+    G5.use_marker(args.marker)
     if not os.path.exists(G5.BOX_CSV):
-        print(f"no {G5.BOX_CSV} - run 05a_roi_geometry.py first")
+        print(f"no {G5.BOX_CSV} - run 05a_roi_geometry.py --marker {args.marker} first")
         return 1
+    print(f"marker: {args.marker}  ({os.path.basename(G5.BOX_CSV)})")
     boxes = G5.load_csv(G5.BOX_CSV)
     geom = {g["scene_uid"]: g for g in G5.load_csv(G5.GEOM_CSV)}
     os.makedirs(RESULTS, exist_ok=True)
@@ -199,14 +320,34 @@ def main():
 
     # Resume by section, because a section is the unit that costs something:
     # one CZI open and a model call per ROI in it.
-    done = set()
-    if os.path.exists(NUCLEI_CSV) and not args.force:
-        done = {r["scene_uid"] for r in G5.load_csv(NUCLEI_CSV)}
-        print(f"resuming: {len(done)} sections already measured")
-
     by_sec = {}
     for b in boxes:
         by_sec.setdefault(b["scene_uid"], []).append(b)
+
+    # Resume by section, scoped to THIS MARKER. roi_nuclei.csv holds both once
+    # the PCNA pass has run, and while scene uids are disjoint - so a raw
+    # `done` set would still skip the right sections - the balanced-order
+    # counter below counts what each arm has already had, and the other
+    # marker's sections would inflate both arms and misdirect the ordering.
+    exists = os.path.exists(NUCLEI_CSV)
+    if exists:
+        # Before anything else: appending to a file with a different header
+        # corrupts it quietly (see check_header), and the check is one line.
+        check_header(NUCLEI_CSV, COLUMNS)
+    done = set()
+    if exists and not args.force:
+        # Streamed with csv.reader, not load_csv: this needs one column and
+        # load_csv would build a dict per row - about five million of them once
+        # PCNA is in the file, on the resume of the run this stage exists to
+        # make resumable. 06c reads the same file the same way for the same
+        # reason.
+        with open(NUCLEI_CSV, newline="", encoding="utf-8") as rf:
+            rd = csv.reader(rf)
+            next(rd, None)
+            for row in rd:
+                if row and row[0] in by_sec:
+                    done.add(row[0])
+        print(f"resuming: {len(done)} {args.marker} sections already measured")
     todo = [u for u in sorted(by_sec) if u not in done]
     if args.order == "balanced":
         todo = balanced_order(todo, done)
@@ -222,14 +363,35 @@ def main():
     from pylibCZIrw import czi as pyczi
     from skimage.measure import regionprops
 
-    new = not os.path.exists(NUCLEI_CSV) or args.force
-    fh = open(NUCLEI_CSV, "w" if new else "a", newline="", encoding="utf-8")
+    # --force MUST NOT TRUNCATE THE OTHER MARKER'S ROWS, NOR THE SECTIONS IT
+    # IS NOT ABOUT TO REDO.
+    #
+    # roi_nuclei.csv is shared: the two markers have disjoint sections and
+    # append to one file. Opening it "w" to redo one marker would discard the
+    # other's entirely - `--marker AF488 --force` deleting ~895,000 pERK rows,
+    # or a forced pERK re-run deleting the PCNA ones. Nothing would error; 06a
+    # and 06c would just report the missing marker at 0 coverage. That is the
+    # same hazard Phase 3.1 removed from 05a's box files, one stage later, and
+    # here the cost is hours of irrecoverable detection.
+    #
+    # The same applied within the marker: `--force --limit 5` dropped every
+    # section of the marker and re-measured five. So the drop is scoped to
+    # `todo` - exactly the sections whose rows are about to be replaced - and
+    # done after load_model(), so a model that fails to load leaves the file
+    # as it was.
+    if exists and args.force:
+        dropped, kept = drop_rows(NUCLEI_CSV, args.marker, todo)
+        print(f"  --force: dropped {dropped} {args.marker} rows over {len(todo)} "
+              f"sections, kept {kept}")
+
+    fh = open(NUCLEI_CSV, "a" if exists else "w", newline="", encoding="utf-8")
     w = csv.writer(fh)
-    if new:
+    if not exists:
         w.writerow(COLUMNS)
 
     px_area = BASE_PX_UM ** 2
     total_nuc = 0
+    no_tissue_mask = []
     for n, uid in enumerate(todo, 1):
         g = geom[uid]
         M = np.array([[float(g["m00"]), float(g["m01"]), float(g["m02"])],
@@ -237,6 +399,16 @@ def main():
         Minv = G5.invert_affine(M)              # CZI px -> 256 grid
         art = mask_at(uid, "artifact")
         cen = mask_at(uid, "censor")
+        # The DAPI tissue silhouette 04a_reformat.py carried into this same 256
+        # frame - the tissue definition every other stage and the curator use.
+        # Without it there is no way to tell a nucleus on the section from one
+        # on the glass, so a section with no mask is skipped rather than
+        # measured: silently calling every nucleus on-tissue is the failure this
+        # check exists to stop.
+        tis = mask_at(uid, "mask")
+        if tis is None:
+            no_tissue_mask.append(uid)
+            continue
         path = os.path.join(CONFIG["source_dir"], g["czi_file"])
         rows = []
         with pyczi.open_czi(path) as doc:
@@ -273,15 +445,24 @@ def main():
                 sx, sy, sr = float(b["sec_x"]), float(b["sec_y"]), float(b["sec_r"])
                 props = regionprops(labels, intensity_image=mark)
                 dprops = {p.label: p for p in regionprops(labels, intensity_image=dapi)}
+                kept = set()
                 for p in props:
                     cy, cx = p.centroid
                     gx, gy = G5.apply_affine(Minv, x0 + cx, y0 + cy)
                     if (gx - sx) ** 2 + (gy - sy) ** 2 > sr * sr:
                         continue
+                    kept.add(p.label)
                     vals = p.image_intensity[p.image]
                     ix, iy = int(round(gx)), int(round(gy))
                     inb = lambda m: (m is not None and 0 <= iy < m.shape[0]
                                      and 0 <= ix < m.shape[1] and bool(m[iy, ix]))
+                    # Outside the silhouette, or off the frame entirely, means
+                    # the nucleus is not on the section - glass, mounting
+                    # medium, or a neighbouring scene. `inb` is False for an
+                    # out-of-bounds index, so both cases land here. Recorded
+                    # rather than dropped, the way `artifact` is: 06a decides,
+                    # and the QC overlay can still show what was found.
+                    off_tis = int(not inb(tis))
                     rows.append([
                         uid, b["animal"], b["marker"], b["roi_kind"], b["region"],
                         b["seed_n"], bi, p.label,
@@ -294,7 +475,9 @@ def main():
                         round(float(vals.mean()), 1),
                         round(float(np.median(vals)), 1),
                         round(float(np.percentile(vals, 90)), 1),
-                        int(inb(cen)), int(inb(art))])
+                        int(inb(cen)), int(inb(art)), off_tis])
+                if args.qc:
+                    write_overlay(uid, bi, b, dapi, labels, kept)
         w.writerows(rows)
         fh.flush()
         total_nuc += len(rows)
@@ -302,6 +485,10 @@ def main():
               f"({total_nuc} total)          ", end="")
     fh.close()
     print(f"\n{total_nuc} nuclei -> {NUCLEI_CSV}")
+    if no_tissue_mask:
+        print(f"!! {len(no_tissue_mask)} sections SKIPPED for want of a tissue "
+              f"mask in reformatted/: {no_tissue_mask[:5]}")
+        print("   Run 04a_reformat.py for them before trusting any count.")
     return 0
 
 

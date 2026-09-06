@@ -114,6 +114,43 @@ w_um, h_um = X.max() - X.min(), Y.max() - Y.min()
 chk("the mapped outline is wider one way than the other",
     round(h_um / w_um, 2), 1.73)
 
+# Column norms are the semi-axes only while the columns are orthogonal, which
+# is true at angle 0, 90, 180, 270 and nowhere else. Rotate the same tall box
+# by 45 degrees and the two columns have EQUAL norms - a reading of 1.00, a
+# circle - while the section is exactly as stretched as it was before. The
+# semi-axes of the image of a circle are the singular values of the linear
+# part, whatever the angle.
+note("\n...and the ellipse does not change shape when the section rotates:\n")
+
+ROT45 = dict(TALL, angle=45.0)
+mr = G5.affine_from(G5.grid_to_overview(ROT45))
+sr = 10.0
+sv = np.linalg.svd(mr[:, :2], compute_uv=False) * sr
+a_ax, b_ax = G5.ellipse_axes(mr, sr)
+close("ellipse_axes: the larger semi-axis is the top singular value", a_ax, sv[0], 1e-9)
+close("ellipse_axes: the smaller is the other one", b_ax, sv[1], 1e-9)
+chk("axis_a is the larger", a_ax >= b_ax, True)
+col_a = np.linalg.norm(mr[:, 0]) * sr
+col_b = np.linalg.norm(mr[:, 1]) * sr
+chk("at 45 deg the column norms read as a circle", round(float(col_b / col_a), 6), 1.0)
+chk("...and are NOT the semi-axes", abs(col_a - a_ax) > 1.0 and abs(col_b - b_ax) > 1.0, True)
+close("at 45 deg the ellipse area still comes from |det A|", a_ax * b_ax,
+      abs(np.linalg.det(mr[:, :2])) * sr * sr, 1e-9)
+close("the area the column norms implied was 15% too large",
+      (col_a * col_b) / (a_ax * b_ax), 1.1536, 1e-3)
+
+# At angle 0 the columns are orthogonal and the old reading was right, so the
+# new helper must agree with it there.
+a0, b0 = G5.ellipse_axes(mt, sr)
+close("at angle 0 ellipse_axes agrees with the column norms (a)", a0,
+      max(np.linalg.norm(mt[:, 0]), np.linalg.norm(mt[:, 1])) * sr, 1e-9)
+close("...and (b)", b0,
+      min(np.linalg.norm(mt[:, 0]), np.linalg.norm(mt[:, 1])) * sr, 1e-9)
+
+close("anisotropy is s_max/s_min at 45 deg", G5.anisotropy(mr), 1632 / 944, 1e-9)
+close("...and the same number at angle 0", G5.anisotropy(mt), 1632 / 944, 1e-9)
+close("...and 1.0 for a square box", G5.anisotropy(ms), 1.0, 1e-9)
+
 # ----------------------------------------------- rotation, flip, crop and pad
 note("\nthe steps that are easy to get backwards:\n")
 

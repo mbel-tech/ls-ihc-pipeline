@@ -46,10 +46,19 @@ Run:  python 04d_rotation_curator.py
 
 import argparse
 import csv
+import importlib.util
 import json
 import os
 
-CONFIG_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config.json")
+_lsio = importlib.util.spec_from_file_location(
+    "_lsio", os.path.join(os.path.dirname(os.path.abspath(__file__)), "ls_io.py"))
+IO = importlib.util.module_from_spec(_lsio)
+_lsio.loader.exec_module(IO)
+
+# LS_CONFIG names the file explicitly; the file-relative path is the fallback.
+# Frozen, the scripts sit inside _internal/ while config.json is beside the
+# executable, so the fallback would point at a file that does not exist.
+CONFIG_PATH = os.environ.get("LS_CONFIG") or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config.json")
 with open(CONFIG_PATH, encoding="utf-8") as _fh:
     CONFIG = json.load(_fh)
 
@@ -167,6 +176,8 @@ let reviewOnly = false;
 let active = null;
 
 const el = id => document.getElementById(id);
+const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g,
+  c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
 document.getElementById("wall").style.gridTemplateColumns =
   `repeat(auto-fill,minmax(${THUMB}px,1fr))`;
 
@@ -187,13 +198,15 @@ const AUTO = __AUTO__;
 const SYM = __SYM__;
 
 const symOf = uid => (SYM[uid] ? SYM[uid].r : 0);
-// The user's own rotation wins; with none, the symmetry proposal stands.
-const isSymAuto = uid => !!SYM[uid] && !(state[uid] && state[uid].r !== undefined);
+// TRI-STATE, like `x`. `r` ABSENT from the record means "no rotation decided,
+// use the proposal"; `r` present - including an explicit 0 - is the user's.
+const hasOwnR   = uid => !!(state[uid] && state[uid].r !== undefined);
+const isSymAuto = uid => !!SYM[uid] && !hasOwnR(uid);
 
 const save = () => localStorage.setItem(KEY, JSON.stringify(state));
 // Effective rotation: the user's if they have set one, otherwise 04h's proposal.
-// Dragging writes into `state` and takes over from then on.
-const get  = uid => state[uid] || {r: symOf(uid), f:false};
+const get  = uid => ({r: hasOwnR(uid) ? state[uid].r : symOf(uid),
+                      f: !!(state[uid] && state[uid].f)});
 
 // Tri-state. The user's explicit decision wins; with no decision the proposal
 // stands. `x` is absent, not false, until they actually click.
@@ -202,22 +215,29 @@ const isExcluded = uid =>
 const isAuto     = uid => !!AUTO[uid] && !(state[uid] && state[uid].x !== undefined);
 const isRestored = uid => !!AUTO[uid] && state[uid] && state[uid].x === false;
 
+// `r` undefined = leave the rotation decision as it is (absent stays absent).
 function setState(uid, r, f, x){
-  r = ((Math.round(r) % 360) + 360) % 360;
   const prev = state[uid];
   if(x === undefined) x = prev ? prev.x : undefined;   // keep "no decision yet"
-  // Drop the entry only when it carries no information at all - no rotation, no
-  // flip, and no decision that differs from what the proposal already says.
-  if(r === 0 && !f && x === undefined) delete state[uid];
-  else { state[uid] = {r, f}; if(x !== undefined) state[uid].x = x; }
+  let rOwn = r === undefined ? (prev ? prev.r : undefined)
+                             : ((Math.round(r) % 360) + 360) % 360;
+  // 0 with no proposal says nothing, so it is not stored; 0 AGAINST a proposal
+  // is the user overruling it, and must survive.
+  if(rOwn === 0 && !SYM[uid]) rOwn = undefined;
+  if(rOwn === undefined && !f && x === undefined) delete state[uid];
+  else {
+    state[uid] = {f: !!f};
+    if(rOwn !== undefined) state[uid].r = rOwn;
+    if(x !== undefined) state[uid].x = x;
+  }
   save(); paint(uid); counts();
 }
 
 function toggleExclude(uid){
-  const s = get(uid);
   // Flips against the *effective* state, so the first right-click on a proposal
-  // restores it rather than appearing to do nothing.
-  setState(uid, s.r, s.f, !isExcluded(uid));
+  // restores it rather than appearing to do nothing. The rotation decision is
+  // passed through untouched: excluding a section is not rotating it.
+  setState(uid, undefined, get(uid).f, !isExcluded(uid));
 }
 
 function counts(){
@@ -282,21 +302,32 @@ function onDown(e, uid){
   if(e.button !== 0) return;
   const stack = e.currentTarget;
   const rect = stack.getBoundingClientRect();
-  drag = {uid, rect, start: angleOf(e, rect), base: get(uid).r, moved:false};
+  drag = {uid, rect, start: angleOf(e, rect), base: get(uid).r, r: get(uid).r,
+          moved:false};
   setActive(uid);
   stack.setPointerCapture(e.pointerId);
   e.preventDefault();
 }
+// The angle is a DRAFT until the pointer is released. Writing state on every
+// pointermove serialised the whole store to localStorage and repainted the
+// cell per event; now only the transform moves, and one setState() lands on
+// release - so a drag that is cancelled leaves the record exactly as it was.
 function onMove(e){
   if(!drag) return;
   let delta = angleOf(e, drag.rect) - drag.start;
   if(Math.abs(delta) > 0.5) drag.moved = true;
   let r = drag.base + delta;
   if(e.shiftKey) r = Math.round(r/15)*15;
-  setState(drag.uid, r, get(drag.uid).f);
-  el("live").textContent = `${drag.uid}: ${get(drag.uid).r}\\u00B0`;
+  drag.r = ((Math.round(r) % 360) + 360) % 360;
+  const cell = document.querySelector(`[data-uid="${CSS.escape(drag.uid)}"] .sec`);
+  if(cell) cell.style.transform = `rotate(${drag.r}deg) scaleX(${get(drag.uid).f ? -1 : 1})`;
+  el("live").textContent = `${drag.uid}: ${drag.r}\\u00B0`;
 }
-function onUp(){ drag = null; }
+function onUp(){
+  if(drag && drag.moved) setState(drag.uid, drag.r, get(drag.uid).f);
+  else if(drag) paint(drag.uid);       // put an un-moved cell back exactly
+  drag = null;
+}
 
 function setActive(uid){
   document.querySelectorAll(".cell.active").forEach(c => c.classList.remove("active"));
@@ -306,6 +337,11 @@ function setActive(uid){
 }
 
 addEventListener("keydown", e => {
+  if(e.ctrlKey || e.metaKey || e.altKey) return;
+  // A focused control eats its own keys: the animal select does type-ahead
+  // on letters, and a range input steps itself on the arrows.
+  const tag = e.target && e.target.tagName;
+  if(tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
   if(!active) return;
   const s = get(active);
   const step = e.shiftKey ? 10 : 1;
@@ -348,12 +384,13 @@ function render(){
       </div>
       <div class="cap">${d.order} &middot; ${d.uid.split('_').slice(1).join('_')}
         ${d.plate ? '&middot; ' + d.plate : ''} <span class="tag"></span>
-        ${AUTO[d.uid] ? `<div class="why" title="${AUTO[d.uid].reason}">${AUTO[d.uid].reason}</div>` : ""}
+        ${AUTO[d.uid] ? `<div class="why" title="${esc(AUTO[d.uid].reason)}">${esc(AUTO[d.uid].reason)}</div>` : ""}
       </div>
     </div>`).join("");
   counts();
   rows.forEach(d => {
     const cell = document.querySelector(`[data-uid="${CSS.escape(d.uid)}"]`);
+    if(!cell) return;
     const stack = cell.querySelector(".stack");
     stack.addEventListener("pointerdown", e => onDown(e, d.uid));
     stack.addEventListener("pointermove", onMove);
@@ -387,7 +424,7 @@ function exportCsv(){
                  "rotation_source","decision","reason"]];
   DATA.filter(d => seen.has(d.uid)).forEach(d => {
     const s = get(d.uid), excl = isExcluded(d.uid);
-    if(!s.r && !s.f && !excl && !AUTO[d.uid]) return;
+    if(!s.r && !s.f && !excl && !AUTO[d.uid] && !hasOwnR(d.uid)) return;
     const decision = excl ? (isAuto(d.uid) ? "auto" : "manual")
                           : (AUTO[d.uid] ? "restored" : "");
     const reason = excl && AUTO[d.uid] ? AUTO[d.uid].reason
@@ -396,9 +433,8 @@ function exportCsv(){
     // no way to report how often 04h's proposal was accepted, and "the operator
     // rotated 1,278 sections" and "the operator accepted 1,150 proposals" are
     // different claims in a methods section.
-    const rsrc = !s.r ? ""
-               : isSymAuto(d.uid) ? "auto_symmetry"
-               : (SYM[d.uid] ? "manual_overrode_auto" : "manual");
+    const rsrc = hasOwnR(d.uid) ? (SYM[d.uid] ? "manual_overrode_auto" : "manual")
+               : (s.r ? "auto_symmetry" : "");
     rows.push([d.uid, s.r||0, s.f?1:0, excl?1:0, rsrc, decision,
                '"'+reason.replace(/"/g,"'")+'"']);
   });
@@ -418,6 +454,10 @@ def main():
                     help="build the curator with nothing pre-marked")
     ap.add_argument("--thumb", type=int, default=170,
                     help="thumbnail size in px; bigger gives finer drag control")
+    ap.add_argument("--out", default=CURATOR_HTML, metavar="HTML",
+                    help="where to write the page (default: the live curator under "
+                         "out_root). tests/run.sh points this at tests/build/ so a "
+                         "test run never rewrites the page being curated in")
     args = ap.parse_args()
 
     if not os.path.exists(INDEX_CSV):
@@ -488,15 +528,13 @@ def main():
             "img": f"sections/{r['id']}.png", "ref": ref, "plate": plate or "",
         })
 
-    page = (PAGE.replace("__DATA__", json.dumps(data))
-                .replace("__AUTO__", json.dumps(auto))
-                .replace("__SYM__", json.dumps(sym))
-                .replace("__THUMB__", str(args.thumb)))
-    with open(CURATOR_HTML, "w", encoding="utf-8") as fh:
+    page = IO.fill(PAGE, {"__DATA__": data, "__AUTO__": auto, "__SYM__": sym,
+                          "__THUMB__": args.thumb})
+    with open(args.out, "w", encoding="utf-8") as fh:
         fh.write(page)
 
     with_ref = sum(1 for d in data if d["ref"])
-    print(f"wrote {CURATOR_HTML}")
+    print(f"wrote {args.out}")
     print(f"  {len(data)} sections, {len({d['animal'] for d in data})} animals, "
           f"{with_ref} with a reference plate")
     print()

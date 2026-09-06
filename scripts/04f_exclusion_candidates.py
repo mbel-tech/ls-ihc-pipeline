@@ -78,15 +78,32 @@ _SPEC = importlib.util.spec_from_file_location(
     "reformat_mod", os.path.join(os.path.dirname(os.path.abspath(__file__)), "04a_reformat.py"))
 _RF = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(_RF)
+
+_lsio = importlib.util.spec_from_file_location(
+    "_lsio", os.path.join(os.path.dirname(os.path.abspath(__file__)), "ls_io.py"))
+IO = importlib.util.module_from_spec(_lsio)
+_lsio.loader.exec_module(IO)
+
 tissue_mask, WORK = _RF.tissue_mask, _RF.WORK_SIZE
 
-CONFIG_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config.json")
+# LS_CONFIG names the file explicitly; the file-relative path is the fallback.
+# Frozen, the scripts sit inside _internal/ while config.json is beside the
+# executable, so the fallback would point at a file that does not exist.
+CONFIG_PATH = os.environ.get("LS_CONFIG") or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config.json")
 with open(CONFIG_PATH, encoding="utf-8") as _fh:
     CONFIG = json.load(_fh)
 
 OUT_ROOT = CONFIG["out_root"]
 OVERVIEW_DIR = os.path.join(OUT_ROOT, "overviews")
 REFORMAT_DIR = os.path.join(OUT_ROOT, "reformatted")
+CANDIDATES_CSV = os.path.join(REFORMAT_DIR, "exclusion_candidates.csv")
+SURVEY_CSV = os.path.join(OUT_ROOT, "qc", "exclusion", "survey.csv")
+
+
+def output_path(survey):
+    """--survey measures and proposes nothing, so it must not overwrite the
+    proposals 04d reads. It gets its own file under qc/."""
+    return SURVEY_CSV if survey else CANDIDATES_CSV
 QC_CSV = os.path.join(OUT_ROOT, "qc", "focus.csv")
 REPORT_DIR = os.path.join(OUT_ROOT, "qc", "exclusion")
 
@@ -245,13 +262,11 @@ def main():
         print("proposal was wrong stays measurable rather than assumed.")
     print("=" * 74)
 
-    out = os.path.join(REFORMAT_DIR, "exclusion_candidates.csv")
+    out = output_path(args.survey)
+    os.makedirs(os.path.dirname(out), exist_ok=True)
     keys = ["uid", "animal", "section_order", "proposed", "artifact_class", "reason",
             "largest_mm2", "total_mm2", "n_pieces", "focus_score", "frame_mm2"]
-    with open(out, "w", newline="", encoding="utf-8") as fh:
-        w = csv.DictWriter(fh, fieldnames=keys, extrasaction="ignore")
-        w.writeheader()
-        w.writerows(sorted(rows, key=lambda r: (-r["proposed"], r["animal"], r["section_order"])))
+    IO.atomic_write_csv(out, sorted(rows, key=lambda r: (-r["proposed"], r["animal"], r["section_order"])), keys)
     print(f"wrote {out}")
 
     montage(rows, args.montage)

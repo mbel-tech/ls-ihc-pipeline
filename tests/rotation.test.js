@@ -54,6 +54,7 @@ chk("survives a reload", reloaded.rot.toFixed(1), "19.0");
 
 X.restoreTilt();
 chk("Restore original tilt zeroes it", X.st(uid).rot.toFixed(1), "0.0");
-chk("...on disk too", disk(uid).rot.toFixed(1), "0.0");
+chk("...on disk too - a zero tilt on an undecided section stores nothing",
+    (disk(uid).rot || 0).toFixed(1), "0.0");
 
 done();

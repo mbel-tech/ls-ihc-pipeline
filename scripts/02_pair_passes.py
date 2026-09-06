@@ -25,7 +25,10 @@ from collections import defaultdict
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 
-CONFIG_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config.json")
+# LS_CONFIG names the file explicitly; the file-relative path is the fallback.
+# Frozen, the scripts sit inside _internal/ while config.json is beside the
+# executable, so the fallback would point at a file that does not exist.
+CONFIG_PATH = os.environ.get("LS_CONFIG") or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config.json")
 with open(CONFIG_PATH, encoding="utf-8") as _fh:
     CONFIG = json.load(_fh)
 
@@ -61,6 +64,15 @@ def nn_spacing(pts):
     return float(np.median(d.min(axis=1)))
 
 
+def _fnum(v):
+    """A float cell, or nan for a blank one - a scene with no recorded centre
+    must load, and be ignored by the distance maths, rather than kill the run."""
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return float("nan")
+
+
 def load_scenes():
     path = os.path.join(MANIFEST_DIR, "manifest_scenes.csv")
     with open(path, newline="", encoding="utf-8") as fh:
@@ -70,8 +82,8 @@ def load_scenes():
         r["scene_index"] = int(r["scene_index"])
         r["slide_serial"] = int(r["slide_serial"])
         r["section_order"] = int(r["section_order"])
-        r["center_x_um"] = float(r["center_x_um"])
-        r["center_y_um"] = float(r["center_y_um"])
+        r["center_x_um"] = _fnum(r["center_x_um"])
+        r["center_y_um"] = _fnum(r["center_y_um"])
     return rows
 
 

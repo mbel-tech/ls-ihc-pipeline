@@ -9,6 +9,1039 @@ where things landed, not which plausible-looking route was tried and abandoned, 
 
 ---
 
+## 2026-09-03 - 04i was subtracting angles from two different frames
+
+**Changed:** `04i_propagate_to_perk.py` converts between `04a`'s per-scan squashed frame and the
+physical grid before combining angles, and writes a new `final_iou_256` column. New
+`tests/test_propagate_frames.py`. `perk_overrides.csv` on disk is now stale, and so is everything
+built from it - NOT re-run, see below.
+
+**The bug.** `04a` resizes every overview to a 400x400 square *before* measuring the principal
+axis, and that resize is anisotropic for any non-square scan box - `04a` says so itself in the
+`report` note. So every angle `04a` reports or consumes is in a frame that belongs to that one
+scan. `04i`'s `align()` measures on the isotropic physical grid. The old code did
+`target = rotate(m488_physical, total488)` with a squashed-frame `total488`, and
+`extra = deg - a568` with a physical `deg` and a squashed `a568`. Scan boxes here run 0.44-1.99
+in aspect and paired scans differ by a median of 12%, so the two errors do not cancel. And
+`align_iou` is computed *before* the mix, so it was 0.98 on sections where the delivered angle was
+15 degrees off - the confidence column could not see the thing it was meant to guard.
+
+**What the conversion is.** `ndimage.rotate(img, A)` sends a direction at angle `a` to `a - A`,
+which is why `04a` rotates by `principal_angle` and not its negative. The invariant across frames
+is therefore *the direction that ends up horizontal*, and a direction's angle transforms through
+the resize as `atan2(w sin t, h cos t)` (physical -> squashed). Checked against `04a`'s own
+`principal_angle` on a thin bar, not trusted: agrees to 0.01 degrees, the inverse map misses by 9.
+A principal axis of a *blob* does not transform this way - eigenvectors do not survive anisotropic
+scaling - which is why the first version of that check failed by 4 degrees on the section shape
+and had to be rewritten with a bar. Only a shape that is a direction can be the probe.
+
+**What the fix cannot do, and this is the more important finding.** The review asked for the two
+256-px masks to reach IoU 0.95. They cannot. The squash survives `04a`'s crop and square-pad, so
+the curated PCNA mask and the propagated pERK mask are one shape squashed two different ways, and
+brute force over the full circle puts the ceiling at **0.65-0.81** on synthetic sections with
+realistic box pairs. The angle fix reaches that ceiling (within 2 degrees and 0.025 IoU on all
+three test cases, from 10-15 degrees off before); it does not raise it. The test gates on the
+ceiling, and pins that the ceiling is below 0.95, so nobody tightens it into a gate no code passes.
+`final_iou_256` is reported per section and NOT gated, for the same reason: it is comparable
+between neighbours, not against a number.
+
+**Measured on the real data before re-running anything** (12 random paired sections, read-only):
+the corrected `extra_rotation` differs from the stored one by a **median of 1.0 degree, max 5.4**,
+and the 256-px IoU moves by +-0.02 either way. Real sections leave `04a` near-horizontal in both
+frames, which is where the two frames agree; the 37-degree synthetic case is the worst of it, not
+the typical. Since `04l` curates the two channels independently and `05a` inverts each scan's own
+geometry, the bug was a few-degree tilt of the pERK *picture* the operator saw, not a coordinate
+error in any measurement.
+
+**Consequence, and why nothing was re-run.** `perk_overrides.csv`, the pERK reformat
+(`04a --marker AF568 ...`), `reformat_index_AF568.csv`, `sections_AF568/`, and every stage after
+them are stale until `04i` and `04a` are re-run. Re-running rotates the pERK pictures by those
+1-5 degrees under the **130 sections already landmarked against the current frames**, which would
+move every one of those landmarks. Whether a median 1-degree tilt is worth re-curating 130
+sections, or the fix is carried forward for sections not yet curated, is the operator's call, so
+the files were left as they are.
+
+---
+
+## 2026-09-03 - Export scale is per section, and CSV fields are quoted
+
+**Changed:** `scripts/04l_roi_curator.py` (JS: `frameOf`/`frameIn`/`syncFrame`/
+`stampFrame`, per-section `K` in `exportCsv`, `csvq` on every cell in `dl`),
+`tests/harness.js` (per-src Image size via `env.imgSize`),
+`tests/export_frame.test.js` (new).
+
+Landmarks are stored in the pixels of the image the section was shown with, and
+that is not one number per page: a section with a colour composite is shown at
+768, one 04o has not built yet falls back to the 256 greyscale, and both kinds
+sit on one page. Export read `secImg.naturalWidth` once - the image on screen -
+and divided every row by it, so on a mixed page the rows of whichever kind was
+not active were three times too large or too small. Nothing on screen said so,
+and no suite saw it because the harness's Image was 768 for everything.
+
+The frame is now stamped on the section's record when a pair is stored, export
+divides each section by its own frame, and a record with no frame is read in
+the frame its rgb flag implies - the same rule 04q_import_curation.py uses when
+it rebuilds a store. A store written without --rgb and opened under --rgb has
+its pairs lifted into the 768 frame on draw, so it no longer lands in the
+top-left ninth of the composite. The CSVs are canonical 256-px units either
+way; columns unchanged.
+
+dl() also joined with "," and quoted nothing - csvq existed but only
+exportReview used it. Region names like "Rm (Raphe) ??" were one comma away
+from shifting every column after them. Every cell of the three ROI exports now
+goes through csvq; plain fields are byte-identical.
+
+roi_regions_used_AF568.csv on disk is unaffected: all 153 landmarked pERK
+sections had a composite (dated 2026-08-24) before the export, so K was 3 for
+every row, and no field contains a comma. app/import_exports.py still assumes
+k=3 for every section - unchanged in meaning by this, but it would mis-scale a
+greyscale-only section on rebuild; noted for the Tier 3 plan.
+
+---
+
+## 2026-09-03 - Three quiet ways roi_nuclei.csv could go wrong on a resume
+
+**Changed:** `05c_detect_rois.py` gains `check_header()` and `drop_rows()`; a resume onto a
+file with a different header stops and names `06g_flag_off_tissue.py`, and `--force` drops
+only the sections it is about to redo. `06a_roi_dataset.py` gains `check_join()`, which
+verifies the positional nucleus-to-disc join before anything is computed. New
+`tests/test_detect_resume.py`; `tests/test_roi_dataset.py` now tests 05c's real helpers
+instead of a copy of its rewrite block, and adds the join check.
+
+**Why.** All three are the same failure shape as 2026-09-02: nothing errors, the numbers
+look fine, and the dataset is wrong.
+
+**Header mismatch on resume.** COLUMNS gained `off_tissue` on 2026-09-02, and 05c appends
+positionally. A resume against a file written before that put 21-field rows under a
+20-field header. csv.DictReader maps the extra field to key `None`, so in 06a every NEW
+nucleus read `off_tissue` as None - indistinguishable from absent - and 06g cannot backfill
+a file that is half old and half new. 05c now compares the file's header to COLUMNS before
+touching it, order included: a permuted header would take every appended row scrambled.
+The current file is already the 21-column one, so this changes nothing today; it is the
+next column that would have found this.
+
+**`--force --limit N`.** The force path dropped every row of the marker and then
+re-measured N sections. `--force --limit 5` on pERK would have silently discarded 125
+sections of detection while printing that it had kept the PCNA rows. The drop is now scoped
+to the todo list - exactly the sections whose rows are about to be replaced - and runs after
+`load_model()`, so a model that fails to load leaves the file as it was. One consequence:
+plain `--force` no longer removes rows for a section that has since left the box file. 06a
+reports those instead of skipping them silently, which is the better place to notice.
+
+**The positional join.** A nucleus names its disc by `roi_index`, its row position in
+`roi_boxes_<marker>.csv` for that section, and 05a rewrites that file from the newest
+export. Insert or remove a disc on a section after 05c has run and every later index on it
+shifts: the background disc's nuclei are summed under an ROI, with a count and a density
+that look entirely plausible. Nuclei rows carry `roi_kind` and `region`, so 06a now checks
+that the box at each index agrees on both and refuses with the list of sections and the two
+ways out - restore the box file the nuclei were measured against, or re-run 05c `--force`
+for those uids. Sections in the nuclei file with no boxes anywhere are reported, not fatal.
+Against today's 895,548 nuclei and 130 sections the check passes in 0.21 s.
+
+**The test that was a copy.** `force_check` mirrored 05c's rewrite block on the belief that
+05c could not be imported without StarDist. That import is lazy inside `load_model()`, so
+the module loads fine and the tests now call the real `drop_rows`. A copy tests that the
+copy still works.
+
+---
+
+## 2026-09-03 - 04j section gate decided on tissue, not on the frame
+
+**Changed:** `scripts/04j_censor_clipped.py` - the section-level 1% tolerance is
+now applied to `censored_fraction_in_tissue`, measured against the pipeline's own
+tissue mask (`tissue/<uid>_tissue.png` from 04p `--tissue-masks`, else rebuilt
+with `04a_reformat.tissue_mask` the way 04p builds it). `censored_fraction`
+(frame) stays as a column; a new `gate` column says which fraction decided
+(`tissue`, or `frame` when no mask could be built - counted and printed). New
+`tests/test_censor_gate.py`. Column names and file names unchanged.
+
+**Why.** "Tissue" in 04j was `DAPI overview > 0`. The overview is stretched from
+the frame's 1st percentile (`01_overviews.py`, `LO_PCT = 1.0`), so `> 0` is the
+frame minus its darkest percent: 81-93% of the frame on five sections checked,
+against 23-41% for the real mask. `censored_fraction_in_tissue` was therefore a
+second copy of the frame fraction (ratio median 1.17 on disk) and never used for
+the verdict anyway - `in_analysis_set` gated on the frame. Measured against the
+04p masks, **96.6% of censored pixels lie outside the tissue**, on the PAP pen
+ring. A section was being set aside for clipping that no nucleus in it will ever
+see, while the nuclei that will be measured sat under a mask 04p had already
+written for exactly this purpose and 04j never read.
+
+The rebuild path is byte-identical to 04p's masks on the sections checked, so
+there is still one definition of tissue in the pipeline, not a fourth.
+
+**Consequence - the analysis set changes.** Recomputed read-only against the
+existing `qc/censor_raw` masks, 184 of 718 pERK sections move from set-aside to
+kept (450 -> 634); none move the other way. LS53 goes from 0 measurable sections
+to 9, LS85 from 3 to 45 - the two animals the 2026-08 entry said could not
+support a per-animal estimate. Per animal (old -> new in set): LS37 67 -> 85,
+LS45 55 -> 70, LS69 24 -> 45, LS105 25 -> 65, LS136 27 -> 36, LS138 16 -> 44;
+LS22, LS61, LS87, LS120 essentially unchanged. The unevenness of censoring
+across animals, which the 04m entry flagged as a biology-unrelated axis, shrinks
+accordingly. Pixel-level censoring is untouched: a clipped pixel on tissue is
+right-censored exactly as before.
+
+One thing this does not settle: the 1% figure was chosen (2026-08-12) while the
+denominator was the frame. It now divides by tissue pixels, which is the
+quantity the rule was always meant to bound, but whether 1% of tissue is the
+right tolerance is a fresh decision, and the bimodality argument in the
+2026-08-12 entry should be re-checked on the new column before it is kept.
+
+Nothing has been re-run. To take effect: `04j_censor_clipped.py` (both markers),
+then `04m_sections_dataset.py`, `04n_roi_worklist.py`, and the pERK final
+reformat (`04a_reformat --censor --marker AF568`) so `05c` reads a mask set that
+matches the new analysis set. That is the operator's call, because it changes
+n per animal.
+
+---
+
+## 2026-09-03 - Refresh loop tells R where results/ is; SAT flags read the raw clipping; level curator reads the configured plate set
+
+**Changed:** `scripts/06e_refresh_loop.py`, `scripts/01d_contactsheets.py`,
+`scripts/04g_artifact_mask.py`, `scripts/04k_level_curator.py`; new
+`tests/test_small_fixes.py`. Three independent fixes from the 2026-09-03 review.
+
+**06e.** The loop called all three figure scripts with no argument, and every one
+falls back to `RESULTS_DEFAULT <- "D:/LS-analysis/results"`. On this machine that
+happens to be the right directory, which is the only reason it worked; on any
+other `out_root` the loop would rebuild the workbooks in one place and draw the
+figures from another, and report success. The R side already read
+`commandArgs(trailingOnly = TRUE)[1]`, so the fix is entirely on the caller: a
+new `r_command()` passes `<out_root>/results`, and the test pins it as the last
+argv element.
+
+**01d and 04g.** `qc/focus.csv` now measures clipping twice: `saturated_fraction`
+after the tile-field correction and `saturated_fraction_raw` before it. Clipping
+is a camera event, so only the raw count says how many pixels were lost; the
+corrected column undercounts by about 2x because dividing by a gain above 1
+pulls clipped values back under the ceiling (2026-09-02 entry). Both the
+contact-sheet SAT tag and the artifact summary were judging on the corrected
+number. `saturation(row)` prefers the raw column and falls back to the old one,
+so an older focus.csv still works; the summary keeps the old column and adds
+the raw one so nothing joining on it breaks.
+
+**04k.** The path was hard-coded to `atlas/plates/` while config has said
+`plates_final` since 2026-08-19, and plate ids collide between the sets. A level
+anchored here was therefore a `plate_NNN` naming a different image from the one
+the ROI curator works on, and no file recorded which. `PLATE_SET` now comes from
+`atlas_plate_set.dir` as in 04l and 04e; the page shows the original plate from
+the configured set (04a's DAPI-polarity copies in `reformatted/plates/` exist
+only for the old set), with `invert(1)` added to the overlay filter so it still
+reads as before; the exported `atlas_levels.csv` gains a `plate_set` column.
+
+---
+
+## 2026-09-03 - The ROI ellipse was measured along the wrong axes
+
+**Changed:** `05a_roi_geometry.py` gains `ellipse_axes(M, sr)` and `anisotropy(M)`;
+the `anisotropy` column of `roi_geometry_<MARKER>.csv` and the `axis_a_um` /
+`axis_b_um` columns of `roi_boxes_<MARKER>.csv` now come from them. Column names
+are unchanged; `axis_a_um` is now always the larger. `tests/test_roi_geometry.py`
+pins the rotated case.
+
+**Why:** 05a described the ellipse a curator circle becomes on the slide by the
+norms of the two columns of the linear part of the grid-to-CZI matrix. The columns
+are the images of the grid's unit vectors, and their lengths are the semi-axes only
+while they stay orthogonal - at a rotation of 0, 90, 180 or 270 degrees, which is
+where every fixture in the test suite sat. Sections are rotated by whatever angle
+the mask decided (296, 320, 314 degrees on the first three checked), and at any
+other angle the two columns are the same length regardless of how stretched the
+section is: at 45 degrees on a 944x1632 box both norms are 5.21 px, `anisotropy`
+read 1.00 - "a circle stays a circle" - and the product of the two axes came out
+15.4% larger than the ellipse's true area. The semi-axes are the singular values of
+the linear part, 6.375 and 3.6875 px per grid px for that box at every angle, and
+their product is |det A|, which is what the area has to be.
+
+Measured by building the same tall box at angle 0 and 45 through the module's own
+`grid_to_overview` and comparing column norms against `np.linalg.svd`: identical at
+0, disagreeing at 45 by the numbers above. The new test asserts both.
+
+**What moves:** every `axis_a_um`, `axis_b_um` and `anisotropy` value written so far,
+by an amount that depends on the section's angle. `06a_roi_dataset.py` takes the ROI
+area as pi*a*b from those two columns, so densities per ROI were off by the same
+per-section factor. 05a and 06a must be re-run - the operator's call, not done here.
+05c need not: membership is decided per nucleus by mapping the centroid back to the
+256 grid, and the bounding box comes from the mapped 128-point outline, neither of
+which ever read the axes.
+
+---
+
+## 2026-09-03 - The app covers the workflow figure; stages find config through LS_CONFIG
+
+**Changed:** `app/stages.py` rewritten to the bands of Figure 1; `app/runner.py`,
+`app/main_window.py`, `app/curator_view.py`, `app/state.py`; every stage's
+`CONFIG_PATH`; `scripts/run_all.sh`; new `tests/test_stages.py`,
+`tests/test_runner.py`, `tests/test_config_resolver.py`.
+
+**The frozen build could not run a single stage.** Every script located
+`config.json` as `dirname(dirname(__file__))/config.json`. From source that is
+the repo root. Frozen, the scripts ship in `_internal/scripts/` and `config.json`
+sits beside the executable, so the path resolved to `_internal/config.json`,
+which `lsapp.spec` never bundles (only `config.example.json`). Every stage failed
+at import; the self-test did not notice because it loads a curator page and runs
+nothing. `LS_CONFIG` now names the file and the file-relative path is the
+fallback, in all 34 scripts that read config at import; the runner exports it,
+and `run_all.sh` already did for the Groovy stages, so one variable now reaches
+everything.
+
+**The sidebar covered 15 of the figure's 27 boxes.** It was a transcription of
+`run_all.sh` plus the ROI-curation chain and stopped there: 04f, 04g, 04j, 06f,
+06g, 04i, 04h, 04m, 04q, the atlas chain 04a2-04a4 and most of 01c-01k had no
+row, and 01k - now a hard input to 04j and 01g - was run by nothing, not even
+`run_all.sh`. Two listed rows could never show done, because their declared
+outputs were the product of commands they did not run: "reformat" ran the PCNA
+default and declared the pERK index, "atlas_extract" declared `plates_final`,
+which only 04a4 writes. 05c was CLI-only unconditionally, though `work/appenv`
+- the interpreter `run_app.bat` uses - has StarDist; only the .exe lacks it.
+
+The list now mirrors the figure's bands, one row per invocation actually used to
+build this dataset (three reformat passes per marker, because that is what the
+`--apply-overrides` / `--mask-artifacts` / `--censor` history in this file
+records), with `operator` and `reader` carried as data and shown in the window.
+`tests/test_stages.py` pins it: every numbered script is a stage or in
+`NOT_LISTED` with a reason (04b, 04c, 04e and the two retired Groovy files), every
+row's script exists and has `main()`, every figure box has an id, no row needs a
+later row.
+
+**Three smaller things found on the way.**
+
+  * `run_all.sh` built step 4's list and step 8's glob under `$ROOT` - the repo -
+    while every stage writes under `config.out_root`. Fiji was handed a list
+    that did not exist, 01c a glob that matched nothing, and `|| true` hid it.
+    Both now use `out_root`, read from `LS_CONFIG`; 01k is step 10.
+  * The runner's log tee emitted only on `\n`; the stages report progress with
+    `\r` and `end=""`, so a 12-minute export showed nothing and then one line.
+  * Export downloads all landed in `reformatted/`; the plate reframer's
+    `plate_boxes.csv` belongs in `atlas/`, where 04a3b and 04a4 look. Exports now
+    land beside the page. Settings changes re-root the server and the curation
+    store, which used to keep serving the old tree; `ls_roi_curator_v1_size` is
+    seeded back so the landmark radius survives a reload.
+
+Verified: the three new suites and `test_config_example` pass; `python -m app
+--self-test` passes with the new list (window, server, 55 rows, a curator page
+rendered). Nothing under `out_root` was touched.
+
+---
+
+## 2026-09-02 - Nuclei were being quantified off the section
+
+**Changed:** `05c_detect_rois.py` records a new `off_tissue` column; `06a_roi_dataset.py`
+drops those nuclei the way it already drops artifact ones; new `06g_flag_off_tissue.py`
+backfills the column onto a `roi_nuclei.csv` written before the column existed.
+
+**Why:** 05c decided membership on the ROI **disc alone** - a nucleus was kept if its
+centroid mapped inside the disc on the 256 grid. Nothing checked that it was on the
+tissue, or even inside the scanned scene. A disc overhanging the silhouette therefore
+contributed objects segmented on glass or mounting medium, and they were quantified like
+any other nucleus.
+
+**How much.** Of the 895,548 nuclei present today, **2,576 (0.29%)** sit outside the DAPI
+silhouette: 1,969 of 621,906 in ROI discs (0.32%) and 607 of 273,642 in background discs
+(0.22%), spread over **87 of 130** sections. **430 are not merely off the tissue but
+outside the 256 frame entirely** - 429 of them a single background disc in
+`LS37_s05a_sc06` sitting about **2.6 mm above the top edge of its own scene**, i.e.
+measured on an area the scanner never visited. That disc is 429 of that section's 4,813
+background nuclei, so **8.9% of the population setting its positivity cut** was found
+outside the scan.
+
+**Background discs are where this costs something**, and the direction is the bad one.
+06a sets each section's cut from its own background discs as
+`median + 3 * 1.4826 * MAD`. Objects found on glass are dim, so they pull the median and
+the cut **down**, and a lower cut makes that section look **more positive**.
+
+**What it moved.** 06a now drops 947 nuclei on an artifact and 2,576 off the tissue,
+quantifying 892,025. Against the previous run: `n_nuclei` changes on **311 of 2,069 ROIs**
+(median -2, worst -429); `frac_positive` on **273 of 2,054** (median +0.0004, range -0.082
+to +0.022); the per-section `positivity_cut` on **28 of 130** (median -0.04%, max +2.30%);
+`bg_nuclei` on 31 (max -8.91%); `false_positive_rate` on 19 (max +7.61%). Small in
+aggregate, and not small on the sections that had the problem.
+
+**The tissue definition is deliberately the one everything else uses** - 04a's
+`tissue_mask()` silhouette carried through the same rotation and crop into the 256 frame
+as `<uid>_mask.npy`. A different definition here would let 05c reject a nucleus the
+operator had placed a disc over in the curator, which displays that very mask. Its
+resolution is a real limit and is not hidden: the 256 frame is ~31 um per cell against a
+7 um nucleus, so a nucleus within about one cell of the silhouette edge is judged by which
+cell its centroid lands in. That is coarse at the boundary and exact in the interior,
+which is where the problem cases are - `LS37_s05a_sc06` is off by **69 cells**, not one.
+
+**Recorded, not dropped at source**, following `artifact`: 05c writes the flag and 06a
+decides. The QC overlay can still show what was found, and the decision is one line to
+reverse. A section with no silhouette is **skipped with a loud message** rather than
+measured, because silently calling every nucleus on-tissue is the failure this check
+exists to stop.
+
+**A bug this introduced and the fix for it.** The first backfill corrupted
+`roi_nuclei.csv`: 05c writes it with `csv.writer` on Windows, so lines end **CRLF**, and
+`line.rstrip("\n")` leaves a bare CR on the last field. Appending a column after that put
+the CR mid-line, Python's universal-newline reader treated it as a line break, and 06a saw
+1,791,097 rows and a `None`. Restored from `_pre_06g_backup/` (verified byte-identical to
+the original) before anything downstream ran; 06a had crashed before writing, so no result
+file was touched. Both `06f` and `06g` now detect the terminator and write it back
+unchanged. **06f had the same latent bug** and was only accidentally safe, because it
+rewrites a middle column and passes unchanged lines through verbatim.
+
+---
+
+## 2026-09-02 - Clipping was measured after the tile field, and the censor mask inherited it
+
+**Changed:** `01_overviews.py` measures clipping **before** `apply_tile_field()` and adds
+`saturated_fraction_raw` / `saturated_fraction_dapi_raw`; new `01k_saturation_raw.py`
+backfills those columns and writes a raw clipping mask per section;
+`04j_censor_clipped.py` and `01g_saturation_map.py` read that mask instead of thresholding
+the 8-bit overview; 04j gains `--marker`; new `06f_recensor_nuclei.py` recomputes the
+per-nucleus flag without re-running StarDist.
+
+**Why:** `01_overviews.py` divided by the tile field and *then* counted pixels at 65535.
+`tilefield_c1` runs **0.812-1.097 and exceeds 1.0 over 54% of its area**, so a pixel
+recorded at the sensor ceiling was lifted off it and stopped counting as clipped - while
+its value was exactly as lost, because no correction restores what the sensor never
+recorded. The column was `clipping x ~0.46`.
+
+Measured in one run, both numbers by the same code on the same data - which is the control
+the old comparison never had:
+
+    LS45_1a.czi sc14   raw 0.283137   corrected 0.136108   (focus.csv held 0.136108)
+    AF568 sections clipping >1% of frame, n=441:
+        raw / corrected   median 1.989   p05 1.798   p95 2.182
+
+**It also runs the other way, which nobody had looked for.** Where the gain is below 1,
+division pushes a sub-ceiling pixel past 65535 and `np.clip(...).astype(np.uint16)` pins
+it there. **165 of 1,191 AF568 sections recorded more clipping after correction than they
+had, and 10 recorded some when the raw plane had none.** So the old column was not a
+consistent undercount; it was a count of "pixels that were clipped **and** happened to
+land where the gain was at most 1".
+
+**The old validation was circular, and it was mine to notice because it reads as rigorous.**
+04j's docstring reported a median absolute difference of 0.00000 against `saturated_fraction`
+in `focus.csv`. True, and worth nothing: both sides were measured after the same correction.
+
+**Resolution is a second understatement and it is scale-dependent** - measured with
+`--native-sample`, not assumed. Downsampling only loses a clipped pixel whose neighbours
+were not clipped, so sparse clipping dilutes hard and dense clipping barely at all: over
+30 sections the native/overview ratio is a median 1.73 overall but **1.09** where clipping
+exceeds 0.1% of frame. On the sections that matter the combined understatement is
+therefore about **2.2x**, not the 3.4x that multiplying the two medians suggests.
+
+### What the corrected census says, and what it does not
+
+Regenerated `qc/saturation/saturation_AF568.csv`. The **fraction of sections** above 2%
+clipped barely moves - 36.3% to 36.6% - because the distribution is bimodal and doubling
+does not carry many across the line. **The severity roughly doubles**: the worst section
+goes from 24.0% to **50.6%** of frame, and per-animal maxima follow (LS69 24.0 to 50.6,
+LS53 20.8 to 42.7, LS105 13.6 to 29.5). The old "35% of sections, up to 47%" line was
+right in its first half largely by luck.
+
+**Attributed with a same-code control, because the naive comparison lies.** Comparing
+against the stored pre-fix CSV showed 248 sections changing verdict - but that file dates
+from 2026-08-12 and the comparison mixes the mask change with three weeks of drift in this
+module. `01g --proxy` was added to measure clipping the old way with *today's* code, so the
+two runs differ in exactly one thing. Against that control: the >2% fraction moves 36.3% to
+36.6%, p95 0.140 to 0.259, max 0.256 to 0.506, raw/proxy median **1.884** on sections above
+1% - and **only 3 sections change verdict**, all of them out of `negligible`. The mask was
+badly wrong and the *classification* barely cared, because the verdicts here are dominated
+by contrast inversion, which this did not touch.
+
+The proxy ratio (1.884) is slightly below the direct one (1.989) for a reason worth
+recording: the old proxy thresholded at `>= 254`, not 255, so it caught a sliver of
+sub-ceiling pixels and **accidentally compensated for part of its own undercount**. That is
+how a wrong measurement passed inspection for three weeks.
+
+**And the clipping is still almost all outside the brain.** A median of **1%** of clipped
+pixels fall inside the DAPI mask, covering a median 1.5% of tissue area. That is consistent
+with the PAP pen stroke measured on 2026-09-01 - present in 54 of 60 sampled pERK sections
+at a median 7.5% of frame - and it is why doubling a frame-level number does not double
+anything biological.
+
+### What it changed downstream
+
+**Section level: 4 sections, exactly as predicted.** The pERK analysis set goes 454 to
+**450** of 718. The four are `LS105_s05a_sc03` (0.0095 -> 0.0238), `LS105_s05a_sc11`
+(0.0052 -> 0.0111), `LS105_s05a_sc09` (0.0063 -> 0.0111) and `LS61_s03a_sc11` (0.0051 ->
+0.0106). The split is bimodal - the analysis set sits at p99 0.33% against a censored-out
+median of 10.6% - so it was never going to be more.
+
+**Pixel level: nothing today, and that is the honest answer.** `06f` recensored all
+895,548 nuclei and the count went 0 to 0; the rewritten file is **byte-identical** to its
+backup. Not a plumbing failure - `roi_nuclei.csv` covers **130 of 454** analysis-set
+sections because 05c is still partway through, and the sections that clip heavily have not
+been detected yet. The fix is preventive: it will bite on the remaining 324.
+
+### AF488 was never actually checked
+
+`LOGS.md` said "AF488 cannot clip, so there is nothing to censor". That was an inference
+from the same broken test, not a measurement: AF488's display high is 37,263, so 255 in its
+8-bit overview means "at or above the display high", and the question was unanswerable
+rather than answered. On the raw plane **AF488 clips on 58.9% of sections**, median
+0.000005 of frame, **max 0.0252**. Censoring it costs **one section** - `LS37_s01b_sc03` at
+1.31%, of 788 reformatted PCNA sections - because most of the worst offenders are not in
+the reformat index. Unlike AF568 the tile field does not halve it consistently; AF488's
+clipping is sparse, so the old proxy scattered it both ways.
+
+### Still outstanding: the corrected masks have not reached the frame 05c reads
+
+**This applies to both markers and it is the one thing left undone.** 04j writes
+`censor/<uid>_censor.png` in the overview frame; `05c_detect_rois.py` does not read that.
+It reads `reformatted/sections_<marker>/<uid>_censor.npy` in the 256 frame, which only
+`04a_reformat.py --censor` produces. Today's corrected PNGs are timestamped 2026-09-02
+14:06; the `.npy` files beside them are **2026-09-01 13:40**. So:
+
+  * the 895,548 nuclei already in `roi_nuclei.csv` are correct - `06f` sampled the raw
+    overview-frame mask directly and bypassed the 256 frame entirely;
+  * **every future 05c run would censor from the stale, undercounting masks**, and 05c is
+    only 130 of 454 analysis-set sections in.
+
+For AF488 it is worse than stale: `reformatted/sections/` holds **zero** `*_censor.npy`,
+so PCNA has never been censored in that frame at all.
+
+Fixing it means `04a_reformat.py --censor` for AF568 and `--censor --marker AF488`. That is
+a full reformat pass which rewrites every section PNG, so it is left for a deliberate
+go-ahead rather than folded into this change. **Until it runs, do not start a new 05c
+pass** - or the nuclei it adds will carry the old flags while the ones already in the table
+carry the new.
+
+### Two things about the run itself
+
+**D: went away again.** At 15:43-15:52 on 2026-09-01 both `01g` and `01k` died with
+`FileNotFoundError` on paths that exist, which is what a vanished volume looks like from
+inside `open()`. Same failure as 2026-08-12. Nothing was lost - 01k checkpoints per file
+and resumed at 1,392 of 2,572 - but it *died* rather than waiting, so `atomic_write` now
+retries five times over ~31 s and only then propagates.
+
+**The `tilefield_c1` marker bug is still live and deliberately untouched.**
+`01_overviews.py:165` loads one field per channel *index*, so AF568 and AF488 files get the
+same correction despite measurably different fields (found 2026-08-12, never fixed). It
+sets the exact size of the undercount above. It must not be fixed by promoting the existing
+per-marker fields: at `--tiles 60` the raw AF568 field spans **0.386-3.641**, an unconverged
+median rather than an illumination profile, and swapping a mild +-10% error for an
+unconverged +-264% one would make the data worse. The route is more tiles, then the
+`01c_measure_tile_artifact.py` gate (median pitch prominence < 2.0x), then a re-export -
+and only with someone looking at the gate result.
+
+---
+
+## 2026-09-01 - The pen stroke nothing masks, and the 473 that had no picture
+
+**Changed:** `--render-excluded` in `04a_reformat.py`; the pen stroke measured and
+written into the stage 5-6 guide. Prompted by two operator questions: *is the pen
+stroke masked*, and *why are the two channels not treated the same*.
+
+### The pen stroke is not masked, and the thing that saves you is not a mask
+
+The marker channel carries a PAP pen stroke around the tissue in **54 of 60 sampled
+pERK sections and 0 of 60 PCNA** - median 7.5% of the frame, up to 28%. It
+autofluoresces into AF568 and not AF488, and on many sections it is brighter than
+the tissue.
+
+**Two independent things guarantee 04g cannot see it.** It detects on DAPI only,
+deliberately - a per-channel mask "would break the blinding" - and the stroke has no
+DAPI signal. And 04g protects the rim: 6 px erosion before seeding, and growth that
+escapes "along the bright tissue rim" is aborted. That is exactly where the stroke is.
+
+**What removes it is the reformat.** 04a crops to the DAPI tissue bounding box and
+zeroes outside the silhouette, and the stroke is outside the tissue in the channel
+that defines both. Measured on 40 reformatted pERK sections: outside the tissue mask
+the mean is **0.51 against 74.0 inside**, 144x dimmer, and **not one pixel** exceeds
+half-scale. Saturated in the overview, absent from the analysis frame.
+
+Every geometric decision is safe by the same mechanism - tissue mask, crop, 04i's
+silhouette rotation, the frozen display range, and 05c's segmentation are all computed
+on DAPI. **This is a safeguard nobody designed**, and it would stop holding the moment
+any geometry was computed on the marker channel.
+
+**The one place it could have leaked, and did not.** 04j censors on
+`censored_fraction` - the whole FRAME - not `censored_fraction_in_tissue`, which it
+records and does not use. A bright stroke could therefore have thrown away sections
+whose tissue was clean. It did not: of the 264 censored out, **263 are also over the
+1% tolerance inside the tissue**. One section, `LS45_s01a_sc09`, went at 15.5% frame
+against 0.78% tissue. Worth knowing if that decision is ever revisited.
+
+### 473 pERK sections had no reformatted image, for no reason
+
+The operator's point that the two channels should be treated alike is right, and most
+of the asymmetries turn out to be principled. Three are:
+
+  * **Exclusion is decided on PCNA and propagated to pERK.** Correct: 02 pairs the two
+    passes "onto the same physical sections via stage coordinates", so `a` and `b` are
+    two scans of ONE piece of tissue and damage is shared.
+  * **Censoring is pERK-only.** AF488's display high is 37,263, below the 16-bit
+    ceiling; 04j says outright that its 8-bit test "does not generalise". AF488 cannot
+    clip, so there is nothing to censor.
+  * **Rotation is manual for PCNA, re-derived for pERK**, because the pERK scan box was
+    redrawn and "rotations must be re-derived, not copied".
+
+One was not. **All 593 excluded PCNA sections had a reformatted image and none of the
+473 excluded pERK ones did** - purely because PCNA was reformatted and then excluded
+while pERK was excluded first. Nothing depended on it until the Review mode, which
+could then show an excluded PCNA section in the analysis frame and an excluded pERK
+one only as the original scan. The asymmetry fell entirely on one channel.
+
+`--render-excluded` renders them and **never writes an index row**, because being in
+`reformatted/` has never been what puts a section into the analysis - the index is.
+Verified: all 718 section rows byte-identical afterwards, a previously-kept image
+byte-identical, 0 excluded sections in the index, and 473 excluded sections now with
+one. `section_provenance.csv` goes from "2,099 in the analysis frame, 473 as the
+original scan only" to **2,572 and 0**.
+
+**Since acted on: `04g --include-excluded`, both markers.** 04g runs off the index, so
+it had never seen an excluded section - which meant Review could offer a
+with/without-mask comparison for a kept section and nothing for a rejected one,
+exactly when you most want to know whether an artifact drove the exclusion. The
+identity comes from `focus.csv`, the only table covering every scanned section, and
+the summary gains an `excluded` column so a consumer joining on it cannot silently
+pick up the rejects.
+
+**Determinism was checked, not assumed, and that is what made the PCNA run safe.**
+Re-running 04g regenerates the masks for the indexed sections too, and those are
+already baked into the reformatted images - so a non-deterministic 04g would have
+left every reformatted image stale against its own mask, silently. 25 pERK masks
+were checksummed before the run and 25 PCNA ones before theirs: **50 of 50
+byte-identical**. Only then was PCNA re-run.
+
+Both markers now: a mask for every scanned section, a summary covering every scanned
+section, and a column saying which rows are the analysis set. pERK 1,191 = 718 + 473,
+PCNA 1,381 = 788 + 593, and all 2,572 carry an overview, a reformatted image, a mask
+and artifact counts.
+
+One thing noticed in passing and not acted on: 04a's `PLATE_DIR` is hardcoded to `atlas/plates`
+while `config.atlas_plate_set.dir` is `plates_final`, so the plate rows it rewrites in
+`reformat_index` describe a set nothing else uses. That is why those 101 rows moved in
+the 4th decimal on this run while every section row held.
+
+---
+
+## 2026-09-01 - The prior steps, inside the ROI curator
+
+**Changed:** new `scripts/04p_section_provenance.py`; a Review mode in
+`04l_roi_curator.py`; `apply_review()` in `04a_reformat.py`; new
+`tests/review.test.js` and `tests/test_section_review.py`.
+
+**Four stages decide a section's fate before the ROI curator ever loads it, and it
+loads only the survivors.** `reformat_index*.csv` is the list of sections that got
+through, so **1,066 exclusions and 2,099 artifact masks** were decisions nobody could
+inspect from the tool they spend their time in. 04d covers exclusion for the 788 PCNA
+sections it was built for; nothing covered the pERK side, the sections dropped before
+reformat, or masking at all.
+
+`04p` is the join that makes them visible: one row per scanned section, all **2,572**,
+from the CZI scene downstream. It is a join and not a measurement - every number already
+existed - and it imports `04m`'s `classify()` rather than writing a second parser for the
+same reason strings. All 1,066 parse: `tissue_damaged` 789, `no_tissue` 185,
+`out_of_focus` 92.
+
+### The comparison only works if both halves are the same picture
+
+The obvious build showed the **reformatted** image for "masked" and the overview for
+"unmasked". They are not the same frame - 256x256 rotated and cropped to the tissue
+against 1632x1862 as scanned - so flicking between them changed the framing, the rotation
+and the scale, and the one thing it was meant to isolate was lost in the middle of all
+that.
+
+So masking is applied **in the browser, over the overview**, which is the frame 04g's mask
+actually lives in: "the same pixel grid as the DAPI overview - *not* the reformatted
+frame". Three states, one picture.
+
+**The mask is 0 clean / 1 compact / 2 elongated - values, not 0-255.** Drawn raw it is
+indistinguishable from black. `brightness(255)` takes 1 to 255 and leaves 0 at 0, which
+turns it into a stencil: inverted and multiplied it blacks out the artifact pixels, tinted
+and screened it shows them in red. Done in CSS rather than by reading the bitmap, because
+`getImageData` taints on a `file://` page - the trap this page was already written to
+avoid.
+
+### A separate file, merged - not a rewritten override
+
+Export writes `section_review.csv`, and `04a_reformat.apply_review()` merges it over the
+exclusion list. **The plan said to write `perk_overrides.csv` directly and that was
+wrong.** The Review mode runs in a browser and can only download; a page that knows about
+the handful of sections someone reviewed would have overwritten a file carrying
+hand-entered rotations for 1,134 of them. One bad export would have destroyed work that
+cannot be recovered.
+
+Reinstating needed no new format: `load_overrides` already reads and counts
+`decision="restored"` - it reports how often the 04f proposal was overruled. `mask_rejected`
+is the one new column, and it is one condition in 04a; the mask file is untouched, so the
+decision is reversible by deleting a row.
+
+### Page weight, and what was not carried
+
+2,572 rows of provenance is real content, but the first build tripled the page - 378 KB to
+1.19 MB. Two thirds of that was avoidable:
+
+  * **The three image paths are not carried.** They are a fixed function of uid, animal and
+    marker, and at ~110 bytes each over 2,572 rows they were 275 KB spent restating a rule
+    the page can apply. What is carried is whether each file *exists*, which cannot be
+    derived. The rule now lives in two places, `04p` and `revSrc()`, and says so in both.
+  * **Repeated strings are pooled.** "manually excluded: tissue too damaged to measure"
+    appears 789 times and there are 222 distinct CZI files; nine columns became an index
+    into a per-column list.
+
+773 KB of table became 393 KB, and the page 718 KB. A separate JSON fetched at load would
+have been smaller still and is not available: `fetch()` is refused under `file://`.
+
+### Verified
+
+`04p` reconciles against every upstream file: 1,066 excluded = 593 PCNA + 473 pERK,
+1,506 reformatted = 788 + 718, 2,099 with a mask, 130 measured, 264 censored out.
+
+The round trip was run end to end in a browser: place a reinstatement and a mask rejection,
+reload, confirm both survive and that neither leaks into `roi_plates.csv` (still 268 rows),
+export, then feed that exact CSV to `apply_review` - the AF568 run picks up the mask
+rejection and leaves its 473 exclusions alone, the AF488 run picks up the reinstatement and
+goes 593 to 592. Each marker takes only its own rows.
+
+One asymmetry worth knowing, and it is not a bug: **an excluded PCNA section still has its
+reformatted image, an excluded pERK section does not.** PCNA was reformatted and excluded
+afterwards, so all 1,381 have a PNG; pERK exclusions were applied before reformatting. That
+is why 2,099 sections can be shown in the analysis frame and 473 only as the original scan.
+
+---
+
+## 2026-09-01 - The curator works from disk; only the Shotgun deck needs http
+
+**Changed:** new `scripts/serve_curators.py` and `serve_curators.bat`; corrected
+`app/curator_view.py`'s rationale and the in-page message.
+
+**The reason recorded in `curator_view.py` was stale, and it was overstating the
+problem.** It said a `file://` page "throws SecurityError from `getImageData`",
+which was true of an early version and has not been true for some time - the page
+was changed to toggle DAPI by compositing rather than by reading pixels back, and
+`getImageData` now appears in it only inside the comment explaining its absence.
+Read literally, the note implied the curators do not work in a browser at all.
+They do: landmarking, ROI placement, rotation, the filters and all three CSV
+exports are fine from disk.
+
+**What genuinely still needs http is the Shotgun deck**, because building a .pptx
+means reading the plate and section bitmaps back - `toBlob()` on a canvas tainted
+by a local image, and `fetch()`, both refused under `file://`. The page already
+handles that well: it checks `location.protocol` and disables the button with a
+reason instead of failing at the click.
+
+**Fixed by serving, not by embedding.** Inlining the images as data URIs would
+remove the taint, and is not viable at this size: 240 MB of atlas plates and
+242 MB of pERK composites before base64's 33%, against a 378 KB page that loads
+instantly - and the deck draws on the favourites, which are chosen after the page
+is built, so there is no subset to embed. `serve_curators.py` is instead the
+app's own `LocalServer` without the app: `out_root` as document root, an
+ephemeral port, **127.0.0.1 and never 0.0.0.0** - it serves every overview and
+the whole atlas, and has no business being reachable off this machine.
+
+That also makes it the way in when the app will not start, since it imports no
+PySide6. Verified end to end on a fixed port: the page, an `../atlas/` plate and
+a section composite all 200.
+
+The in-page message now names the script rather than only the app, and says that
+everything else on the page works either way - the previous wording read as though
+opening from disk were broadly unsupported.
+
+---
+
+## 2026-09-01 - Stage 06a had never been run, so every figure was DAPI density
+
+**Changed:** `06a_roi_dataset.py` rewritten to a single pass and run for the first time;
+`06c_excel_dataset.py` and `06d_excel_by_slide.py` now consume its output instead of
+re-deriving it; `plot_roi_figures.R` gains a positivity series; `05a_roi_geometry.py` archives
+the export it consumed; `05c_detect_rois.py` `--qc` implemented; new `tests/test_roi_dataset.py`.
+
+**The pipeline stopped one stage short of the thing the study is about.** `05c` had finished -
+883,077 nuclei over 128 sections, which later turned out to be 128 of 130; see the stale box set
+below - and `results/roi_measurements.csv` and
+`detector_specificity.csv` did not exist. 06a is the only stage that applies the positivity
+cut, measures the detector against the background discs and computes Abercrombie. It had never
+been run.
+
+06c and 06d did not read it. They re-aggregated `roi_nuclei.csv` themselves, with their own
+copy of the area and Abercrombie arithmetic, and emitted `n_nuclei` = **every DAPI nucleus**.
+So `roi_dataset.xlsx`, `roi_dataset_by_slide.xlsx` and all twenty PNGs were reporting **total
+nuclear density by treatment**. The pERK measurement sat unused in `roi_nuclei.csv`, one column
+away. Nothing was wrong with any individual number; the file simply did not answer the question.
+
+**06a re-scanned the whole table three times per section.** The cut filtered all 883k rows once
+per uid, h did the same per (marker, region), and `by_idx` once more per uid - a few hundred
+million comparisons. `06c` had already hit this and recorded what it cost: a rebuild that ran
+long enough to be killed part-written, leaving a 7 KB xlsx openpyxl could not reopen. Same fix,
+one pass building every index at once. **16 s** on the finished file, and the shape matters more
+than that figure, because PCNA is roughly six times this.
+
+### Two corrections to the docstring, one of them to a claim about a bug
+
+**The stated reason for the per-section cut was one the logs had already overturned.** The
+docstring justified it by a background level that "splits the animals into two groups 8,732
+units apart", citing a batch effect. Restricting to clip-free sections showed the two groups are
+the same - background 10,844 vs 12,300, tissue 5,542 vs 5,494 - and the 1.86x gap is *produced
+by* clipped pixels pinned at 65,535 dragging the mean up. Information loss, not a gain
+difference. The per-section cut stays; the reason is now section-to-section variation in a
+high-baseline marker.
+
+**The censored-nuclei rule looked like a bug and is correct.** 06a counts a censored nucleus as
+positive while excluding it from the intensity median, and that reads as an inconsistency.
+`04j_censor_clipped.py` states both halves outright: a censored pixel is right-censored *at the
+ceiling*, so it is unambiguously above any cut, and including a ceiling value in a median biases
+the statistic down. 04j also says why it matters - dropping them "would bias positive counts
+down in exactly the animals with the brightest staining". Left alone, with a comment naming 04j
+so the next reader does not fix it. Inert here in any case: **0 rows are censored** - 0 of
+883,077 when this was written, 0 of 895,548 after the two late sections were added.
+
+### The two aggregations had drifted on h, and nothing compared them
+
+06a computes Abercrombie's h per **(marker, region)**, which is what
+`config.detection.abercrombie._h_source` declares. 06c computed it per **(animal, region)** and
+06d per **(slide, region)**. Adopting 06a moved `cells_per_mm2` by a median 1.7% and up to 10.7%.
+
+**That is not a rounding difference, because measured nuclear diameter is not the same in both
+arms.** Vl differs by 1.50 um between control and exercise, Vc by 0.99, Vs by 0.96. A per-animal
+h therefore made the correction factor vary with group, injecting up to **-6.6%** into the
+exercise-vs-control contrast in Vl and -1.6% on average across regions - which is exactly what
+`config._effect_on_the_comparison` warns about when it says the correction is only harmless "if
+h is similar between groups". Per (marker, region) keeps it a constant multiplier within a
+region, so it cannot manufacture a group difference.
+
+Worth stating plainly: **the physically more specific h is arguably the per-group one**, if that
+1.50 um is real biology rather than segmentation noise. That is a scientific call, not a coding
+one. The declared convention is what shipped; changing it is one line in 06a.
+
+`n_nuclei` and `total_tissue_area_mm2` were byte-identical across the refactor on all 67 by_roi
+and 96 by_slide rows - checked against the pre-refactor workbooks, which is why they were copied
+aside first.
+
+**That was true when it was measured and is not true of the files on disk, so state it
+properly.** Measuring the refactor came before the two late sections were found and detected;
+afterwards **5 of 67 by_roi rows and 5 of 96 by_slide rows differ**, and every one is LS120 or
+LS22 - exactly the two animals those sections belong to. So the refactor changed nothing and the
+extra data changed five cells; the two are separate events that a single "unchanged" claim runs
+together.
+
+### What the background discs actually measured
+
+**False-positive rate: median 2.1%, range 0.0-8.0%, over 273,332 background nuclei.** Every one
+of the 130 sections had at least 5 background nuclei, so every one got a cut.
+
+The number that decides whether any of this is usable: **it is not group-correlated.** Control
+2.2%, exercise 2.0%, and no animal's median leaves the 1.7-3.0% band - LS105 lowest, LS45
+highest.
+
+Against that, pooled ROI positivity is **13.3%** against a pooled background of **2.2%**, a
+**5.9x** separation. (The median *per disc* is 7.4%; the pooled figure is the one to compare
+with the false-positive rate, since that is itself a pooled ratio.) Both are a much wider
+separation than the 1.23x ROI-vs-background *intensity* ratio suggested, because the cut is on a
+spread rather than a level.
+
+It remains a false-positive rate and not a negative control - the primary antibody is on the
+background tissue too - so absolute positivity rates are still not defensible. Relative
+comparisons between arms at matched levels are.
+
+### Positivity alongside density, never instead of it
+
+`n_positive`, `frac_positive` and `positive_cells_per_mm2` join the spreadsheets after the
+existing columns, and two new figure series - `positive_treatment/` and
+`positive_production_phase/` - join the two existing ones, which are unchanged and keep their
+folder names so nothing already cited moves. 40 PNGs where there were 20.
+
+Blank, not 0, wherever any disc behind a cell sat on a section with no cut: 0 reads as "looked
+and found none".
+
+**Both attempts to print the false-positive rate on the figures were silently clipped.** ggplot
+does not wrap a subtitle and `element_markdown` does not wrap a caption; each just runs off the
+panel edge. The note went to the subtitle first and vanished at the right margin, then to the
+caption as one 96-character line and vanished again. It is now two caption lines under 90
+characters each, broken on `<br>`. Both failures looked like a figure that had simply not been
+given the note.
+
+### Archiving the export found a stale box set
+
+`05a` took its ROIs from the newest `~/Downloads/roi_regions*.csv` and kept no record of which
+file that was. It now copies the export it used to `reformatted/roi_regions_used.csv` with a
+`.txt` beside it naming the path, its mtime, and what it produced.
+
+Doing that re-ran 05a, and the current export gives **130 sections and 2,069 discs** against the
+**128 and 2,036** the measurements were built from. The operator had curated two more sections
+after the last 05a run. Checked before trusting it, because a shifted `roi_index` would have
+silently re-pointed every measured disc: the new set is a strict superset - all 2,036 discs keep
+their index, kind, region and position, **0 misaligned**, and all 33 new discs are on the two new
+sections. `05c` then measured them, 12,471 nuclei.
+
+**895,548 rows over 130 of 130 sections - 894,601 of them analysable, the other 947 flagged
+`artifact` and dropped by 06a.** Both numbers appear downstream and they are not the same
+number, so which is which is worth fixing here: the file has 895,548, the analysis has 894,601.
+The pERK pass really is complete now; it was 128 of 130 against the curation that exists.
+
+### `--qc` did what its help text said
+
+It created `qc/roi_detections/` and wrote nothing into it - an empty directory that reads like a
+run which found nothing. It now writes one PNG per ROI: the DAPI crop with nucleus boundaries
+drawn on it, **green counted, red found inside the bounding box but outside the disc**.
+
+Boundaries rather than filled labels, because a fill hides the thing being judged. Drawing the
+rejects is the point - a box that is mostly red means the disc is small or misplaced relative to
+what was segmented, and no table shows that. Boundaries are computed with array shifts rather
+than `skimage.find_boundaries`, so the frozen build carries no new import.
+
+### Five things an independent spec review caught afterwards
+
+Worth recording because three of them were latent rather than visible, and one was a claim
+rather than a defect.
+
+  * **06c and 06d keyed their aggregation on (animal, region), with no marker.** Invisible while
+    only pERK existed, and guaranteed wrong the moment PCNA is measured: one row would have
+    carried AF568 + AF488 summed under a single `n_nuclei`, with whichever marker's Abercrombie
+    factor was written last. Making 06a read both markers' boxes is what turned this from
+    unreachable into certain. The marker is now part of the key and a column in every sheet, and
+    a two-marker fixture in the tests fails if they are ever pooled again. Today it changes
+    nothing: still 67 and 96 rows, one marker.
+
+    **And the same defect was sitting one layer downstream, which the first fix did not
+    reach.** Nothing in `analysis/` mentioned a marker at all. The R figures read those sheets
+    and would have drawn AF568 and AF488 points into one panel as replicates of a single
+    measure - sharing a mean bar, an SEM bar and a significance test, under a y-axis reading
+    "pERK-positive" - and `roi_stats.R`'s `needs_mixed()` switches on whether an animal has more
+    than one row, so the five ROIs that currently have one row per animal would have flipped
+    silently from `lm` to `lmer` with a second antibody standing in for a second slide. Nothing
+    would have errored. `load_sheet` now filters to one marker, centrally, because it is the one
+    point all three entry points pass through; `LS_MARKER` selects it; output folders, filenames
+    and the pptx are suffixed for anything other than the pERK default; and the axis label names
+    the marker. A marker with no rows stops with a message naming what the sheet does hold.
+  * **06c's staleness check would have killed the refresh loop.** It required
+    `measured == nuc_secs` exactly. But 06a runs at the head of each 06e cycle and 05c keeps
+    appending throughout, so any section finishing in between leaves 06a legitimately behind -
+    and 06e escalates a failed refresh into ENDING the loop. The check would have killed the
+    scenario it was written for. A subset is now a warning; the reverse - 06a naming sections the
+    nuclei file lacks - is still a failure, because that means the two files are not from the
+    same run. Both directions are tested.
+  * **The byte-identity claim above** - corrected in place.
+  * **The guide contradicted itself on `--qc`**, listing it as writing nothing in the flag table
+    while §8.1 described the PNGs, and §5.4 still carried the 128-section / 883,077-row counts.
+  * **§5.4 described 06a's censoring rule as "keep them in the count, drop them from the
+    intensity statistics"** - which is two thirds of it. The missing third is that a censored
+    nucleus is counted POSITIVE without consulting the cut, and that is the part that looks like
+    a bug in the code. Now stated outright, with 04j quoted.
+
+### The marker assumption displaced twice more before it was cornered
+
+Three review rounds, and each one found the same defect one layer further down. Worth recording
+as a shape rather than three separate fixes: a pipeline built for one marker does not announce
+where it assumed that, and every place it did produced plausible numbers rather than an error.
+
+Round 1 found it in 06c/06d's aggregation keys. Round 2 found it in `analysis/`, which had no
+mention of a marker at all. Round 3 found the last two:
+
+  * **`detector_specificity.csv` is read directly, not through `load_sheet`**, so it never
+    inherited the sheet filter - and it is the one number on a positivity figure that must not be
+    pooled, since it is what stops the positivity being read as absolute. Measured on a synthetic
+    two-marker file: unfiltered gives median 2.6%, range 0.0-45.0% over 180 sections against the
+    true 2.1%, 0.0-8.0% over 130. Now filtered by a shared `filter_marker()`.
+  * **`06e_refresh_loop.py` ran `Rscript` with no `LS_MARKER`**, so it would have spent the whole
+    PCNA run - the long one it exists to babysit - redrawing unchanged pERK figures and reporting
+    success. It now reads which markers 06a has measured and runs the script once per marker.
+
+And a fourth round found two more, one of them the worst of the set:
+
+  * **`05c --force` opened the shared `roi_nuclei.csv` in `"w"`.** The two markers append to one
+    file, so `--marker AF488 --force` would have discarded every pERK row - ~895,000 of them,
+    hours of irrecoverable detection - and a forced pERK re-run would have deleted the PCNA ones.
+    Nothing errors; 06a and 06c would simply report the missing marker at 0 of 130. This is the
+    same hazard Phase 3.1 removed from 05a's box files, one stage later, and the previous commit
+    had scoped 05c's *reads* to the marker while leaving the write mode alone. A forced run now
+    rewrites the file keeping every other marker's rows, through a temp file and one atomic
+    replace, because a half-written `roi_nuclei.csv` is the whole dataset.
+  * **06a's own printed summary pooled the markers** - the one place round 3 did not reach after
+    fixing the same thing in 06c's summary and in the R caption. An h range spanning two markers
+    is not a range of anything: pERK 9.4 and PCNA 6.0 would print as "6.0-9.4" and destroy the
+    check that a large deviation means the h grouping changed. And the false-positive rate is the
+    number the operator is told to stop and read before building any figure on the cut - filtered
+    on the figure, pooled in the console.
+
+Two smaller ones from round three: 06c's printed summary still totalled by sample alone, so
+each animal appeared twice with identical pooled figures against per-marker section counts; and
+`marker_label()`'s fallback was unreachable, because `[[` on a named character vector throws for
+an unknown name rather than returning NULL, so an unrecognised marker would have died with
+"subscript out of bounds" instead of printing its own id.
+
+A fifth round found three more, and the shape held to the last one:
+
+  * **06a's Abercrombie fallback `h_all` was a single mean over both markers**, and it is not an
+    edge case: background discs carry region `__background__`, which is never a key in the
+    per-(marker, region) table, so **every background row takes the fallback** - 586 of 2,069.
+    With PCNA at roughly six times the volume it would have set the correction factor on pERK's
+    background rows, changing a published number with the other antibody's nuclei. The per-marker
+    table was right; the line below it was not.
+  * **`app/import_exports.py` replaced the curation store wholesale.** The guide says curating
+    PCNA cannot disturb the pERK placements, and that is true of the curator page - one store,
+    disjoint uids - but not of the documented recovery path: a PCNA-only export imported without
+    `--merge` drops every pERK placement. It now refuses when replacing would drop sections the
+    export does not mention, names them, and points at `--merge` or `--replace`.
+
+    **This shipped once as documentation with no code behind it, and that is worth recording as
+    its own failure.** The patch that wrote it applied its docstring hunk and silently failed to
+    match the code block - the script printed one "changed: True" for the whole file, and what
+    was checked afterwards was a syntax parse and a grep for an import, neither of which touches
+    the thing that was meant to change. So the docstring promised a refusal, an operator would
+    have omitted `--replace` expecting one, and got the wholesale replacement: strictly worse
+    than before it was written. `tests/test_import_exports.py` only ever called `rebuild()`,
+    never `main()`, which is why nothing caught it. It now calls `main()`.
+
+    The general lesson, since the same escaping fault bit three separate patches in this branch:
+    a bulk string-replace that reports one boolean for a whole file cannot tell a partial match
+    from a complete one, and a syntax check will not either. Verify the specific line.
+  * **`plot_by_sample.R` and `plot_by_slide.R` were referenced nowhere** - not the README, not
+    the guide, not 06e, not `app/stages.py` - while writing four of the shipped figures. That is
+    why they sat for a day drawn from the old h. 06e now runs all three R scripts, per marker.
+
+Three smaller ones from the same round: the guide claimed 04l *refuses* `--analysis-set` for
+AF488 when the `SystemExit` is unreachable behind its own caller's guard, so it quietly narrows
+only the pERK side; 06d's docstring still said 128 sections; and 05c's resume built a dict per
+row of `roi_nuclei.csv` to collect one column - about five million of them once PCNA is in the
+file, on the resume of the run this stage exists to make resumable.
+
+**`all_boxes()` now checks the invariant instead of asserting it in a comment.** Scene uids being
+disjoint across markers is what makes 06a's `(scene_uid, roi_index)` join correct - the index is
+a position in the per-uid box list - so a collision would pair every nucleus on that section with
+the wrong disc, silently. It was stated in three comments and verified nowhere; it now raises.
+
+`app/stages.py` had `excel_sample`, `excel_slide`, `join_sampling` and `refresh_loop` still
+declaring `needs=["detect"]`. 06c and 06d hard-require `roi_measurements.csv` now, so the graph
+said something the code no longer did - and the file's own docstring calls a disagreement with
+`run_all.sh` "a bug here".
+
+### Smaller things
+
+  * `run_app.bat` used the Python on PATH, which has no PySide6, and `lsapp-crash.log` was a
+    bare `ModuleNotFoundError` traceback. It now prefers `work/appenv` - the same 3.13 venv
+    `build_app.bat` freezes the exe from and `refresh_loop.bat` already used - and the ImportError
+    branch names the running interpreter and the fix instead of only the exception.
+  * `06e_refresh_loop.py` runs 06a at the head of every cycle. Without it a cycle would rebuild
+    the spreadsheets from the previous cycle's counts; 06c refuses a 06a that predates the nuclei
+    file rather than doing that quietly.
+  * `06c.main()` and `06d.main()` take an explicit argv. They parse their own, and 06e's flags
+    reach them through `sys.argv` - `--interval 1800` would have aborted the cycle with exit 2.
+  * `tests/test_roi_dataset.py`: the cut is a spread and not a percentile, a section one
+    background nucleus short of five gets blanks and not zeros, h excludes artifact nuclei, area
+    is the ellipse - and **06c's totals equal 06a's**, which is the regression that would have
+    caught the h drift.
+
+---
+
+## 2026-08-29 to 2026-08-31 - quantification, the datasets and the figures
+
+Not written up here at the time. The reasoning for this span is in the commit messages, which
+carry it in full - `git log 1eb2fdb..bd30e6a` - and this is an index rather than a second
+telling.
+
+  * **05a and 05c** (`0538f98`, `5a12a0c`): the curator's ROIs placed on the slide, then nuclei
+    segmented on DAPI with the marker measured inside each mask.
+  * **06a, 06b** (`5a12a0c`): the positivity cut and the Abercrombie correction, then the
+    unblinding join. Written, and - see above - not run until 2026-09-01.
+  * **Abercrombie** (`af82e53`, `10d9494`): sections are 14 um and consecutive, so what is
+    counted is profiles and neighbours double-count a boundary nucleus.
+  * **06c, 06d, 06e** (`5073714`, `6fa4063`, `64e73aa`): the spreadsheets, the per-slide level,
+    and the hourly rebuild with a stall detector.
+  * **The figures** (`6b6d73f`, `f7fe3b6`, `ed5374f`, `bd30e6a`): one measure and one level;
+    points became sections rather than slides after keying by slide reduced Dm's sea-control
+    group to a single point; a singular fit says what it means because four of ten ROIs are in
+    that state; Tukey letters are drawn only when they separate something, and the caption says
+    so when they do not.
+  * **Shotgun by region** (`0524cfc` and the working tree): the favourites as a PowerPoint,
+    split by treatment, cut by plate or by atlas region.
+
+---
+
 ## 2026-08-13 - The atlas was 101 fragments, not 101 plates. Rebuilt to 68 real plates.
 
 **Changed:** three new scripts - `04a2_atlas_remerge.py`, `04a3_plate_reframe.py`,

@@ -22,7 +22,10 @@ import json
 import os
 from collections import Counter, defaultdict
 
-CONFIG_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config.json")
+# LS_CONFIG names the file explicitly; the file-relative path is the fallback.
+# Frozen, the scripts sit inside _internal/ while config.json is beside the
+# executable, so the fallback would point at a file that does not exist.
+CONFIG_PATH = os.environ.get("LS_CONFIG") or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config.json")
 with open(CONFIG_PATH, encoding="utf-8") as _fh:
     CONFIG = json.load(_fh)
 

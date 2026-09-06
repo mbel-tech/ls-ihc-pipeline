@@ -19,6 +19,64 @@ library(ggplot2)
 
 RESULTS_DEFAULT <- "D:/LS-analysis/results"
 
+# WHICH MARKER THESE FIGURES ARE ABOUT.
+#
+# The sheets carry one row per (sample|slide, MARKER, ROI). A figure that does
+# not filter would draw AF568 and AF488 points into the same panel as if they
+# were replicates of one measure - two different antibodies sharing a mean bar,
+# an SEM bar and a significance test - and roi_stats.R would silently flip from
+# lm to lmer for the ROIs that currently have one row per animal, because a
+# second marker looks exactly like a second slide to `needs_mixed()`.
+#
+# Nothing would error. So the filter is applied centrally, in load_sheet, where
+# all three entry points pass through, rather than left to each of them.
+#
+# Override with LS_MARKER=AF488 in the environment.
+MARKER <- Sys.getenv("LS_MARKER", "AF568")
+MARKER_LABEL <- c(AF568 = "pERK", AF488 = "PCNA")
+
+marker_label <- function(m = MARKER) {
+  # Single brackets and is.na, NOT [[ ]]: double-bracket lookup of an unknown
+  # name on a named character vector THROWS rather than returning NULL, so the
+  # fallback below was unreachable and an unrecognised marker would have failed
+  # with "subscript out of bounds" instead of printing its own id.
+  lbl <- MARKER_LABEL[m]
+  if (is.na(lbl)) m else unname(lbl)
+}
+
+# Filter any per-section table to the marker in play.
+#
+# Shared because `detector_specificity.csv` needs exactly what the sheets need
+# and got it wrong by being a separate read: it is not a sheet, so it did not
+# pass through load_sheet, and the false-positive rate printed on every pERK
+# positivity figure would have had PCNA's sections folded into it.
+filter_marker <- function(df, what, require_rows = FALSE) {
+  if (!"marker" %in% names(df)) {
+    # A file written before the marker column existed is all AF568. Saying so
+    # is fine when AF568 is what was asked for; handing it back for AF488 would
+    # caption a PCNA figure with pERK data, which is the whole failure mode.
+    if (MARKER != "AF568") {
+      stop(sprintf(paste0("%s has no marker column, so it is all AF568 - ",
+                          "cannot serve %s.\n  Rebuild with 06c/06d."),
+                   what, MARKER))
+    }
+    message(sprintf("  %s has no marker column - treating it as AF568 (pERK)", what))
+    return(df)
+  }
+  have <- sort(unique(df$marker[!is.na(df$marker)]))
+  out <- df[!is.na(df$marker) & df$marker == MARKER, , drop = FALSE]
+  if (require_rows && !nrow(out)) {
+    stop(sprintf("no %s rows in %s (it has: %s).\n  Set LS_MARKER to one of them.",
+                 MARKER, what, paste(have, collapse = ", ")))
+  }
+  if (length(have) > 1) {
+    message(sprintf("  marker %s (%s) - %s also present and excluded",
+                    MARKER, marker_label(),
+                    paste(setdiff(have, MARKER), collapse = ", ")))
+  }
+  out
+}
+
 # Colour-blind safe, and deliberately not red/green.
 TREATMENT_COLOURS <- c(control = "#4C72B0", exercise = "#DD8452")
 
@@ -30,6 +88,10 @@ load_sheet <- function(path, sheet) {
                  else "06c_excel_dataset.py"))
   }
   df <- as.data.frame(readxl::read_excel(path, sheet = sheet))
+  # ONE marker per figure, via the shared rule - this used to reimplement it
+  # inline with different messages, which is two versions of one decision.
+  df <- filter_marker(df, basename(path), require_rows = TRUE)
+
   df <- df[!is.na(df$treatment) & df$treatment != "", ]
   df$treatment <- factor(df$treatment, levels = names(TREATMENT_COLOURS))
   # Longest region names first would reorder the panels arbitrarily; sort by how

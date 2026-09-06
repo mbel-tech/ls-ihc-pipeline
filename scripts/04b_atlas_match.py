@@ -33,6 +33,7 @@ Run:  python 04b_atlas_match.py
 
 import argparse
 import csv
+import importlib.util
 import json
 import os
 
@@ -40,7 +41,15 @@ import numpy as np
 from PIL import Image
 from scipy import ndimage
 
-CONFIG_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config.json")
+_lsio = importlib.util.spec_from_file_location(
+    "_lsio", os.path.join(os.path.dirname(os.path.abspath(__file__)), "ls_io.py"))
+IO = importlib.util.module_from_spec(_lsio)
+_lsio.loader.exec_module(IO)
+
+# LS_CONFIG names the file explicitly; the file-relative path is the fallback.
+# Frozen, the scripts sit inside _internal/ while config.json is beside the
+# executable, so the fallback would point at a file that does not exist.
+CONFIG_PATH = os.environ.get("LS_CONFIG") or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config.json")
 with open(CONFIG_PATH, encoding="utf-8") as _fh:
     CONFIG = json.load(_fh)
 
@@ -310,7 +319,7 @@ def build_curator(proposals):
     ordered = sorted(proposals,
                      key=lambda p: (p["proposed_score"],
                                     p["proposed_plate"] == p["local_best"]))
-    page = TEMPLATE.replace("__DATA__", json.dumps(ordered))
+    page = IO.fill(TEMPLATE, {"__DATA__": ordered})
     out = os.path.join(REPORT_DIR, "atlas_curator.html")
     with open(out, "w", encoding="utf-8") as fh:
         fh.write(page)
@@ -381,6 +390,11 @@ const KEY = "ls_atlas_curator_v1";
 let marks = JSON.parse(localStorage.getItem(KEY) || "{}");
 let i = 0;
 const el = id => document.getElementById(id);
+const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g,
+  c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+el("cands").addEventListener("click", e => {
+  const c = e.target.closest && e.target.closest(".cand"); if(c) setMark(c.dataset.plate);
+});
 
 function render(){
   const d = DATA[i];
@@ -396,10 +410,10 @@ function render(){
   const chosen = marks[d.scene_uid];
   el("decision").textContent = chosen || "-";
   el("cands").innerHTML = d.candidates.map((c,k) => `
-    <div class="cand ${chosen===c.plate_id?'chosen':''}" onclick="setMark('${c.plate_id}')">
-      <img src="${c.img}" alt="">
-      <div class="cap"><b>${k+1}. ${c.plate_id}</b> p${c.page} &middot; IoU ${c.score}
-      ${c.regions ? '<br>'+c.regions : ''}</div>
+    <div class="cand ${chosen===c.plate_id?'chosen':''}" data-plate="${esc(c.plate_id)}">
+      <img src="${esc(c.img)}" alt="">
+      <div class="cap"><b>${k+1}. ${esc(c.plate_id)}</b> p${esc(c.page)} &middot; IoU ${c.score}
+      ${c.regions ? '<br>'+esc(c.regions) : ''}</div>
     </div>`).join("");
 
   const n = Object.keys(marks).length;

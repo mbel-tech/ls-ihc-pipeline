@@ -36,6 +36,7 @@ Run:  python 04a_reformat.py
 
 import argparse
 import csv
+import importlib.util
 import json
 import os
 
@@ -43,7 +44,15 @@ import numpy as np
 from PIL import Image
 from scipy import ndimage
 
-CONFIG_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config.json")
+_lsio = importlib.util.spec_from_file_location(
+    "_lsio", os.path.join(os.path.dirname(os.path.abspath(__file__)), "ls_io.py"))
+IO = importlib.util.module_from_spec(_lsio)
+_lsio.loader.exec_module(IO)
+
+# LS_CONFIG names the file explicitly; the file-relative path is the fallback.
+# Frozen, the scripts sit inside _internal/ while config.json is beside the
+# executable, so the fallback would point at a file that does not exist.
+CONFIG_PATH = os.environ.get("LS_CONFIG") or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config.json")
 with open(CONFIG_PATH, encoding="utf-8") as _fh:
     CONFIG = json.load(_fh)
 
@@ -402,7 +411,53 @@ def marker_paths(marker):
             "lost": os.path.join(REFORMAT_DIR, f"lost_sections_{marker}.csv")}
 
 
-def load_overrides(paths=None):
+REVIEW_CSV = os.path.join(REFORMAT_DIR, "section_review.csv")
+
+
+def apply_review(excluded, marker):
+    """Merge `section_review.csv` - the Review mode's decisions - over the
+    exclusion list, and collect the sections whose artifact mask was rejected.
+
+    **A separate file, MERGED, rather than a rewritten override file.** The
+    Review mode runs in a browser and can only download; having it write
+    `perk_overrides.csv` directly would mean a page that knows about the handful
+    of sections someone reviewed overwriting a file that carries hand-entered
+    rotations for 1,134. One bad export would destroy work that cannot be
+    recovered. So it writes only its own decisions and this merges them.
+
+    Reinstating is not a new concept: `load_overrides` already reads and counts
+    `decision="restored"`. This applies the same idea from the other file.
+
+    Returns (excluded, mask_rejected). `excluded` is a new dict; the caller's is
+    not mutated.
+    """
+    if not os.path.exists(REVIEW_CSV):
+        return excluded, set()
+    out, rejected = dict(excluded), set()
+    restored = dropped = 0
+    with open(REVIEW_CSV, newline="", encoding="utf-8") as fh:
+        for r in csv.DictReader(fh):
+            uid = r.get("scene_uid", "")
+            # Rows for the other marker belong to the other run's index and
+            # would never match a section here; skipping them keeps the counts
+            # honest rather than reporting decisions this run did not apply.
+            if not uid or (r.get("marker") and r["marker"] != marker):
+                continue
+            if r.get("mask_rejected") == "1":
+                rejected.add(uid)
+            if (r.get("decision") or "") == "restored":
+                if out.pop(uid, None) is not None:
+                    restored += 1
+            elif r.get("excluded") == "1":
+                out[uid] = ("manual", r.get("reason") or "excluded on review")
+                dropped += 1
+    if restored or dropped or rejected:
+        print(f"section_review.csv: {restored} reinstated, {dropped} dropped, "
+              f"{len(rejected)} mask(s) rejected")
+    return out, rejected
+
+
+def load_overrides(paths=None, write=False):
     """Manual rotation corrections from 04d_rotation_curator.py.
 
     Stored as a correction *on top of* the automatic angle rather than as an
@@ -441,15 +496,66 @@ def load_overrides(paths=None):
         print(f"  {restored} of {prop} automatic proposals were overruled "
               f"({100 * restored / prop:.0f}%) - see LOGS.md if that rate is high")
 
-    # Written out separately as the canonical list, so any stage can honour
-    # exclusions without parsing the curator's export format.
-    if excluded:
-        with open(paths["excluded"], "w", newline="", encoding="utf-8") as fh:
-            w = csv.writer(fh)
-            w.writerow(["scene_uid", "decision", "reason"])
-            for uid in sorted(excluded):
-                w.writerow([uid, excluded[uid][0], excluded[uid][1]])
+    # The canonical list is written by main(), AFTER apply_review() has merged
+    # section_review.csv over this - writing it here published a list that
+    # never carried a Review-mode drop or reinstatement, and every caller of
+    # this loader (04o builds composites) rewrote it. `write=True` is for a
+    # caller that has no review to merge and wants the old behaviour.
+    if write:
+        write_excluded(paths["excluded"], excluded)
     return out, excluded
+
+
+def write_excluded(path, excluded):
+    """`excluded_sections*.csv`: the canonical exclusion list, one row per
+    section, so any stage can honour it without parsing a curator export.
+    Header-only when there is nothing to exclude: an absent file reads as
+    "never computed", which is a different fact."""
+    rows = [{"scene_uid": uid, "decision": excluded[uid][0], "reason": excluded[uid][1]}
+            for uid in sorted(excluded)]
+    IO.atomic_write_csv(path, rows, ["scene_uid", "decision", "reason"])
+
+
+def wants_masks(is_excl, mask_artifacts, censor, mask_rejected, uid):
+    """(use artifact mask, use censor mask) for one section.
+
+    An excluded section is rendered RAW whatever the flags say. 04o builds its
+    composite unmasked - the blue plane has to equal this picture - and a
+    section on screen so somebody can decide whether to reinstate it cannot
+    be judged with the artifact already painted black.
+    """
+    if is_excl:
+        return False, False
+    return (mask_artifacts and uid not in mask_rejected), censor
+
+
+def select_only(spec, excluded):
+    """The uids a `--only` run may touch, or raise.
+
+    A PARTIAL RUN REPAIRS PICTURES AND NOTHING ELSE. The index is written from
+    the rows a full pass builds, so `--only` writes none - and this guard is
+    what makes that safe rather than merely true. Re-rendering an INDEXED
+    section without rewriting its row would leave the analysis pointing at an
+    image that no longer matches the angle and fill recorded for it, and nothing
+    downstream could detect that. An excluded section has no row to disagree
+    with, so those are the only ones this can touch.
+
+    `spec` is a comma-separated list, or "@path" for one uid per line.
+    """
+    if spec.startswith("@"):
+        with open(spec[1:], encoding="utf-8") as fh:
+            want = {ln.strip() for ln in fh if ln.strip()}
+    else:
+        want = {u.strip() for u in spec.split(",") if u.strip()}
+    if not want:
+        raise SystemExit("--only was given no scene_uids")
+    indexed = want - set(excluded)
+    if indexed:
+        raise SystemExit(
+            "--only refuses %d section(s) that are not excluded, because a "
+            "partial run writes no index and their rows would go stale: %s"
+            % (len(indexed), ", ".join(sorted(indexed)[:10])))
+    return want
 
 
 def main():
@@ -463,9 +569,26 @@ def main():
                     help="blank 04g artifact pixels in the reformatted output")
     ap.add_argument("--apply-overrides", action="store_true",
                     help="apply manual rotations from rotation_overrides.csv")
+    ap.add_argument("--render-excluded", action="store_true",
+                    help="also render excluded sections, so they can be LOOKED at "
+                         "in the ROI curator's Review mode. They are never added "
+                         "to the index, so nothing downstream can pick them up.")
+    ap.add_argument("--only", metavar="UIDS",
+                    help="re-render just these scene_uids (comma-separated, or @file "
+                         "for one per line) and write NO index. Every uid must be an "
+                         "excluded one: a partial run cannot produce a complete "
+                         "index, and re-rendering an INDEXED section without "
+                         "rewriting the index would leave the analysis pointing at "
+                         "an image that no longer matches its row. Repairs the "
+                         "look-at-only PNGs, nothing else")
     args = ap.parse_args()
     paths = marker_paths(args.marker)
     overrides, excluded = load_overrides(paths) if args.apply_overrides else ({}, {})
+    mask_rejected = set()
+    if args.apply_overrides:
+        excluded, mask_rejected = apply_review(excluded, args.marker)
+        # After the merge, unconditionally: header-only means "nothing excluded".
+        write_excluded(paths["excluded"], excluded)
 
     sec_dir = paths["sections"]
     plate_dir = os.path.join(REFORMAT_DIR, "plates")
@@ -477,6 +600,11 @@ def main():
     with open(os.path.join(PLATE_DIR, "plates.csv"), newline="", encoding="utf-8") as fh:
         plates = list(csv.DictReader(fh))
     ok = 0
+    # A --only run repairs section pictures; the plates are not sections and
+    # rewriting them would be a side effect nobody asked for, even though the
+    # bytes would come out the same.
+    if args.only:
+        plates = []
     for p in plates:
         # Plates are Nissl - cell bodies DARK on white paper - so they are
         # inverted into DAPI polarity and then treated by the dark-background
@@ -495,17 +623,51 @@ def main():
 
     with open(QC_CSV, newline="", encoding="utf-8") as fh:
         secs = [r for r in csv.DictReader(fh) if r["marker_channel"] == args.marker]
+
+    # A PARTIAL RUN REPAIRS PICTURES AND NOTHING ELSE.
+    #
+    # The index is written from `rows`, which a partial run only half fills, so
+    # --only must not reach it - and the guard below is what makes that safe
+    # rather than merely true. Re-rendering an INDEXED section without rewriting
+    # its row would leave the analysis pointing at an image that no longer
+    # matches the angle and fill recorded for it, which nothing downstream could
+    # detect. Excluded sections have no row to disagree with, so they are the
+    # only ones this can touch.
+    if args.only:
+        want = select_only(args.only, excluded)
+        secs = [r for r in secs if r["scene_uid"] in want]
+        gone = want - {r["scene_uid"] for r in secs}
+        if gone:
+            print("--only: %d uid(s) not in %s for this marker, skipped: %s"
+                  % (len(gone), os.path.basename(QC_CSV), ", ".join(sorted(gone)[:5])))
+        print(f"--only: re-rendering {len(secs)} excluded section(s), no index write")
+        args.render_excluded = True
     ok = 0
     n_excluded = 0
+    n_rendered = 0
     lost = []
     no_mask = []
     for i, r in enumerate(secs):
-        # Excluded sections are dropped here rather than filtered later, so
-        # nothing downstream can accidentally pick them up: they simply do not
-        # appear in reformatted/ or in the index.
-        if r["scene_uid"] in excluded:
+        # Excluded sections are kept out of the INDEX rather than filtered
+        # later, so nothing downstream can accidentally pick them up.
+        #
+        # Whether their image is rendered at all is a separate question, and it
+        # used to be answered by accident. PCNA was reformatted and excluded
+        # afterwards, so all 1,381 have a PNG; pERK exclusions were applied
+        # first, so 473 have none - which left the Review mode able to show an
+        # excluded PCNA section in the analysis frame and an excluded pERK one
+        # only as the original scan. Same pipeline, different order, and the
+        # asymmetry fell entirely on one channel.
+        #
+        # --render-excluded renders them too. It never adds an index row, so
+        # nothing downstream can pick them up either way: the image exists to be
+        # LOOKED AT, and being in reformatted/ has never been what puts a
+        # section into the analysis.
+        is_excl = r["scene_uid"] in excluded
+        if is_excl:
             n_excluded += 1
-            continue
+            if not args.render_excluded:
+                continue
         src = os.path.join(OVERVIEW_DIR, r["animal"], r["marker_channel"],
                            r["scene_uid"] + "_DAPI.png")
         # A section that was NOT excluded must survive, or it must be reported.
@@ -516,9 +678,18 @@ def main():
             lost.append((r["scene_uid"], "overview PNG missing"))
             continue
         extra, flip = overrides.get(r["scene_uid"], (0.0, False))
-        art = load_artifact(r["scene_uid"], (WORK_SIZE, WORK_SIZE)) if args.mask_artifacts else None
-        cen = load_censor(r["scene_uid"], (WORK_SIZE, WORK_SIZE)) if args.censor else None
-        if args.mask_artifacts and art is None:
+        # A rejected mask means this section reformats UNMASKED even with
+        # --mask-artifacts on. The mask file is left alone, so the decision is
+        # reversible by deleting one row of section_review.csv.
+        use_art, use_cen = wants_masks(is_excl, args.mask_artifacts, args.censor,
+                                       mask_rejected, r["scene_uid"])
+        art = load_artifact(r["scene_uid"], (WORK_SIZE, WORK_SIZE)) if use_art else None
+        cen = load_censor(r["scene_uid"], (WORK_SIZE, WORK_SIZE)) if use_cen else None
+        # "no mask was built for this section" and "its mask was rejected on
+        # review" are different facts, and reporting the second as the first
+        # would read as a gap in 04g rather than as a decision someone made.
+        if (args.mask_artifacts and art is None and not is_excl
+                and r["scene_uid"] not in mask_rejected):
             no_mask.append(r["scene_uid"])
         out = reformat(src, light_background=False, extra_angle=extra, flip=flip,
                        artifact=art, censor=cen)
@@ -528,10 +699,17 @@ def main():
         img, mask, angle, amask, cmask = out
         Image.fromarray(img).save(os.path.join(sec_dir, r["scene_uid"] + ".png"))
         np.save(os.path.join(sec_dir, r["scene_uid"] + "_mask.npy"), mask)
-        if args.mask_artifacts:
+        # No mask products for an excluded section: it is a picture to look at,
+        # and 05c reads these .npy files as "this section is in the analysis".
+        if use_art:
             np.save(os.path.join(sec_dir, r["scene_uid"] + "_artifact.npy"), amask)
-        if args.censor:
+        if use_cen:
             np.save(os.path.join(sec_dir, r["scene_uid"] + "_censor.npy"), cmask)
+        # THE INDEX IS WHAT PUTS A SECTION INTO THE ANALYSIS, and an excluded
+        # one must never enter it - however good its picture looks.
+        if is_excl:
+            n_rendered += 1
+            continue
         rows.append({"kind": "section", "id": r["scene_uid"], "angle": round(angle, 1),
                      "fill": round(float(mask.mean()), 4),
                      "animal": r["animal"], "section_order": r["section_order"],
@@ -559,13 +737,16 @@ def main():
             print(f"    {uid}")
         print("!" * 74)
 
+    if args.only:
+        print()
+        print("=" * 72)
+        print(f"--only: rendered {n_rendered} excluded section(s); index left alone")
+        return
+
     out_csv = paths["index"]
     keys = ["kind", "id", "angle", "fill", "animal", "section_order", "regions",
             "manual_rotation", "manual_flip"]
-    with open(out_csv, "w", newline="", encoding="utf-8") as fh:
-        w = csv.DictWriter(fh, fieldnames=keys, extrasaction="ignore")
-        w.writeheader()
-        w.writerows(rows)
+    IO.atomic_write_csv(out_csv, rows, keys)
 
     if args.preview:
         preview(rows, sec_dir, plate_dir, args.preview)
@@ -614,7 +795,9 @@ def preview(rows, sec_dir, plate_dir, n):
     plates = [r for r in rows if r["kind"] == "plate"][:n]
     secs = [r for r in rows if r["kind"] == "section"]
     secs = secs[:: max(1, len(secs) // n)][:n]
-    fig, ax = plt.subplots(2, n, figsize=(2.1 * n, 4.6))
+    # squeeze=False: with n == 1 the axes array comes back 1-D and every
+    # ax[row, col] below raises.
+    fig, ax = plt.subplots(2, n, figsize=(2.1 * n, 4.6), squeeze=False)
     for k, p in enumerate(plates):
         ax[0, k].imshow(np.asarray(Image.open(os.path.join(plate_dir, p["id"] + ".png"))), cmap="gray")
         ax[0, k].set_title(f"{p['id']}\n{p['angle']:.0f} deg", fontsize=7)

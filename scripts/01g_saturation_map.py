@@ -26,9 +26,18 @@ Four measurements separate those cases:
                        what actually bounds how much of a section is usable.
 
 Works off the exported 8-bit overviews rather than the CZIs, so it costs
-minutes rather than hours. Caveat recorded in the output: the overviews were
-written with the display range topped at 65535 and after tile-field correction,
-so a PNG value of 255 is a close proxy for clipping, not a re-measurement of it.
+minutes rather than hours. The tissue and background intensities still come from
+those PNGs, which is correct - they are display-ranged comparisons.
+
+**The clipped set no longer does, and the old hedge understated the problem.**
+This module used to call `_MARK.png >= 254` a "close proxy for clipping". It was
+not close: the PNG is written after `apply_tile_field()`, and dividing by a gain
+above 1 lifts a pixel off the 16-bit ceiling so it stops reading as clipped,
+while its value is exactly as lost. `tilefield_c1` runs 0.812-1.097 and exceeds
+1.0 over 54% of its area, so the proxy held roughly 46% of the clipped pixels and
+every figure this module printed was about half the truth. The clipped set now
+comes from `qc/censor_raw/<uid>_clipped.png`, measured on the raw 16-bit plane by
+`01k_saturation_raw.py`; run that first.
 
 Run:  python 01g_saturation_map.py
       python 01g_saturation_map.py --figures 12
@@ -47,7 +56,10 @@ import numpy as np
 from PIL import Image
 from scipy import ndimage
 
-CONFIG_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config.json")
+# LS_CONFIG names the file explicitly; the file-relative path is the fallback.
+# Frozen, the scripts sit inside _internal/ while config.json is beside the
+# executable, so the fallback would point at a file that does not exist.
+CONFIG_PATH = os.environ.get("LS_CONFIG") or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config.json")
 with open(CONFIG_PATH, encoding="utf-8") as _fh:
     CONFIG = json.load(_fh)
 
@@ -57,7 +69,13 @@ QC_CSV = os.path.join(OUT_ROOT, "qc", "focus.csv")
 REPORT_DIR = os.path.join(OUT_ROOT, "qc", "saturation")
 
 # 8-bit proxy for a clipped 16-bit pixel.
-SAT_LEVEL = 254
+SAT_LEVEL = 254          # fallback only; see raw_clip_mask()
+RAW_MASK_DIR = os.path.join(OUT_ROOT, "qc", "censor_raw")
+# --proxy reproduces the pre-2026-09-02 measurement with TODAY'S code, so a
+# before/after comparison isolates the mask change instead of mixing it with
+# three weeks of drift in this file. Debugging affordance only; never the
+# default, and it writes to its own output.
+_force_proxy = [False]
 # Only sections with at least this much clipping are worth characterising.
 MIN_SAT_FRACTION = 0.005
 # A clipped region larger than this cannot be a nucleus at overview resolution.
@@ -102,15 +120,39 @@ def tissue_mask(dapi):
     return mask
 
 
-def analyse(row, um_px):
+def raw_clip_mask(uid, shape):
+    """Clipping as measured on the RAW 16-bit plane by 01k_saturation_raw.py.
+
+    This module used to take `_MARK.png >= 254` as the clipped set, on the
+    grounds that the AF568 display high is 65535. The arithmetic is right and
+    the input was wrong: the PNG is written AFTER `apply_tile_field()`, and
+    dividing by a gain above 1 lifts a pixel off the ceiling so it stops reading
+    as clipped. `tilefield_c1` exceeds 1.0 over 54% of its area, so every
+    clipping figure this module printed before today was roughly half the truth.
+    """
+    p = os.path.join(RAW_MASK_DIR, uid + "_clipped.png")
+    if not os.path.exists(p):
+        return None
+    m = np.asarray(Image.open(p).convert("L")) > 0
+    return m if m.shape == shape else None
+
+
+def analyse(row, um_px, fallbacks):
     base = os.path.join(OVERVIEW_DIR, row["animal"], row["marker_channel"], row["scene_uid"])
     mark_path, dapi_path = base + "_MARK.png", base + "_DAPI.png"
     if not (os.path.exists(mark_path) and os.path.exists(dapi_path)):
         return None
 
+    # The 8-bit overview still supplies the tissue/background intensities below -
+    # those are display-ranged comparisons and belong on it. Only the clipped set
+    # moves to the raw plane.
     mark = np.asarray(Image.open(mark_path).convert("L"))
     dapi = np.asarray(Image.open(dapi_path).convert("L"))
-    sat = mark >= SAT_LEVEL
+    sat = None if _force_proxy[0] else raw_clip_mask(row["scene_uid"], mark.shape)
+    if sat is None and not _force_proxy[0]:
+        fallbacks.append(row["scene_uid"])
+    if sat is None:
+        sat = mark >= SAT_LEVEL
     sat_fraction = float(sat.mean())
 
     result = {
@@ -225,7 +267,18 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--figures", type=int, default=8)
     ap.add_argument("--marker", default="AF568")
+    ap.add_argument("--proxy", action="store_true",
+                    help="measure clipping with the OLD 8-bit >=254 proxy instead "
+                         "of the raw masks, writing saturation_<marker>_proxy.csv. "
+                         "For reproducing the pre-fix census with current code.")
     args = ap.parse_args()
+    # Per run, not per process: the app runs stages in-process, and a
+    # module-level list reported the PREVIOUS run's sections on the second.
+    fallbacks = []
+    _force_proxy[0] = args.proxy
+    suffix = "_proxy" if args.proxy else ""
+    if args.proxy:
+        print("PROXY MODE: measuring clipping the old, wrong way, on purpose.")
     os.makedirs(REPORT_DIR, exist_ok=True)
 
     with open(QC_CSV, newline="", encoding="utf-8") as fh:
@@ -233,12 +286,13 @@ def main():
     print(f"{len(rows)} {args.marker} sections\n")
 
     results, samples = [], []
-    worst = sorted(rows, key=lambda r: -float(r["saturated_fraction"] or 0))
+    worst = sorted(rows, key=lambda r: -float(r.get("saturated_fraction_raw")
+                                               or r["saturated_fraction"] or 0))
     want = {r["scene_uid"] for r in worst[: args.figures]}
 
     for i, row in enumerate(rows):
         um_px = float(row["um_px"] or 5.2)
-        out = analyse(row, um_px)
+        out = analyse(row, um_px, fallbacks)
         if out is None:
             continue
         res, imgs = out
@@ -248,14 +302,14 @@ def main():
         if (i + 1) % 200 == 0:
             print(f"  {i + 1}/{len(rows)}")
 
-    path = os.path.join(REPORT_DIR, f"saturation_{args.marker}.csv")
+    path = os.path.join(REPORT_DIR, f"saturation_{args.marker}{suffix}.csv")
     keys = sorted({k for r in results for k in r})
     with open(path, "w", newline="", encoding="utf-8") as fh:
         w = csv.DictWriter(fh, fieldnames=keys); w.writeheader(); w.writerows(results)
     print(f"\nwrote {path}")
 
     if samples:
-        fig_path = os.path.join(REPORT_DIR, f"saturation_{args.marker}.png")
+        fig_path = os.path.join(REPORT_DIR, f"saturation_{args.marker}{suffix}.png")
         figure(samples, fig_path)
         print(f"wrote {fig_path}")
 
@@ -293,6 +347,10 @@ def report(results, marker):
 
     affected = [r for r in results if r.get("verdict") not in (None, "negligible", "no tissue mask")]
     print(f"\n{len(affected)} sections with a non-negligible verdict")
+    if fallbacks:
+        print(f"\n!! {len(fallbacks)} sections had no raw clipping mask and fell "
+              f"back to the 8-bit proxy, which UNDERCOUNTS by roughly 2x.")
+        print(f"   Run 01k_saturation_raw.py. First few: {fallbacks[:5]}")
     print(f"verdicts: {dict(sorted(defaultdict_count(results, 'verdict').items(), key=lambda kv: -kv[1]))}")
     if not affected:
         print("=" * 72)

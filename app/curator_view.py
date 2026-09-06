@@ -5,11 +5,24 @@ autosave, undo, the numbered seed order. Nothing here reimplements any of that.
 This is a frame around them, and it exists to solve exactly two problems that
 appear the moment a page moves from a browser into an embedded view.
 
-**Serve over http, never file://.** The plate images are referenced as
-`../atlas/<set>/...`, above the page's own directory, and a `file://` page throws
-SecurityError from `getImageData` - which is what once killed `drawSec` partway
-and left two empty panels. Serving `out_root` as the document root makes both
-problems go away and costs one thread.
+**Serve over http, never file://.** A `file://` page cannot read its own images
+back: every local image taints the canvas, so `toBlob()` throws and `fetch()` is
+refused. It also cannot reach the plate images at all, since they are referenced
+as `../atlas/<set>/...`, above the page's own directory. Serving `out_root` as
+the document root makes both go away and costs one thread.
+
+*What this is NOT still working around.* An early version split the DAPI channel
+with `getImageData`, whose SecurityError killed `drawSec` partway and left two
+empty panels; that was fixed in the page itself, by compositing instead of
+reading pixels back, and the curator has not called `getImageData` since. So
+from disk the page is fully usable for landmarking, ROI placement, rotation, the
+filters and all three CSV exports. The one capability that genuinely needs http
+is the **Shotgun deck**, which has to read bitmaps back to build a .pptx - the
+page checks `location.protocol` and disables the button with a reason rather
+than failing at the click.
+
+`scripts/serve_curators.py` is this same server without the app, for a browser
+that wants the same terms.
 
 **Catch the download.** Export builds a Blob and clicks an `<a download>`. A
 browser saves it; QtWebEngine raises `downloadRequested` and, with nothing
@@ -144,19 +157,38 @@ class CuratorView(QWidget):
     # ---- downloads --------------------------------------------------------
 
     def _on_download(self, item: QWebEngineDownloadRequest):
-        """Send Export straight to reformatted/, and say where it went.
+        """Send Export to the folder the page lives in, and say where it went.
 
         Accepting without a directory would drop the file in the profile's
-        default download path, which is not anywhere the pipeline reads.
+        default download path, which is not anywhere the pipeline reads. The
+        page's own folder is where its consumers look: the ROI curator's three
+        CSVs in reformatted/, the plate reframer's plate_boxes.csv in atlas/.
         """
         name = item.downloadFileName() or "export.csv"
-        target = os.path.join(self.out_root, "reformatted")
+        target = os.path.join(self.out_root, os.path.dirname(self.rel or "reformatted/"))
         os.makedirs(target, exist_ok=True)
         item.setDownloadDirectory(target)
         item.setDownloadFileName(name)
         item.accept()
-        item.isFinishedChanged.connect(
-            lambda: self.logged.emit(f"exported  {os.path.join(target, name)}"))
+
+        def finished():
+            # isFinishedChanged also fires for a cancelled or failed download,
+            # and "exported" would then name a file that is not there.
+            done = QWebEngineDownloadRequest.DownloadState.DownloadCompleted
+            if item.state() == done:
+                self.logged.emit(f"exported  {os.path.join(target, name)}")
+            else:
+                self.logged.emit(f"export of {name} did not complete ({item.state().name})")
+        item.isFinishedChanged.connect(finished)
+
+    def rebase(self, server, out_root):
+        """Point at a different out_root after Settings changed it."""
+        self.server = server
+        self.out_root = out_root
+        self.store.dir = os.path.join(out_root, "curation")
+        self.refresh_seed()
+        if self.rel:
+            self.show_page(self.rel, self.title.text())
 
     def _open_external(self):
         import webbrowser

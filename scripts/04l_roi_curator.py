@@ -60,6 +60,13 @@ Interaction
   foot of the page script for why that is a declared exception to blinding. With
   no `groups` block in `config.json` it is disabled and says so.
 
+  **`By region` writes the same deck cut the other way** - one slide per atlas
+  REGION rather than per plate. A section appears on every region it carries an
+  ROI for, so it appears more than once, and a favourite carrying no seeded ROI
+  does not appear at all: the grouping comes from the seeds the ROIs answer,
+  which is the same thing `roi_regions.csv` reports. Use it to compare one region
+  across animals; use `Shotgun` to compare one level.
+
   **`f` marks a section favourite** - the subset worth carrying into actual
   quantification. It is orthogonal to the plate assignment, because a section can
   be worth quantifying before anyone has landmarked it, so it sets no other flag
@@ -168,11 +175,20 @@ Run:  python 04l_roi_curator.py
 
 import argparse
 import csv
+import importlib.util
 import json
 import math
 import os
 
-CONFIG_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config.json")
+_lsio = importlib.util.spec_from_file_location(
+    "_lsio", os.path.join(os.path.dirname(os.path.abspath(__file__)), "ls_io.py"))
+IO = importlib.util.module_from_spec(_lsio)
+_lsio.loader.exec_module(IO)
+
+# LS_CONFIG names the file explicitly; the file-relative path is the fallback.
+# Frozen, the scripts sit inside _internal/ while config.json is beside the
+# executable, so the fallback would point at a file that does not exist.
+CONFIG_PATH = os.environ.get("LS_CONFIG") or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config.json")
 with open(CONFIG_PATH, encoding="utf-8") as _fh:
     CONFIG = json.load(_fh)
 
@@ -197,6 +213,112 @@ REGION_GROUP = {r: "/".join(g) for g in AMBIGUOUS_GROUPS for r in g}
 # The canonical reformatted frame every stored coordinate is expressed in. 04o may
 # render the picture larger; the curator divides that back out on export.
 SEC_GRID = 256
+
+# COL_BAND / COL_SPAN group the seeds of a plate into the vertical strips the
+# click-through order runs down; see the long note at their use in `main`. They
+# live up here because the region hulls below reuse COL_SPAN, and a reader has
+# to be able to see that the two thresholds are deliberately the same number
+# rather than two guesses that happen to agree.
+COL_BAND, COL_SPAN = 0.08, 0.12
+
+# A region on one plate is not one blob, and hulling it as though it were is the
+# mistake this constant exists to stop. These regions are BILATERAL: a hull over
+# all of Dl's seeds spans the midline gap and draws a single band across the
+# whole brain. `04f_exclusion_candidates.py` documents the identical failure for
+# section solidity - "two bilaterally separated lobes ... its hull spans the
+# midline gap" - and rejected the metric over it. So a region's seeds are SPLIT
+# before they are hulled, and each part is hulled on its own.
+#
+# The split is a gap in x at COL_SPAN, reused rather than invented. That value is
+# already tuned to sit between the two real scales: wide enough to hold a strip
+# that drifts sideways as it descends (the left lateral arc on plate_013 runs
+# x = 0.05 -> 0.13), narrow enough that a strip cannot chain across the midline
+# and swallow its bilateral partner (plate_013's partners sit at 0.05 and 0.94).
+# That is exactly the discrimination a lobe split needs.
+#
+# EVERY gap over the threshold cuts, not only the widest: nothing says a region
+# has exactly two parts, and a midline structure like POA has one.
+LOBE_GAP = COL_SPAN
+
+
+def convex_hull(pts):
+    """Monotone-chain hull of (x, y) pairs, no repeated closing point.
+
+    Written out rather than imported. This runs wherever the page is generated
+    and is emitted as page data, and pulling scipy in for eight points would be
+    the only reason this stage needed it at all.
+
+    CONVEX, not concave, and that is a limit of the data rather than a
+    preference: a lobe of Dl carries a handful of seeds, and a concave hull over
+    three points is noise dressed as anatomy.
+
+    Fewer than three points is not an error - Vs and Vc carry four seeds in the
+    entire atlas - so a part of one or two comes back as itself and the page
+    draws a dot or a segment. Collinear points collapse to the two ends for the
+    same reason.
+    """
+    p = sorted(set((float(a), float(b)) for a, b in pts))
+    if len(p) < 3:
+        return [list(q) for q in p]
+
+    def cross(o, a, b):
+        return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+
+    lower = []
+    for q in p:
+        while len(lower) > 1 and cross(lower[-2], lower[-1], q) <= 0:
+            lower.pop()
+        lower.append(q)
+    upper = []
+    for q in reversed(p):
+        while len(upper) > 1 and cross(upper[-2], upper[-1], q) <= 0:
+            upper.pop()
+        upper.append(q)
+    return [list(q) for q in lower[:-1] + upper[:-1]]
+
+
+def region_hulls(sd):
+    """One hull per (region, part) on a plate, built from that plate's own seeds.
+
+    This is what the atlas pane draws a region as, instead of leaving the reader
+    to infer the region's extent from a scatter of numbered dots. `sd` is the
+    plate's seed list, already numbered by the click-through order.
+
+    Vertices are FRACTIONS of the plate image, exactly as the seeds are, so the
+    plate can keep being shown in its original unreformatted form and nothing
+    here needs a transform.
+    """
+    by_region = {}
+    for s in sd:
+        by_region.setdefault(s["region"], []).append(s)
+    out = []
+    for region in sorted(by_region):
+        grp = sorted(by_region[region], key=lambda s: s["xf"])
+        parts, cur = [], [grp[0]]
+        for s in grp[1:]:
+            if s["xf"] - cur[-1]["xf"] > LOBE_GAP:
+                parts.append(cur)
+                cur = [s]
+            else:
+                cur.append(s)
+        parts.append(cur)
+        for i, part in enumerate(parts, 1):
+            out.append({
+                "region": region,
+                # Both uncertainties belong to the seeds, so a hull inherits
+                # them rather than inventing its own. `amb` is the same for
+                # every seed of a region by construction. `unk` is true if ANY
+                # seed under the hull is one the atlas marked "??" - a part
+                # holding an uncertain seed is not a settled part.
+                "amb": part[0]["amb"],
+                "unk": 1 if any(s["unk"] for s in part) else 0,
+                "hex": part[0]["hex"],
+                "part": i, "n_parts": len(parts),
+                "seeds": sorted(s["n"] for s in part),
+                "v": [[round(x, 6), round(y, 6)] for x, y in
+                      convex_hull([(s["xf"], s["yf"]) for s in part])],
+            })
+    return out
 
 
 def marker_paths(marker):
@@ -228,6 +350,81 @@ def analysis_uids(marker):
 PLATE_SET = CONFIG.get("atlas_plate_set", {}).get("dir", "plates")
 PLATE_DIR = os.path.join(OUT_ROOT, "atlas", PLATE_SET)
 CURATOR_HTML = os.path.join(REFORMAT_DIR, "roi_curator.html")
+PROVENANCE_CSV = os.path.join(REFORMAT_DIR, "section_provenance.csv")
+
+# The Review mode needs one row per SCANNED section - 2,572, against the ~1,242
+# the rest of the page carries - so the fields are chosen and the rows are
+# emitted as ARRAYS under a shared header rather than as objects. Per-object
+# keys would repeat 22 field names 2,572 times and roughly double the page for
+# nothing. A separate JSON fetched at load is not an option: `fetch()` is
+# refused under file://, which is how this page is often opened.
+PROV_FIELDS = [
+    "scene_uid", "animal", "marker", "slide", "section_order", "czi_file",
+    "scene_index", "status", "decision", "exclusion_class", "decision_reason",
+    "proposed_excluded", "tissue_area_mm2", "focus_score", "largest_mm2",
+    "n_artifact_objects", "artifact_pct_of_tissue", "in_analysis_set",
+    "censored_fraction_in_tissue", "censor_reason",
+    "has_overview", "has_section", "has_section_rgb", "has_section_thumb",
+    "has_mask", "has_censor", "has_tissue",
+    "n_rois", "n_nuclei",
+]
+
+# Columns whose values repeat across thousands of rows. "manually excluded:
+# tissue too damaged to measure" alone appears 789 times, and there are 222
+# distinct CZI files across 2,572 sections. Each of these becomes an index into
+# a per-column list. Measured: 773 KB -> 393 KB, which on a page that was 378 KB
+# is the difference between a nuisance and a problem.
+PROV_POOLED = ("animal", "marker", "slide", "czi_file", "status", "decision",
+               "exclusion_class", "decision_reason", "censor_reason")
+
+
+def load_provenance():
+    """`04p_section_provenance.py`'s table, compacted for embedding.
+
+    `{"f": fields, "p": {field: [distinct values]}, "r": [[values]...]}` - rows
+    are arrays under a shared header, and pooled columns carry an index into `p`
+    instead of the string. Objects per row would repeat 24 field names 2,572
+    times; see PROV_POOLED for the rest.
+
+    **The three image paths are NOT carried.** They are a fixed function of the
+    uid, animal and marker, and at ~110 bytes each over 2,572 rows they were
+    275 KB - a third of the table - to say something the page can derive. What
+    IS carried is whether each file exists, which is the part that cannot be
+    derived. The naming rule therefore lives in two places, here and in
+    `revSrc()`; it is one line in each and it is stated in both.
+
+    Empty when 04p has not been run: the Review button then explains itself and
+    the rest of the page is unaffected.
+    """
+    if not os.path.exists(PROVENANCE_CSV):
+        return {"f": PROV_FIELDS, "p": {}, "r": []}
+    with open(PROVENANCE_CSV, newline="", encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh))
+
+    for r in rows:
+        r["has_overview"] = 1 if r.get("overview_img") else 0
+        r["has_section"] = 1 if r.get("section_img") else 0
+        # Separate from has_section on purpose: all 2,572 have a greyscale
+        # section image, only the 1,506 reformatted ones have a composite.
+        r["has_section_rgb"] = 1 if r.get("section_rgb") else 0
+        r["has_section_thumb"] = 1 if r.get("section_thumb") else 0
+        r["has_mask"] = 1 if r.get("mask_img") else 0
+        # WHETHER the file exists, never which marker. 04j was AF568-only while
+        # it read the 8-bit _MARK.png; reading the raw data lifted that and both
+        # channels have censor masks now, so a marker test is already wrong.
+        r["has_censor"] = 1 if r.get("censor_img") else 0
+        r["has_tissue"] = 1 if r.get("tissue_img") else 0
+
+    pool, index = {}, {}
+    for k in PROV_POOLED:
+        vals = sorted({r.get(k, "") for r in rows})
+        pool[k] = vals
+        index[k] = {v: i for i, v in enumerate(vals)}
+    out = []
+    for r in rows:
+        out.append([index[k][r.get(k, "")] if k in index else r.get(k, "")
+                    for k in PROV_FIELDS])
+    return {"f": PROV_FIELDS, "p": pool, "r": out}
 
 # THE GROUP KEY, and the only place in this pipeline before 06b that reads one.
 # It exists for the Shotgun deck and reaches nothing else - not a count, not a
@@ -352,6 +549,10 @@ input[type=range]{width:100%}
    pane resizes between a 3-column and a 4-column layout. */
 .cell.excl{border-color:#f85149;opacity:.5}
 .cell.excl img{filter:grayscale(1)}
+/* Reinstated in Review mode: curatable now, but NOT in the index until 04a runs
+   again, so it must not look like an ordinary section that was always there. */
+.cell.reinstated{border-color:#3fb950;border-style:dashed;opacity:1}
+.cell.reinstated img{filter:none}
 /* The seeds are drawn in the atlas's own colours on both panes, so the key has
    to use those same colours - reading it off the seed rather than a table here
    is what keeps the two from ever disagreeing. */
@@ -402,6 +603,94 @@ footer{flex:0 0 auto;background:var(--bg);border-top:1px solid var(--line);
        padding:6px 14px;font-size:12px;color:var(--dim)}
 kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-radius:4px;
     background:#1c2027;font:600 11px ui-monospace,monospace}
+
+/* ---- Review mode ------------------------------------------------------- */
+/* The cell vocabulary is 04d_rotation_curator's, deliberately unchanged: a
+   DASHED amber border is a proposal the program made, a SOLID red one is a
+   decision a person made. The operator already reads those two borders that
+   way, and inventing a second language for the same distinction would be the
+   worse choice even though this is a different page. */
+#review{flex:1 1 auto;display:none;min-height:0;overflow:hidden}
+#review.on{display:flex}
+#revGrid{flex:1 1 auto;overflow:auto;padding:8px 10px}
+#revSide{flex:0 0 380px;border-left:1px solid var(--line);overflow:auto;padding:10px}
+.revGroup{margin-bottom:14px}
+.revGroup h4{margin:0 0 5px;font:600 11px ui-monospace,monospace;color:var(--dim);
+             letter-spacing:.06em;position:sticky;top:0;background:var(--bg);padding:3px 0;z-index:1}
+.revCells{display:grid;grid-template-columns:repeat(auto-fill,minmax(78px,1fr));gap:5px}
+.rc{position:relative;border:2px solid var(--line);border-radius:4px;overflow:hidden;
+    cursor:pointer;background:#0f1216}
+.rc img{width:100%;aspect-ratio:1;object-fit:contain;display:block}
+.rc .n{position:absolute;left:2px;top:1px;font:600 9px ui-monospace,monospace;
+       color:#c9d1d9;text-shadow:0 0 3px #000}
+.rc.sel{border-color:#7c5cff;box-shadow:0 0 0 2px rgba(124,92,255,.35)}
+.rc.excluded{border-color:#c0392b;background:#1c1010}
+.rc.excluded img{opacity:.32;filter:grayscale(1)}
+.rc.proposed{border-style:dashed;border-color:var(--warn)}
+.rc.measured{border-color:#3fb950}
+.rc.censored{border-color:#e3b341}
+.rc .flag{position:absolute;right:2px;bottom:1px;font:700 8px ui-monospace,monospace;
+          padding:0 3px;border-radius:2px}
+.rc .flag.rs{background:#1f6feb;color:#fff}
+.rc .flag.dr{background:#c0392b;color:#fff}
+.rc .flag.um{background:#8957e5;color:#fff}
+#revImg{width:100%;border:1px solid var(--line);border-radius:4px;background:#000;
+        display:block;aspect-ratio:1;object-fit:contain}
+#revImgWrap{position:relative}
+/* THE OVERLAYS ARE DRAWN, NOT BLENDED.
+   The first version stacked the mask PNGs with mix-blend-mode. `screen` is
+   invisible over bright tissue - and artifacts are BY DEFINITION the brightest
+   pixels in the section, so it failed exactly where it was needed. `multiply`
+   has the mirrored problem on dark background. No blend mode reads on both.
+   So the two masks are now image SOURCES only, kept in the DOM so the browser
+   loads and caches them, and a canvas composites them at a fixed opacity.
+   Still no getImageData anywhere - that taints on a file:// page. */
+#revMask,#revCensor,#revTissue{display:none}
+#revOv{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+/* FULLSCREEN. The pane is ~320px wide and the overview is 1174x1632, so the
+   detail image is shown at about a fifth of its resolution - fine for "which
+   section is this", useless for "is that debris or tissue". The card goes
+   fullscreen rather than the image alone so the channel and mask toggles come
+   with it; looking closely is exactly when switching layers matters.
+
+   aspect-ratio is dropped here: square is right for a side panel, and wrong
+   for a screen. The canvas follows the image because it is inset:0 on the same
+   wrapper, but its BACKING STORE is sized in drawRevOverlays from clientWidth,
+   so entering and leaving fullscreen has to redraw - see revFull(). */
+/* TWO MECHANISMS, ONE LOOK. The Fullscreen API is the nicer one - it hides the
+   browser chrome too - but it is refused often enough to be useless on its own:
+   a permissions-policy on an embedding viewer, or a page opened from file://,
+   and requestFullscreen resolves having done nothing. So the class is what
+   actually does the work and native fullscreen is a bonus layered on top. Both
+   selectors carry the same rules so the two cannot drift. */
+#revImgCard:fullscreen,#revImgCard.imgmax{background:#000;padding:10px;
+        display:flex;flex-direction:column;gap:6px;box-sizing:border-box}
+#revImgCard.imgmax{position:fixed;inset:0;z-index:9999;margin:0;border-radius:0;
+        overflow:auto}
+#revImgCard:fullscreen #revImgWrap,#revImgCard.imgmax #revImgWrap{
+        flex:1 1 auto;min-height:0;display:flex}
+#revImgCard:fullscreen #revImg,#revImgCard.imgmax #revImg{
+        height:100%;width:100%;aspect-ratio:auto;border:0;object-fit:contain}
+#revImgCard:fullscreen .deliver,#revImgCard.imgmax .deliver{
+        flex:0 0 auto;justify-content:center}
+#revFullBtn{margin-left:auto}
+/* Stepping and reinstating live in other cards, which do not come along when
+   the image card is maximised - so they are repeated here and shown only then.
+   Hidden in the windowed layout on purpose: the same two controls a few
+   centimetres apart is a worse page, not a more capable one. */
+.fsonly{display:none}
+#revImgCard:fullscreen .fsonly,#revImgCard.imgmax .fsonly{display:inline-flex;
+        align-items:center;gap:6px}
+#revImgCard:fullscreen #revFsPos,#revImgCard.imgmax #revFsPos{
+        color:var(--dim);font:11px ui-monospace,monospace;min-width:74px;
+        text-align:center}
+.revChain{font:11px ui-monospace,monospace;line-height:1.5}
+.revChain .st{display:flex;gap:6px;padding:3px 0;border-bottom:1px solid #1b1f26}
+.revChain .st b{flex:0 0 96px;color:var(--dim);font-weight:600}
+.revChain .st span{flex:1 1 auto;color:#c9d1d9;word-break:break-word}
+.revChain .st.no b,.revChain .st.no span{color:#5b6270}
+.revWhy{width:100%;box-sizing:border-box;margin:6px 0;padding:5px;border-radius:4px;
+        border:1px solid var(--line);background:#0f1216;color:#e6e6e6;font:11px ui-monospace,monospace}
 </style>
 <header>
   <h1>ROI curator</h1>
@@ -440,13 +729,135 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
   <button id="guideBtn" class="btn-guide" onclick="toggleGuided()">Guided</button>
   <button id="skipBtn" class="btn-guide" onclick="skipSeed()">Skip seed</button>
   <button class="btn-edit" onclick="undoPt()">Undo point</button>
+  <button id="undoBtn" class="btn-rot" onclick="undoLast()" disabled
+          title="Nothing to undo (u)">Undo</button>
   <button class="btn-edit" onclick="clearPts()">Clear points</button>
   <span class="deliver">
+    <button id="revBtn" class="btn-guide" onclick="toggleReview()">Review</button>
     <button class="primary" onclick="exportCsv()">Export</button>
     <button id="shotBtn" class="btn-shot" onclick="shotgun()">Shotgun</button>
+    <button id="shotRegBtn" class="btn-shot" onclick="shotgun('region')">By region</button>
   </span>
   </span>
 </header>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <!-- LUMINANCE -> ALPHA. Canvas compositing reads alpha, and a greyscale mask
+       PNG is opaque everywhere, so `source-in` kept the fill across the whole
+       rectangle rather than only where the mask was set. This matrix copies the
+       red channel into RGB and into A, which makes the stencil's alpha mean what
+       its brightness means. sRGB so the values are not linearised first. -->
+  <filter id="revLumAlpha" color-interpolation-filters="sRGB">
+    <feColorMatrix type="matrix" values="1 0 0 0 0  1 0 0 0 0  1 0 0 0 0  1 0 0 0 0"/>
+  </filter>
+
+  <!-- THE OVERVIEW PUTS THE MARKER IN BOTH RED AND GREEN, so every section
+       renders yellow whichever channel it is - and the section composites next
+       to it are red for pERK and green for PCNA. Same section, two colour
+       schemes, and the one that looks like a third marker is the overview.
+
+       The duplication is what makes this exact rather than a tint: R and G hold
+       the identical marker image (measured: means equal to 2dp), so dropping
+       one loses nothing and leaves the marker in its own colour. Blue is DAPI
+       and is untouched by the choice.
+
+       DAPI is then lifted 4x. It is not a contrast preference: in tissue the
+       marker runs 4.0-4.6x brighter than DAPI across 24 sampled sections, so
+       at native scale the counterstain is swamped by the thing sitting on top
+       of it and the section reads as marker-only. The pipeline measures the
+       raw data; this is the viewing pane.
+
+       Marker-only (_MARK.png) is greyscale, so R=G=B there and the same matrix
+       gives the marker its colour with no blue to lift - hence a pair per
+       channel rather than one filter with a toggle. -->
+  <filter id="revPerkDapi" color-interpolation-filters="sRGB">
+    <feColorMatrix type="matrix" values="1 0 0 0 0  0 0 0 0 0  0 0 4 0 0  0 0 0 1 0"/>
+  </filter>
+  <filter id="revPerkOnly" color-interpolation-filters="sRGB">
+    <feColorMatrix type="matrix" values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0"/>
+  </filter>
+  <filter id="revPcnaDapi" color-interpolation-filters="sRGB">
+    <feColorMatrix type="matrix" values="0 0 0 0 0  0 1 0 0 0  0 0 4 0 0  0 0 0 1 0"/>
+  </filter>
+  <filter id="revPcnaOnly" color-interpolation-filters="sRGB">
+    <feColorMatrix type="matrix" values="0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 1 0"/>
+  </filter>
+  <!-- DAPI alone. _DAPI.png is greyscale, so R=G=B and only the blue row does
+       anything. Still lifted 4x: the point of a toggle is to compare, and a
+       channel that changed brightness depending on what was next to it would
+       make that comparison a guess. -->
+  <filter id="revDapiOnly" color-interpolation-filters="sRGB">
+    <feColorMatrix type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 4 0 0  0 0 0 1 0"/>
+  </filter>
+  <!-- Both channels off. The image still LOADS - blanked rather than removed -
+       because the overlay canvas takes its size from the base image, so a
+       missing one would take the artifact and censor layers down with it. This
+       way the masks can be read on their own against black. -->
+  <filter id="revBlank" color-interpolation-filters="sRGB">
+    <feColorMatrix type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0"/>
+  </filter>
+</defs></svg>
+<div id="review">
+  <div id="revGrid"></div>
+  <div id="revSide">
+    <div class="card"><h3 id="revTitle">SECTION REVIEW</h3>
+      <div class="kv" id="revHint">pick a section on the left</div>
+      <div class="deliver" style="margin-top:5px">
+        <button class="btn-edit" onclick="revStep(-1)" title="Previous section (up arrow)">&lsaquo;</button>
+        <span class="kv" id="revPos" style="flex:1 1 auto;text-align:center">-</span>
+        <button class="btn-edit" onclick="revStep(1)" title="Next section (down arrow)">&rsaquo;</button>
+      </div>
+      <select id="revFilter" onchange="revRender(); this.blur()" style="width:100%;margin-top:5px">
+        <option value="all">every scanned section</option>
+        <option value="excluded">excluded only - what the pipeline threw out</option>
+        <option value="analysis">in the analysis only</option>
+        <option value="measured">measured only</option>
+        <option value="masked">has an artifact mask</option>
+      </select></div>
+    <div class="card" id="revImgCard"><h3 id="revImgH">IMAGE</h3>
+      <div id="revImgWrap" ondblclick="revFull()" title="double-click for fullscreen">
+        <img id="revImg" alt=""><img id="revMask" alt="">
+        <img id="revCensor" alt=""><img id="revTissue" alt="">
+        <canvas id="revOv"></canvas></div>
+      <div class="kv" id="revImgNote" style="margin-top:4px"></div>
+      <div class="deliver" style="flex-wrap:wrap;margin-top:4px">
+        <button id="revDapiBtn" class="btn-plate" onclick="revLayer('dapi')">DAPI</button>
+        <button id="revMarkBtn" class="btn-fav" onclick="revLayer('mark')">Marker</button>
+        <button id="revArtBtn" class="btn-rot" onclick="revLayer('art')">Artifacts</button>
+        <button id="revCenBtn" class="btn-kill" onclick="revLayer('cen')">Censored</button>
+        <button id="revApplyBtn" class="btn-excl" onclick="revLayer('apply')">Apply mask</button>
+        <span class="fsonly">
+          <button class="btn-edit" onclick="revStep(-1)"
+                  title="Previous section (up arrow)">&lsaquo;</button>
+          <span id="revFsPos">-</span>
+          <button class="btn-edit" onclick="revStep(1)"
+                  title="Next section (down arrow)">&rsaquo;</button>
+          <button id="revFsRestore" class="btn-plate" onclick="revAct('restore')"
+                  title="Put this section back into the pipeline">Reinstate</button>
+        </span>
+        <button id="revFullBtn" class="btn-edit" onclick="revFull()"
+                title="Fullscreen (f) - double-clicking the image does it too">&#9974; Full</button>
+      </div>
+      <label class="chk" style="margin-top:5px;display:block">
+        <input type="checkbox" id="revPenChk" checked onchange="revImg()">
+        hide the PAP pen ring - show only censoring inside the tissue</label></div>
+    <div class="card"><h3>WHAT EACH STAGE DECIDED</h3>
+      <div class="revChain" id="revChain"></div></div>
+    <div class="card"><h3>YOUR DECISION</h3>
+      <textarea class="revWhy" id="revWhy" rows="2"
+                placeholder="why - recorded with the decision"></textarea>
+      <div class="deliver" style="flex-wrap:wrap">
+        <button id="revRestore" class="btn-plate" onclick="revAct('restore')">Reinstate</button>
+        <button id="revDrop" class="btn-kill" onclick="revAct('drop')">Drop</button>
+        <button id="revUnmask" class="btn-rot" onclick="revAct('unmask')">Reject mask</button>
+        <button class="btn-edit" onclick="revAct('')">Clear</button>
+      </div>
+      <div class="kv" id="revState" style="margin-top:5px"></div></div>
+    <div class="card"><h3>EXPORT</h3>
+      <div class="kv" id="revCount">-</div>
+      <button class="primary" onclick="exportReview()" style="margin-top:5px">
+        Export review decisions</button></div>
+  </div>
+</div>
 <div id="panes">
   <div class="pane"><h2 id="secTitle">SECTION - click to place a point</h2>
     <canvas id="cSec" tabindex="0" onmousedown="secDown(event)"></canvas>
@@ -489,11 +900,19 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
   <kbd>f</kbd> favourite &middot; <kbd>x</kbd> exclude this section &middot;
   <kbd>g</kbd> guided (walk the plate's numbered seeds, one click each) &middot;
   <kbd>s</kbd> skip a seed that is not on this section &middot;
-  <kbd>b</kbd> background: mark tissue with NO signal, 2-3 per section - it is
+  <kbd>d</kbd> background disc: mark tissue with NO signal, 2-3 per section - it is
   measured by the same detector, so it reports the false-positive rate here
   (it takes no seed number and does not move the guided cursor) &middot;
+  <kbd>Review</kbd> every scanned section and what each stage decided about it -
+  reinstate one the pipeline excluded, or reject its artifact mask. There,
+  <kbd>&uarr;</kbd>/<kbd>&darr;</kbd> step one section at a time through whatever
+  the filter shows (including the excluded ones), and the layers are independent:
+  <kbd>d</kbd> DAPI on/off, <kbd>k</kbd> the marker on/off, <kbd>v</kbd> artifacts
+  in red, <kbd>c</kbd> censored pixels in cyan, <kbd>m</kbd> apply the mask to see
+  what 04a removed, <kbd>f</kbd> fullscreen (or double-click the image) &middot;
   <kbd>[</kbd><kbd>]</kbd> ROI size (or drag as you place one) &middot;
-  3 pairs for an affine, 6 for a spline &middot;
+  <kbd>u</kbd> undo the last thing, whatever it was (<kbd>z</kbd> stays
+  point-only) &middot;
   <span style="color:#7c5cff">purple</span> = registered &middot;
   <span style="color:#4da3ff">blue</span> = plate assigned only &middot;
   <span style="color:#e3b341">gold edge</span> = favourite &middot;
@@ -535,16 +954,31 @@ const KEY = "ls_roi_curator_v1";
 // Whatever this browser already holds wins. The seed only fills an empty store,
 // so opening a stale copy of the page can never overwrite work in progress.
 const SEED_STATE = __SEED__;
-let S = (function(){
+// WHAT COUNTS AS WORK. `st()` creates a record the moment a section is looked
+// at, and the slider writes into it - so "the store has records" never meant
+// "the operator decided something". These two predicates are the only rule:
+// hasRoiWork is what exportCsv reports; hasDecision adds the two things kept
+// but exported elsewhere (a tilt, a Review-mode verdict).
+const hasRoiWork  = r => !!r && !!(r.assigned || r.fav || r.excl || r.noroi
+                                   || (r.pairs && r.pairs.length));
+const hasDecision = r => hasRoiWork(r) || !!(r && (r.rot || r.rev));
+const decided = obj => Object.fromEntries(
+  Object.entries(obj || {}).filter(([, v]) => hasDecision(v)));
+// Whatever this browser already holds wins - but only what it holds that is a
+// decision. A store of looked-at sections is an empty store.
+function initState(raw, seed){
   try {
-    const raw = localStorage.getItem(KEY);
-    if (raw) { const v = JSON.parse(raw); if (v && Object.keys(v).length) return v; }
+    if (raw) { const v = decided(JSON.parse(raw)); if (Object.keys(v).length) return v; }
   } catch (e) {}
-  return SEED_STATE && Object.keys(SEED_STATE).length ? SEED_STATE : {};
-})();
+  return decided(seed);
+}
+let S = initState(localStorage.getItem(KEY), SEED_STATE);
 let active = null, pending = null;   // pending section point awaiting its plate partner
 const el = id => document.getElementById(id);
-const save = () => localStorage.setItem(KEY, JSON.stringify(S));
+// Only decisions reach disk. The in-memory record for a section being looked
+// at stays (the plate it is on is needed while it is on screen); it is simply
+// not persisted until something is decided about it.
+const save = () => localStorage.setItem(KEY, JSON.stringify(decided(S)));
 // AUTOSAVE.
 //
 // save() already runs on every change - all twelve mutation sites call it - so
@@ -599,6 +1033,14 @@ el("marker").innerHTML =
   MARKERS.map(m=>`<option value="${m.id}">${m.label} - ${m.n}</option>`).join("")
   + (MARKERS.length>1 ? `<option value="both">both channels - ${DATA.length}</option>` : "");
 el("marker").value = DEFAULT_MARKER;
+// One listener per container instead of an onclick string per cell: the uid
+// never has to survive being pasted into a JS string literal.
+el("strip").addEventListener("click", e => {
+  const c = e.target.closest && e.target.closest(".cell"); if(c) select(c.dataset.uid);
+});
+el("revGrid").addEventListener("click", e => {
+  const c = e.target.closest && e.target.closest(".rc"); if(c) revPick(c.dataset.uid);
+});
 const D_BY = Object.fromEntries(DATA.map(d=>[d.uid,d]));
 // Which channel is on screen. `both` is a real option - useful for reading
 // progress across the pair - but the two are still independent sections; nothing
@@ -821,6 +1263,7 @@ function markerOnly(img){
 
 function drawSec(){
   const c=el("cSec"), x=c.getContext("2d"); if(!secImg.naturalWidth) return;
+  syncFrame(active);          // pairs drawn in the frame of the image on screen
   const g=secGeom();
   c.width=g.D; c.height=g.D;
   x.clearRect(0,0,g.D,g.D);
@@ -1023,6 +1466,7 @@ function secDown(e){
     rotDrag={x:e.clientX, rot:effRot(), live:false}; e.preventDefault();
     return;
   }
+  syncFrame(active);
   const [ix,iy] = can2img(...canvasXY(el("cSec"), e), secGeom());
   ptDrag = {ix, iy, r: defaultR()};
   e.preventDefault(); drawSec(); status();
@@ -1144,6 +1588,36 @@ function onRoiSize(v){
 }
 const imgK = () => (secImg.naturalWidth || SEC_GRID) / SEC_GRID;
 const defaultR = () => PT_R_CANON * imgK();
+// ---- the frame a section's pairs are in ------------------------------------
+// Every pair is stored in the pixels of the image the section was SHOWN with,
+// and that is not one number per page: a section with a colour composite is
+// shown at 768 (04o renders at 3x the canonical grid), one without falls back
+// to the 256 greyscale. Both kinds sit on one page. So the frame is recorded on
+// the section's record the moment a pair is stored, and export divides each
+// section by its OWN frame rather than by whatever happens to be on screen.
+//
+// A record with no frame predates this. Its pairs were placed on whatever image
+// the page showed for that section, which is what the rgb flag says - the same
+// rule 04q_import_curation.py uses when it rebuilds a store from the CSVs.
+const RGB_FRAME = 3 * SEC_GRID;
+const frameOf = uid => D_BY[uid]?.rgb ? RGB_FRAME : SEC_GRID;
+const frameIn = (s, uid) => s.frame || frameOf(uid);
+// A store written without --rgb holds 256-frame pairs; opened under --rgb the
+// section is 768 wide and the pairs would sit in the top-left ninth of it. So
+// when the image on screen is not the frame the record says, the pairs are
+// lifted into it - positions and radii, so nothing moves relative to the
+// tissue - and the record updated. Export reads canonical either way.
+function syncFrame(uid){
+  const s = S[uid], w = secImg.naturalWidth;
+  if(!s || !w || !s.pairs.length) return;
+  const have = frameIn(s, uid);
+  if(have === w) { if(!s.frame){ s.frame = w; } return; }
+  const k = w / have;
+  s.pairs.forEach(p => { p[0]*=k; p[1]*=k; if(p[5]) p[5]*=k; });
+  s.frame = w; save();
+}
+// Called wherever a pair is pushed: the frame is the image it was clicked on.
+const stampFrame = (s, uid) => { syncFrame(uid); s.frame = secImg.naturalWidth || frameOf(uid); };
 const pairR = p => p[5] || defaultR();      // 4- and 5-element pairs predate this
 let ptDrag = null;                          // {ix, iy, r} while the button is down
 
@@ -1184,7 +1658,11 @@ function toggleBgMode(){
 }
 
 function commitPoint(ix, iy, r){
+  // One mark for all three landings - background disc, guided, and the free
+  // pair below - because they are one action to whoever placed it.
+  undoMark(active, bgMode ? "background disc" : "place point");
   const s=st(active);
+  stampFrame(s, active);
   if(bgMode){
     // No plate coordinate, and deliberately no seed number: the guided cursor
     // must not advance, or placing a background disc would silently consume the
@@ -1221,20 +1699,96 @@ function clickPl(e){
     return;
   }
   if(!pending) return;
+  stampFrame(st(active), active);
   st(active).pairs.push([pending[0],pending[1],px,py,0,pending[2]||defaultR()]);
   pending=null;
   save(); drawSec(); drawPl(); status(); paintCell(active);
 }
+// GENERAL UNDO - one step back, whatever the last thing was.
+//
+// `z` / "Undo point" is narrow on purpose: it takes back the last landmark and
+// nothing else, which is right in the middle of placing a row of them. It does
+// nothing about the other eight ways a section's record changes - plate,
+// assigned, favourite, no-ROI, exclude, rotation, background disc, a cleared
+// set of points - and those are exactly the ones that are easy to hit by
+// accident and awkward to reconstruct by hand.
+//
+// SNAPSHOTS, NOT INVERSE OPERATIONS. Every action here is a small edit to one
+// section's record, so storing the record as it was is both simpler and safer
+// than writing an inverse for each one: a missing inverse silently half-undoes,
+// while a snapshot cannot. `prev: null` records that the section had NO entry,
+// so undoing the first edit to an untouched section removes the record rather
+// than leaving an empty one the export would report.
+const UNDO = [];
+const UNDO_MAX = 80;
+let undoAt = 0;
+
+function undoMark(uid, label){
+  if(!uid) return;
+  // COALESCE A DRAG. The slider fires oninput per pixel, so a single scrub from
+  // plate 12 to plate 30 would otherwise bury everything else under eighteen
+  // identical-looking steps. Same section, same label, within a moment: keep the
+  // OLDEST snapshot, because that is the state the drag started from.
+  const last = UNDO[UNDO.length - 1];
+  const now = Date.now();
+  if(last && last.uid === uid && last.label === label && now - last.at < 900){
+    last.at = now;
+    return;
+  }
+  UNDO.push({uid, label, at: now,
+             prev: Object.prototype.hasOwnProperty.call(S, uid)
+                   ? JSON.stringify(S[uid]) : null});
+  if(UNDO.length > UNDO_MAX) UNDO.shift();
+  undoState();
+}
+
+function undoLast(){
+  const e = UNDO.pop();
+  if(!e){ undoState(); return; }
+  // ORDER MATTERS HERE, and getting it wrong silently dropped the plate.
+  //
+  // select() writes s.plate as a side effect - the slider deliberately does not
+  // follow the section, so selecting one records whatever plate is on screen.
+  // Restoring first and selecting second therefore undid everything EXCEPT the
+  // plate, which select() promptly overwrote again. So the section is shown
+  // first, and the record put back afterwards.
+  if(DATA.some(d => d.uid === e.uid)) select(e.uid);
+  if(e.prev === null) delete S[e.uid];
+  else {
+    S[e.uid] = JSON.parse(e.prev);
+    // and move the slider to what the restored record says, rather than leaving
+    // it pointing at a plate the section no longer claims.
+    if(active === e.uid){
+      el("slider").value = S[e.uid].plate;
+      onSlide(S[e.uid].plate);
+    }
+  }
+  save();
+  syncReinstated();       // a reinstatement undone has to leave the strip again
+  render(); status(); undoState();
+}
+
+function undoState(){
+  const b = el("undoBtn");
+  if(!b) return;
+  const e = UNDO[UNDO.length - 1];
+  b.disabled = !e;
+  b.title = e ? `Undo: ${e.label} on ${e.uid}  (u)`
+              : "Nothing to undo (u)";
+}
+
 function undoPt(){
   if(!active) return;
+  undoMark(active, "undo point");
   if(pending){ pending=null; } else st(active).pairs.pop();
   gSync();                       // the cursor follows the pairs, both ways
   save(); drawSec(); drawPl(); status(); paintCell(active);
 }
-function clearPts(){ if(!active) return; st(active).pairs=[]; pending=null; save();
+function clearPts(){ if(!active) return; undoMark(active, "clear points"); st(active).pairs=[]; pending=null; save();
   gSync(); drawSec(); drawPl(); status(); paintCell(active); }
 
 function status(){
+  if(!active) return;
   const s=st(active), T=transform(s.pairs);
   const nRoi = roiPairs(s).length, nBg = bgPairs(s).length;
   el("npair").textContent = nRoi;
@@ -1311,8 +1865,7 @@ function status(){
     el("fit").innerHTML = T.kind==="tps"
       ? `<b style="color:#7c5cff">thin-plate spline</b> on ${nRoi} points `
         + `&middot; residual is 0 by construction`
-      : `<b>affine</b> &middot; mean residual <b>${(tot/nRoi).toFixed(1)} px</b>`
-        + ` &middot; ${TPS_MIN - nRoi} more point${TPS_MIN-nRoi===1?"":"s"} for a spline`;
+      : `<b>affine</b> &middot; mean residual <b>${(tot/nRoi).toFixed(1)} px</b>`;
     const P=PLATES[s.plate];
     // Ambiguous regions are listed as their group and flagged, so the summary
     // never reads as a firmer claim than the section supports.
@@ -1335,8 +1888,7 @@ function status(){
       : "<span class='unlab'>this plate has no region seeds</span>";
   } else {
     el("fit").textContent = "";
-    el("regInfo").innerHTML = `needs 3 pairs for an affine, ${TPS_MIN} for a spline `
-      + `(have ${nRoi})`
+    el("regInfo").innerHTML = `${nRoi} landmark${nRoi === 1 ? "" : "s"} placed`
       + bgLine(s);
     roiPairs(s).forEach((_,i)=>html+=`<div><span>#${i+1}</span><span>-</span></div>`);
   }
@@ -1373,18 +1925,21 @@ function status(){
 // distinction between "the operator chose this plate" and "this section has
 // never been looked at" reliable.
 function onSlideUser(v){
+  undoMark(active, "plate");
   const s=st(active); s.assigned=true; save(); onSlide(v); paintCell(active);
 }
-function markAssigned(){ if(active){ st(active).assigned=true; save(); paintCell(active); status(); } }
+function markAssigned(){ if(active){ undoMark(active, "assign plate"); st(active).assigned=true; save(); paintCell(active); status(); } }
 // Favourite marks the subset chosen for actual quantification. It is ORTHOGONAL
 // to the plate assignment - a section can be worth quantifying before anyone has
 // landmarked it - so it sets no other flag and the export carries it on its own.
 function toggleFav(){
   if(!active) return;
+  undoMark(active, "favourite");
   const s=st(active); s.fav=!s.fav; save(); paintCell(active); status();
 }
 function toggleNoRoi(){
   if(!active) return;
+  undoMark(active, "no ROI");
   const s=st(active); s.noroi=!s.noroi; if(s.noroi) s.assigned=true;
   save(); paintCell(active); status();
 }
@@ -1395,6 +1950,7 @@ function toggleNoRoi(){
 // whoever reads the export.
 function toggleExcl(){
   if(!active) return;
+  undoMark(active, "exclude");
   const s=st(active);
   s.excl = !s.excl;
   save(); paintCell(active); status();
@@ -1443,9 +1999,30 @@ function onSlide(v){
 }
 
 function select(uid, keep){
+  // THE SECTION MAY NOT BE IN THE FILTERED VIEW, and this used to be a crash
+  // that left the tool lying about what was selected.
+  //
+  // `rows()` is the strip AFTER the filters. Ticking "hide excluded" or
+  // "favourites only" while a section is active drops it out, and the next
+  // select() found i = -1, took list[-1] as undefined, and threw on `d.uid` -
+  // but `active` had already been reassigned on the line above. So the big view
+  // still showed the PREVIOUS section while every subsequent edit went to the
+  // hidden one: assigning a plate wrote plate and assigned=true onto a section
+  // that was not on screen, which reads as "this section will not take a plate".
+  //
+  // So the row is looked up in the unfiltered set when the filtered one does not
+  // have it, and the position line says the filter is hiding it rather than
+  // claiming a place in a list it is not in. Nothing is reassigned before we
+  // know the section can actually be drawn.
+  const list = rows();
+  const i = list.findIndex(d => d.uid === uid);
+  const d = i >= 0 ? list[i] : DATA.find(x => x.uid === uid);
+  if(!d) return;                  // not a section this page has at all
   active = uid; pending = null; gSync();
-  const list=rows(), i=list.findIndex(d=>d.uid===uid), d=list[i], s=st(uid);
-  el("secInfo").innerHTML = `<b>${d.uid}</b><br>section ${d.order} &middot; ${i+1} of ${list.length}`;
+  const s = st(uid);
+  el("secInfo").innerHTML = `<b>${d.uid}</b><br>section ${d.order} &middot; `
+    + (i >= 0 ? `${i + 1} of ${list.length}`
+              : `<span style="color:var(--warn,#d29922)">hidden by the current filter</span>`);
   // The plate slider does NOT follow the section. Serial sections sit at
   // neighbouring atlas levels, so the plate just scrubbed to is nearly always
   // still the right one; reloading each section's stored plate meant every z/x
@@ -1465,9 +2042,19 @@ function select(uid, keep){
   if(!keep) document.querySelector(`[data-uid="${CSS.escape(uid)}"]`)
     ?.scrollIntoView({inline:"center", block:"nearest"});
 }
-const isDone   = uid => (S[uid]?.pairs?.length || 0) >= 3;
+// LANDMARKS, not pairs: a background disc is a pair too, and three of them
+// would light the cell green with nothing registered.
+const nRoi     = uid => S[uid]?.pairs ? roiPairs(S[uid]).length : 0;
+const isDone   = uid => nRoi(uid) >= 3;
 const isNoRoi  = uid => !!S[uid]?.noroi;
-const isExcl   = uid => !!S[uid]?.excl;
+// A REINSTATEMENT BEATS THE EXCLUSION FLAG. Both live in the same record, and
+// a section that is flagged excluded while carrying act:"restore" would be
+// hidden by "hide excluded", drawn red, and counted as excluded - by the same
+// tool the operator just used to put it back. revAct() clears the flag too, so
+// this is a belt on top of that; it also covers a store written before that
+// existed.
+const isExcl   = uid => !!S[uid]?.excl && S[uid]?.rev?.act !== "restore";
+const isReinstated = uid => S[uid]?.rev?.act === "restore";
 // Plate chosen deliberately but not landmarked - a real decision, and one the
 // export used to discard.
 const isPlateOnly = uid => !!S[uid]?.assigned && !isDone(uid) && !isNoRoi(uid);
@@ -1480,11 +2067,15 @@ function cellClass(uid){
   const base = isExcl(uid) ? "excl"
              : isDone(uid) ? "done" : isNoRoi(uid) ? "noroi"
              : isPlateOnly(uid) ? "plateonly" : "";
-  return S[uid]?.fav ? base + " fav" : base;
+  const cls = isReinstated(uid) ? (base + " reinstated").trim() : base;
+  return S[uid]?.fav ? cls + " fav" : cls;
 }
 function cellTag(uid){
-  const s=S[uid], n=s?.pairs?.length||0;
+  const s=S[uid], n=nRoi(uid);
   if(isExcl(uid)) return "excluded";
+  // Said on the cell, because a reinstated section is curatable but is NOT in
+  // the index yet, and nothing else on the strip distinguishes it.
+  if(isReinstated(uid) && !n) return "reinstated";
   return isNoRoi(uid) ? "no ROI" : n ? n+" pts"
        : isPlateOnly(uid) ? PLATES[s.plate].id.replace("plate_","pl ") : "";
 }
@@ -1648,7 +2239,7 @@ function render(){
   counts();
   el("strip").innerHTML = list.map(d=>
     `<div class="cell ${cellClass(d.uid)} ${active===d.uid?"active":""}"
-      data-uid="${d.uid}" onclick="select('${d.uid}')">
+      data-uid="${esc(d.uid)}">
       <img src="${d.img}" loading="lazy" alt="" style="transform:${rotCss(rotOf(d.uid))}">
       <div class="cap">${d.order}<br>${cellTag(d.uid)}</div></div>`).join("");
   if(active && !list.some(d=>d.uid===active)) active=null;
@@ -1657,6 +2248,10 @@ function render(){
 }
 
 addEventListener("keydown", e=>{
+  // Ctrl/Cmd/Alt chords belong to the browser - Ctrl+F finds, Ctrl+X cuts -
+  // and a chord must never read as the bare letter. Shift is a real modifier
+  // here (Shift+drag snaps), so it is left alone.
+  if(e.ctrlKey || e.metaKey || e.altKey) return;
   // A focused control eats its own keys - but only the ones it actually uses.
   //
   // This used to bail on ANY input, which killed the arrows for good: tick
@@ -1674,6 +2269,32 @@ addEventListener("keydown", e=>{
     if(t.type==="range" && e.key.startsWith("Arrow")) return;
     if(t.type==="text" || t.type==="search" || t.type==="number") return;
   }
+  // Review mode has its OWN keys and must not fall through to the ROI ones.
+  // Every letter below is bound: `x` excludes a section from measurement, `b`
+  // starts a background disc. Firing those from a screen that is about the
+  // upstream decisions would be a silent edit to work the operator is not
+  // looking at.
+  if(revOn){
+    if(e.key==="ArrowDown"){ revStep(1); e.preventDefault(); }
+    else if(e.key==="ArrowUp"){ revStep(-1); e.preventDefault(); }
+    else if(e.key==="d" || e.key==="D"){ revLayer("dapi"); }
+    // `k` for the marker, because `m` is already the mask and moving a binding
+    // people have in their fingers costs more than an imperfect mnemonic.
+    else if(e.key==="k" || e.key==="K"){ revLayer("mark"); }
+    else if(e.key==="v" || e.key==="V"){ revLayer("art"); }
+    else if(e.key==="c" || e.key==="C"){ revLayer("cen"); }
+    else if(e.key==="m" || e.key==="M"){ revLayer("apply"); }
+    else if(e.key==="f" || e.key==="F"){ revFull(); }
+    // Escape closes it. With native fullscreen refused there is no
+    // fullscreenchange to listen for, so the key has to be handled directly -
+    // otherwise the only way out of a maximised card is the button, and a
+    // maximised card is exactly when the button is easiest to lose.
+    else if(e.key==="Escape" && el("revImgCard")
+            && el("revImgCard").classList.contains("imgmax")){
+      revFull(false); e.preventDefault();
+    }
+    return;
+  }
   if(!active) return;
   const list=rows(), i=list.findIndex(d=>d.uid===active);
   if(e.key==="ArrowRight"){ stepPlate(1); e.preventDefault(); }
@@ -1689,7 +2310,12 @@ addEventListener("keydown", e=>{
   else if(e.key==="x" || e.key==="X"){ toggleExcl(); }
   else if(e.key==="z" || e.key==="Z"){ undoPt(); }
   else if(e.key==="r" || e.key==="R"){ restoreTilt(); }
-  else if(e.key==="b" || e.key==="B"){ toggleBgMode(); }
+  // u is the general undo, d is the background DISC, and b is deliberately
+  // unbound: it was the disc for long enough to be muscle memory, and a key
+  // that used to place something and now undoes is the worst of both. Leaving
+  // it dead is the safe end of that trade.
+  else if(e.key==="u" || e.key==="U"){ undoLast(); }
+  else if(e.key==="d" || e.key==="D"){ toggleBgMode(); }
   else if(e.key==="g" || e.key==="G"){ toggleGuided(); }
   else if(e.key==="s" || e.key==="S"){ skipSeed(); }
   else if(e.key==="[" || e.key==="]"){
@@ -1738,11 +2364,14 @@ function exportCsv(){
     // to the section.
     // Background discs are work too, so a section carrying only those is
     // reported rather than dropped for having made no other decision.
-    if(!s || !(s.assigned || s.fav || s.excl || s.pairs.length)) continue;
+    if(!hasRoiWork(s)) continue;
     const P=PLATES[s.plate], n=roiPairs(s).length, nBg=bgPairs(s).length;
     const T=transform(s.pairs);
     const chosen = s.assigned || n>0;   // is the plate a decision, or still the default?
-    const status = s.excl ? "excluded"
+    // isExcl(), not s.excl: a Review-mode reinstatement beats the flag, and the
+    // strip already honours that. The two must not disagree.
+    const excl = isExcl(d.uid);
+    const status = excl ? "excluded"
                  : s.noroi ? "no_roi" : n>=3 ? "registered"
                  : chosen ? "plate_only" : "favourite_only";
     // Blank rather than plate_001 when no plate was ever chosen - otherwise a
@@ -1750,18 +2379,25 @@ function exportCsv(){
     pl.push([d.uid,d.animal,d.m,d.sub,d.order,PLATE_SET, chosen?P.id:"", chosen?s.plate:"",
              chosen?(P.labelled?1:0):"", n, nBg, T?T.kind:"", status,
              s.fav?1:0, (s.rot||0).toFixed(1),
-             s.excl?1:0]);
+             excl?1:0]);
     // Gate on the landmarks themselves, NOT on status - a section that was
     // landmarked and then excluded still has that work, and keying this on
     // status would silently drop it from both files the moment the exclude
     // button was pressed. The exclusion is recorded in roi_plates.csv; dropping
     // a section is a filter on that, not a hole in this one.
-    // Coordinates are captured in the pixels of whatever image is on screen, and
-    // 04o can render that at a multiple of the canonical grid. Divide by the
-    // multiple on the way out so sec_x/sec_y always mean canonical-frame pixels -
-    // the same frame the masks and every other reformatted product live in.
-    // Residuals are a length in the same space, so they scale too.
-    const K = (secImg.naturalWidth || SEC_GRID) / SEC_GRID;
+    // Coordinates are captured in the pixels of the image the SECTION was shown
+    // with, and 04o renders that at a multiple of the canonical grid only where
+    // it has built a composite. Divide by each section's own multiple on the
+    // way out so sec_x/sec_y always mean canonical-frame pixels - the same
+    // frame the masks and every other reformatted product live in. Residuals
+    // are a length in the same space, so they scale too.
+    //
+    // This used to read the image on screen once and divide every row by it,
+    // which was right only while every section on the page had the same frame.
+    // With composites for some sections and greyscale for the rest, the rows
+    // of whichever kind was not active were three times too large or too
+    // small, and nothing on screen said so.
+    const K = frameIn(s, d.uid) / SEC_GRID;
 
     // Background discs need neither a transform nor three landmarks: they are
     // positions on the section, full stop. Emitting them ABOVE the gate means a
@@ -1814,8 +2450,13 @@ function exportCsv(){
   dl(lm,"roi_landmarks.csv");
   dl(rg,"roi_regions.csv");
 }
+// Every cell goes through csvq: a field with a comma, a quote or a newline is
+// RFC-4180 quoted, anything else is written as it was. Region names like
+// "Rm (Raphe) ??" and subsets like roi_worklist:core are already in these
+// files, and the first name to carry a comma would have shifted every column
+// after it - in a file whose readers index columns by header.
 function dl(rowsArr,name){
-  const b=new Blob([rowsArr.map(r=>r.join(",")).join("\\n")],{type:"text/csv"});
+  const b=new Blob([rowsArr.map(r=>r.map(csvq).join(",")).join("\\n")],{type:"text/csv"});
   const a=document.createElement("a"); a.href=URL.createObjectURL(b); a.download=name; a.click();
 }
 // Write the seed through on first load, so this browser holds it like any other
@@ -1829,7 +2470,7 @@ try { if(!localStorage.getItem(KEY) && Object.keys(S).length) save(); } catch(e)
 (function(){
   const seedN = Object.keys(SEED_STATE || {}).length;
   if(!seedN) return;
-  const missing = Object.keys(SEED_STATE).filter(u => !S[u]).length;
+  const missing = Object.keys(SEED_STATE).filter(u => hasDecision(SEED_STATE[u]) && !hasDecision(S[u])).length;
   if(!missing) return;
   const el2 = el("seedOffer");
   el2.style.display = "";
@@ -1843,7 +2484,8 @@ try { if(!localStorage.getItem(KEY) && Object.keys(S).length) save(); } catch(e)
 // what it does not have. Replacing would make the button a way to lose work.
 function adoptSeed(){
   const before = Object.keys(S).length;
-  for(const [uid, v] of Object.entries(SEED_STATE || {})) if(!S[uid]) S[uid] = v;
+  for(const [uid, v] of Object.entries(SEED_STATE || {}))
+    if(hasDecision(v) && !hasDecision(S[uid])) S[uid] = v;
   save();
   el("seedOffer").style.display = "none";
   render(); status();
@@ -1872,8 +2514,13 @@ function adoptSeed(){
 // dependency), and the deck uses real picture and text-box shapes so everything
 // on the slide can still be moved, resized and edited in PowerPoint.
 
-const SHOT_COLS = 5, SHOT_ROWS = 2;
+const SHOT_COLS = 5, SHOT_ROWS = 2, SHOT_ROWS_REGION = 4;
 const SHOT_PER_HALF = SHOT_COLS * SHOT_ROWS;
+// A region slide has no plate picture to make room for - a region spans several
+// plates, and drawing any one of them would assert a level the slide does not
+// have - so the band the plate occupied goes back to the grid: four rows a side
+// rather than two.
+const perHalf = by => SHOT_COLS * (by === "region" ? SHOT_ROWS_REGION : SHOT_ROWS);
 const EMU = 914400;                             // EMU per inch, the OOXML unit
 const SLIDE_W = 12192000, SLIDE_H = 6858000;    // 13.333 x 7.5 in, 16:9
 const inch = v => Math.round(v * EMU);
@@ -1890,6 +2537,12 @@ const SHOT_L = {
   gridY: 2.58, cell: 1.15, gapX: 0.08, gapY: 0.10, capH: 0.20, capSz: 800,
   divTop: 0.58, divBot: 7.20,
 };
+// The same block with the plate band reclaimed. Cell size, gaps and type sizes
+// are deliberately shared, so a region slide and a plate slide are comparable
+// side by side rather than merely similar.
+const SHOT_L_REGION = Object.assign({}, SHOT_L,
+  {headY: 0.66, gridY: 1.14, divTop: 0.58, divBot: 6.98});
+
 const INK = "1A1A1A", DIM = "6E7681", RULE = "C9D1D9";
 
 // Served over http the canvas is clean and fetch works; opened straight off
@@ -1898,8 +2551,10 @@ const INK = "1A1A1A", DIM = "6E7681", RULE = "C9D1D9";
 // button instead of failing at the click.
 function shotWhyNot(){
   if(location.protocol === "file:")
-    return "open the curator from the app, or its Open in browser button - a page "
-         + "loaded from disk cannot read its own images back, so no deck can be built";
+    return "this page was opened from disk, and a file:// page cannot read its own "
+         + "images back, so no deck can be built. Serve it instead: run "
+         + "serve_curators.bat (or python scripts/serve_curators.py), or open the "
+         + "curator from the app - everything else on this page works either way";
   if(!(GROUPS && GROUPS.order && GROUPS.order.length
        && GROUPS.by_animal && Object.keys(GROUPS.by_animal).length))
     return "no group key declared - fill in groups.order and groups.by_animal in "
@@ -1912,6 +2567,12 @@ function shotBtnState(){
   el("shotBtn").disabled = !!why;
   el("shotBtn").title = why
     || "favourites with a plate, one slide per plate, split by treatment";
+  // Same gate, both decks: neither can read a tainted canvas, and neither can be
+  // laid out without the key.
+  el("shotRegBtn").disabled = !!why;
+  el("shotRegBtn").title = why
+    || "the same favourites, one slide per atlas region - a section appears on "
+     + "every region it carries an ROI for";
   // Say it ON SCREEN, not only in a tooltip. A disabled button with no visible
   // reason is indistinguishable from a broken one, and nobody hovers a control
   // they have already decided is dead.
@@ -1944,31 +2605,65 @@ function shotPick(){
   return {take, noPlate, noGroup, excluded};
 }
 
-// Slides are (plate x marker), in plate order, pERK before PCNA. A half holding
-// more than SHOT_PER_HALF runs on to a continuation slide rather than being cut
-// short - both halves advance together, so a row always faces its counterpart.
-function shotSlides(take){
+// Which regions a section carries, read from the seeds its ROIs answer. A
+// free-clicked ROI has no seed and therefore no region - exactly how exportCsv
+// treats it - so the region deck can say nothing roi_regions.csv does not.
+function secRegions(s){
+  const P = PLATES[s.plate], out = [];
+  if(!P || !P.seeds) return out;
+  for(const p of roiPairs(s)){
+    const sd = p[4] ? P.seeds[p[4] - 1] : null;
+    if(sd && out.indexOf(sd.region) < 0) out.push(sd.region);
+  }
+  return out;
+}
+
+// Slides are (plate x marker), in plate order, pERK before PCNA - or
+// (region x marker) when `by` is "region", where a section lands on every region
+// slide it carries an ROI for, and on none at all if it carries no seeded ROI.
+//
+// Regions run in the order of the FIRST plate they appear on rather than by
+// name, so the deck still reads rostral to caudal: alphabetical would open on
+// the anterior tuberal nucleus and interleave telencephalon with diencephalon.
+//
+// A half holding more than perHalf(by) runs on to a continuation slide rather
+// than being cut short - both halves advance together, so a row always faces its
+// counterpart.
+function shotSlides(take, by){
   const order = MARKERS.map(m => m.id);
-  const by = new Map();
+  const per = perHalf(by);
+  const groups = new Map();
+  const add = (key, meta, it) => {
+    if(!groups.has(key)) groups.set(key, Object.assign({items: []}, meta));
+    const g = groups.get(key);
+    g.items.push(it);
+    g.at = Math.min(g.at, it.s.plate);
+  };
   for(const it of take){
-    const k = it.s.plate + "|" + it.d.m;
-    if(!by.has(k)) by.set(k, []);
-    by.get(k).push(it);
+    if(by === "region")
+      for(const r of secRegions(it.s))
+        add(r + "|" + it.d.m, {region: r, marker: it.d.m, at: it.s.plate}, it);
+    else
+      add(it.s.plate + "|" + it.d.m,
+          {plate: it.s.plate, marker: it.d.m, at: it.s.plate}, it);
   }
   const anim = a => +a.slice(2);
   const out = [];
-  const keys = [...by.keys()].sort((a, b) => {
-    const pa = a.split("|"), pb = b.split("|");
-    return (+pa[0]) - (+pb[0]) || order.indexOf(pa[1]) - order.indexOf(pb[1]);
+  const keys = [...groups.keys()].sort((a, b) => {
+    const A = groups.get(a), B = groups.get(b);
+    return A.at - B.at
+        || String(A.region || "").localeCompare(String(B.region || ""))
+        || order.indexOf(A.marker) - order.indexOf(B.marker);
   });
   for(const k of keys){
-    const items = by.get(k), plate = +k.split("|")[0], marker = k.split("|")[1];
-    const halves = GROUPS.order.map(g => items.filter(it => it.g === g)
+    const g = groups.get(k), items = g.items;
+    const halves = GROUPS.order.map(gr => items.filter(it => it.g === gr)
       .sort((a, b) => anim(a.d.animal) - anim(b.d.animal) || a.d.order - b.d.order));
-    const pages = Math.max(1, ...halves.map(h => Math.ceil(h.length / SHOT_PER_HALF)));
+    const pages = Math.max(1, ...halves.map(h => Math.ceil(h.length / per)));
     for(let p = 0; p < pages; p++)
-      out.push({plate, marker, page: p + 1, pages, n: items.length,
-                halves: halves.map(h => h.slice(p * SHOT_PER_HALF, (p + 1) * SHOT_PER_HALF))});
+      out.push({plate: g.plate, region: g.region, marker: g.marker,
+                page: p + 1, pages, n: items.length,
+                halves: halves.map(h => h.slice(p * per, (p + 1) * per))});
   }
   return out;
 }
@@ -2172,16 +2867,21 @@ const PRESPROPS = XML_HEAD + `<p:presentationPr ${NS_A} ${NS_R} ${NS_P}/>`;
 
 // ---- the deck --------------------------------------------------------------
 
-function shotgun(){
+function shotgun(by){
   const why = shotWhyNot();
   if(why){ shotSay(why); return; }
   el("shotBtn").disabled = true;
-  return shotBuild()
+  el("shotRegBtn").disabled = true;
+  return shotBuild(by)
     .catch(err => { shotSay("shotgun failed: " + ((err && err.message) || err)); throw err; })
     .then(() => shotBtnState(), () => shotBtnState());
 }
 
-async function shotBuild(){
+async function shotBuild(by){
+  // Normalised once, here, rather than trusted from the caller: everything below
+  // branches on it, and a stray truthy value would half-build a region deck.
+  const mode = by === "region" ? "region" : "plate";
+  const L = mode === "region" ? SHOT_L_REGION : SHOT_L;
   const got = shotPick();
   const take = got.take;
   if(!take.length){
@@ -2190,7 +2890,15 @@ async function shotBuild(){
           + (got.noPlate.length > 1 ? "s" : "") + " with no plate)" : ""));
     return;
   }
-  const slides = shotSlides(take);
+  const slides = shotSlides(take, mode);
+  // Reachable only in region mode, and worth its own message: every favourite
+  // can have a plate and still produce no region slide, because the regions come
+  // from seeded ROIs and a section can be landmarked with none.
+  if(!slides.length){
+    shotSay("nothing to build: no favourite carries an ROI placed on a numbered "
+      + "atlas seed, so there is no region to group by");
+    return;
+  }
   shotSay("building " + slides.length + " slide" + (slides.length > 1 ? "s" : "") + "...");
 
   shotId = 1;
@@ -2205,15 +2913,27 @@ async function shotBuild(){
     return i;
   }
 
-  const half = (SLIDE_W / 2) - inch(SHOT_L.margin) - inch(SHOT_L.gutter);
-  const gridW = SHOT_COLS * inch(SHOT_L.cell) + (SHOT_COLS - 1) * inch(SHOT_L.gapX);
-  const rowH = inch(SHOT_L.cell) + inch(SHOT_L.capH) + inch(SHOT_L.gapY);
-  const manifest = [["slide", "plate_set", "plate_id", "marker", "treatment", "half",
-                     "scene_uid", "animal", "section_order", "view_rotation_deg"]];
+  const half = (SLIDE_W / 2) - inch(L.margin) - inch(L.gutter);
+  const gridW = SHOT_COLS * inch(L.cell) + (SHOT_COLS - 1) * inch(L.gapX);
+  const rowH = inch(L.cell) + inch(L.capH) + inch(L.gapY);
+  // The region column exists only on a region deck. Adding it unconditionally
+  // would put an always-blank column in a file that is already read elsewhere.
+  const manifest = [mode === "region"
+    ? ["slide", "plate_set", "region", "plate_id", "marker", "treatment", "half",
+       "scene_uid", "animal", "section_order", "view_rotation_deg"]
+    : ["slide", "plate_set", "plate_id", "marker", "treatment", "half",
+       "scene_uid", "animal", "section_order", "view_rotation_deg"]];
+  // plate_012 -> p012, because the caption has 1.15 inches and the full id does
+  // not fit beside the animal and the section number.
+  const shortPlate = i => (PLATES[i] ? PLATES[i].id : "").replace("plate_", "p");
 
   const slideXmls = [], slideRels = [];
   for(let si = 0; si < slides.length; si++){
-    const sl = slides[si], P = PLATES[sl.plate];
+    const sl = slides[si];
+    // Undefined rather than a plate in region mode - a region has no single one,
+    // and picking any would assert a level the slide does not have.
+    const P = sl.plate === undefined ? null : PLATES[sl.plate];
+    const head = mode === "region" ? sl.region : P.id;
     const mk = MARKERS.find(m => m.id === sl.marker);
     const rel = [{id: "rId1", type: REL + "/slideLayout",
                   target: "../slideLayouts/slideLayout1.xml"}];
@@ -2225,47 +2945,62 @@ async function shotBuild(){
     };
 
     let body = "";
-    body += tbox(inch(SHOT_L.margin), inch(SHOT_L.titleY),
-                 SLIDE_W - 2 * inch(SHOT_L.margin), inch(SHOT_L.titleH),
-                 P.id + "   " + (mk ? mk.label : sl.marker) + "   " + sl.n + " section"
+    body += tbox(inch(L.margin), inch(L.titleY),
+                 SLIDE_W - 2 * inch(L.margin), inch(L.titleH),
+                 head + "   " + (mk ? mk.label : sl.marker) + "   " + sl.n + " section"
                    + (sl.n > 1 ? "s" : "")
                    + (sl.pages > 1 ? "   (" + sl.page + " of " + sl.pages + ")" : ""),
-                 SHOT_L.titleSz, true, INK, "l");
-    body += tbox(inch(SHOT_L.margin), inch(SHOT_L.titleY),
-                 SLIDE_W - 2 * inch(SHOT_L.margin), inch(SHOT_L.titleH),
-                 PLATE_SET, SHOT_L.capSz + 100, false, DIM, "r");
+                 L.titleSz, true, INK, "l");
+    body += tbox(inch(L.margin), inch(L.titleY),
+                 SLIDE_W - 2 * inch(L.margin), inch(L.titleH),
+                 PLATE_SET, L.capSz + 100, false, DIM, "r");
 
     // The plate the sections were matched to, at its own aspect and its own
     // resolution: fetched as bytes rather than redrawn, so nothing is resampled.
-    const pw = Math.round(inch(SHOT_L.plateH) * (P.w / P.h));
-    const prid = await addPic(P.img, () => fetch(P.img).then(r => {
-      if(!r.ok) throw new Error("plate " + P.id + ": HTTP " + r.status);
-      return r.arrayBuffer();
-    }).then(b => new Uint8Array(b)));
-    body += pic(Math.round(SLIDE_W / 2 - pw / 2), inch(SHOT_L.plateY),
-                pw, inch(SHOT_L.plateH), prid, P.id);
-    body += vline(Math.round(SLIDE_W / 2), inch(SHOT_L.divTop), inch(SHOT_L.divBot));
+    if(P){
+      const pw = Math.round(inch(L.plateH) * (P.w / P.h));
+      const prid = await addPic(P.img, () => fetch(P.img).then(r => {
+        if(!r.ok) throw new Error("plate " + P.id + ": HTTP " + r.status);
+        return r.arrayBuffer();
+      }).then(b => new Uint8Array(b)));
+      body += pic(Math.round(SLIDE_W / 2 - pw / 2), inch(L.plateY),
+                  pw, inch(L.plateH), prid, P.id);
+    }
+    // Drawn in both modes: the split down the middle is the point of the slide,
+    // not decoration around the plate.
+    body += vline(Math.round(SLIDE_W / 2), inch(L.divTop), inch(L.divBot));
 
     for(let h = 0; h < GROUPS.order.length; h++){
-      const x0 = h === 0 ? inch(SHOT_L.margin)
-                         : Math.round(SLIDE_W / 2) + inch(SHOT_L.gutter);
-      body += tbox(x0, inch(SHOT_L.headY), half, inch(SHOT_L.headH),
-                   String(GROUPS.order[h]).toUpperCase(), SHOT_L.headSz, true, INK, "ctr");
+      const x0 = h === 0 ? inch(L.margin)
+                         : Math.round(SLIDE_W / 2) + inch(L.gutter);
+      body += tbox(x0, inch(L.headY), half, inch(L.headH),
+                   String(GROUPS.order[h]).toUpperCase(), L.headSz, true, INK, "ctr");
       const gx = x0 + Math.round((half - gridW) / 2);
       const cells = sl.halves[h];
       for(let i = 0; i < cells.length; i++){
         const it = cells[i];
-        const cx = gx + (i % SHOT_COLS) * (inch(SHOT_L.cell) + inch(SHOT_L.gapX));
-        const cy = inch(SHOT_L.gridY) + Math.floor(i / SHOT_COLS) * rowH;
+        const cx = gx + (i % SHOT_COLS) * (inch(L.cell) + inch(L.gapX));
+        const cy = inch(L.gridY) + Math.floor(i / SHOT_COLS) * rowH;
         const rid = await addPic(it.d.uid, async () => {
           const img = await shotLoad(it.d.img);
           return shotBytes(await shotPng(shotTile(img, it.d.rgb, it.s.rot || 0)));
         });
-        body += pic(cx, cy, inch(SHOT_L.cell), inch(SHOT_L.cell), rid, it.d.uid);
-        body += tbox(cx, cy + inch(SHOT_L.cell), inch(SHOT_L.cell), inch(SHOT_L.capH),
-                     it.d.animal + " " + it.d.order, SHOT_L.capSz, false, DIM, "ctr");
-        manifest.push([si + 1, PLATE_SET, P.id, it.d.m, it.g, h + 1,
-                       it.d.uid, it.d.animal, it.d.order, (it.s.rot || 0).toFixed(1)]);
+        body += pic(cx, cy, inch(L.cell), inch(L.cell), rid, it.d.uid);
+        // On a region slide the plate has left the title, so each cell carries
+        // its own. The level is what makes two tiles comparable; without it the
+        // grid is only sections that share a region name.
+        body += tbox(cx, cy + inch(L.cell), inch(L.cell), inch(L.capH),
+                     it.d.animal + " " + it.d.order
+                       + (mode === "region" ? "  " + shortPlate(it.s.plate) : ""),
+                     L.capSz, false, DIM, "ctr");
+        // plate_id is the SECTION's plate on a region deck - each cell has its
+        // own - and the slide's plate on a plate deck, where by construction
+        // they are the same thing.
+        manifest.push(mode === "region"
+          ? [si + 1, PLATE_SET, sl.region, shortPlate(it.s.plate), it.d.m, it.g, h + 1,
+             it.d.uid, it.d.animal, it.d.order, (it.s.rot || 0).toFixed(1)]
+          : [si + 1, PLATE_SET, P.id, it.d.m, it.g, h + 1,
+             it.d.uid, it.d.animal, it.d.order, (it.s.rot || 0).toFixed(1)]);
       }
     }
     slideXmls.push(slideXml(body));
@@ -2330,8 +3065,11 @@ async function shotBuild(){
               + "_" + pad2(now.getHours()) + pad2(now.getMinutes());
   const blob = new Blob(zipStore(files, now),
     {type: "application/vnd.openxmlformats-officedocument.presentationml.presentation"});
-  shotSave(blob, "shotgun_" + PLATE_SET + "_" + stamp + ".pptx");
-  dl(manifest, "shotgun_manifest.csv");
+  // Named apart so a region deck cannot silently overwrite a plate one, and so
+  // the pair of files that belong together stay recognisable as a pair.
+  const tag = mode === "region" ? "by-region_" : "";
+  shotSave(blob, "shotgun_" + tag + PLATE_SET + "_" + stamp + ".pptx");
+  dl(manifest, "shotgun_manifest" + (mode === "region" ? "_by-region" : "") + ".csv");
 
   const bits = [slides.length + " slides", take.length + " sections",
                 media.length + " images"];
@@ -2353,8 +3091,690 @@ function shotSave(blob, name){
   a.click();
 }
 
+// ===========================================================================
+// REVIEW MODE - the four stages that decided a section's fate before this page
+// ever loaded it.
+//
+// The rest of the curator works on SURVIVORS: it loads reformat_index, which is
+// the list of sections that got through. So 1,066 exclusions and 2,099 artifact
+// masks were decisions nobody could inspect from the tool they spend their time
+// in. This mode carries all 2,572 SCANNED sections, from the CZI scene onward.
+//
+// PROV is emitted as arrays under a shared header, not objects - 22 field names
+// repeated 2,572 times would roughly double the page for nothing.
+const PROV = __PROV__;
+// Pooled columns arrive as an index into PROV.p[field]; everything else is the
+// value. Decoded once, here, so nothing downstream has to know which is which.
+const PROWS = PROV.r.map(r => Object.fromEntries(PROV.f.map((k, i) =>
+  [k, PROV.p[k] ? PROV.p[k][r[i]] : r[i]])));
+const P_BY = Object.fromEntries(PROWS.map(p => [p.scene_uid, p]));
+
+// The three image paths are derived rather than carried - 275 KB of the table
+// was spent restating a fixed rule. 04p records only WHETHER each file exists,
+// which is the part that cannot be derived, and writes the same paths from the
+// same rule; if one of these moves, both move.
+function revSrc(p, what){
+  const ov = k => `../overviews/${p.animal}/${p.marker}/${p.scene_uid}_${k}.png`;
+  // RGB is DAPI + marker together; MARK is the marker alone. Both exist for
+  // every scanned section, so "remove DAPI" is a different file rather than a
+  // composite that would have to be built - and it is exact, not approximated.
+  if(what === "overview") return p.has_overview ? ov(REV.dapi ? "RGB" : "MARK") : "";
+  if(what === "dapi")     return p.has_overview ? ov("DAPI") : "";
+  if(what === "section"){
+    // Colour where there is colour, at the SIZE THE GRID DRAWS.
+    //
+    // The composite is what the operator is looking at everywhere else in this
+    // page, and a grid of grey thumbnails next to a colour detail reads as two
+    // different datasets. But the composite is 768px and 448 KB for a cell
+    // drawn at 78px - one animal is 56.6 MB of picture nobody sees at that
+    // size, which is the overview mistake again with smaller numbers. 04o
+    // --thumbs writes a 256px copy at 61 KB; that is what the grid asks for.
+    //
+    // Three steps down, because each one is a separate fact about the disk:
+    // thumbnail, then composite, then the greyscale every section has. Nothing
+    // here infers one file from another - 1,066 sections have no composite and
+    // a failed <img> is silent.
+    if(!p.has_section) return "";
+    const dir = `sections${p.marker === "AF568" ? "_AF568" : ""}`;
+    const sub = p.has_section_thumb ? "_rgb_thumb"
+              : p.has_section_rgb   ? "_rgb" : "";
+    return `${dir}${sub}/${p.scene_uid}.png`;
+  }
+  if(what === "censor")   return p.has_censor
+      ? `../censor/${p.scene_uid}_censor.png` : "";
+  if(what === "tissue")   return p.has_tissue
+      ? `../tissue/${p.scene_uid}_tissue.png` : "";
+  return p.has_mask ? `../artifacts/${p.scene_uid}_artifact.png` : "";
+}
+
+// Independent layers, not a cycle.
+//
+// This started as one button cycling masked -> unmasked -> overlay, which is
+// fine for answering "what did the mask remove" and useless for anything else:
+// you cannot see the artifacts and the censored pixels at once, and you cannot
+// take DAPI off to look at the marker alone. Four switches say what is on
+// screen at all times, which a three-state cycle never does.
+const REV = {dapi: true, mark: true, art: false, cen: false, apply: false};
+
+function revLayer(k){
+  REV[k] = !REV[k];
+  revImg();
+}
+
+// Composite the masks onto a canvas over the section.
+//
+// Each mask is drawn through an offscreen pass: brightness(255) turns the
+// artifact mask's 0/1/2 into a 0/255 stencil (the censor mask is already 0/255
+// and is unharmed by it), then `source-in` fills the stencil with a flat colour
+// and leaves everything else transparent. The result composites at a fixed
+// alpha, so it reads over bright tissue and dark background alike.
+//
+// RED is an artifact, CYAN is a censored pixel, and they must not look alike:
+// they mean opposite things. An artifact LEAVES the analysis; a censored pixel
+// STAYS in the count and is positive by construction (04j).
+//
+// "Apply mask" is the other direction - paint the artifact black, which is what
+// 04a does to the pixels - so it draws opaque instead of tinted.
+function drawRevOverlays(p, hasCen){
+  const c = el("revOv"), base = el("revImg");
+  const W = c.clientWidth, H = c.clientHeight;
+  if(!W || !H) return;
+  c.width = W; c.height = H;
+  const x = c.getContext("2d");
+  x.clearRect(0, 0, W, H);
+  const nw = base.naturalWidth, nh = base.naturalHeight;
+  if(!nw || !nh) return;
+
+  // Undo object-fit:contain. The element box is not the drawn area - the same
+  // trap the ROI curator's click mapping had to solve - so the masks are placed
+  // in the letterboxed rect the base image actually occupies, not the box.
+  const k = Math.min(W / nw, H / nh);
+  const dw = nw * k, dh = nh * k, dx = (W - dw) / 2, dy = (H - dh) / 2;
+
+  const layer = (img, colour, alpha, clipToTissue) => {
+    if(!img || !img.naturalWidth) return;
+    const t = document.createElement("canvas");
+    t.width = Math.round(dw); t.height = Math.round(dh);
+    const g = t.getContext("2d");
+    // brightness(255) turns the artifact mask's 1 and 2 into 255 and leaves 0
+    // at 0; the censor mask is already 0/255 and passes through unchanged. Then
+    // luminance becomes alpha, so the source-in below clips to the mask instead
+    // of to the whole rectangle.
+    g.filter = "brightness(255) url(#revLumAlpha)";
+    g.drawImage(img, 0, 0, t.width, t.height);
+    g.filter = "none";
+    // HIDE THE PEN RING: keep only the part of the stencil that is on tissue.
+    //
+    // 96.4% of all censored pixels lie OUTSIDE the tissue - 169.0M censored,
+    // 6.0M on tissue, measured over the 1,506 sections that have both masks -
+    // because 04j censors every clipped pixel in the frame and the PAP pen ring
+    // is saturated. 39% of sections with any censoring have NONE of it on
+    // tissue at all. So the overlay is mostly pen and the real clipping is
+    // invisible underneath it; intersecting with a tissue stencil leaves the
+    // censoring that is actually on tissue.
+    //
+    // THRESHOLDING DAPI IN THE BROWSER WAS TRIED FIRST AND CANNOT WORK. In the
+    // 8-bit overview DAPI has a median of 4/255 inside tissue against 1-2
+    // outside; no cut separates them, and the one that looked plausible kept
+    // 0.2% of the censoring 04j says is on tissue - a display that would have
+    // read as "almost nothing is censored here" while the file said 10.6%.
+    // The mask now comes from 04p, which runs the pipeline's own log-space
+    // Otsu on the data it was designed for.
+    //
+    // Still a way of LOOKING, not a measurement - but do NOT reach for
+    // `censored_fraction_in_tissue` as the number instead. That column is not
+    // restricted to tissue: 04j takes its stencil as `DAPI > 0`, which is every
+    // pixel that is not exactly black and covers 74-92% of the frame (mean 83%)
+    // against 10-35% for real tissue. `cen[DAPI > 0].mean()` reproduces the
+    // column to four decimals on every section checked, so the name promises a
+    // restriction the arithmetic does not make, and the pen sits inside it.
+    // That is why it runs ~7x the tissue-restricted overlap and correlates with
+    // it only r=0.61.
+    //
+    // Reported, not fixed here: 04j belongs to the censoring work and this is
+    // the viewer. Whoever lands that stage should decide what the column ought
+    // to mean; this comment exists so the next person does not quote it as
+    // "fraction in tissue" on the strength of its name.
+    if(clipToTissue){
+      const tsrc = el("revTissue");
+      if(tsrc && tsrc.naturalWidth){
+        g.globalCompositeOperation = "destination-in";
+        g.filter = "url(#revLumAlpha)";       // already 0/255, only alpha needed
+        g.drawImage(tsrc, 0, 0, t.width, t.height);
+        g.filter = "none";
+      }
+    }
+    g.globalCompositeOperation = "source-in";
+    g.fillStyle = colour;
+    g.fillRect(0, 0, t.width, t.height);
+    x.globalAlpha = alpha;
+    x.drawImage(t, dx, dy);
+    x.globalAlpha = 1;
+  };
+
+  if(REV.apply && p.has_mask) layer(el("revMask"), "#000000", 1);
+  if(REV.art   && p.has_mask) layer(el("revMask"), "#ff3b30", 0.75);
+  if(REV.cen && hasCen)
+    layer(el("revCensor"), "#00d5ff", 0.55,
+          !!p.has_tissue && el("revPenChk") && el("revPenChk").checked);
+}
+
+// A src is assigned and the overlay drawn in the same breath, so the first draw
+// usually runs before anything has decoded and naturalWidth is still 0 - which
+// is a blank overlay and no error. Every load re-draws.
+for(const id of ["revImg", "revMask", "revCensor", "revTissue"]){
+  el(id).addEventListener("load", () => {
+    const p = P_BY[revSel];
+    // has_censor, not the marker - the same test as revImg. This handler kept
+    // the old marker check after revImg moved off it, so every image load
+    // redrew PCNA with the censor layer off and quietly wiped it.
+    if(p) drawRevOverlays(p, !!p.has_censor);
+  });
+}
+
+let revOn = false, revSel = null;
+
+// Everything drawn here comes out of a CSV rather than out of this page, so it
+// is escaped. The rest of the curator interpolates values it generated itself -
+// animal ids, plate names - and does not need this; a recorded exclusion reason
+// is operator-typed free text and does.
+const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g,
+  c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+
+// dl() joins fields with commas and quotes nothing, which is fine for the
+// numbers the other exports write. Exclusion reasons are free text and DO carry
+// commas - "no tissue piece larger than 1.46 mm2 (threshold 2.5)" is tame, but
+// several in excluded_sections.csv are already quoted at source - so anything
+// operator-typed goes through this first.
+const csvq = s => {
+  const v = String(s == null ? "" : s);
+  return /[",\\n\\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+};
+
+// The decision lives in the SAME curation store, on the section's own entry,
+// under a field nothing else reads. It therefore rides the existing autosave,
+// the seeding and the app's file mirror for free, and cannot collide with ROI
+// work on the same section. `st()` creates the entry lazily, so a section that
+// is only looked at never grows one.
+const revOf = uid => (S[uid] || {}).rev || null;
+
+function toggleReview(){
+  if(!PROWS.length){
+    alert("no section_provenance.csv - run:\\n  python scripts/04p_section_provenance.py");
+    return;
+  }
+  revOn = !revOn;
+  el("review").classList.toggle("on", revOn);
+  el("panes").style.display = revOn ? "none" : "";
+  el("strip").style.display = revOn ? "none" : "";
+  el("revBtn").classList.toggle("mode-on", revOn);
+  if(revOn) revRender();
+}
+
+// Grouped animal -> slide, in scan order, because that is the order they came
+// off the scanner and the order damage runs in - a bad slide is usually a run
+// of neighbours, and seeing them adjacent is most of the review.
+// The one list. The grid draws it and the stepper walks it, so "next" always
+// means the next cell you can see - a stepper over a different set than the one
+// on screen is the kind of thing that looks like a bug in the data.
+function revList(){
+  const want = el("animal").value;
+  const f = el("revFilter") ? el("revFilter").value : "all";
+  return PROWS
+    .filter(p => want === "both" || !want || p.animal === want)
+    .filter(p => f === "all" ? true
+               : f === "excluded" ? p.status === "excluded"
+               : f === "analysis" ? p.status !== "excluded"
+               : f === "measured" ? p.status === "measured"
+               : f === "masked"   ? !!p.has_mask : true)
+    .sort((a, b) => (a.animal + a.slide + a.marker).localeCompare(
+                     b.animal + b.slide + b.marker)
+                 || (+a.section_order || 0) - (+b.section_order || 0));
+}
+
+// One section at a time, in the order the grid shows them.
+function revStep(d){
+  const list = revList();
+  if(!list.length) return;
+  const i = list.findIndex(p => p.scene_uid === revSel);
+  const next = list[(i < 0 ? 0 : i + d + list.length) % list.length];
+  revPick(next.scene_uid);
+  const cell = document.querySelector(`.rc[data-uid="${next.scene_uid}"]`);
+  if(cell) cell.scrollIntoView({block: "nearest"});
+}
+
+function revRender(){
+  const g = el("revGrid");
+  const rows = revList();
+  const groups = new Map();
+  for(const p of rows){
+    const k = p.animal + " " + p.slide + p.marker;
+    if(!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(p);
+  }
+  const parts = [];
+  for(const [k, ps] of groups){
+    ps.sort((a, b) => (+a.section_order || 0) - (+b.section_order || 0));
+    const lab = ps[0].marker === "AF568" ? "pERK" : "PCNA";
+    parts.push(`<div class="revGroup"><h4>${esc(ps[0].animal)} &middot; slide `
+      + `${esc(ps[0].slide)} &middot; ${lab} &middot; ${ps.length} sections `
+      + `&middot; ${esc(ps[0].czi_file)}</h4><div class="revCells">`
+      + ps.map(revCell).join("") + `</div></div>`);
+  }
+  g.innerHTML = parts.join("") || "<div class='kv'>nothing for this animal</div>";
+  revCount();
+}
+
+function revCell(p){
+  const r = revOf(p.scene_uid);
+  const cls = ["rc"];
+  if(p.status === "excluded") cls.push("excluded");
+  else if(p.status === "measured") cls.push("measured");
+  else if(p.status === "censored_out") cls.push("censored");
+  // A proposal the program made, which the operator has not overruled. Dashed,
+  // exactly as 04d draws it.
+  if(p.proposed_excluded === "1" && p.status !== "excluded") cls.push("proposed");
+  if(p.scene_uid === revSel) cls.push("sel");
+  const flag = r ? `<span class="flag ${r.act === "restore" ? "rs"
+                     : r.act === "drop" ? "dr" : "um"}">`
+                 + (r.act === "restore" ? "IN" : r.act === "drop" ? "OUT" : "NOMASK")
+                 + `</span>` : "";
+  // THE 256px THUMBNAIL, at 61 KB, not the overview at 556 KB.
+  //
+  // The grid draws a few hundred cells at 78 px, and the overview is
+  // 1632x1862 - LS61's pERK sections alone are 98 MB of PNG against 2.3 MB
+  // reformatted. Loading the big ones left most cells blank behind `loading
+  // ="lazy"` and the grid looked broken rather than slow.
+  //
+  // The overview was chosen originally because it was the only picture EVERY
+  // section had; that stopped being true once 04a --render-excluded gave the
+  // excluded ones an image too. The fallback stays for a section that somehow
+  // has neither.
+  const src = revSrc(p, "section") || revSrc(p, "overview");
+  return `<div class="${cls.join(" ")}" data-uid="${esc(p.scene_uid)}" `
+       + `title="${esc(p.scene_uid)} - ${esc(p.status)}">`
+       + (src ? `<img loading="lazy" src="${esc(src)}" alt="">`
+              : `<div style="aspect-ratio:1"></div>`)
+       + `<span class="n">${esc(p.section_order)}</span>${flag}</div>`;
+}
+
+function revPick(uid){
+  revSel = uid;
+  revDetail();
+  revRender();
+  const list = revList();
+  const i = list.findIndex(p => p.scene_uid === uid);
+  el("revPos").textContent = i < 0 ? "-" : `${i + 1} of ${list.length}`;
+  // The maximised card carries its own copy of the position, because the card
+  // that normally shows it is not on screen then.
+  const fsp = el("revFsPos");
+  if(fsp) fsp.textContent = el("revPos").textContent;
+}
+
+// One line per stage, in the order they ran. A stage that had nothing to say
+// about this section is greyed rather than omitted - "04g found no artifact" and
+// "04g never looked at this section" are different facts, and a missing row
+// would read as the first when it is often the second.
+function revChainRows(p){
+  const out = [];
+  const row = (name, txt, on) =>
+    out.push(`<div class="st${on ? "" : " no"}"><b>${name}</b><span>${esc(txt)}</span></div>`);
+  row("scan", `${p.czi_file} scene ${p.scene_index} - ${p.marker === "AF568" ? "pERK" : "PCNA"}`, true);
+  row("01 overview", p.tissue_area_mm2
+      ? `tissue ${p.tissue_area_mm2} mm2, focus ${p.focus_score}` : "no QC row", !!p.tissue_area_mm2);
+  row("04f propose", p.proposed_excluded === "1"
+      ? `proposed EXCLUDE${p.largest_mm2 ? ` - largest piece ${p.largest_mm2} mm2` : ""}`
+      : p.proposed_excluded === "0" ? "no objection"
+      : "not assessed (only survivors are)", p.proposed_excluded !== "");
+  row("04d decide", p.status === "excluded"
+      ? `EXCLUDED (${p.decision || "?"}) - ${p.decision_reason || "no reason recorded"}`
+      : "kept", true);
+  row("04g mask", p.has_mask
+      ? `${p.n_artifact_objects || 0} objects, ${p.artifact_pct_of_tissue || 0}% of tissue`
+      : "no mask built", !!p.has_mask);
+  row("04a reformat", p.has_section
+      ? "reformatted" + (p.status === "excluded" ? " (image predates the exclusion)" : "")
+      : "not reformatted - original scan only", !!p.has_section);
+  row("04j censor", p.in_analysis_set === "1" ? "in the analysis set"
+      : p.in_analysis_set === "0" ? `CENSORED OUT - ${p.censor_reason || ""}`
+      : "pERK only", p.in_analysis_set !== "");
+  row("05a/05c", +p.n_nuclei ? `${p.n_rois} ROIs, ${p.n_nuclei} nuclei`
+      : +p.n_rois ? `${p.n_rois} ROIs, not yet measured` : "nothing measured", !!+p.n_nuclei);
+  return out.join("");
+}
+
+function revDetail(){
+  const p = P_BY[revSel];
+  if(!p){ el("revHint").textContent = "pick a section on the left"; return; }
+  el("revTitle").textContent = p.scene_uid;
+  el("revHint").innerHTML = `<b>${esc(p.status)}</b> &middot; ${esc(p.animal)} `
+    + `&middot; section ${esc(p.section_order)}`;
+  el("revChain").innerHTML = revChainRows(p);
+  revImg();
+  const r = revOf(revSel);
+  el("revState").innerHTML = r
+    ? `<b style="color:#7c5cff">${esc(r.act)}</b> - ${esc(r.why || "no reason given")}`
+    : "no decision recorded";
+  el("revWhy").value = r ? (r.why || "") : "";
+  // Reinstating something that was never excluded, or rejecting a mask that
+  // does not exist, are both meaningless - say so on the button.
+  el("revRestore").disabled = p.status !== "excluded";
+  // Same rule for the maximised copy, and it says which way it will go - there
+  // is no separate Clear button up there, so the one button has to toggle.
+  const fsr = el("revFsRestore");
+  if(fsr){
+    const on = r && r.act === "restore";
+    fsr.disabled = p.status !== "excluded";
+    fsr.textContent = on ? "Reinstated ✓" : "Reinstate";
+    fsr.classList.toggle("mode-on", !!on);
+    fsr.onclick = () => revAct(on ? "" : "restore");
+  }
+  el("revDrop").disabled = p.status === "excluded";
+  el("revUnmask").disabled = !p.has_mask;
+}
+
+// ALL THREE STATES ARE THE SAME PICTURE, and that is the point.
+//
+// The obvious build showed the REFORMATTED image for "masked" and the overview
+// for "unmasked". They are not the same frame - 256x256 rotated and cropped to
+// the tissue, against 1404x1632 as scanned - so flicking between them changed
+// the framing, the rotation and the scale, and the one thing it was supposed to
+// isolate was lost in the middle of all that. A comparison whose two halves are
+// not registered is not a comparison.
+//
+// So masking is applied HERE, over the overview, in the frame 04g's mask
+// actually lives in ("the same pixel grid as the DAPI overview - *not* the
+// reformatted frame"). The reformatted image is a different question and the
+// chain says whether one exists.
+function revImg(){
+  const p = P_BY[revSel];
+  if(!p) return;
+  // WHETHER A CENSOR MASK EXISTS, not which marker this is.
+  //
+  // Censoring WAS pERK-only, and this asked `p.marker === "AF568"` because of
+  // it: 04j thresholded the 8-bit _MARK.png at 255, which only means "clipped"
+  // for AF568, whose display high is the 16-bit ceiling. AF488's is 37,263, so
+  // the test did not generalise and PCNA had no masks. Reading the raw data
+  // instead lifted that, both channels now have them, and a marker test would
+  // silently refuse on half the dataset. The file is the authority.
+  const hasCen = !!p.has_censor;
+
+  // FOUR STATES, THREE FILES. The overview ships the composite, the marker
+  // alone and DAPI alone, so every combination is a real image rather than a
+  // channel knocked out of a composite - "marker off" shows the counterstain
+  // that was actually recorded, not the composite with a plane zeroed.
+  //
+  // Marker in ITS OWN colour, matching the composites in the grid beside it -
+  // red pERK, green PCNA - instead of the overview's yellow-for-both. See the
+  // filter definitions for why this is exact and why DAPI is lifted.
+  const perk = p.marker === "AF568";
+  el("revImg").src = (REV.mark || !REV.dapi)
+      ? revSrc(p, "overview")     // RGB when REV.dapi, MARK when not
+      : revSrc(p, "dapi");
+  el("revImg").style.filter = "url(#" + (
+        !REV.mark && !REV.dapi ? "revBlank"
+      : !REV.mark              ? "revDapiOnly"
+      : REV.dapi               ? (perk ? "revPerkDapi" : "revPcnaDapi")
+                               : (perk ? "revPerkOnly" : "revPcnaOnly")) + ")";
+  el("revMask").src = revSrc(p, "mask");
+  el("revCensor").src = hasCen ? revSrc(p, "censor") : "";
+  el("revTissue").src = p.has_tissue ? revSrc(p, "tissue") : "";
+
+  drawRevOverlays(p, hasCen);
+
+  const on = (id, v, dis) => {
+    el(id).classList.toggle("mode-on", !!v);
+    el(id).disabled = !!dis;
+  };
+  const pen = el("revPenChk");
+  if(pen){
+    // The clip needs a real tissue mask. Without one the box is not merely
+    // ineffective, it would be a lie about what is on screen.
+    pen.disabled = !p.has_tissue;
+    pen.parentElement.style.opacity = p.has_tissue ? "1" : ".45";
+    pen.parentElement.title = p.has_tissue ? ""
+      : "needs a tissue mask - run: python scripts/04p_section_provenance.py --tissue-masks";
+  }
+  on("revDapiBtn",  REV.dapi,  !p.has_overview);
+  on("revMarkBtn",  REV.mark,  !p.has_overview);
+  on("revArtBtn",   REV.art,   !p.has_mask);
+  on("revCenBtn",   REV.cen,   !hasCen);
+  on("revApplyBtn", REV.apply, !p.has_mask);
+  el("revDapiBtn").textContent = REV.dapi ? "DAPI ✓" : "DAPI";
+  el("revMarkBtn").textContent = REV.mark
+    ? (perk ? "pERK ✓" : "PCNA ✓") : (perk ? "pERK" : "PCNA");
+  el("revCenBtn").title = hasCen ? "" :
+    "no censor mask for this section - run 04j_censor_clipped.py";
+
+  // The 4x is named rather than left to be noticed. A viewer that quietly
+  // rescales one channel invites reading brightness off the screen, and DAPI
+  // here is 4x further from its neighbours than it looks.
+  const mk = perk ? "pERK red" : "PCNA green";
+  el("revImgH").textContent = "IMAGE - "
+    + (REV.mark && REV.dapi ? mk + " + DAPI blue x4"
+     : REV.mark            ? mk.replace(/ (red|green)$/, "") + " only"
+     : REV.dapi            ? "DAPI blue x4, no marker"
+                           : "both channels hidden - masks only")
+    + (REV.apply ? ", artifacts removed" : "");
+  const bits = [];
+  bits.push(p.has_mask
+    ? `${p.n_artifact_objects || 0} artifact objects, `
+      + `${p.artifact_pct_of_tissue || 0}% of tissue`
+    : "no artifact mask");
+  if(hasCen && p.censored_fraction_in_tissue !== ""){
+    const pen = el("revPenChk") && el("revPenChk").checked;
+    bits.push(`${(100 * (+p.censored_fraction_in_tissue || 0)).toFixed(2)}% of `
+            + `tissue censored` + (pen ? "" : " - pen ring shown too"));
+  }
+  el("revImgNote").textContent = bits.join("  ·  ");
+}
+
+// A REINSTATED SECTION JOINS THE STRIP IMMEDIATELY.
+//
+// Review mode used to end at "recorded, now re-run 04a" - the decision was
+// written, the section stayed invisible to the curator, and the only way to act
+// on it was a pipeline run. Every scanned section now has a reformatted image
+// and a composite, so the picture the strip needs already exists and the wait
+// was for nothing.
+//
+// WHAT THIS DOES NOT DO IS PUT IT INTO THE ANALYSIS. The index is what does
+// that, and only 04a writes the index. ROIs placed here are real curation and
+// they export, but the nuclei behind them are not measured until 04a and 05c
+// have run - which is exactly what exportReview() already warns about. The
+// subset is written as "reinstated" so the export says where the row came from
+// rather than implying it was in the worklist all along.
+function reinstatedRow(p){
+  const dir = "sections" + (p.marker === "AF568" ? "_AF568" : "")
+            + (p.has_section_rgb ? "_rgb" : "");
+  return {uid: p.scene_uid, animal: p.animal, m: p.marker, sub: "reinstated",
+          order: +p.section_order || 0, rgb: !!p.has_section_rgb,
+          img: dir + "/" + p.scene_uid + ".png", reinstated: true};
+}
+
+// Add the ones that are restored, drop the ones that no longer are, so undoing
+// a reinstatement takes the section back out instead of leaving it stranded in
+// a strip it can no longer be removed from.
+function syncReinstated(){
+  const want = new Set(Object.keys(S).filter(u =>
+    S[u] && S[u].rev && S[u].rev.act === "restore"
+    && P_BY[u] && P_BY[u].has_section));
+  let changed = false;
+  for(const uid of want){
+    if(!DATA.some(d => d.uid === uid)){ DATA.push(reinstatedRow(P_BY[uid])); changed = true; }
+  }
+  for(let i = DATA.length - 1; i >= 0; i--){
+    if(DATA[i].reinstated && !want.has(DATA[i].uid)){ DATA.splice(i, 1); changed = true; }
+  }
+  return changed;
+}
+
+// FULLSCREEN, and the redraw that has to go with it.
+//
+// The overlay canvas is stretched over the image by CSS, but what it holds is a
+// bitmap sized in drawRevOverlays from clientWidth at the moment it was drawn.
+// Resizing the element without redrawing would leave a ~320px bitmap scaled up
+// to fill a 1400px box - a blurry mask sitting a few pixels off the artifact it
+// is supposed to be marking, which is worse than no overlay because it still
+// looks like an answer.
+function revFull(on){
+  const card = el("revImgCard");
+  if(!card) return;
+  const want = on === undefined ? !card.classList.contains("imgmax") : !!on;
+  card.classList.toggle("imgmax", want);
+  // Native fullscreen ON TOP of the class, never instead of it. It is allowed
+  // to fail silently - the class has already filled the viewport - which is
+  // what keeps this working from file:// and inside an embedding viewer.
+  try {
+    if(want && card.requestFullscreen && !document.fullscreenElement){
+      const r = card.requestFullscreen();
+      if(r && r.catch) r.catch(() => {});
+    } else if(!want && document.fullscreenElement && document.exitFullscreen){
+      const r = document.exitFullscreen();
+      if(r && r.catch) r.catch(() => {});
+    }
+  } catch(e){ /* class-only is a complete answer */ }
+  revRedrawOverlays();
+  const b = el("revFullBtn");
+  if(b) b.textContent = want ? "✖ Exit" : "⛶ Full";
+}
+
+// REDRAW WHEN THE BOX ACTUALLY CHANGES SIZE, not a guessed number of frames
+// after asking it to.
+//
+// drawRevOverlays sizes the canvas bitmap from clientWidth at the moment it
+// runs, and the canvas is then stretched over the wrapper by CSS. Get the
+// timing wrong and the bitmap keeps the OLD dimensions while the box has the
+// new ones - going fullscreen and back left a 1258x567 bitmap stretched into a
+// 324x324 box, which is not merely blurry: the aspect ratios differ, so the
+// overlay lands somewhere other than the artifact it is marking while still
+// looking like a real answer.
+//
+// A double requestAnimationFrame was the first attempt and is a guess about
+// how long layout takes - it held when the box grew and lost the race when it
+// shrank. This asks the browser instead, and covers every cause at once:
+// fullscreen in and out, a resized window, a resized panel.
+const revBoxObserver = typeof ResizeObserver === "function"
+  ? new ResizeObserver(() => {
+      const p = P_BY[revSel];
+      if(p) drawRevOverlays(p, !!p.has_censor);
+    })
+  : null;
+if(revBoxObserver && el("revImgWrap")) revBoxObserver.observe(el("revImgWrap"));
+
+// Kept for the browsers without ResizeObserver, and harmless where it observes:
+// a second draw at the same size is idempotent.
+function revRedrawOverlays(){
+  const p = P_BY[revSel];
+  if(!p) return;
+  requestAnimationFrame(() => requestAnimationFrame(() =>
+    drawRevOverlays(p, !!p.has_censor)));
+}
+// Leaving native fullscreen by Escape or the browser's own control does not go
+// through revFull(), so the class has to be taken off here or the card would
+// stay pinned over the page with no obvious way out.
+document.addEventListener("fullscreenchange", () => {
+  if(!document.fullscreenElement) {
+    const card = el("revImgCard");
+    if(card && card.classList.contains("imgmax")) revFull(false);
+  } else revRedrawOverlays();
+});
+// The window can also change size under a maximised card - a real fullscreen
+// transition, or just a resized window - and the bitmap is sized in pixels.
+addEventListener("resize", () => {
+  const card = el("revImgCard");
+  if(card && (card.classList.contains("imgmax") || document.fullscreenElement))
+    revRedrawOverlays();
+});
+
+function revAct(act){
+  const p = P_BY[revSel];
+  if(!p) return;
+  // st() CREATES a record for whatever it is given, and `excl` below is enough
+  // to make the export treat that record as a decision. Undoing a reinstatement
+  // on a section nobody had otherwise touched would then leave an operator
+  // exclusion it never made.
+  //
+  // `mine` is carried ON the decision rather than recomputed, because by the
+  // time undo runs the record always exists - the restore created it - so
+  // asking "did this exist?" at that moment always says yes. It has to be
+  // answered once, when review first touches the section, and remembered.
+  //
+  // It cannot be inferred from content either: a record holding nothing but
+  // excl:true is exactly what the 227 exclusions the operator really did record
+  // look like, so there is no telling them apart afterwards.
+  const had = Object.prototype.hasOwnProperty.call(S, revSel);
+  const e = st(revSel);
+  const mine = e.rev ? e.rev.mine : !had;
+  // The exclusion to put back on undo is THE ONE THAT WAS THERE, captured once,
+  // not one re-derived from p.status. The curator's flag and the pipeline's
+  // status are different facts: an operator can exclude a section 04a happily
+  // reformatted, and rebuilding the flag from the status would throw that
+  // decision away the moment a reinstatement was undone.
+  const wasExcl = e.rev ? e.rev.wasExcl : !!e.excl;
+  if(!act){ delete e.rev; }
+  else { e.rev = {act, why: el("revWhy").value.trim(), status: p.status,
+                  mine, wasExcl}; }
+  // Reinstating IS a curation decision, so the curator's own exclusion flag
+  // follows it rather than contradicting it. Undo puts back exactly what was
+  // there before review touched the section.
+  e.excl = act === "restore" ? false : wasExcl;
+  // Undo means undo. A record this call invented, carrying nothing but the
+  // exclusion the pipeline already decided, says nothing the pipeline has not
+  // said - and roi_plates.csv reports sections the OPERATOR touched.
+  if(!act && mine && !e.assigned && !e.fav && !e.noroi && !e.pairs.length
+     && !e.rot){
+    delete S[revSel];
+  }
+  save();
+  syncReinstated();
+  revDetail();
+  revRender();
+  render();          // the strip, so the section is curatable without a reload
+  status();
+}
+
+function revCount(){
+  const all = Object.entries(S).filter(([, v]) => v && v.rev);
+  const n = a => all.filter(([, v]) => v.rev.act === a).length;
+  el("revCount").innerHTML = `${n("restore")} reinstate &middot; ${n("drop")} drop `
+    + `&middot; ${n("unmask")} mask rejected`;
+}
+
+// Written in the SAME shape 04a_reformat.load_overrides already reads, one file
+// per marker. `decision="restored"` is not new: 04a already counts how often the
+// 04f proposal was overruled and reports it, so reinstating needs no format
+// change and no change to 04a. `mask_rejected` is the one new column.
+function exportReview(){
+  const all = Object.entries(S).filter(([, v]) => v && v.rev);
+  if(!all.length){ alert("no review decisions to export"); return; }
+  const restores = all.filter(([, v]) => v.rev.act === "restore").length;
+  if(restores && !confirm(
+      `${restores} section(s) would be put back into the pipeline.\\n\\n`
+    + `That changes the analysis set, so 05c_detect_rois.py has to run again for `
+    + `the sections it changes - the nuclei already measured do not cover them. `
+    + `Nothing is applied by this export; it writes the decisions for `
+    + `04a_reformat.py --apply-overrides to act on.\\n\\nExport anyway?`)) return;
+
+  const rows = [["scene_uid", "marker", "extra_rotation", "flip", "excluded",
+                 "decision", "mask_rejected", "reason", "prior_status"]];
+  for(const [uid, v] of all){
+    const p = P_BY[uid] || {};
+    const r = v.rev;
+    rows.push([uid, p.marker || "", "", "",
+               r.act === "drop" ? 1 : 0,
+               r.act === "restore" ? "restored" : r.act === "drop" ? "manual" : "",
+               r.act === "unmask" ? 1 : 0,
+               // dl() quotes every cell now; quoting here too would double it.
+               r.why || "", r.status || ""]);
+  }
+  dl(rows, "section_review.csv");
+}
+
 el("roiSize").value = PT_R_CANON;
 el("roiSizeVal").textContent = PT_R_CANON;
+// Before the first render: a reinstatement made in an earlier session is still
+// one, and the section has to be back in the strip for it to be curatable.
+syncReinstated();
 scopeLabel();
 shotBtnState();
 render();
@@ -2389,7 +3809,13 @@ def main():
                     help="show the two-colour composites from 04o_section_rgb.py "
                          "(DAPI blue + marker) instead of the greyscale DAPI the "
                          "geometry was computed on. Same frame either way.")
+    ap.add_argument("--out", default=CURATOR_HTML, metavar="HTML",
+                    help="where to write the page (default: the live curator under "
+                         "out_root). tests/run.sh points this at tests/build/ so a "
+                         "test run never rewrites the page being curated in")
     args = ap.parse_args()
+    if args.worklist and not os.path.exists(args.worklist):
+        raise SystemExit(f"--worklist: {args.worklist} not found - run 04n_roi_worklist.py first")
 
     # Both channels go into one page. They are separate physical sections and
     # stay independently curated - this shares the TOOL, not the decisions - so
@@ -2495,8 +3921,8 @@ def main():
     #
     # COL_SPAN caps a column's total width as well as the step between
     # neighbours, so a strip drifting steadily sideways cannot chain across the
-    # midline and swallow its bilateral partner.
-    COL_BAND, COL_SPAN = 0.08, 0.12
+    # midline and swallow its bilateral partner. Both constants live at module
+    # level, because `region_hulls` splits a region's lobes at that same COL_SPAN.
     for _lst in seeds.values():
         _lst.sort(key=lambda s: (s["xf"], s["yf"]))
         _cols, _cur = [], [_lst[0]]
@@ -2535,7 +3961,10 @@ def main():
                    # this image, so no transform chain is needed.
                    "img": f"../atlas/{PLATE_SET}/{p['image_file']}",
                    "w": int(p["px_w"]), "h": int(p["px_h"]),
-                   "labelled": int(bool(sd)), "seeds": sd})
+                   "labelled": int(bool(sd)), "seeds": sd,
+                   # What a REGION is on this plate, as opposed to where its
+                   # individual seeds are. One entry per region per lobe.
+                   "hulls": region_hulls(sd)})
 
     # The curation the app has on file, carried into the page so a browser copy
     # opens with the same work rather than empty. --no-seed leaves it out, which
@@ -2549,19 +3978,15 @@ def main():
         except (OSError, ValueError):
             seed = {}
 
-    page = (PAGE.replace("__SEED__", json.dumps(seed))
-                .replace("__DATA__", json.dumps(data))
-                .replace("__PLATES__", json.dumps(pl))
-                .replace("__PLATESET__", json.dumps(PLATE_SET))
-                .replace("__MARKERS__", json.dumps(markers))
-                .replace("__MARKER__", json.dumps(args.marker))
-                .replace("__SECGRID__", json.dumps(SEC_GRID))
-                .replace("__GROUPS__", json.dumps(GROUPS)))
-    with open(CURATOR_HTML, "w", encoding="utf-8") as fh:
+    page = IO.fill(PAGE, {
+        "__SEED__": seed, "__PROV__": load_provenance(), "__DATA__": data,
+        "__PLATES__": pl, "__PLATESET__": PLATE_SET, "__MARKERS__": markers,
+        "__MARKER__": args.marker, "__SECGRID__": SEC_GRID, "__GROUPS__": GROUPS})
+    with open(args.out, "w", encoding="utf-8") as fh:
         fh.write(page)
 
     lab = [p for p in pl if p["labelled"]]
-    print(f"wrote {CURATOR_HTML}")
+    print(f"wrote {args.out}")
     # Loud, because a page that can lay itself out by treatment is a page that
     # is no longer blind, and that should never be discovered by accident.
     if GROUPS["by_animal"] and GROUPS["order"]:
@@ -2582,7 +4007,8 @@ def main():
               f"   {nrgb} with a colour composite")
     print(f"  {len(data)} sections in the page, {len(pl)} plates, "
           f"{sum(len(p['seeds']) for p in pl)} region seeds")
-    print(f"  {len(lab)} plates carry seeds: {lab[0]['id']} .. {lab[-1]['id']}")
+    print(f"  {len(lab)} plates carry seeds"
+          + (f": {lab[0]['id']} .. {lab[-1]['id']}" if lab else " - no region can be placed yet"))
     print()
     print("Scrub the plate slider until it matches, then click matching points -")
     print("section first, then plate. From three pairs the atlas regions are warped")

@@ -40,9 +40,13 @@ function concat(parts) {
   return out;
 }
 
-// Written by tests/run.sh, which regenerates the page with --no-seed and lifts
-// out its <script>. Not committed: it is a build product of a generated file.
-const CURATOR_JS = path.join(__dirname, "build", "curator.js");
+// Written by tests/run.sh, which regenerates each page into tests/build/ and
+// lifts out its <script>. Not committed: build products of generated files.
+//   curator.js           04l_roi_curator.py   (--no-seed)
+//   rotation_curator.js  04d_rotation_curator.py (--no-proposals)
+//   level_curator.js     04k_level_curator.py
+const builtJs = page => path.join(__dirname, "build", page + ".js");
+const CURATOR_JS = builtJs("curator");
 
 function makeEnv() {
   const store = {};          // localStorage
@@ -75,6 +79,13 @@ function makeEnv() {
     // is the package that gets built around it, not the picture.
     toBlob(cb) { cb(mkBlob([PNG_1PX])); },
     getBoundingClientRect: () => ({ left: 0, top: 0, width: 600, height: 600 }),
+    // Every element in a real document has a parent, and the page dresses the
+    // label AROUND a checkbox - disabling it also dims and re-titles the
+    // wrapper. A stub with no parentElement made that a TypeError, which reads
+    // as "the page is broken" when it is the fake DOM that is thin.
+    get parentElement() {
+      return (this._parent ||= { style: {}, title: "", classList: mkCL() });
+    },
     getContext: () => new Proxy({}, {
       get: (t, k) => k === "measureText"
         ? (s => ({ width: String(s).length * 8 }))
@@ -100,10 +111,18 @@ function makeEnv() {
     setItem: (k, v) => { store[k] = v; },
     removeItem: k => { delete store[k]; },
   };
+  // Every image is 768 square unless a suite says otherwise. The page shows a
+  // 768 px composite where one exists and the 256 px greyscale where it does
+  // not, and both frames can be on one page - so a suite that cares sets
+  // env.imgSize to a function of the src the page assigned (null keeps 768).
+  // The stub never fires onload; a suite drives drawSec() itself.
+  const imgSize = img => ret.imgSize ? ret.imgSize(img._src || "") : 768;
   global.Image = function () {
     return {
-      addEventListener() {}, set src(v) {},
-      get naturalWidth() { return 768 }, get naturalHeight() { return 768 },
+      _src: "", addEventListener() {},
+      set src(v) { this._src = String(v); }, get src() { return this._src; },
+      get naturalWidth() { return imgSize(this); },
+      get naturalHeight() { return imgSize(this); },
     };
   };
   // Kept as a string for the CSV suites, which read env.blobs and compare text.
@@ -131,7 +150,8 @@ function makeEnv() {
   // Dispatch a window-level event the page registered for. The page listens on
   // window for mousemove/mouseup, so a drag has to be delivered this way.
   const fire = (ev, o) => (win[ev] || []).forEach(f => f(o));
-  return { store, win, els, blobs, blobParts, fire, concat };
+  const ret = { store, win, els, blobs, blobParts, fire, concat, imgSize: null };
+  return ret;
 }
 
 const env = makeEnv();
@@ -143,12 +163,13 @@ const env = makeEnv();
  * suite can reach `active`, `guided` and friends - which are `let` bindings with
  * no other way out. Getters and setters keep them live rather than snapshotting.
  */
-function load(exportExpr) {
-  if (!fs.existsSync(CURATOR_JS)) {
-    console.error(`missing ${CURATOR_JS}\nRun tests/run.sh, which extracts it.`);
+function load(exportExpr, page = "curator") {
+  const file = builtJs(page);
+  if (!fs.existsSync(file)) {
+    console.error(`missing ${file}\nRun tests/run.sh, which builds it.`);
     process.exit(2);
   }
-  let js = fs.readFileSync(CURATOR_JS, "utf8");
+  let js = fs.readFileSync(file, "utf8");
   // The page calls render() on load; the suites drive it themselves.
   js = js.replace(/\nrender\(\);\s*$/, "\n");
   js += "\nglobalThis._X=" + exportExpr + ";";

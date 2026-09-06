@@ -20,12 +20,50 @@ flip, crop, pad and resize - the same trick the artifact and censor masks alread
 use - and the blue channel of the output is the byte-for-byte image the curator
 was showing. `--verify` checks exactly that rather than assuming it.
 
-Only the sections in `roi_worklist.csv` are built, so this covers the curation
-job rather than all 718 reformatted sections.
+Only the sections in `roi_worklist.csv` are built by default, so that covers the
+curation job rather than all 718 reformatted sections. `--all` builds the
+marker's whole reformat index instead, and `--include-excluded` builds every
+scanned section in `focus.csv` - including the 1,066 the pipeline threw out.
+
+Those excluded sections are exactly why this reaches past the index. They have a
+greyscale image (`04a --render-excluded` writes one so they can be LOOKED at in
+Review mode) but no composite, so the review grid showed them in grey next to
+colour neighbours - which reads as a rendering fault rather than as "this one
+was excluded". Being in `sections_*_rgb/` still puts nothing into the analysis -
+the index is what does that, and this does not touch it.
+
+AN EXCLUDED SECTION IS BUILT UNMASKED, because that is what its greyscale is.
+04a masks only under `--mask-artifacts`, and the excluded ones were rendered
+before `04g --include-excluded` gave them artifact masks at all - so their
+stored image has no masking in it, while every section in the index does.
+Applying the mask here anyway made 848 of the 1,066 fail `--verify` against the
+picture the grid actually shows: same frame, different pixels.
+
+It is also the better picture to review. An excluded section is on screen so
+somebody can decide whether to reinstate it, and a base image with the artifact
+already painted black cannot answer that - the mask is a layer you switch on in
+Review mode, and it has nothing to show if it has been baked in.
+
+Thumbnails
+----------
+
+`--thumbs` writes a `RF.GRID`-sized copy of each composite into
+`<sections>_rgb_thumb/`. The review grid draws a few hundred cells at 78px, and
+a 768px composite is 448 KB against 21 KB for the greyscale it replaced - one
+animal's grid went from 4.7 MB to 56.6 MB for pictures nobody sees at that size.
+That is the same mistake the grid already made once with the 1632x1862
+overviews, which left most cells blank behind `loading="lazy"` and looked broken
+rather than slow.
+
+A thumbnail is a DOWNSCALE OF THE COMPOSITE, never a re-render. Re-rendering
+would put a second code path between the picture and the frame it was built in,
+and the only thing that makes these safe to show next to landmark work is that
+they are the same image, smaller.
 
 Run:  python 04o_section_rgb.py
       python 04o_section_rgb.py --tier core
       python 04o_section_rgb.py --verify
+      python 04o_section_rgb.py --thumbs --all --marker AF488
 """
 
 import argparse
@@ -50,6 +88,41 @@ FOCUS_CSV = os.path.join(OUT_ROOT, "qc", "focus.csv")
 MARKER_PLANE = {"AF568": 0, "AF488": 1}
 
 
+def write_thumbs(rgb_dir, size=RF.GRID, force=False):
+    """Downscale every composite in `rgb_dir` into `<rgb_dir>_thumb`.
+
+    Reads the composites rather than rebuilding from the overviews: a thumbnail
+    that went through its own render could differ from the picture the landmarks
+    were placed on, and the whole point is that it cannot.
+
+    LANCZOS because this is a 3:1 reduction of a sparse fluorescent signal -
+    nearest or bilinear drop isolated positive nuclei entirely, which is exactly
+    the thing the grid is being scanned for.
+    """
+    out_dir = rgb_dir + "_thumb"
+    os.makedirs(out_dir, exist_ok=True)
+    made = existing = failed = 0
+    for name in sorted(os.listdir(rgb_dir)):
+        if not name.endswith(".png"):
+            continue
+        dst = os.path.join(out_dir, name)
+        if os.path.exists(dst) and not force:
+            existing += 1
+            continue
+        try:
+            with Image.open(os.path.join(rgb_dir, name)) as im:
+                im.convert("RGB").resize((size, size), Image.LANCZOS).save(dst)
+            made += 1
+        except OSError:
+            failed += 1
+    print(f"wrote {made} thumbnails ({size}px) to {out_dir}")
+    if existing:
+        print(f"  {existing} already there, left alone (--force rebuilds them)")
+    if failed:
+        print(f"  {failed} could not be read")
+    return made, existing, failed
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--marker", choices=("AF488", "AF568"), default="AF568")
@@ -64,24 +137,51 @@ def main():
                          "instead of the pERK worklist. The worklist is keyed on "
                          "pERK and reaches PCNA only through the pairing, so it "
                          "cannot define the PCNA job - this can")
+    ap.add_argument("--include-excluded", action="store_true",
+                    help="build every SCANNED section for this marker, not just the "
+                         "ones that survived. The excluded ones already have a "
+                         "greyscale image from 04a --render-excluded and are shown "
+                         "in Review mode; without this they are the only grey cells "
+                         "in a colour grid. Adds no index row, so nothing downstream "
+                         "picks them up")
     ap.add_argument("--force", action="store_true",
                     help="rebuild composites that already exist (default is to skip "
                          "them, so topping a set up costs only the missing ones)")
     ap.add_argument("--verify", action="store_true",
                     help="check the blue plane still equals the existing greyscale section")
+    ap.add_argument("--thumbs", action="store_true",
+                    help="downscale the composites already built for this marker to "
+                         f"{RF.GRID}px for the review grid, and do nothing else")
+    ap.add_argument("--thumb-size", type=int, default=RF.GRID, metavar="N",
+                    help=f"thumbnail edge in pixels (default {RF.GRID})")
     args = ap.parse_args()
 
     paths = RF.marker_paths(args.marker)
-    overrides, _ = RF.load_overrides(paths)
     src_dir = paths["sections"]
     out_dir = src_dir + "_rgb"
+    index_path = paths["index"]
+
+    # Thumbnails are a resize of what is already on disk, so they need none of
+    # the overrides, focus table or worklist below.
+    if args.thumbs:
+        if not os.path.isdir(out_dir):
+            print(f"no composites to shrink: {out_dir} does not exist")
+            return
+        write_thumbs(out_dir, args.thumb_size, args.force)
+        return
+
+    overrides, _ = RF.load_overrides(paths)
     os.makedirs(out_dir, exist_ok=True)
 
     with open(FOCUS_CSV, newline="", encoding="utf-8") as fh:
         secs = {r["scene_uid"]: r for r in csv.DictReader(fh)
                 if r["marker_channel"] == args.marker}
 
-    if args.all:
+    if args.include_excluded:
+        # focus.csv is the whole scanned set for this marker - the same list 04p
+        # walks - so this reaches the sections the index deliberately omits.
+        uids = sorted(secs)
+    elif args.all:
         with open(paths["index"], newline="", encoding="utf-8") as fh:
             uids = [r["id"] for r in csv.DictReader(fh) if r["kind"] == "section"]
     else:
@@ -92,6 +192,12 @@ def main():
         # sections do not have - hence --all, which reads the marker's own index.
         uid_col = "pcna_scene_uid" if args.marker == "AF488" else "scene_uid"
         uids = [u for u in ((w.get(uid_col) or "").strip() for w in want) if u]
+
+    # The index is the definition of "survived", so it is also the definition of
+    # "was masked on the way in" - 04a writes an index row for exactly the
+    # sections it reformatted under the analysis flags.
+    with open(index_path, newline="", encoding="utf-8") as fh:
+        in_index = {r["id"] for r in csv.DictReader(fh) if r["kind"] == "section"}
 
     plane = MARKER_PLANE[args.marker]
     made = skipped = mismatched = existing = 0
@@ -113,8 +219,12 @@ def main():
             continue
 
         extra, flip = overrides.get(uid, (0.0, False))
-        art = RF.load_artifact(uid, (RF.WORK_SIZE, RF.WORK_SIZE))
-        cen = RF.load_censor(uid, (RF.WORK_SIZE, RF.WORK_SIZE))
+        # Masked exactly as this section's own greyscale was - see the module
+        # docstring. Not a preference: the blue plane has to equal the picture
+        # already on disk, and for an excluded section that picture is raw.
+        excluded_here = uid not in in_index
+        art = None if excluded_here else RF.load_artifact(uid, (RF.WORK_SIZE, RF.WORK_SIZE))
+        cen = None if excluded_here else RF.load_censor(uid, (RF.WORK_SIZE, RF.WORK_SIZE))
         out = RF.reformat(dapi, light_background=False, extra_angle=extra, flip=flip,
                           artifact=art, censor=cen, companion=mark,
                           render_scale=1 if args.verify else args.scale)

@@ -69,6 +69,25 @@ def main():
     try:
         from PySide6.QtWidgets import QApplication
     except ImportError as e:
+        # A bare traceback here is the least useful thing this can print: the
+        # cause is almost always the interpreter rather than a broken install,
+        # and the traceback says nothing about which one is running. Name it,
+        # and name the fix. run_app.bat now prefers work\\appenv for the same
+        # reason; this is what someone running `python -m app` by hand sees.
+        sys.stderr.write(
+            f"\nPySide6 is not installed in this interpreter.\n"
+            f"  running: {sys.executable}\n"
+            f"  version: {sys.version.split()[0]}\n\n"
+            f"work\\appenv is the interpreter that has it - the same 3.13 venv "
+            f"build_app.bat freezes the exe from. (It is 3.13 rather than 3.14 "
+            f"because pylibCZIrw, which the overview stage needs, publishes no "
+            f"cp314 wheel.)\n\n"
+            f"Use it:\n"
+            f"  run_app.bat\n"
+            f"or build it:\n"
+            f"  build_app.bat\n"
+            f"or install into this one:\n"
+            f"  pip install -r requirements.txt\n\n")
         _report(type(e), e, e.__traceback__)
         return 1
 

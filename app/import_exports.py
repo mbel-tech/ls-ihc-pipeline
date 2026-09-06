@@ -14,11 +14,23 @@ read - is the more reliable of the two.
 
 Run:  python -m app.import_exports C:\\path\\to\\downloads
       python -m app.import_exports <dir> --merge
+      python -m app.import_exports <dir> --replace   # drop what it omits
       python -m app.import_exports "C:/.../roi_plates(1).csv" --merge
       python -m app.import_exports <dir> --dry-run
+      python -m app.import_exports <dir> --no-rgb    # the page was run without them
 
 A path to a plates CSV works as well as a directory, because a second export
 lands as `roi_plates(1).csv` and that is exactly when it is needed.
+
+Without --merge the store is REPLACED, and one store holds both markers - so a
+PCNA-only export would drop every pERK placement. That is refused rather than
+warned about: pass --merge to keep them, or --replace if the loss is intended.
+
+The scale each section's coordinates come back at is read off `reformatted/`,
+per section: 04l shows the 768 px composite where 04o built one and the 256 px
+greyscale where it did not, and the CSVs are written in the canonical 256 grid
+either way. --no-rgb says the page was run without composites, so every section
+is read in the greyscale frame.
 
 --merge keeps sections the export does not mention. A session spent on one animal
 exports only that animal, so a plain import would silently drop every decision
@@ -39,19 +51,64 @@ import state as ST                                          # noqa: E402
 ROI_KEY = "ls_roi_curator_v1"
 
 
+SEC_GRID = 256
+
+
+def marker_dir(marker):
+    """Mirrors 04l's marker_paths: the two channels do not share a directory."""
+    return "sections_AF568" if marker == "AF568" else "sections"
+
+
+def frame_from_disk(reformat_dir, rgb=True):
+    """uid -> the width of the image 04l would have put on screen for it.
+
+    The same rule 04q_import_curation.k_from_disk applies: the 768 px composite
+    where 04o built one, the 256 px greyscale otherwise. Returned as a callable
+    so `rebuild()` stays pure and a test can pin the scale with no images.
+    """
+    cache = {}
+
+    def frame_of(uid, marker):
+        if uid in cache:
+            return cache[uid]
+        from PIL import Image
+        base = marker_dir(marker)
+        subs = ((base + "_rgb",) if rgb else ()) + (base,)
+        frame = float(SEC_GRID)
+        for sub in subs:
+            path = os.path.join(reformat_dir, sub, uid + ".png")
+            if os.path.exists(path):
+                try:
+                    frame = float(Image.open(path).size[0])
+                except OSError:
+                    frame = float(SEC_GRID)
+                break
+        cache[uid] = frame
+        return frame
+
+    return frame_of
+
+
 def _blank():
     return {"plate": 0, "pairs": [], "assigned": False,
             "noroi": False, "fav": False, "rot": 0.0, "excl": False}
 
 
-def rebuild(plates_csv, landmarks_csv=None, k=3.0, regions_csv=None):
+def rebuild(plates_csv, landmarks_csv=None, k=None, regions_csv=None, frame_of=None):
     """Turn the exports back into the curator's `S` map.
 
-    `k` is the ratio between the pixels the operator clicked in and the canonical
-    256 grid the export is written in - 3 for the 768 px colour composites. The
-    export divides by it on the way out, so the rebuild multiplies by it on the
-    way back in. Get this wrong and every landmark lands at the wrong scale,
-    which is why it is a named argument rather than a constant buried below.
+    THE SCALE IS PER SECTION, not per import. The export is always in the
+    canonical 256 grid; the pixels the operator clicked in are the width of the
+    image 04l put on screen, which is 768 where 04o built a composite and 256
+    where it did not - and both kinds sit in one export. `k=3.0` used to be the
+    default for the whole file, so every greyscale section came back with its
+    landmarks three times too far out. Pass `frame_of(uid, marker)` - build one
+    with `frame_from_disk()` - and each section is read in its own frame and has
+    that frame recorded on it, which is what 04l itself now stores.
+
+    `k` remains for a caller that knows every section shared one frame. With
+    neither, nothing is scaled: the export's own 256 grid is assumed, which is
+    the only safe guess when there is nothing on disk to ask.
 
     `regions_csv` is read for its BACKGROUND rows and nothing else. Background
     discs are not landmarks - they have no plate counterpart, so they are absent
@@ -62,7 +119,14 @@ def rebuild(plates_csv, landmarks_csv=None, k=3.0, regions_csv=None):
     back: those are derived from the landmarks, and reading both would duplicate
     every pair.
     """
+    if frame_of is None:
+        flat = float(SEC_GRID) * (float(k) if k is not None else 1.0)
+
+        def frame_of(uid, marker, _f=flat):
+            return _f
+
     S = {}
+    frames = {}
     with open(plates_csv, newline="", encoding="utf-8") as fh:
         for r in csv.DictReader(fh):
             uid = (r.get("scene_uid") or "").strip()
@@ -82,6 +146,8 @@ def rebuild(plates_csv, landmarks_csv=None, k=3.0, regions_csv=None):
                 e["rot"] = float(r.get("view_rotation_deg") or 0) or 0.0
             except ValueError:
                 e["rot"] = 0.0
+            e["frame"] = frames.setdefault(
+                uid, float(frame_of(uid, (r.get("marker") or "").strip())))
             S[uid] = e
 
     n_pairs = 0
@@ -92,9 +158,15 @@ def rebuild(plates_csv, landmarks_csv=None, k=3.0, regions_csv=None):
                 if not uid:
                     continue
                 e = S.setdefault(uid, _blank())
+                # A landmarks row for a section the plates file did not
+                # mention still needs a frame; ask for it once either way.
+                kk = frames.setdefault(
+                    uid, float(frame_of(uid, (r.get("marker") or "").strip()))
+                ) / SEC_GRID
+                e.setdefault("frame", frames[uid])
                 try:
-                    sx = float(r["sec_x"]) * k
-                    sy = float(r["sec_y"]) * k
+                    sx = float(r["sec_x"]) * kk
+                    sy = float(r["sec_y"]) * kk
                     px = float(r["plate_x"])
                     py = float(r["plate_y"])
                 except (KeyError, ValueError):
@@ -108,7 +180,7 @@ def rebuild(plates_csv, landmarks_csv=None, k=3.0, regions_csv=None):
                     seed = 0
                 rad = 0.0
                 try:
-                    rad = float(r.get("sec_r") or 0) * k
+                    rad = float(r.get("sec_r") or 0) * kk
                 except ValueError:
                     rad = 0.0
                 pair = [sx, sy, px, py, seed, rad] if (seed or rad) else [sx, sy, px, py]
@@ -127,17 +199,21 @@ def rebuild(plates_csv, landmarks_csv=None, k=3.0, regions_csv=None):
                 uid = (r.get("scene_uid") or "").strip()
                 if not uid:
                     continue
+                kk = frames.setdefault(
+                    uid, float(frame_of(uid, (r.get("marker") or "").strip()))
+                ) / SEC_GRID
                 try:
-                    sx = float(r["sec_x"]) * k
-                    sy = float(r["sec_y"]) * k
-                    rad = float(r.get("sec_r") or 0) * k
+                    sx = float(r["sec_x"]) * kk
+                    sy = float(r["sec_y"]) * kk
+                    rad = float(r.get("sec_r") or 0) * kk
                 except (KeyError, ValueError):
                     continue
                 # Plate coords 0,0 and seed 0, exactly as the curator stores
                 # them - the "bg" marker is what identifies it, and the fit
                 # filters on that rather than on the coordinates.
-                S.setdefault(uid, _blank())["pairs"].append(
-                    [sx, sy, 0.0, 0.0, 0, rad, "bg"])
+                bge = S.setdefault(uid, _blank())
+                bge.setdefault("frame", frames[uid])
+                bge["pairs"].append([sx, sy, 0.0, 0.0, 0, rad, "bg"])
                 n_bg += 1
     return S, n_pairs, n_bg
 
@@ -146,6 +222,9 @@ def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     dry = "--dry-run" in sys.argv
     merge = "--merge" in sys.argv
+    # Only needed to override the refusal below - replacing is still the
+    # default, it just stops when it would drop another marker's work.
+    replace = "--replace" in sys.argv
     if not args:
         print(__doc__)
         return 2
@@ -169,7 +248,12 @@ def main():
     with open(cfg, encoding="utf-8") as fh:
         out_root = json.load(fh)["out_root"]
 
-    S, n_pairs, n_bg = rebuild(plates, marks, regions_csv=regions)
+    # The frame is read off disk, per section, exactly as 04q does it:
+    # a flat k here put every greyscale section's landmarks at 3x.
+    frame_of = frame_from_disk(os.path.join(out_root, "reformatted"),
+                               rgb="--no-rgb" not in sys.argv)
+    S, n_pairs, n_bg = rebuild(plates, marks, regions_csv=regions,
+                               frame_of=frame_of)
     fresh = len(S)
 
     if merge:
@@ -198,9 +282,32 @@ def main():
     existing = None if merge else store.read(ROI_KEY)
     if existing:
         try:
-            had = len(json.loads(existing))
+            prior_all = json.loads(existing)
         except ValueError:
-            had = "?"
+            prior_all = {}
+        had = len(prior_all) if prior_all else "?"
+
+        # REPLACING NOW DESTROYS THE OTHER MARKER'S CURATION.
+        #
+        # One store holds both markers - scene uids never collide, which is what
+        # lets the curator page carry pERK and PCNA at once - so a PCNA-only
+        # export replacing it wholesale drops every pERK placement, and the
+        # reverse. Harmless while only one marker had ever been curated; the
+        # store here already holds 180 pERK sections and 85 PCNA ones.
+        #
+        # Sections the export does not mention are the signal. A normal
+        # re-import of the same marker mentions its own sections, so whatever is
+        # left over belongs to another marker - or the wrong export was picked.
+        # Either way it is not a default, and it is not reversible.
+        orphans = sorted(u for u in (prior_all or {}) if u not in S)
+        if orphans and not replace:
+            print(f"\n  REFUSING: {ROI_KEY} holds {had} sections and this "
+                  f"export mentions {len(S)}, so replacing it would DROP "
+                  f"{len(orphans)} - e.g. {', '.join(orphans[:3])}.")
+            print(f"  One store holds both markers. Curating one cannot disturb "
+                  f"the other, but REPLACING the store can.")
+            print(f"  --merge keeps them; --replace drops them anyway.")
+            return 1
         print(f"\n  NOTE: {ROI_KEY} already holds {had} sections and will be replaced.")
 
     if dry:

@@ -17,6 +17,10 @@ export LS_CONFIG="${LS_CONFIG:-$ROOT/config.json}"
 FIJI="${FIJI:-C:/Users/marti/Fiji.app/ImageJ-win64.exe}"
 # pylibCZIrw has no cp314 wheel, so the CZI stages run in a 3.13 venv.
 CZIPY="${CZIPY:-$ROOT/work/czienv/Scripts/python.exe}"
+# Every stage writes under config.out_root, which is NOT the repo. Steps 4 and
+# 8 used $ROOT/qc/... and so handed Fiji a list that did not exist and 01c a
+# glob that matched nothing - hidden by the `|| true` on step 8.
+OUT="$(python -c "import json,sys;print(json.load(open(sys.argv[1],encoding='utf-8'))['out_root'])" "$LS_CONFIG")" || exit 1
 mkdir -p "$LOGS"
 
 START_AT=1
@@ -66,7 +70,7 @@ step 3 "pick sections for the tile field" \
   python 01b_pick_sections.py --n 96 --scenes-per-file 4 || exit 1
 
 if [ "$START_AT" -le 4 ]; then
-  export EX_LIST="$ROOT/qc/tilefield_sample.csv"
+  export EX_LIST="$OUT/qc/tilefield_sample.csv"
   export EX_UMPX=2.6
   step 4 "export sample sections at 2.6 um px" \
     fiji "$SCRIPTS/01b_export_section.groovy" || exit 1
@@ -83,7 +87,7 @@ step 7 "measure the tile artifact BEFORE correction" \
   python 01c_measure_tile_artifact.py || true
 
 step 8 "measure the tile artifact AFTER correction" \
-  bash -c "python 01c_measure_tile_artifact.py '$ROOT/qc/test_sections_corrected'/*.tif" || true
+  python 01c_measure_tile_artifact.py "$OUT/qc/test_sections_corrected/*.tif" || true
 
 # Every section at exactly 5.2 um/px. Ported from Fiji to pylibCZIrw:
 # ~36 min instead of ~306, no Memoizer to silently hand back a tile-mode reader
@@ -93,18 +97,25 @@ step 8 "measure the tile artifact AFTER correction" \
 step 9 "export overviews for every section" \
   "$CZIPY" 01_overviews.py || exit 1
 
-step 10 "build contact sheets and gallery" \
+# Clipping measured BEFORE the tile field, per section, with the raw mask 04j
+# censors from. Dividing by a gain above 1 lifts a pixel off the ceiling, so
+# the count taken after correction was roughly half the truth (LOGS
+# 2026-09-02). pylibCZIrw again, so the same interpreter as step 9.
+step 10 "measure clipping on the raw plane" \
+  "$CZIPY" 01k_saturation_raw.py || exit 1
+
+step 11 "build contact sheets and gallery" \
   python 01d_contactsheets.py || exit 1
 
-step 11 "pair the AF568 and AF488 passes" \
+step 12 "pair the AF568 and AF488 passes" \
   python 02_pair_passes.py || exit 1
 
-step 12 "extract the atlas plates and seeds" \
+step 13 "extract the atlas plates and seeds" \
   python 04a_atlas_extract.py || exit 1
 
 # Reports the call and writes the evidence figure, but does not commit the
 # names to config.json - that needs a human look, so no --accept here.
-step 13 "infer which fluorophore is pERK and which is PCNA" \
+step 14 "infer which fluorophore is pERK and which is PCNA" \
   python 00c_channel_identity.py || true
 
 # The 04-series curation chain and the quantification that follows it are not
@@ -114,7 +125,7 @@ step 13 "infer which fluorophore is pERK and which is PCNA" \
 #
 #   python 05a_roi_geometry.py --verify        check the map, run this first
 #   python 05a_roi_geometry.py <roi_regions.csv>
-step 14 "place the curated ROIs on the slide (needs a curator export)" \
+step 15 "place the curated ROIs on the slide (needs a curator export)" \
   python 05a_roi_geometry.py || true
 
 # 05c is NOT run here. It needs StarDist and TensorFlow, which the packaged app
@@ -128,9 +139,10 @@ step 14 "place the curated ROIs on the slide (needs a curator export)" \
 
 printf '\n========================================================================\n'
 printf 'PIPELINE COMPLETE\n'
-printf '  contact sheets : %s/contactsheets/\n' "$ROOT"
-printf '  gallery        : %s/contactsheets/gallery.html\n' "$ROOT"
+printf '  contact sheets : %s/contactsheets/\n' "$OUT"
+printf '  gallery        : %s/contactsheets/gallery.html\n' "$OUT"
 printf '  tile artifact  : compare step 7 (before) against step 8 (after)\n'
-printf '  channel call   : %s/qc/channel_identity/channel_identity.png\n' "$ROOT"
+printf '  raw clipping   : %s/qc/saturation_raw.csv\n' "$OUT"
+printf '  channel call   : %s/qc/channel_identity/channel_identity.png\n' "$OUT"
 printf '  logs           : %s\n' "$LOGS"
 printf '========================================================================\n'

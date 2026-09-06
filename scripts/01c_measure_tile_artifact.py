@@ -28,7 +28,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import tifffile
 
-CONFIG_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config.json")
+# LS_CONFIG names the file explicitly; the file-relative path is the fallback.
+# Frozen, the scripts sit inside _internal/ while config.json is beside the
+# executable, so the fallback would point at a file that does not exist.
+CONFIG_PATH = os.environ.get("LS_CONFIG") or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config.json")
 with open(CONFIG_PATH, encoding="utf-8") as _fh:
     CONFIG = json.load(_fh)
 
@@ -265,6 +268,9 @@ def plot(path, result, panels):
 
 def main():
     targets = [a for a in sys.argv[1:] if not a.startswith("--")]
+    # Expand globs here: the app runs this in-process with a literal
+    # ".../test_sections_corrected/*.tif", which no shell has expanded.
+    targets = [p for t in targets for p in (sorted(glob.glob(t)) or [t])]
     if not targets:
         targets = sorted(glob.glob(os.path.join(TEST_DIR, "*.tif")))
     if not targets:

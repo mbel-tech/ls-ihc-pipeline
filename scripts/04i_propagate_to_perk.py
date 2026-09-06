@@ -24,6 +24,12 @@ the alignment IoU is reported per section so weak ones can be caught.
 The search covers the full 360 degrees, because the two automatic angles are
 independent and `04a`'s 180 degree resolution can land differently on each.
 
+`04a`'s angles and the alignment's angle live in different frames - `04a`
+squashes each scan to a square before measuring, the alignment works on the
+physical grid - and they are converted explicitly rather than mixed; see the
+"two frames" note above `derive_rotation`. The number that matters at the end,
+the overlap of the two 256-px masks, is reported per section as `final_iou_256`.
+
 **Artifacts are not propagated at all.** Bubbles, aggregates and fibres are
 properties of the imaged field, and the two scans image different fields. Running
 `04g` directly on the pERK overviews is both simpler and more correct than
@@ -46,7 +52,10 @@ import numpy as np
 from PIL import Image
 from scipy import ndimage
 
-CONFIG_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config.json")
+# LS_CONFIG names the file explicitly; the file-relative path is the fallback.
+# Frozen, the scripts sit inside _internal/ while config.json is beside the
+# executable, so the fallback would point at a file that does not exist.
+CONFIG_PATH = os.environ.get("LS_CONFIG") or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config.json")
 with open(CONFIG_PATH, encoding="utf-8") as _fh:
     CONFIG = json.load(_fh)
 
@@ -56,6 +65,9 @@ REFORMAT_DIR = os.path.join(OUT_ROOT, "reformatted")
 SEC_DIR = os.path.join(REFORMAT_DIR, "sections")
 PAIRS_CSV = os.path.join(OUT_ROOT, "pairs.csv")
 OUT_CSV = os.path.join(REFORMAT_DIR, "perk_overrides.csv")
+OVERRIDE_KEYS = ["perk_scene_uid", "pcna_scene_uid", "animal", "extra_rotation", "flip",
+                 "excluded", "align_iou", "final_iou_256", "flip_margin", "confidence",
+                 "reason"]
 REPORT_DIR = os.path.join(OUT_ROOT, "qc", "perk")
 
 PHYS_DS = 4           # downsample both overviews by this -> 20.8 um/px, shared
@@ -73,6 +85,11 @@ _SPEC = importlib.util.spec_from_file_location(
     "reformat_mod", os.path.join(os.path.dirname(os.path.abspath(__file__)), "04a_reformat.py"))
 _RF = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(_RF)
+
+_lsio = importlib.util.spec_from_file_location(
+    "_lsio", os.path.join(os.path.dirname(os.path.abspath(__file__)), "ls_io.py"))
+IO = importlib.util.module_from_spec(_lsio)
+_lsio.loader.exec_module(IO)
 
 
 def physical_mask(png_path, canvas):
@@ -165,6 +182,98 @@ def align(src_mask, target_mask):
     return deg, score, float(flip_best - score)
 
 
+def mask_iou(a, b):
+    return float((a & b).sum() / max((a | b).sum(), 1))
+
+
+# ---------------------------------------------------------------- two frames
+#
+# 04a measures its angle AFTER resizing the overview to a WORK_SIZE square, and
+# a scan box is rarely square, so that resize is anisotropic: x is scaled by
+# WORK_SIZE/w and y by WORK_SIZE/h. Every angle 04a reports or consumes - the
+# `angle` column of reformat_index.csv, the angle `reformat()` returns, and the
+# `extra_angle` it accepts - is measured in that squashed frame, and the frame
+# is different for every scan. `align()` above works on the isotropic physical
+# grid. The two kinds of angle cannot be added or subtracted directly; the
+# conversion goes through the direction vector, which is what the anisotropic
+# resize actually transforms.
+#
+# What `ndimage.rotate(img, A)` does to a direction at angle a (atan2(dy, dx) in
+# array coordinates) is a -> a - A, so rotating by A puts the direction at
+# angle A along +x. That is why 04a rotates by `principal_angle` rather than its
+# negative, and it is the invariant carried across frames here: the direction
+# that ends up horizontal in the PCNA output must end up horizontal in the pERK
+# output. Its angle is different in each of the three frames.
+
+
+def squashed_to_physical(angle, w, h):
+    """A direction's angle in a scan's WORK_SIZE-square frame -> on the slide."""
+    r = np.radians(angle)
+    return float(np.degrees(np.arctan2(h * np.sin(r), w * np.cos(r)))) % 360.0
+
+
+def physical_to_squashed(angle, w, h):
+    """A direction's angle on the slide -> in that scan's WORK_SIZE-square frame."""
+    r = np.radians(angle)
+    return float(np.degrees(np.arctan2(w * np.sin(r), h * np.cos(r)))) % 360.0
+
+
+def derive_rotation(p488, p568, total488, curated_mask=None):
+    """The correction 04a needs for one pERK scan. None if either scan has no mask.
+
+    `total488` is the TOTAL rotation 04a applied to the PCNA scan (automatic plus
+    the operator's correction), from reformat_index.csv, in the PCNA scan's
+    squashed frame. `curated_mask`, if given, is the PCNA section's 256-px mask
+    as curated; the pERK scan is then reformatted with the derived correction
+    and the IoU of the two 256-px masks is reported as `final_iou_256`.
+
+    That last number is the one that matters and it is bounded well below 1
+    even when the angle is right: the two 256-px masks are the same shape
+    squashed by two different scan boxes, and the squash survives 04a's crop
+    and square-pad. Measured on a synthetic section with boxes 944x1632 against
+    1174x1404 the best any rotation can reach is 0.66. So it is reported
+    against nothing, as a per-section number to compare with its neighbours,
+    not gated.
+    """
+    m488 = physical_mask(p488, CANVAS)
+    m568 = physical_mask(p568, CANVAS)
+    if m488 is None or m568 is None:
+        return None
+    try:
+        w488, h488 = Image.open(p488).size
+        w568, h568 = Image.open(p568).size
+    except OSError:
+        return None
+
+    # The direction 04a put along +x in the curated PCNA output, as an angle on
+    # the slide. Rotating the physical PCNA mask by it reproduces the curated
+    # orientation in physical units - rotating by `total488` itself would apply
+    # a squashed-frame angle to an unsquashed mask.
+    total488_phys = squashed_to_physical(total488, w488, h488)
+    target = ndimage.rotate(m488.astype(np.uint8), total488_phys, order=0,
+                            reshape=False) > 0
+    # `deg` is the same direction, on the slide, in the pERK scan's coordinates.
+    deg, score, flip_margin = align(m568, target)
+
+    # 04a will apply its own automatic angle to the pERK scan, in that scan's
+    # squashed frame, so the correction it needs is the difference between the
+    # total rotation measured here - moved into the same frame - and that
+    # automatic angle.
+    auto = _RF.reformat(p568, light_background=False)
+    if auto is None:
+        return None
+    a568 = float(auto[2])
+    extra = (physical_to_squashed(deg, w568, h568) - a568) % 360
+
+    final_iou = None
+    if curated_mask is not None:
+        done = _RF.reformat(p568, light_background=False, extra_angle=extra)
+        if done is not None:
+            final_iou = mask_iou(done[1], curated_mask)
+    return {"extra": extra, "deg": deg, "auto568": a568, "align_iou": score,
+            "flip_margin": flip_margin, "final_iou_256": final_iou}
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, default=0)
@@ -199,8 +308,8 @@ def main():
         if u568:
             rows.append({"perk_scene_uid": u568, "pcna_scene_uid": uid,
                          "animal": uid.split("_")[0], "extra_rotation": 0, "flip": 0,
-                         "excluded": 1, "align_iou": "", "flip_margin": "",
-                         "confidence": "",
+                         "excluded": 1, "align_iou": "", "final_iou_256": "",
+                         "flip_margin": "", "confidence": "",
                          "reason": "PCNA partner excluded by the operator"})
             n_excl += 1
 
@@ -217,45 +326,31 @@ def main():
         if not (os.path.exists(p488) and os.path.exists(p568)):
             failed += 1
             continue
-        m488 = physical_mask(p488, CANVAS)
-        m568 = physical_mask(p568, CANVAS)
-        if m488 is None or m568 is None:
-            failed += 1
-            continue
+        # The curated PCNA mask as 04a wrote it - the thing the pERK section
+        # has to line up with in the end.
+        mp = os.path.join(SEC_DIR, uid + "_mask.npy")
+        curated = np.load(mp).astype(bool) if os.path.exists(mp) else None
 
         # `angle` in reformat_index is the TOTAL rotation 04a applied to the PCNA
-        # scan - automatic plus the operator's correction. Rotating the raw PCNA
-        # mask by it reproduces the curated orientation, in physical units.
-        total488 = float(meta["angle"])
-        target = ndimage.rotate(m488.astype(np.uint8), total488, order=0,
-                                reshape=False) > 0
-
-        deg, score, flip_margin = align(m568, target)
-
-        # 04a will apply its own automatic angle to the pERK scan, so the
-        # correction it needs is the difference between the total rotation
-        # measured here and that automatic angle.
-        auto = _RF.reformat(p568, light_background=False)
-        if auto is None:
+        # scan - automatic plus the operator's correction.
+        d = derive_rotation(p488, p568, float(meta["angle"]), curated)
+        if d is None:
             failed += 1
             continue
-        a568 = float(auto[2])
-        extra = (deg - a568) % 360
-
+        score = d["align_iou"]
         rows.append({"perk_scene_uid": u568, "pcna_scene_uid": uid, "animal": animal,
-                     "extra_rotation": int(round(extra)), "flip": 0,
+                     "extra_rotation": int(round(d["extra"])), "flip": 0,
                      "excluded": 0, "align_iou": round(score, 4),
-                     "flip_margin": round(flip_margin, 4),
+                     "final_iou_256": ("" if d["final_iou_256"] is None
+                                       else round(d["final_iou_256"], 4)),
+                     "flip_margin": round(d["flip_margin"], 4),
                      "confidence": "low" if score < IOU_MIN else "high",
                      "reason": ""})
         if (i % 50) == 0:
             print(f"\r  aligned {i}/{len(todo)}", end="")
     print(f"\r  aligned {len(todo)} sections            ")
 
-    with open(OUT_CSV, "w", newline="", encoding="utf-8") as fh:
-        w = csv.DictWriter(fh, fieldnames=list(rows[0].keys()))
-        w.writeheader()
-        w.writerows(rows)
+    IO.atomic_write_csv(OUT_CSV, rows, OVERRIDE_KEYS)
 
     live = [r for r in rows if not r["excluded"] and r["align_iou"] != ""]
     s = np.array([r["align_iou"] for r in live], dtype=float)
@@ -273,6 +368,15 @@ def main():
         print(f"  alignment IoU : median {np.median(s):.3f}  p10 {np.percentile(s, 10):.3f}  "
               f"p90 {np.percentile(s, 90):.3f}  min {s.min():.3f}")
         print(f"  high confidence (>= {IOU_MIN}) : {hi} ({100 * hi / len(live):.0f}%)")
+        f256 = np.array([r["final_iou_256"] for r in live if r["final_iou_256"] != ""],
+                        dtype=float)
+        if len(f256):
+            print(f"  final 256-px IoU (pERK reformatted with the derived correction, "
+                  f"against the curated PCNA mask) : median {np.median(f256):.3f}  "
+                  f"p10 {np.percentile(f256, 10):.3f}  n {len(f256)}")
+            print("  This is lower than the alignment IoU by construction: 04a squashes each")
+            print("  scan to a square before the crop, and the two scan boxes differ, so the")
+            print("  two 256-px silhouettes are different shapes even when the angle is right.")
         print(f"  mirrored-would-score-better on {int((fm > 0).sum())} section(s), "
               f"by a median of {np.median(fm[fm > 0]) if (fm > 0).any() else 0:.4f} IoU")
         print("  Flipping is measured but never applied: two scans of one slide cannot")

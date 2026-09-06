@@ -19,7 +19,10 @@ import os
 import random
 from collections import defaultdict
 
-CONFIG_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config.json")
+# LS_CONFIG names the file explicitly; the file-relative path is the fallback.
+# Frozen, the scripts sit inside _internal/ while config.json is beside the
+# executable, so the fallback would point at a file that does not exist.
+CONFIG_PATH = os.environ.get("LS_CONFIG") or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config.json")
 with open(CONFIG_PATH, encoding="utf-8") as _fh:
     CONFIG = json.load(_fh)
 
@@ -28,6 +31,14 @@ OUT_ROOT = CONFIG["out_root"]
 OUT_CSV = os.path.join(OUT_ROOT, "qc", "tilefield_sample.csv")
 SEED = 20260811
 
+
+def pick_files(files, n_files):
+    """`n_files` of `files`, evenly spread. Sampling at the CENTRE of each
+    stride, so one file from a series is its middle slide - not the first,
+    which is what `int(i * stride)` always returned for i = 0 and left every
+    animal's tile-field sample on its most rostral slide."""
+    stride = len(files) / n_files
+    return [files[min(int((i + 0.5) * stride), len(files) - 1)] for i in range(n_files)]
 
 def main():
     ap = argparse.ArgumentParser()
@@ -67,8 +78,7 @@ def main():
             by_file[r["file"]].append(r)
         files = sorted(by_file)
         n_files = max(1, min(len(files), -(-per_group // args.scenes_per_file)))
-        stride = len(files) / n_files
-        chosen_files = [files[min(int(i * stride), len(files) - 1)] for i in range(n_files)]
+        chosen_files = pick_files(files, n_files)
 
         for fname in chosen_files:
             scenes = sorted(by_file[fname], key=lambda r: r["section_order"])

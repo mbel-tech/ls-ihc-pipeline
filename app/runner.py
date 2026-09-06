@@ -25,6 +25,7 @@ Two things the stages already do that this has to respect:
 import contextlib
 import importlib.util
 import io
+import json
 import os
 import sys
 import threading
@@ -58,7 +59,10 @@ class _Tee(io.TextIOBase):
         if not s:
             return 0
         self._all.append(s)
-        self._buf += s
+        # A stage reporting progress prints "\r  12/454" with end="" and never
+        # sends a newline until it is finished, so a carriage return has to
+        # count as a line end here or the pane stays blank for the whole run.
+        self._buf += s.replace("\r\n", "\n").replace("\r", "\n")
         while "\n" in self._buf:
             line, self._buf = self._buf.split("\n", 1)
             if self._on_line:
@@ -79,10 +83,42 @@ class Runner:
 
     def __init__(self, scripts_dir, config_path):
         self.scripts_dir = scripts_dir
-        self.config_path = config_path
+        self.config_path = os.path.abspath(config_path)
         self._modules = {}
         self._config_stamp = None
         self._lock = threading.Lock()
+        # The stages resolve config.json relative to their own file unless
+        # LS_CONFIG says otherwise. Frozen, their own file is inside _internal/
+        # and config.json is beside the executable, so without this every
+        # stage fails at import with a missing file.
+        os.environ["LS_CONFIG"] = self.config_path
+
+    # ---- argv -------------------------------------------------------------
+
+    def expand_argv(self, argv):
+        """Fill `{out_root}`, `{repo}` and `{scripts}` in a stage's argv.
+
+        stages.py is static data and cannot know where the outputs live; the
+        stages that take absolute paths (04q's three exports, 06b's workbook)
+        get them here, from the same config the stage itself will read.
+        """
+        try:
+            with open(self.config_path, encoding="utf-8") as fh:
+                out_root = json.load(fh).get("out_root", "")
+        except (OSError, ValueError):
+            out_root = ""
+        subs = {"{out_root}": out_root,
+                "{repo}": os.path.dirname(self.config_path),
+                "{scripts}": self.scripts_dir}
+        out = []
+        for a in argv:
+            hit = any(k in a for k in subs)
+            for k, v in subs.items():
+                a = a.replace(k, v)
+            # normpath only on expanded paths: a plain argument such as "--n"
+            # or "AF568" must reach the stage exactly as written.
+            out.append(os.path.normpath(a) if hit else a)
+        return out
 
     # ---- module loading ---------------------------------------------------
 
@@ -150,7 +186,7 @@ class Runner:
             return StageResult(stage.sid, False, 0.0, "",
                                f"{stage.title} has no script to run")
 
-        argv = [stage.script] + list(stage.argv) + list(extra_argv)
+        argv = [stage.script] + self.expand_argv(list(stage.argv) + list(extra_argv))
         tee = _Tee(on_line)
         t0 = time.time()
 

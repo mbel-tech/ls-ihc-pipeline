@@ -44,6 +44,11 @@ _spec = importlib.util.spec_from_file_location("_g5", os.path.join(_HERE, "05a_r
 G5 = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(G5)
 
+_lsio = importlib.util.spec_from_file_location(
+    "_lsio", os.path.join(os.path.dirname(os.path.abspath(__file__)), "ls_io.py"))
+IO = importlib.util.module_from_spec(_lsio)
+_lsio.loader.exec_module(IO)
+
 CONFIG = G5.CONFIG
 OUT_ROOT = G5.OUT_ROOT
 RESULTS = os.path.join(OUT_ROOT, "results")
@@ -58,9 +63,44 @@ DEFAULT_XLSX = os.path.join(CONFIG["source_dir"], "large scale exp sampling data
 EXERCISE_TANKS = {"303", "304", "307", "308"}
 CONTROL_TANKS = {"305", "306", "309", "310"}
 
-COL = {"fish": 0, "timepoint": 1, "environment": 2, "brackish_tank": 3,
-       "sea_tank": 4, "treatment": 5, "body_weight_g": 9, "fork_length_cm": 10,
-       "sex": 11, "brain_for": 13, "sliced_july_2025": 17}
+# The columns this stage needs, by a prefix of the header cell after
+# lower-casing and collapsing whitespace. The live sheet spells them
+# "enviroment" and "sea water  tank"; the prefixes are chosen so a fixed typo
+# still matches, and an inserted column moves the index rather than the
+# meaning.
+COLUMN_PREFIX = {"fish": "fish id", "timepoint": "timepoint", "environment": "enviro",
+                 "brackish_tank": "brackish tank", "sea_tank": "sea water tank",
+                 "treatment": "treatment", "body_weight_g": "body weight",
+                 "fork_length_cm": "fork length", "sex": "sex", "brain_for": "brain for",
+                 "sliced_july_2025": "slicing ihc july 2025"}
+
+
+def _norm(s):
+    return re.sub(r"\s+", " ", str(s or "")).strip().lower()
+
+
+def resolve_columns(header):
+    """{key: column index} from the header row, or a SystemExit naming what is
+    missing. Exactly one header cell may match each prefix."""
+    cells = {i: _norm(v) for i, v in header.items()}
+    out, bad = {}, []
+    for key, prefix in COLUMN_PREFIX.items():
+        hits = [i for i, v in cells.items() if v.startswith(prefix)]
+        if len(hits) != 1:
+            bad.append(f"{key} (header starting '{prefix}': {len(hits)} matches)")
+        else:
+            out[key] = hits[0]
+    if bad:
+        raise SystemExit("the sampling workbook's header does not match: " + "; ".join(bad))
+    return out
+
+
+def read_table(path):
+    """(columns, data rows): the sheet with its header resolved."""
+    rows = read_sheet(path)
+    if not rows:
+        raise SystemExit(f"{path}: the first worksheet is empty")
+    return resolve_columns(rows[0]), rows[1:]
 
 
 def read_sheet(path):
@@ -119,7 +159,7 @@ def main():
     animals = sorted({r["animal"] for r in meas},
                      key=lambda a: int(re.sub(r"\D", "", a) or 0))
 
-    sheet = read_sheet(args.xlsx)[1:]
+    COL, sheet = read_table(args.xlsx)
     fish = {r.get(COL["fish"], ""): r for r in sheet}
     sliced = {f for f, r in fish.items() if r.get(COL["sliced_july_2025"], "") == "x"}
 
@@ -165,10 +205,8 @@ def main():
             "sliced_july_2025": int(n in sliced),
         }
 
-    with open(META_CSV, "w", newline="", encoding="utf-8") as fh:
-        w = csv.DictWriter(fh, fieldnames=list(next(iter(meta.values())).keys()))
-        w.writeheader()
-        w.writerows(meta[a] for a in animals)
+    IO.atomic_write_csv(META_CSV, [meta[a] for a in animals],
+                        list(next(iter(meta.values())).keys()))
 
     carry = ["fish_id", "timepoint", "environment", "treatment", "treatment_source",
              "sex", "body_weight_g", "fork_length_cm"]
@@ -176,10 +214,7 @@ def main():
     for r in meas:
         m = meta.get(r["animal"], {})
         out.append({**r, **{k: m.get(k, "") for k in carry}})
-    with open(DATASET_CSV, "w", newline="", encoding="utf-8") as fh:
-        w = csv.DictWriter(fh, fieldnames=list(out[0].keys()))
-        w.writeheader()
-        w.writerows(out)
+    IO.atomic_write_csv(DATASET_CSV, out, list(out[0].keys()))
 
     print("=" * 72)
     print(f"{len(animals)} animals -> {META_CSV}")
