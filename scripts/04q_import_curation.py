@@ -13,7 +13,13 @@ keeps re-seeding from whatever the app last wrote.
 
 Reads `roi_plates.csv` (one row per touched section), `roi_landmarks.csv` (every
 landmark pair) and `roi_regions.csv` (the background discs live here too, told
-apart by `roi_kind`). Writes the seed JSON 04l embeds.
+apart by `roi_kind`, and the drawn REGIONS, told apart by `roi_shape`). Writes
+the seed JSON 04l embeds.
+
+A polygon is the one thing `roi_regions.csv` holds that the landmarks file
+cannot supply. A disc row is a landmark seen from the other side; a polygon
+answers no single point on the plate, so it exists in that file alone and a
+round trip that ignored it would quietly undo an operator's region work.
 
 THE SCALE IS PER SECTION
 ------------------------
@@ -71,14 +77,16 @@ SEED_JSON = os.path.join(OUT_ROOT, "curation", "ls_roi_curator_v1.json")
 
 # Mirrors 04l: the pair array is
 # [sec_x, sec_y, plate_x, plate_y, seed_n, radius] and a background disc carries
-# BG_MARK at index 6. pairR() reads index 5, isBg() reads index 6; nothing else
+# BG_MARK at index 6. A drawn region is NOT a pair - it sits in `polys` as
+# {v:[x,y,...], region, part} - because a pair is a correspondence and a polygon
+# corresponds to no single plate point. pairR() reads index 5, isBg() reads index 6; nothing else
 # in the page inspects the tail, so a pair that is one element short silently
 # becomes an ROI with a default radius.
 BG_MARK = "bg"
 SEC_GRID = 256
 
 # The decision fields 04l keeps per section.
-STATE_FIELDS = ("plate", "pairs", "assigned", "noroi", "fav", "rot", "excl")
+STATE_FIELDS = ("plate", "pairs", "polys", "assigned", "noroi", "fav", "rot", "excl")
 
 
 def num(v, default=0.0):
@@ -161,6 +169,7 @@ def build(plates, landmarks, regions, k_of):
         state[uid] = {
             "plate": int(num(idx)) if idx else 0,
             "pairs": [],
+            "polys": [],
             # Export collapses `assigned || n > 0` into plate_id - see the
             # module docstring; a named plate is read as a chosen one.
             "assigned": bool(cell(r, "plate_id")),
@@ -192,12 +201,55 @@ def build(plates, landmarks, regions, k_of):
         ])
 
     for r in regions:
+        uid = cell(r, "scene_uid")
+        # A drawn REGION is the one thing in this file that roi_landmarks.csv
+        # cannot supply. A disc row is a landmark seen from the other side and
+        # is already covered by the pairs above; a polygon answers no single
+        # plate point and exists only here, so losing it would quietly undo an
+        # operator's region work on every round trip.
+        if cell(r, "roi_shape") == "polygon":
+            if uid not in state:
+                skipped.append(("polygon", uid))
+                continue
+            k = k_of(uid, marker_of.get(uid, ""))
+            v = []
+            for vtx in cell(r, "sec_poly").split(";"):
+                xy = vtx.split()
+                if len(xy) != 2:
+                    continue
+                v.append(tidy(round(num(xy[0]) * k, 2)))
+                v.append(tidy(round(num(xy[1]) * k, 2)))
+            # Under three corners is not a polygon. A row that lost its vertex
+            # list somewhere would come back as a shape enclosing nothing, and
+            # 05a would hand 05c a box with no area in it.
+            if len(v) < 6:
+                skipped.append(("polygon", uid))
+                continue
+            pt, rn = cell(r, "part"), cell(r, "roi_n")
+            poly = {
+                "v": v, "region": cell(r, "region"),
+                "part": int(num(pt)) if pt else 1,
+                # Which numbered ROI on the plate this area answers. Without it
+                # the guided cursor cannot tell a re-imported section is already
+                # done and would ask for every region again.
+                "roi": int(num(rn)) if rn else 0,
+            }
+            # The order stamp, when the export carried one. An export written
+            # before the column existed has no answer, and absent has to stay
+            # absent: the curator reads an unstamped region as the newer of the
+            # two, and a number invented here would assert an order the file
+            # never recorded. "0" is a real stamp - a region drawn before any
+            # landmark - so this tests for an empty cell, not for falsity.
+            at = cell(r, "landmarks_at_draw")
+            if at != "":
+                poly["n"] = int(num(at))
+            state[uid].setdefault("polys", []).append(poly)
+            continue
         # roi_kind is the only thing separating a background disc from an ROI:
         # same columns, same units, same meaning. The ROI rows here are already
         # covered by roi_landmarks.csv, which carries every placed pair.
         if cell(r, "roi_kind") != "background":
             continue
-        uid = cell(r, "scene_uid")
         if uid not in state:
             skipped.append(("background", uid))
             continue
@@ -234,6 +286,8 @@ def counts(state):
         "assigned": sum(1 for v in vals if v["assigned"]),
         "landmarks": sum(1 for v in vals for p in v["pairs"] if len(p) <= 6),
         "background": sum(1 for v in vals for p in v["pairs"] if len(p) > 6),
+        "regions": sum(len(v.get("polys") or ()) for v in vals),
+        "region_sections": sum(1 for v in vals if v.get("polys")),
     }
 
 
@@ -258,6 +312,11 @@ def main(argv=None):
     print("rebuilt {sections} sections: {excluded} excluded, {favourites} "
           "favourite, {assigned} with a plate".format(**c))
     print("  {landmarks} landmark pairs, {background} background discs".format(**c))
+    # Said out loud rather than left to be inferred from the file size: a drawn
+    # region exists in roi_regions.csv alone, so if this line reads 0 after an
+    # export that had regions in it, the round trip lost them.
+    if c["regions"]:
+        print("  {regions} drawn regions on {region_sections} sections".format(**c))
 
     scales = {}
     for uid, v in state.items():

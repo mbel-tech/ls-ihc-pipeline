@@ -19,9 +19,13 @@ chk("dl quotes each field", blobs[0], 'h1,h2\n"x,y","q""r"\n1,');
 const pi = X.PLATES.findIndex(P => P.labelled), P = X.PLATES[pi];
 els["animal"].value = "LS105";
 const uid = X.rows()[0].uid; X.select(uid, true); X.active = uid; X.onSlideUser(pi);
-P.seeds[0].region = "Dm, medial"; P.seeds[0].amb = "";
+// The region name reaches roi_regions.csv through the POLYGON now - a landmark
+// carries no region, because an area does and a point does not.
+P.hulls[0].region = "Dm, medial"; P.hulls[0].amb = "";
 const s = X.st(uid);
-s.pairs.push([10, 10, 20, 20, 1, 5], [30, 30, 40, 40, 2, 5], [50, 50, 60, 60, 3, 5]);
+s.polys = [{v: [10, 10, 60, 10, 60, 60, 10, 60],
+            roi: P.hulls[0].roi, region: "Dm, medial", part: P.hulls[0].part}];
+s.pairs.push([10, 10, 20, 20, 0, 5], [30, 30, 40, 40, 0, 5], [50, 50, 60, 60, 0, 5]);
 blobs.length = 0; X.exportCsv();
 const rg = blobs[2].split("\n"), hdr = rg[0].split(",");
 chk("the region is quoted", rg.slice(1).some(l => l.includes('"Dm, medial"')), true);

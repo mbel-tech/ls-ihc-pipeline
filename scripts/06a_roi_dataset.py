@@ -82,8 +82,18 @@ def mad(xs):
 
 
 def roi_area_um2(b):
-    """The ellipse the disc became on the slide, from the two semi-axes 05a
-    measured. Not pi*r^2 in canonical pixels: the map is not a similarity."""
+    """The area of the ROI on the slide, in um^2, as 05a measured it.
+
+    `area_um2` is the answer for either shape - pi*a*b for a disc, the shoelace
+    over the mapped vertices for a drawn region - and is preferred wherever it
+    is present. Falling back to the two semi-axes keeps a roi_boxes file written
+    before 05a computed the area readable; a POLYGON has no semi-axes and leaves
+    those columns blank, so the fallback is for old disc files only.
+
+    Never pi*r^2 in canonical pixels either way: the map is not a similarity."""
+    a = b.get("area_um2", "")
+    if a not in ("", None):
+        return float(a)
     return np.pi * float(b["axis_a_um"]) * float(b["axis_b_um"])
 
 

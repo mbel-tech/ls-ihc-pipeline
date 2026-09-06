@@ -257,19 +257,27 @@ X.shotBuild().then(res => {
 // of this file already documents.
 function region() {
   note("");
+  // A section's regions are the AREAS drawn on it. It used to be the seeds its
+  // landmarks answered, which was right while a landmark was also an ROI.
   X.PLATES[PA].seeds = [{region: "Dm"}, {region: "Dl"}];
   X.PLATES[PB].seeds = [{region: "Dm"}, {region: "Vv"}];
-  const seed = (d, n) => X.st(d.uid).pairs.push([10, 10, 20, 20, n, 5]);
+  const REG = {1: {[PA]: "Dm", [PB]: "Dm"}, 2: {[PA]: "Dl", [PB]: "Vv"}};
+  const seed = (d, n) => {
+    const s = X.st(d.uid);
+    (s.polys || (s.polys = [])).push(
+      {v: [10, 10, 60, 10, 60, 60, 10, 60], roi: n, part: 1,
+       region: REG[n][s.plate]});
+  };
   seed(a9, 1); seed(a9, 2);              // one control section in two regions
   seed(b9, 1);                           // its exercise counterpart, in one
   twelve.forEach(d => seed(d, 2));       // twelve control sections in Vv
-  // pcna9 is left with no ROI at all, and must therefore reach no region slide.
+  // pcna9 is left with no region at all, and must reach no region slide.
 
-  chk("regions come from the seeds the ROIs answer",
+  chk("regions come from the areas drawn on the section",
       X.secRegions(X.st(a9.uid)).join(","), "Dm,Dl");
-  chk("a free-clicked ROI has no region",
-      X.secRegions({plate: PA, pairs: [[1, 1, 2, 2]]}).length, 0);
-  chk("no seeded ROI -> no region", X.secRegions(X.st(pcna9.uid)).length, 0);
+  chk("a section with no polygon has no region",
+      X.secRegions({plate: PA, pairs: [[1, 1, 2, 2]], polys: []}).length, 0);
+  chk("no region drawn -> no region", X.secRegions(X.st(pcna9.uid)).length, 0);
 
   const pick = X.shotPick();
   const rs = X.shotSlides(pick.take, "region");

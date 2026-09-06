@@ -19,8 +19,10 @@ const { env, load, chk, note, done } = require("./harness");
 const { els, blobs, fire } = env;
 
 const X = load(`{KEY, PLATES, DATA, st, rows, select, onSlideUser, exportCsv,
-  markAssigned, toggleFav, secDown, toggleBgMode, transform,
-  usedSeeds, roiPairs, bgPairs, isBg, pairR, defaultR,
+  markAssigned, toggleFav, secDown, toggleBgMode, transform, toggleGuided,
+  clickPl,
+  usedRois, roisOf, polysOf, roiPairs, bgPairs, isBg, pairR, defaultR,
+  drawSec,
   get guided(){return guided}, get gTarget(){return gTarget},
   get bgMode(){return bgMode},
   set active(v){active=v}, get active(){return active}}`);
@@ -39,39 +41,57 @@ const clickAt = (cx, cy, dragTo) => {
 };
 
 const s = X.st(uid);
+// The stub sizes the section image only once it has been drawn with.
+X.drawSec();
 
 // ---- the interleaving that breaks the cursor -----------------------------
-note("\nplacing: seed 1, then a background disc, then the next seed\n");
+note("\ndrawing ROI 1, then a background disc, then the next ROI\n");
 
-clickAt(100, 100);
-chk("seed 1 placed", s.pairs[0][4], 1);
+const square = (x0, y0, w) => {
+  clickAt(x0, y0); clickAt(x0 + w, y0); clickAt(x0 + w, y0 + w);
+  clickAt(x0, y0 + w); clickAt(x0, y0);
+};
+square(100, 100, 80);
+chk("ROI 1 drawn", X.polysOf(s)[0].roi, 1);
 chk("cursor advanced to 2", X.gTarget, 2);
 
 X.toggleBgMode();
 chk("background mode is on", X.bgMode, true);
-clickAt(150, 150);
-chk("the disc was stored", s.pairs.length, 2);
-chk("...marked as background", X.isBg(s.pairs[1]), true);
-chk("...with no seed number", !s.pairs[1][4], true);
+clickAt(300, 300);
+chk("the disc was stored", s.pairs.length, 1);
+chk("...marked as background", X.isBg(s.pairs[0]), true);
+chk("...with no seed number", !s.pairs[0][4], true);
 
-// The whole point of the suite.
+// The whole point of the suite: a background disc must not consume an ROI.
 chk("the guided cursor did NOT advance", X.gTarget, 2);
-chk("...and seed 2 is still unplaced", X.usedSeeds(s).has(2), false);
+chk("...and ROI 2 is still undrawn", X.usedRois(s).has(2), false);
+chk("...nor did it become a region", X.polysOf(s).length, 1);
 
 X.toggleBgMode();
 chk("background mode is off again", X.bgMode, false);
-clickAt(200, 200);
-chk("the next click answers seed 2, not seed 3", s.pairs[2][4], 2);
-chk("usedSeeds counts landmarks only", [...X.usedSeeds(s)].sort().join(), "1,2");
+square(400, 400, 80);
+chk("the next region answers ROI 2, not ROI 3", X.polysOf(s)[1].roi, 2);
+chk("usedRois counts regions only", [...X.usedRois(s)].sort().join(), "1,2");
 chk("roiPairs / bgPairs split the list",
-    X.roiPairs(s).length + "/" + X.bgPairs(s).length, "2/1");
+    X.roiPairs(s).length + "/" + X.bgPairs(s).length, "0/1");
 
 // ---- the fit must not see them -------------------------------------------
 // A background disc carries plate coords (0,0). If it reached the spline the
 // fit would be pulled to the plate's corner, and nothing on screen would say so
 // - the landmarks would still be drawn where they were placed.
 note("\nthe transform:\n");
-clickAt(260, 120);                                  // seed 3, so a fit is possible
+// Landmarks are placed FREE now - section, then the matching point on the plate
+// - because the guided walk asks for areas, not points.
+X.toggleGuided();
+chk("guided off, so clicks place landmarks", X.guided, false);
+const pair = (sx, sy, px, py) => {
+  clickAt(sx, sy);
+  X.clickPl({clientX: px, clientY: py, button: 0, preventDefault() {}});
+};
+pair(120, 120, 30, 30);
+pair(200, 140, 90, 45);
+pair(260, 120, 140, 80);
+chk("three landmarks placed", X.roiPairs(s).length, 3);
 const withBg = X.transform(s.pairs);
 const withoutBg = X.transform(X.roiPairs(s));
 chk("a fit exists", !!withBg, true);
@@ -94,13 +114,18 @@ const rgBody = rg.slice(1).filter(r => r[0] === uid);
 chk("roi_regions.csv gained roi_kind", kindI > 0, true);
 chk("...and every row declares one",
     rgBody.every(r => r[kindI] === "roi" || r[kindI] === "background"), true);
-chk("3 landmarks -> 3 region rows",
-    rgBody.filter(r => r[kindI] === "roi").length, 3);
+// TWO areas were drawn, and three landmarks placed. The landmarks are not ROIs
+// any more, which is the whole change: a region is an area, and a point is not.
+chk("2 regions drawn -> 2 roi rows",
+    rgBody.filter(r => r[kindI] === "roi").length, 2);
+chk("...every one a polygon, never a disc",
+    rgBody.filter(r => r[kindI] === "roi")
+          .every(r => r[col(rgH, "roi_shape")] === "polygon"), true);
 chk("1 background disc -> 1 background row",
     rgBody.filter(r => r[kindI] === "background").length, 1);
 chk("...named so it cannot be read as a place",
     rgBody.find(r => r[kindI] === "background")[regI], "__background__");
-chk("...and carrying a radius like any other ROI",
+chk("...and it is the only thing left carrying a radius",
     +rgBody.find(r => r[kindI] === "background")[col(rgH, "sec_r")] > 0, true);
 chk("no background row claims a seed",
     rgBody.filter(r => r[kindI] === "background" && r[col(rgH, "seed_n")] !== "").length, 0);
@@ -114,27 +139,36 @@ const plRow = pl.slice(1).find(r => r[0] === uid);
 chk("roi_plates.csv gained n_background", col(pl[0], "n_background") > 0, true);
 chk("...and reports it", plRow[col(pl[0], "n_background")], "1");
 chk("n_landmarks excludes the background disc", plRow[col(pl[0], "n_landmarks")], "3");
+X.toggleGuided();
 
 // ---- a section with too few landmarks for a fit --------------------------
-// Both files used to be gated on `n >= 3 && transform`, so a lightly landmarked
-// section exported nothing and read exactly like one nobody had touched. Since
-// the automatic placement was removed a landmark and an ROI are both just
-// things the operator put somewhere, and a transform is not the price of
-// admission for recording them. What goes blank is the residual, which really
-// is unmeasurable without a fit - blank rather than 0, which would be a claim.
+// Both files used to be gated on `n >= 3 && transform`, so a lightly curated
+// section exported nothing and read exactly like one nobody had touched. A
+// region and a landmark are both just things the operator put somewhere, and a
+// transform is not the price of admission for recording them. What goes blank is
+// the residual, which really is unmeasurable without a fit - blank rather than
+// 0, which would be a claim.
 note("\na section with background discs but only one landmark:\n");
 const thin = X.rows()[1].uid;
 X.select(thin, true); X.active = thin;
 X.onSlideUser(pi);
-clickAt(100, 100);                                  // one landmark, not three
+X.drawSec();
+// One region, drawn the ordinary way.
+clickAt(100, 100); clickAt(180, 100); clickAt(180, 180); clickAt(100, 180);
+clickAt(100, 100);
+// ...and one landmark, free, which is not enough for a fit.
+X.toggleGuided();
+clickAt(240, 240);
+X.clickPl({clientX: 60, clientY: 60, button: 0, preventDefault() {}});
+X.toggleGuided();
 X.toggleBgMode();
-clickAt(140, 140); clickAt(180, 180);
+clickAt(300, 300); clickAt(340, 340);
 X.toggleBgMode();
 X.markAssigned();
 blobs.length = 0; X.exportCsv();
 const rg2 = rows(blobs[2]).slice(1).filter(r => r[0] === thin);
 const lm2 = rows(blobs[1]).slice(1).filter(r => r[0] === thin);
-chk("the one placed ROI is still exported",
+chk("the one drawn region is still exported",
     rg2.filter(r => r[kindI] === "roi").length, 1);
 chk("...and both background discs",
     rg2.filter(r => r[kindI] === "background").length, 2);

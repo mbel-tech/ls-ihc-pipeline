@@ -20,7 +20,7 @@ const { els, blobs, fire } = env;
 // 768 for a composite, 256 for a greyscale - the frames the real page shows.
 env.imgSize = src => /_rgb\//.test(src) ? 768 : 256;
 
-const X = load(`{PLATES, DATA, D_BY, S, st, rows, select, onSlideUser, exportCsv,
+const X = load(`{toggleGuided, clickPl, PLATES, DATA, D_BY, S, st, rows, select, onSlideUser, exportCsv,
   secDown, toggleBgMode, roiPairs, bgPairs, drawSec,
   get bgMode(){return bgMode}, get secImg(){return secImg},
   set active(v){active=v}, get active(){return active}}`);
@@ -48,12 +48,23 @@ const clickAt = (cx, cy) => {
   X.secDown({ clientX: cx, clientY: cy, button: 0, preventDefault() {} });
   fire("mouseup", {});
 };
-// Three landmarks and one background disc, through the same clicks the
-// operator makes, so the frame is stamped where the page stamps it.
+// Three landmarks and one background disc, through the same clicks the operator
+// makes, so the frame is stamped where the page stamps it. Landmarks are placed
+// FREE - section, then the matching point on the plate - because the guided walk
+// asks for areas now.
 const place = uid => {
   X.select(uid, true); X.active = uid; X.onSlideUser(pi); X.drawSec();
-  clickAt(100, 100); clickAt(200, 150); clickAt(150, 250);
+  X.toggleGuided();
+  [[100,100,30,30],[200,150,90,45],[150,250,140,80]].forEach(([sx,sy,px,py]) => {
+    clickAt(sx, sy);
+    X.clickPl({clientX: px, clientY: py, button: 0, preventDefault(){}});
+  });
+  X.toggleGuided();
   X.toggleBgMode(); clickAt(300, 300); X.toggleBgMode();
+  // ...and one drawn region, because that is what an ROI is now and its
+  // vertices ride the same per-section divisor.
+  clickAt(120, 120); clickAt(220, 120); clickAt(220, 220); clickAt(120, 220);
+  clickAt(120, 120);
   return X.st(uid);
 };
 
@@ -72,7 +83,15 @@ chk("the same click lands ~3x further in A's pixels",
 const rows = t => t.split("\n").map(l => l.split(","));
 const canon = (ps, frame) =>
   ps.map(p => [p[0], p[1], p[5]].map(v => (v * 256 / frame).toFixed(2)).join()).join("|");
-const want = (s, frame) => ({ lm: canon(X.roiPairs(s), frame), bg: canon(X.bgPairs(s), frame) });
+const canonPoly = (s, frame) => (s.polys || []).map(pg => {
+  const o = [];
+  for (let i = 0; i < pg.v.length; i += 2)
+    o.push((pg.v[i] * 256 / frame).toFixed(2) + " " + (pg.v[i+1] * 256 / frame).toFixed(2));
+  return o.join(";");
+}).join("|");
+const want = (s, frame) => ({ lm: canon(X.roiPairs(s), frame),
+                              bg: canon(X.bgPairs(s), frame),
+                              poly: canonPoly(s, frame) });
 const got = (lm, rg, uid) => {
   const h = lm[0], xi = h.indexOf("sec_x"), yi = h.indexOf("sec_y"), ri = h.indexOf("sec_r");
   const g = rg[0], gx = g.indexOf("sec_x"), gy = g.indexOf("sec_y"), gr = g.indexOf("sec_r"),
@@ -80,7 +99,10 @@ const got = (lm, rg, uid) => {
   const pick = (r, a, b, c) => [r[a], r[b], r[c]].join();
   return {
     lm: lm.slice(1).filter(r => r[0] === uid).map(r => pick(r, xi, yi, ri)).join("|"),
-    rg: rg.slice(1).filter(r => r[0] === uid && r[ki] === "roi").map(r => pick(r, gx, gy, gr)).join("|"),
+    // A region is a polygon now, so what the divisor has to be right about is
+    // its VERTEX LIST, not a centre and a radius it no longer has.
+    poly: rg.slice(1).filter(r => r[0] === uid && r[ki] === "roi")
+            .map(r => r[g.indexOf("sec_poly")]).join("|"),
     bg: rg.slice(1).filter(r => r[0] === uid && r[ki] === "background").map(r => pick(r, gx, gy, gr)).join("|"),
   };
 };
@@ -95,10 +117,10 @@ for (const act of [A, B]) {
   const gA = got(lm, rg, A), gB = got(lm, rg, B);
   note(`  active = ${act === A ? "A (768)" : "B (256)"}`);
   chk("  A landmarks canonical", gA.lm, WA.lm);
-  chk("  A regions canonical", gA.rg, WA.lm);
+  chk("  A regions canonical", gA.poly, WA.poly);
   chk("  A background canonical", gA.bg, WA.bg);
   chk("  B landmarks canonical", gB.lm, WB.lm);
-  chk("  B regions canonical", gB.rg, WB.lm);
+  chk("  B regions canonical", gB.poly, WB.poly);
   chk("  B background canonical", gB.bg, WB.bg);
 }
 // Canonical means inside the 256 grid, whichever image the click was made on.
@@ -113,9 +135,17 @@ note("\n(b) a record with no frame is read in the frame its rgb flag implies\n")
 // Stores written before the frame was recorded: a composite section's pairs are
 // in 768 px, a greyscale one's in 256 px. Seeded straight into S, no click.
 const seed = P.seeds[0];
+const roi0 = P.hulls[0];
 const mk = (x, y, r) => ({
   plate: pi,
+  // The landmark keeps a seed number here on purpose: pairs written before ROIs
+  // became areas carry one, the operator's store is full of them, and
+  // roi_landmarks.csv still resolves `seed_region` through it. New pairs get 0.
   pairs: [[x, y, seed.xf * P.w, seed.yf * P.h, 1, r], [x + 30, y, 0, 0, 0, r, "bg"]],
+  // A region carries the name now, so a comma in one has to survive through a
+  // polygon row rather than a disc row.
+  polys: [{v: [x, y, x + 40, y, x + 40, y + 40, x, y + 40],
+           roi: roi0.roi, region: roi0.region, part: roi0.part}],
   assigned: true, noroi: false, fav: false, rot: 0, excl: false,
 });
 X.S[C] = mk(300, 150, 33);        // composite -> 768 frame
@@ -146,9 +176,10 @@ chk("...and the record now says so", X.S[E].frame, 768);
 }
 
 note("\n(c) a comma in a region name is one quoted field\n");
-const orig = seed.region;
-seed.region = "Rm (Raphe), ??";
+const orig = roi0.region, origSeed = seed.region;
+roi0.region = seed.region = "Rm (Raphe), ??";
 X.S[C] = mk(300, 150, 33);
+X.S[C].polys[0].region = roi0.region;
 {
   blobs.length = 0; X.exportCsv();
   const rg = blobs[2].split("\n"), ri = rg[0].split(",").indexOf("region");
@@ -179,6 +210,6 @@ X.S[C] = mk(300, 150, 33);
   chk("roi_landmarks quotes the same name", lmLines.some(l => l.includes('"Rm (Raphe), ??"')), true);
   chk("...and nothing else", lmLines.filter(l => !l.includes("Raphe")).some(l => l.includes('"')), false);
 }
-seed.region = orig;
+roi0.region = orig; seed.region = origSeed;
 
 done();

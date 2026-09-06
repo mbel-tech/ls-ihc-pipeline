@@ -371,8 +371,20 @@ and costs one line in the shared `read_scene()` helper.
   stage coordinates — a different frame from the pixel rectangles every read uses,
   and not convertible without the stage-to-pixel transform.
 - `.//` matches anywhere in the tree, so `.//Objectives/Objective/...` and
-  `.//CameraName` take the first match in document order, which can come from a
-  hardware-settings block rather than the instrument block.
+  `.//CameraName` take the first match in document order, wherever that happens
+  to be.
+
+  *Checked 2026-09-04, and the risk is real but not where this paragraph first
+  put it.* A real file carries seven
+  `HardwareSetting/Configuration/Device/ChangerElements/Objective` nodes, but
+  their parent tag is `ChangerElements`, not `Objectives`, so the loose path
+  does not in fact match them and resolves correctly today. What the check did
+  find is that `CameraName` is not under `Information/Instrument/Detectors/
+  Detector` at all — that element exists and is empty — but at
+  `Scaling/AutoScaling/CameraName`. So the loose path was returning the right
+  answer for the wrong reason, and an anchored path aimed at the Instrument
+  block would have returned nothing. Both are now tried in order, with the loose
+  path kept last.
 
 # Finding 10 — loose ends
 

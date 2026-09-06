@@ -10,6 +10,30 @@
 
 ---
 
+## DANGER — `--force` with `--limit` truncates `focus.csv`
+
+Found while executing Task 5, after the pattern had already been written into
+four steps. **Do not run `01_overviews.py --limit N --force`.**
+
+`export()` (`01_overviews.py:251-256`) loads the existing `focus.csv` into
+`qc_rows` only when `force` is false. With `--force` it starts from an empty
+list, `--limit N` stops it after N sections, and `write_qc` then *atomically
+replaces* `focus.csv` with those N rows. On this dataset that turns 2572 rows
+into 8. `focus.csv` feeds 01d, 01g, 04j, 04a and 05a.
+
+The same trap applies to `01k_saturation_raw.py --force`.
+
+Steps 5-4, 6-7, 9-5 and 11-4 as originally written all carried it. Each has been
+replaced with one of:
+
+- **in-process verification** — import the module and call the function under
+  test directly, touching no output (the approach the operator's standing rule
+  already requires for exploratory runs); or
+- **a scratch `out_root`** — point `LS_CONFIG` at a temporary config whose
+  `out_root` is a scratch directory, copying in whatever inputs the stage needs.
+
+Back up `focus.csv` before any run that writes it, regardless.
+
 ## Preconditions
 
 - Work on a branch off `quantify-the-marker`, not on it directly.
@@ -727,6 +751,27 @@ Expected: `ALL PASS`, exit 0.
 cd /c/Users/marti/repos/ls-ihc-pipeline && git add scripts/czi_meta.py tests/test_czi_meta.py && git commit -m "czi_meta: record ComponentBitCount and per-channel pixel type; anchor the instrument XPaths"
 ```
 
+### Review outcome — the camera XPath above is wrong
+
+Verified against real ZEN metadata during implementation. On these files
+`Information/Instrument/Detectors/Detector` exists but carries **no**
+`CameraName` child; the only one in the document is at
+`Scaling/AutoScaling/CameraName`. So the anchored path listed in Step 3 never
+matches and every file silently falls through to the loose `.//CameraName`.
+
+The camera lookup takes three paths in order: the Instrument path first (so a
+file that does populate it wins), then `.//Scaling/AutoScaling/CameraName`, then
+the loose fallback. The objective anchoring is unaffected and is doing real work
+— a real file carries seven `HardwareSetting/.../ChangerElements/Objective`
+nodes.
+
+Also settled here: `nominal_ceiling` is **duplicated** into `czi_meta.py` rather
+than imported from `00d_czi_selftest.py`. `czi_meta.py` is the dependency-light
+module — stdlib only, so it can run against a zip member — while `00d` is a
+numbered stage script that has to be loaded through `importlib` and pulls in
+numpy and pylibCZIrw. Importing a leaf stage from the foundational module would
+invert the dependency. Both copies are pinned by tests.
+
 ---
 
 ## Task 3: The manifest carries the clip ceiling
@@ -1115,25 +1160,42 @@ In `native_sample()`, replace the two `>= CEILING` comparisons at lines 146 and 
 
 change the signature to `def native_sample(scenes, n, ceilings, seed=20260901):`, its call site in `main()` to `native_sample(scenes, args.native_sample, ceilings)`, and the two comparisons to `>= ceiling`.
 
-- [ ] **Step 4: Verify the numbers do not move**
+- [ ] **Step 4: Verify in-process — do NOT run the stage**
 
-```bash
-cd /c/Users/marti/repos/ls-ihc-pipeline && cp "D:/LS-analysis/qc/focus.csv" "D:/LS-analysis/qc/focus.before-ceiling.csv" && work/appenv/Scripts/python.exe scripts/01_overviews.py --limit 8 --force
-```
+This task is a pure refactor: the same 65535, now sourced from the manifest
+rather than three literals. It needs no stage run, and running one would trip
+the truncation trap documented at the top of this plan.
 
-Then diff the saturation columns:
+Verify by importing the module and calling the new functions against the real
+manifest:
 
 ```bash
 cd /c/Users/marti/repos/ls-ihc-pipeline && work/appenv/Scripts/python.exe -c "
-import csv
-a={r['scene_uid']:r for r in csv.DictReader(open(r'D:\LS-analysis\qc\focus.before-ceiling.csv',newline='',encoding='utf-8'))}
-b={r['scene_uid']:r for r in csv.DictReader(open(r'D:\LS-analysis\qc\focus.csv',newline='',encoding='utf-8'))}
-cols=['saturated_fraction','saturated_fraction_raw','saturated_fraction_dapi_raw']
-d=[(u,c,a[u][c],b[u][c]) for u in a.keys()&b.keys() for c in cols if a[u][c]!=b[u][c]]
-print('compared',len(a.keys()&b.keys()),'sections;',len(d),'differences'); [print(x) for x in d[:10]]"
+import importlib.util
+s=importlib.util.spec_from_file_location('ov','scripts/01_overviews.py')
+OV=importlib.util.module_from_spec(s); s.loader.exec_module(OV)
+c=OV.load_ceilings()
+print(len(c),'files carry a ceiling')
+print('distinct ceilings:',sorted(set(c.values())))
+print('known file      ->',OV.ceiling_for(c,'LS105_1a.czi'))
+print('unknown file    ->',OV.ceiling_for(c,'NOT_A_FILE.czi'),'(must be 65535)')
+print('empty mapping   ->',OV.ceiling_for({},'anything.czi'),'(must be 65535)')"
 ```
 
-Expected: `0 differences`. This task derives the same 65535 from the manifest instead of hardcoding it; any difference means the loader is wrong.
+Expected: 222 files, `[65535]` as the only distinct ceiling, 65535 for the known
+file, and 65535 from both fallback paths.
+
+Then confirm the literals are gone:
+
+```bash
+cd /c/Users/marti/repos/ls-ihc-pipeline && grep -n "65535" scripts/01_overviews.py scripts/01k_saturation_raw.py
+```
+
+Expected: the only remaining occurrences are the documented `CEILING = 65535`
+fallback in `01k`, the `load_ceilings` fallback and its warning in
+`01_overviews.py`, and the `np.clip(out, 0, 65535)` in `apply_tile_field` — which
+is a dtype bound on the uint16 container, not a clipping threshold, and must NOT
+be changed. No comparison of the form `>= 65535` may remain.
 
 - [ ] **Step 5: Commit**
 

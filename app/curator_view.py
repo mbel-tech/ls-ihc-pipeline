@@ -31,7 +31,9 @@ attached, silently discards it. Export would appear to do nothing at all.
 
 import functools
 import http.server
+import json
 import os
+import re
 import socketserver
 import threading
 
@@ -43,6 +45,40 @@ from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QWidget
 
 import state as ST
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+# A curator export is named `<what>_DD.MM.YYYY_HH.MM.<ext>`. Matched strictly -
+# a loose pattern would pull the date out of an ordinary filename and file it
+# somewhere the operator never asked for.
+_STAMP_RE = re.compile(r"_(\d{2}\.\d{2}\.\d{4}_\d{2}\.\d{2})(?:\.[A-Za-z0-9]+)?$")
+
+
+def _export_stamp(name):
+    """The DD.MM.YYYY_HH.MM stamp a curator export carries, or None."""
+    m = _STAMP_RE.search(name)
+    return m.group(1) if m else None
+
+
+def _export_root(out_root):
+    """Where stamped exports are filed. `config.export_dir`, else out_root/exports.
+
+    Read here rather than passed in, because the download handler is the only
+    thing in the app that needs it and a constructor argument would have to be
+    threaded through every caller for one string. Frozen, config.json sits beside
+    the executable; from source it is the repo root - try both, as the rest of
+    the app does.
+    """
+    for cfg in (os.path.join(os.path.dirname(HERE), "config.json"),
+                os.path.join(HERE, "config.json")):
+        try:
+            with open(cfg, encoding="utf-8") as fh:
+                configured = json.load(fh).get("export_dir")
+            if configured:
+                return configured
+        except (OSError, ValueError):
+            continue
+    return os.path.join(out_root, "exports")
 
 
 class _QuietHandler(http.server.SimpleHTTPRequestHandler):
@@ -157,15 +193,26 @@ class CuratorView(QWidget):
     # ---- downloads --------------------------------------------------------
 
     def _on_download(self, item: QWebEngineDownloadRequest):
-        """Send Export to the folder the page lives in, and say where it went.
+        """Send Export to where it belongs, and say where it went.
 
         Accepting without a directory would drop the file in the profile's
         default download path, which is not anywhere the pipeline reads. The
         page's own folder is where its consumers look: the ROI curator's three
         CSVs in reformatted/, the plate reframer's plate_boxes.csv in atlas/.
+
+        A name ending in a `DD.MM.YYYY_HH.MM` stamp is one export of a set that
+        belongs together, and it goes into a folder of that name under
+        `config.export_dir` instead. QtWebEngine has no File System Access API,
+        so the page cannot make that folder itself in here - it puts the stamp
+        in the name and this rebuilds the folder from it, which is what gets the
+        app and a browser to the same layout.
         """
         name = item.downloadFileName() or "export.csv"
-        target = os.path.join(self.out_root, os.path.dirname(self.rel or "reformatted/"))
+        stamp = _export_stamp(name)
+        if stamp:
+            target = os.path.join(_export_root(self.out_root), stamp)
+        else:
+            target = os.path.join(self.out_root, os.path.dirname(self.rel or "reformatted/"))
         os.makedirs(target, exist_ok=True)
         item.setDownloadDirectory(target)
         item.setDownloadFileName(name)

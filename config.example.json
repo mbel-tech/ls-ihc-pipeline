@@ -2,7 +2,7 @@
   "_comment": "Copy to config.json and fill in the three paths. The real config.json is gitignored because it holds machine-specific absolute paths.",
   "source_dir": "<ABSOLUTE PATH TO THE FOLDER OF .czi FILES>",
   "out_root": "<ABSOLUTE PATH FOR PIPELINE OUTPUT>",
-  "atlas_pdf": "<ABSOLUTE PATH TO Salmon Atlas.pdf>",
+  "atlas_pdf": "<ABSOLUTE PATH TO Salmon Atlas full.pdf>",
   "section_order_convention": "S_scan_order",
   "_section_order_note": "Confirmed by user 2026-08-11. Serial order = scene index as acquired. The scanner ran column-major (s0 top-left, s1 below it, s2 next column top), and on staggered slides such as LS120_1a no grid model reproduces the physical layout at all.",
   "pixel_size_um": 0.65,
@@ -54,7 +54,7 @@
   },
   "atlas_scope": {
     "mode": "sbn_nodes",
-    "_note": "Confirmed by user 2026-08-11. The atlas already labels Dm, Dl, Vv, Vs, Vd, Vc and POA. Add only the missing caudal social-behaviour-network nodes, using Wullimann 1996 and Nieuwenhuys 1982 as guides.",
+    "_note": "Confirmed by user 2026-08-11, revised 2026-09-06 for Salmon Atlas full.pdf. The atlas now labels the telencephalon and POA (Dl, Dm, Vd, Vl, Vv, Vs, Vc, POA), Rm, and four tuberal regions the 2026-09 revision added. Names are recorded exactly as the atlas writes them - no abbreviating, no reinterpreting - so the anatomy stays the atlas author's statement rather than this file's. Wullimann 1996 and Nieuwenhuys 1982 remain the comparative guides.",
     "existing_regions": [
       "Dl",
       "Dm",
@@ -63,19 +63,26 @@
       "Vv",
       "Vs",
       "Vc",
-      "POA"
+      "POA",
+      "Rm",
+      "Nucleus Anterior tuberal",
+      "Nucleus Lateral tuberal",
+      "Migrated posterior tuberal nucleus",
+      "Nucleus Posterior Tuberal"
     ],
     "regions_to_add": [
       "vTn",
       "TPp",
       "PAG"
     ],
-    "_regions_to_add_note": "vTn = ventral tuberal nucleus, TPp = periventricular nucleus of posterior tuberculum (dopaminergic), PAG = periaqueductal / central grey."
+    "_regions_to_add_note": "Still absent from the atlas. PAG = periaqueductal / central grey: no legend on any page of Salmon Atlas full.pdf names it. vTn = ventral tuberal nucleus and TPp = periventricular nucleus of posterior tuberculum (dopaminergic) were the 2026-08 request; the 2026-09 atlas added 'Nucleus Lateral tuberal', 'Nucleus Posterior Tuberal' and 'Migrated posterior tuberal nucleus' in that territory, but whether those satisfy the vTn/TPp intent is the atlas author's call and has not been made, so this list is left standing."
   },
   "blinding": {
     "enabled": true,
     "_note": "No stage before 06b may read a group label. Outputs are keyed by animal ID only."
   },
+  "_export_dir_note": "Where the ROI curator files its exports: one folder per export, named DD.MM.YYYY_HH.MM, with the same stamp on every file in it. Read by 04l (shown in the page, and the default for --export-dir) and by the app's download handler, so the two cannot disagree. A browser writes here only after the operator picks the folder with the page's Folder... button - a web page cannot be handed a path.",
+  "export_dir": "<ABSOLUTE PATH FOR CURATOR EXPORTS>",
   "atlas_plate_set": {
     "_note": "Which plate set the ROI curator and the registration use. Both read this, so they cannot drift apart. IDs COLLIDE between sets - the same plate_NNN name exists in more than one set and points at a different image - so a landmark file records the set it was made against. Set this once, before any landmark is placed; changing it later invalidates landmarks made against the old set.",
     "dir": "plates",

@@ -1,25 +1,44 @@
-"""Stage 4a - pull the labelled plate series out of Salmon Atlas.pdf.
+"""Stage 4a - pull the labelled plate series out of the salmon atlas PDF.
 
 The atlas is a working document, not a scan: every region marker is a vector
 dot with a distinct fill colour, and each page carries its own legend mapping
 those colours to region names. That makes the whole thing machine-readable.
 
-Page geometry (verified against pages 5, 9, 10, 18, 20, 25):
-  - legend swatches sit in the left margin at centre x < ~105
-  - legend labels start beside their swatch and are read rightward to the first
-    wide gap. They are NOT confined to x ~ 89: that holds for the single-word
+Page geometry (verified against pages 5, 6, 9, 18, 20, 21, 25 of the 2026-09
+atlas):
+  - legend swatches sit in the left margin at centre x < ~105, OR in the band
+    above the topmost plate. Both carry their label to the right
+  - legend labels are read rightward from their swatch to the first wide gap.
+    They are NOT confined to x ~ 89: that holds for the single-word
     telencephalic names, but the caudal ones are phrases running past x = 240
-  - plate bitmaps are separate image XObjects with non-overlapping bboxes
-  - in-figure dots fall inside a plate bbox; markers are a uniform 22.7 pt,
-    drawn as a fill plus a slightly larger outline
+  - plate bitmaps are image XObjects, once overlay insets and marker stamps are
+    filtered out - see atlas_pdf.py. With that filter their bboxes do not overlap
+  - in-figure dots fall inside a plate bbox; markers are a uniform 22.7 pt
   - in-figure text (e.g. "Optic Chiasm") is annotation, not legend
 
-Markers are found by SIZE, not by colour. Two of the atlas's own region colours
-defeat a colour filter: **black** is Posterior tuberculum on pages 18-20, and the
-**hatched** Anterior tuberal nucleus is a pattern fill that reports as black too.
-Both were being discarded, which is why every plate caudal to plate_025 came out
-with no regions at all. The visible colour is read from a render of the page,
-since for a pattern fill the declared fill and what you see are different.
+Markers are found by SIZE, not by colour, and deduplicated by OVERLAP.
+
+By size, because a colour filter used to discard two of the atlas's own region
+colours: historically black was the posterior tuberculum, and the hatched
+anterior tuberal nucleus was a pattern fill that reported as black too. Neither
+is true of the 2026-09 atlas, where the author redrew both in solid colour, but
+the size rule costs nothing and the colour rule has failed here before. The
+visible colour is still read from a render of the page, since for a pattern fill
+the declared fill and what you see are different.
+
+By overlap, because the PowerPoint re-export draws each marker as THREE stacked
+paths spread over ~9.5 pt, where the old Ghostscript export drew two coincident
+to within 0.08 pt. A fixed 3 pt tolerance merges two of the three and counts
+every marker twice - Dl came out at 182 rather than 142. Two paths are one
+marker when their centres are closer than half the larger one's size, which is
+12.4 pt for a 24.7 pt marker and still separates the closest genuinely distinct
+pair in the atlas, 32.4 pt apart on page 21.
+
+Some markers survive only as pixels. Where PowerPoint flattened part of a plate
+into an overlay inset it took the vector dots with it - 66 of them over pages
+5 to 8. Those are recovered from the render by colour, against the page's own
+legend; see `recover_raster_seeds`. Without that step the telencephalic counts
+come out a third short.
 
 Outputs to atlas/plates/:
   plate_###_p<page>_<n>.<ext>   the plate bitmap, losslessly re-extracted
@@ -33,18 +52,38 @@ Run:  python 04a_atlas_extract.py
 """
 
 import csv
+import importlib.util
 import io
+import json
 import os
 from collections import Counter, defaultdict
 
 import numpy as np
 import pymupdf
 from PIL import Image, ImageDraw, ImageFont
+from scipy import ndimage
+
+# Which images on a page count as plates is shared with 04a2, which re-derives
+# the same boxes from the PDF and pairs them with this stage's rows by position.
+# One definition, so the two cannot drift apart.
+_spec = importlib.util.spec_from_file_location(
+    "_atlas_pdf", os.path.join(os.path.dirname(os.path.abspath(__file__)), "atlas_pdf.py"))
+ATLAS = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(ATLAS)
 
 # ---------------------------------------------------------------- configuration
 
-ATLAS_PDF = r"D:\SLIDES HE DEC 2025 LS\General atlases & reviews\Salmon Atlas.pdf"
-OUT_DIR = r"D:\LS-analysis\atlas\plates"
+# LS_CONFIG names the file explicitly; the file-relative path is the fallback.
+# The atlas path was hardcoded here until 2026-09-06, while 04a2 and 04a4 read it
+# from config - so pointing config at a new atlas moved those two stages and left
+# this one parsing the old PDF, with nothing to say the sets had diverged.
+CONFIG_PATH = os.environ.get("LS_CONFIG") or os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config.json")
+with open(CONFIG_PATH, encoding="utf-8") as _fh:
+    CONFIG = json.load(_fh)
+
+ATLAS_PDF = CONFIG["atlas_pdf"]
+OUT_DIR = os.path.join(CONFIG["out_root"], "atlas", "plates")
 QC_DIR = os.path.join(OUT_DIR, "qc")
 
 # Everything left of this page x is margin, i.e. a legend swatch rather than a
@@ -66,12 +105,24 @@ LABEL_GAP_MAX = 30.0
 # rule that "pure black and white are outlines and page background, never region
 # markers" silently dropped every marker on pages 18-20 and 25-28.
 MARKER_SIZE = (15.0, 40.0)
-# A fill and its outline sit at the same spot; this collapses the pair.
-MARKER_DEDUP_TOL = 3.0
+# One marker is drawn as several stacked paths - two in the old export, three in
+# the 2026-09 one, spread over ~9.5 pt. Two paths are the same marker when their
+# centres are closer than this fraction of the larger one's size; at 0.5 the
+# smaller centre lies inside the larger disc. A fixed pt tolerance cannot do
+# this - 3.0 caught the old coincident pair and read the new triple as two.
+MARKER_OVERLAP_FRAC = 0.5
+# A marker's nominal diameter, used to size the search for one in a raster.
+MARKER_NOMINAL_PT = 22.7
 # Page render zoom used to read a marker's true colour. Needed because a hatched
 # marker (Anterior tuberal nucleus) has a *pattern* fill, which the drawing
 # reports as plain black - the declared fill and the visible colour differ.
 COLOUR_ZOOM = 4.0
+# Recovering a marker from a raster: how far a pixel may sit from a legend colour
+# (0-255 per channel - JPEG-tolerant, but well inside the gap between any two of
+# this atlas's colours), and the fraction of a marker's area a blob must cover.
+# The area range is wide because an inset crops some markers at its edge.
+RASTER_COLOUR_TOL = 12
+RASTER_AREA_RANGE = (0.45, 1.8)
 
 # Labels that mark an explicit unknown rather than a region.
 UNKNOWN_LABELS = {"??", "?"}
@@ -86,7 +137,20 @@ REGION_CANONICAL = {
     "Rm (Raphe) ??": "Rm",
     "Rm (Raphe)": "Rm",
     "Raphe (Rm)": "Rm",
-    "Anterior tuberal nucelus": "Anterior tuberal nucleus",
+}
+# The "nucelus" typo entry retired 2026-09-06: the 2026-09 atlas spells that
+# region "Nucleus Anterior tuberal", with no typo and in a different word order,
+# so the old rewrite could never fire again. Region names are otherwise carried
+# exactly as the atlas writes them - no abbreviating, no reinterpreting.
+
+# A second shade used for a region the legend keys only once. On page 20 the
+# migrated posterior tuberal nucleus is marked in two peach shades, one per
+# section, and only #fbd4b5 carries the legend swatch. Confirmed by the operator
+# 2026-09-06. Keyed by page, so a shade cannot leak into another page's palette,
+# and applied when looking the colour up - `colour_hex` still records what was
+# actually drawn, so the substitution stays visible in the output.
+COLOUR_ALIAS = {
+    (20, "#f9c090"): "#fbd4b5",
 }
 
 
@@ -141,8 +205,18 @@ def sample_colour(render, cx, cy, size, zoom=COLOUR_ZOOM):
 def page_dots(page, render):
     """Every region marker on the page, deduplicated, with its rendered colour.
 
-    Selected by size, not by colour - see MARKER_SIZE. Each marker is drawn twice,
-    as a fill and a slightly larger outline, so coincident pairs are collapsed.
+    Selected by size, not by colour - see MARKER_SIZE. One marker is drawn as
+    several stacked paths, so overlapping paths are collapsed: two belong to the
+    same marker when their centres are closer than MARKER_OVERLAP_FRAC of the
+    larger one's size.
+
+    Which path of a cluster IS the marker is then settled by size, not by
+    position. The 2026-09 export spreads a marker's three paths over 9.5 pt, so
+    taking the largest or the smallest displaces every seed by 2.8 or 6.4 pt.
+    The path nearest MARKER_NOMINAL_PT is the marker; the others are its outline
+    and its drop shadow. Over the 133 markers on the pages whose layout did not
+    change, that choice reproduces the previous atlas's seed positions to 0.00 pt,
+    where taking the largest gives 2.78 and the smallest 6.40.
     """
     found = []
     for item in page.get_drawings():
@@ -161,17 +235,78 @@ def page_dots(page, render):
             }
         )
 
+    clusters = []
+    for path in sorted(found, key=lambda d: -d["size"]):   # the widest path leads
+        for cluster in clusters:
+            lead = cluster[0]
+            gap = ((path["cx"] - lead["cx"]) ** 2 + (path["cy"] - lead["cy"]) ** 2) ** 0.5
+            if gap < MARKER_OVERLAP_FRAC * max(path["size"], lead["size"]):
+                cluster.append(path)
+                break
+        else:
+            clusters.append([path])
+
     out = []
-    for dot in sorted(found, key=lambda d: d["size"]):     # the fill, before its outline
-        if any(abs(dot["cx"] - o["cx"]) <= MARKER_DEDUP_TOL
-               and abs(dot["cy"] - o["cy"]) <= MARKER_DEDUP_TOL for o in out):
-            continue
+    for cluster in clusters:
+        dot = min(cluster, key=lambda d: abs(d["size"] - MARKER_NOMINAL_PT))
         colour = sample_colour(render, dot["cx"], dot["cy"], dot["size"])
         if colour is None:
             continue
         dot["colour"] = colour
+        dot["n_paths"] = len(cluster)
         out.append(dot)
     return out
+
+
+def recover_raster_seeds(page, render, legend, known, zoom=COLOUR_ZOOM):
+    """Region markers that survive only as pixels, read back out of the render.
+
+    Where PowerPoint flattened part of a plate into an overlay inset it took the
+    vector dots inside it with it - 66 markers over pages 5 to 8 of the 2026-09
+    atlas, a third of the telencephalic seeds. Those areas are exactly
+    `atlas_pdf.inset_boxes`, and the markers in them are still drawn in the
+    page's own legend colours at the usual size, so they can be read back:
+    threshold the render on each legend colour inside an inset, keep the
+    connected components that are marker-sized, take their centroids.
+
+    Deliberately narrow. It looks only inside insets, matches only colours this
+    page's legend already names, and drops anything within half a marker of a
+    dot the drawing list already supplied. So it can restore a marker the export
+    lost, but it cannot invent a region, and it cannot double-count one.
+    """
+    insets = ATLAS.inset_boxes(page)
+    if not insets or not legend:
+        return []
+
+    mask = np.zeros(render.shape[:2], bool)
+    for rect in insets:
+        mask[int(rect.y0 * zoom):int(rect.y1 * zoom),
+             int(rect.x0 * zoom):int(rect.x1 * zoom)] = True
+
+    marker_area = np.pi * (MARKER_NOMINAL_PT * zoom / 2.0) ** 2
+    seen = list(known)
+    found = []
+    for colour in legend:
+        hit = (np.abs(render - np.array(colour)).max(axis=2) <= RASTER_COLOUR_TOL) & mask
+        labels, count = ndimage.label(hit)
+        if not count:
+            continue
+        sizes = ndimage.sum(hit, labels, range(1, count + 1))
+        for index, size in enumerate(sizes, start=1):
+            if not (marker_area * RASTER_AREA_RANGE[0] <= size
+                    <= marker_area * RASTER_AREA_RANGE[1]):
+                continue
+            cy, cx = ndimage.center_of_mass(hit, labels, index)
+            cx, cy = cx / zoom, cy / zoom
+            if any(((cx - d["cx"]) ** 2 + (cy - d["cy"]) ** 2) ** 0.5
+                   < MARKER_NOMINAL_PT / 2.0 for d in seen):
+                continue
+            dot = {"cx": cx, "cy": cy, "size": MARKER_NOMINAL_PT,
+                   "x1": cx + MARKER_NOMINAL_PT / 2.0,
+                   "colour": colour, "from_raster": True}
+            found.append(dot)
+            seen.append(dot)
+    return found
 
 
 def label_right_of(page, swatch, tol=LEGEND_LINE_TOL, gap=LABEL_GAP_MAX):
@@ -206,11 +341,25 @@ def figure_lines(page):
     return group_words(words)
 
 
-def build_legend(page, dots):
-    """colour -> region name, from the left-margin swatch/label pairs."""
+def is_legend_key(dot, plate_top):
+    """True when a dot is a legend swatch rather than a region marker.
+
+    Swatches sit in the left margin, or - for the two regions the 2026-09 atlas
+    keys inside the figure area rather than in the margin - in the band above the
+    topmost plate on the page. Both are places a region marker cannot be, since a
+    marker lies inside a plate. Before that second test the swatches for
+    "Migrated posterior tuberal nucleus" (page 20, cx 290) and "Nucleus Posterior
+    Tuberal" (page 21, cx 161) read as figure markers, so neither region was ever
+    named and all ten of their seeds came out UNMAPPED.
+    """
+    return dot["cx"] < LEGEND_MAX_X or dot["cy"] < plate_top
+
+
+def build_legend(page, dots, plate_top):
+    """colour -> region name, from the swatch/label pairs."""
     legend = {}
     for dot in dots:
-        if dot["cx"] >= LEGEND_MAX_X:
+        if not is_legend_key(dot, plate_top):
             continue
         name = label_right_of(page, dot)
         if name:
@@ -219,19 +368,13 @@ def build_legend(page, dots):
 
 
 def plate_boxes(page):
-    """Plate bitmaps on the page, ordered top to bottom."""
-    plates = []
-    for item in page.get_images(full=True):
-        xref = item[0]
-        try:
-            bbox = page.get_image_bbox(item)
-        except (ValueError, RuntimeError):
-            continue
-        if bbox.is_empty or bbox.width <= 0 or bbox.height <= 0:
-            continue
-        plates.append({"xref": xref, "bbox": bbox, "px_w": item[2], "px_h": item[3]})
-    plates.sort(key=lambda p: (round(p["bbox"].y0, 1), round(p["bbox"].x0, 1)))
-    return plates
+    """Plate bitmaps on the page, ordered top to bottom.
+
+    Shared with 04a2, so the two stages cannot disagree about what a plate is.
+    The rule - and why an image XObject is not automatically one - is in
+    atlas_pdf.py.
+    """
+    return ATLAS.plate_boxes(page)
 
 
 def to_plate_pixels(plate, x, y):
@@ -294,13 +437,18 @@ def main():
     seed_rows, text_rows, legend_rows, plate_rows, gap_rows = [], [], [], [], []
     colour_usage = defaultdict(set)
     plate_seq = 0
+    raster_pages = {}
 
     for page_no in range(doc.page_count):
         page = doc[page_no]
         render = render_page(page)
         dots = page_dots(page, render)
-        legend = build_legend(page, dots)
+        # The plates are needed before the legend now: a swatch is recognised by
+        # sitting above the topmost plate as well as by sitting in the margin.
         plates = plate_boxes(page)
+        plate_top = min((p["bbox"].y0 for p in plates), default=float("inf"))
+        legend = build_legend(page, dots, plate_top)
+        by_hex = {hexify(colour): region for colour, region in legend.items()}
 
         for colour, region in sorted(legend.items(), key=lambda kv: kv[1]):
             legend_rows.append(
@@ -308,7 +456,11 @@ def main():
             )
             colour_usage[hexify(colour)].add(region)
 
-        figure_dots = [d for d in dots if d["cx"] >= LEGEND_MAX_X]
+        figure_dots = [d for d in dots if not is_legend_key(d, plate_top)]
+        recovered = recover_raster_seeds(page, render, legend, figure_dots)
+        if recovered:
+            raster_pages[page_no + 1] = len(recovered)
+            figure_dots = figure_dots + recovered
         figure_text = figure_lines(page)
 
         for plate_index, plate in enumerate(plates):
@@ -320,7 +472,10 @@ def main():
             for dot in figure_dots:
                 if not (bbox.x0 <= dot["cx"] <= bbox.x1 and bbox.y0 <= dot["cy"] <= bbox.y1):
                     continue
-                region = legend.get(dot["colour"])
+                colour_hex = hexify(dot["colour"])
+                # A shade the legend does not key in its own right resolves to the
+                # colour it belongs to; colour_hex below still records what was drawn.
+                region = by_hex.get(COLOUR_ALIAS.get((page_no + 1, colour_hex), colour_hex))
                 x_px, y_px, fx, fy = to_plate_pixels(plate, dot["cx"], dot["cy"])
                 my_seeds.append(
                     {
@@ -334,7 +489,10 @@ def main():
                         "is_unknown": int(region is None
                                           or region in UNKNOWN_LABELS
                                           or region.rstrip().endswith("??")),
-                        "colour_hex": hexify(dot["colour"]),
+                        "colour_hex": colour_hex,
+                        # 1 where the marker was read back out of a flattened
+                        # inset rather than from the PDF drawing list.
+                        "from_raster": int(bool(dot.get("from_raster"))),
                         "x_px": round(x_px, 1),
                         "y_px": round(y_px, 1),
                         "x_frac": round(fx, 4),
@@ -381,6 +539,7 @@ def main():
                     "px_w": plate["px_w"],
                     "px_h": plate["px_h"],
                     "n_seeds": len(my_seeds),
+                    "n_seeds_raster": sum(s["from_raster"] for s in my_seeds),
                     "n_text_labels": len(my_texts),
                     "regions": "|".join(sorted({s["region"] for s in my_seeds})),
                     "overlay_written": int(overlay_ok),
@@ -402,7 +561,7 @@ def main():
     _write_csv(os.path.join(OUT_DIR, "legend_by_page.csv"), legend_rows)
     _write_csv(os.path.join(OUT_DIR, "gaps.csv"), gap_rows)
 
-    _report(plate_rows, seed_rows, text_rows, gap_rows, colour_usage)
+    _report(plate_rows, seed_rows, text_rows, gap_rows, colour_usage, raster_pages)
 
 
 def _write_csv(path, rows):
@@ -417,7 +576,7 @@ def _write_csv(path, rows):
     print(f"  wrote {os.path.basename(path)}  ({len(rows)} rows)")
 
 
-def _report(plate_rows, seed_rows, text_rows, gap_rows, colour_usage):
+def _report(plate_rows, seed_rows, text_rows, gap_rows, colour_usage, raster_pages):
     print()
     print("=" * 72)
     print(f"plates extracted     : {len(plate_rows)}")
@@ -431,6 +590,13 @@ def _report(plate_rows, seed_rows, text_rows, gap_rows, colour_usage):
 
     unmapped = [s for s in seed_rows if s["region"] == "UNMAPPED"]
     print(f"seeds with no legend entry: {len(unmapped)}")
+
+    # Say so out loud. A fallback that quietly stops firing is worse than none:
+    # if a future atlas stops flattening its plates this drops to zero and the
+    # seed count drops with it, and that has to be visible here.
+    recovered = sum(s["from_raster"] for s in seed_rows)
+    print(f"seeds recovered from flattened insets: {recovered}"
+          + (f"  on pages {sorted(raster_pages)}" if raster_pages else ""))
 
     inconsistent = {c: r for c, r in colour_usage.items() if len(r) > 1}
     print(f"colours reused for different regions: {len(inconsistent)}")

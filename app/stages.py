@@ -308,7 +308,6 @@ STAGES = [
           blurb="Re-renders each box from the PDF at full resolution and carries "
                 "the seeds across. This is the set the ROI curator uses "
                 "(config.atlas_plate_set)."),
-
     # ---- Normalisation and curation ----------------------------------------
     Stage("reformat_pcna", "04a  Reformat PCNA sections", "Normalisation and curation",
           script="04a_reformat.py",
@@ -485,8 +484,8 @@ STAGES = [
           curator=REF + "roi_curator.html", operator=True,
           needs=["worklist", "rgb_perk", "rgb_pcna", "atlas_rebuild"],
           blurb="Assign a plate, place numbered landmarks and background discs, "
-                "warp the atlas regions onto the section, export the three "
-                "CSVs. Review mode shows every prior decision."),
+                "draw each region as a polygon against its hull on the plate, "
+                "export the three CSVs. Review mode shows every prior decision."),
 
     Stage("import_curation", "04q  Import the curator's exports",
           "Normalisation and curation",
