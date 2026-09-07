@@ -48,9 +48,15 @@ import csv
 import importlib.util
 import os
 import time
+import sys
 
 import numpy as np
 from PIL import Image
+
+# ls_config resolves LS_CONFIG, applies the defaults and validates once for
+# the whole process. Imported, not re-implemented: this block used to be four
+# lines copy-pasted into every stage.
+from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _spec = importlib.util.spec_from_file_location("_ov", os.path.join(_HERE, "01_overviews.py"))

@@ -277,6 +277,17 @@ chk("documented keys are marked, not silently live",
     sorted(k.path for k in C.SPEC if k.status == C.DOCUMENTED),
     ["atlas_scope", "marker_identity"])
 
+# Requiring a key before a stage reads it breaks configs that were working and
+# buys nothing. `slide_naming.pattern` did exactly that for one commit: four
+# suites stopped importing because a key nothing consumed was mandatory.
+chk("no key is required before something consumes it",
+    [k.path for k in C.SPEC if k.required and k.consumers_pending], [])
+chk("every required key names who reads it",
+    [k.path for k in C.SPEC if k.required and not k.consumers], [])
+chk("a pending key is never also documented-only",
+    [k.path for k in C.SPEC
+     if k.consumers_pending and k.status == C.DOCUMENTED], [])
+
 print()
 print("ALL PASS" if not failures else f"{len(failures)} FAILED")
 sys.exit(1 if failures else 0)

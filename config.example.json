@@ -11,7 +11,7 @@
   "export_dir": "<ABSOLUTE PATH FOR CURATOR EXPORTS, OR EMPTY>",
   "source_files": null,
   "slide_naming": {
-    "_pattern_note": "Built by the app's pattern builder, and editable by hand. A filename that does not match is REPORTED, never silently skipped - an invisible file is the failure mode this whole block exists to prevent. `subject` becomes the `animal` column and the first field of every scene_uid, so it is the key the metadata join later runs on.",
+    "_pattern_note": "NOT YET REQUIRED - it becomes required in the same change that makes 00_manifest read it, because requiring a key before anything consumes it only breaks configs that were working. Built by the app's pattern builder, and editable by hand. A filename that does not match is REPORTED, never silently skipped - an invisible file is the failure mode this whole block exists to prevent. `subject` becomes the `animal` column and the first field of every scene_uid, so it is the key the metadata join later runs on.",
     "pattern": "^(?P<subject>[A-Za-z]+\\d+)_(?P<slide>\\d+)(?P<replicate>[a-z])?\\.czi$",
     "example": "AB12_3a.czi",
     "case_insensitive": true

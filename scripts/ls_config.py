@@ -57,7 +57,11 @@ class Key:
 
     def __init__(self, path, type, doc, required=False, default=None,
                  note=None, consumers=(), status=LIVE, choices=None,
-                 materialise=False, example=_UNSET):
+                 materialise=False, example=_UNSET, consumers_pending=False):
+        # Declared, with the stages that WILL read it named, but not consumed
+        # yet. Such a key must not be required: requiring one before anything
+        # reads it only breaks configs that were working.
+        self.consumers_pending = consumers_pending
         self.path = path
         self.type = type
         self.doc = doc
@@ -137,9 +141,12 @@ SPEC = [
         "Regex matching your slide filenames, with a named group 'subject'. "
         "Optional named groups 'slide' and 'replicate'; any others are "
         "carried through as manifest columns.",
-        required=True,
         example=r"^(?P<subject>[A-Za-z]+\d+)_(?P<slide>\d+)(?P<replicate>[a-z])?\.czi$",
-        note="Built by the app's pattern builder, and editable by hand. A "
+        consumers_pending=True,
+        note="NOT YET REQUIRED - it becomes required in the same change that "
+             "makes 00_manifest read it, because requiring a key before "
+             "anything consumes it only breaks configs that were working. "
+             "Built by the app's pattern builder, and editable by hand. A "
              "filename that does not match is REPORTED, never silently "
              "skipped - an invisible file is the failure mode this whole "
              "block exists to prevent. `subject` becomes the `animal` column "
@@ -149,11 +156,13 @@ SPEC = [
 
     Key("slide_naming.example", "str",
         "One real filename, used by the app to preview the parse.",
-        default="", example="AB12_3a.czi", consumers=["app/slides"]),
+        default="", example="AB12_3a.czi", consumers_pending=True,
+        consumers=["app/slides"]),
 
     Key("slide_naming.case_insensitive", "bool",
         "Match filenames case-insensitively.",
-        default=True, consumers=["00_manifest", "app/slides"]),
+        default=True, consumers_pending=True,
+        consumers=["00_manifest", "app/slides"]),
 
     # ---- acquisition geometry -------------------------------------------
     Key("section_order_convention", "str",
@@ -734,8 +743,13 @@ def docs_table():
             default = ""
         else:
             default = "`" + json.dumps(key.default) + "`"
-        read_by = (NOT_READ if key.status == DOCUMENTED
-                   else ", ".join("`" + c + "`" for c in key.consumers))
+        if key.status == DOCUMENTED:
+            read_by = NOT_READ
+        elif key.consumers_pending:
+            read_by = "not read yet; will be " + ", ".join(
+                "`" + c + "`" for c in key.consumers)
+        else:
+            read_by = ", ".join("`" + c + "`" for c in key.consumers)
         rows.append("| `{}` | {} | {} | {} | {} |".format(
             key.path, key.type, default, read_by, key.doc.replace("|", "\\|")))
     return "\n".join(rows)
