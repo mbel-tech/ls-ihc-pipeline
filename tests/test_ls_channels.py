@@ -85,14 +85,22 @@ def errs(block, layout="multiplex"):
 chk("a valid table has nothing to say", errs(BLOCK), [])
 chk("two channels cannot share a name",
     len(errs([BLOCK[0], dict(BLOCK[1], name="DAPI")])), 1)
+# Each of these declares an otherwise-valid table, so the count below is the
+# fault under test and not an echo of it: a block with no valid marker would
+# also report "nothing to measure", which is true but is a second fault.
 chk("a name has to be usable as a folder",
-    len(errs([dict(BLOCK[0], name="a/b")])), 1)
+    len(errs([dict(BLOCK[0], name="a/b"), BLOCK[1]])), 1)
 chk("there is at most one nuclear channel",
-    len(errs([BLOCK[0], dict(BLOCK[1], role="nuclear")])), 1)
+    len(errs([BLOCK[0], BLOCK[1], dict(BLOCK[2], role="nuclear")])), 1)
 chk("something has to be a marker",
     len(errs([BLOCK[0]])), 1)
 chk("an unknown role is refused",
-    len(errs([BLOCK[0], dict(BLOCK[1], role="whatever")])), 1)
+    len(errs([BLOCK[0], BLOCK[1], dict(BLOCK[2], role="whatever")])), 1)
+
+# Independent faults are reported together. Returning only the first would
+# mean fixing a config one error per attempt.
+chk("two unrelated faults are both reported",
+    len(errs([dict(BLOCK[0], name="a/b")])), 2)
 
 # The contradiction the spec names: StarDist is a nucleus detector, so asking
 # for it on something declared not nucleus-shaped would under-detect silently.

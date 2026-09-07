@@ -112,59 +112,55 @@ def resolve(channels, czi_channel_names):
 def validate(block, layout):
     """Errors in a declared channel table. [] when it is usable.
 
-    Checked in stages, and only the first non-empty stage is returned: a
-    channel with a broken name or an unrecognised role makes the counts below
-    it meaningless, so a bad role that happens to leave zero markers is
-    reported as "fix the role", not also as "declare a marker" - the second
-    complaint is just an echo of the first, not an independent problem.
+    Every fault is reported, not just the first. This returns a list rather
+    than raising so that someone with three things wrong in their channel
+    table learns all three in one pass instead of one per attempt.
     """
+    errors = []
     entries = list(block or [])
 
     if layout == "paired":
         if entries:
-            return [
+            errors.append(
                 "acquisition.channels must be empty for the paired layout: "
                 "each scan carries the nuclear channel plus whichever marker "
                 "that pass used, so the marker is read per file rather than "
-                "declared once."]
-        return []
+                "declared once.")
+        return errors
 
     if not entries:
-        return [
+        errors.append(
             "acquisition.channels is empty. A multiplex study has to say what "
-            "its channels are; nothing can be inferred safely from a file."]
+            "its channels are; nothing can be inferred safely from a file.")
+        return errors
 
     channels = parse(entries)
 
-    per_channel = []
     seen = set()
     for chan in channels:
         if not chan.name or not NAME_RE.match(str(chan.name)):
-            per_channel.append(
+            errors.append(
                 f"channel name {chan.name!r} is not usable - it becomes a "
                 f"folder name and a CSV value.")
         elif chan.name in seen:
-            per_channel.append(f"two channels are both called {chan.name!r}.")
+            errors.append(f"two channels are both called {chan.name!r}.")
         seen.add(chan.name)
 
         if chan.role not in ROLES:
-            per_channel.append(
+            errors.append(
                 f"channel {chan.name!r} has role {chan.role!r}; it must be one "
                 f"of {', '.join(ROLES)}.")
-    if per_channel:
-        return per_channel
 
     nuclei = [c for c in channels if c.role == NUCLEAR]
     if len(nuclei) > 1:
-        return [
+        errors.append(
             f"{len(nuclei)} channels are marked nuclear "
-            f"({', '.join(c.name for c in nuclei)}); there can be at most one."]
+            f"({', '.join(c.name for c in nuclei)}); there can be at most one.")
 
     if not markers(channels):
-        return [
-            "no channel has role 'marker', so there is nothing to measure."]
+        errors.append(
+            "no channel has role 'marker', so there is nothing to measure.")
 
-    errors = []
     for chan in markers(channels):
         if chan.segment not in SEGMENTS:
             errors.append(
