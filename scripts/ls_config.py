@@ -57,7 +57,13 @@ class Key:
 
     def __init__(self, path, type, doc, required=False, default=None,
                  note=None, consumers=(), status=LIVE, choices=None,
-                 materialise=False, example=_UNSET, consumers_pending=False):
+                 materialise=False, example=_UNSET, consumers_pending=False,
+                 ui=None, label=None):
+        # How the settings dialog offers this key. None infers it from `type`;
+        # False keeps it out of the dialog entirely, for a key the app writes
+        # itself or one whose value is a table rather than a setting.
+        self._ui = ui
+        self._label = label
         # Declared, with the stages that WILL read it named, but not consumed
         # yet. Such a key must not be required: requiring one before anything
         # reads it only breaks configs that were working.
@@ -79,6 +85,31 @@ class Key:
         # every written config or they get null.
         self.materialise = materialise
 
+    #: type -> how the settings dialog edits it. A type that is not here is a
+    #: table or a list, which is not a one-line setting and is left out.
+    UI_FOR_TYPE = {
+        "path_dir": "dir", "path_dir_opt": "dir", "path_dir_create": "outdir",
+        "path_file": "file", "float": "number", "int": "int", "bool": "bool",
+        "str": "text", "str_opt": "text", "regex": "text",
+    }
+
+    @property
+    def ui(self):
+        """The widget kind, or None when this key is not offered in settings."""
+        if self._ui is not None:
+            return self._ui or None
+        if self.status != LIVE:
+            return None
+        kind = self.UI_FOR_TYPE.get(self.type)
+        return "choice" if kind == "text" and self.choices else kind
+
+    @property
+    def label(self):
+        if self._label:
+            return self._label
+        leaf = self.parts[-1].replace("_", " ").strip()
+        return leaf[:1].upper() + leaf[1:]
+
     @property
     def parts(self):
         return self.path.split(".")
@@ -94,16 +125,16 @@ class Key:
 SPEC = [
     Key("schema_version", "int",
         "Config format version. Written by the app; do not edit by hand.",
-        required=True, default=SCHEMA_VERSION, consumers=["ls_config"]),
+        required=True, default=SCHEMA_VERSION, ui=False, consumers=["ls_config"]),
 
     Key("study.name", "str",
         "A short name for this study, shown in the app's study picker.",
-        default="", consumers=["app"]),
+        default="", label="Study name", consumers=["app"]),
 
     # ---- paths -----------------------------------------------------------
     Key("source_dir", "path_dir",
         "The folder holding the .czi files.",
-        required=True, materialise=True,
+        required=True, materialise=True, label="Slides folder",
         example="<ABSOLUTE PATH TO THE FOLDER OF .czi FILES>",
         consumers=["00_manifest", "00b", "00d", "01b_pick", "01e", "01h",
                    "01_overviews", "05a", "05c", "06b", "app"]),
@@ -111,18 +142,18 @@ SPEC = [
     Key("out_root", "path_dir_create",
         "Where every result is written. Needs room - overviews alone run to "
         "several GB.",
-        required=True, materialise=True,
+        required=True, materialise=True, label="Analysis output",
         example="<ABSOLUTE PATH FOR PIPELINE OUTPUT>", consumers=["every stage"]),
 
     Key("atlas_pdf", "path_file",
         "The atlas the plates and region seeds are extracted from.",
-        required=True, example="<ABSOLUTE PATH TO THE ATLAS PDF>",
+        required=True, label="Atlas PDF", example="<ABSOLUTE PATH TO THE ATLAS PDF>",
         consumers=["04a_atlas_extract", "04a2", "04a4", "app"]),
 
     Key("export_dir", "path_dir_opt",
         "Where the ROI curator files its exports. Empty means "
         "<out_root>/exports.",
-        default=None, example="<ABSOLUTE PATH FOR CURATOR EXPORTS, OR EMPTY>",
+        default=None, label="Curator exports", example="<ABSOLUTE PATH FOR CURATOR EXPORTS, OR EMPTY>",
         note="One folder per export, named DD.MM.YYYY_HH.MM, with the same "
              "stamp on every file in it. Read by 04l (shown in the page, and "
              "the default for --export-dir) and by the app's download handler, "
@@ -138,7 +169,8 @@ SPEC = [
 
     # ---- slide naming ----------------------------------------------------
     Key("slide_naming.pattern", "regex",
-        "Regex matching your slide filenames, with a named group 'subject'. "
+        label="Filename pattern",
+        doc="Regex matching your slide filenames, with a named group 'subject'. "
         "Optional named groups 'slide' and 'replicate'; any others are "
         "carried through as manifest columns.",
         required=True,
@@ -153,12 +185,12 @@ SPEC = [
 
     Key("slide_naming.example", "str",
         "One real filename, used by the app to preview the parse.",
-        default="", example="AB12_3a.czi",
+        default="", example="AB12_3a.czi", label="Example filename",
         consumers=["app/slides"]),
 
     Key("slide_naming.case_insensitive", "bool",
         "Match filenames case-insensitively.",
-        default=True,
+        default=True, label="Case-insensitive names",
         consumers=["00_manifest", "app/slides"]),
 
     # ---- acquisition geometry -------------------------------------------
@@ -232,7 +264,7 @@ SPEC = [
 
     Key("detection.abercrombie.enabled", "bool",
         "Correct counted nuclear profiles to nuclei.",
-        default=True,
+        default=True, label="Abercrombie correction",
         note="A single-plane image of a section counts nuclear PROFILES, not "
              "nuclei: a nucleus straddling the cut face still appears in the "
              "section it is cut into. Abercrombie N = n * T/(T + h), with T "
@@ -258,7 +290,7 @@ SPEC = [
     # ---- atlas -----------------------------------------------------------
     Key("atlas_plate_set.dir", "str",
         "Which plate set the ROI curator and the registration use.",
-        default="plates", choices=["plates", "plates_merged", "plates_final"],
+        default="plates", label="Atlas plate set", choices=["plates", "plates_merged", "plates_final"],
         note="Both read this, so they cannot drift apart. IDs COLLIDE between "
              "sets - the same plate_NNN name exists in more than one set and "
              "points at a different image - so a landmark file records the set "
@@ -274,7 +306,7 @@ SPEC = [
         "Inclusive figure-number range, as a string, of merged figures "
         "holding two sections each - e.g. \"31-47\". Empty leaves every "
         "figure at whatever 04a2 detected.",
-        default=None,
+        default=None, label="Two-section figures",
         note="Operator knowledge, not measurement: the band detector in 04a2 "
              "mis-counts when two sections touch (their legend text bridges "
              "every row, so no row is empty) and when one section is crossed "
@@ -893,6 +925,17 @@ def write_example(path=None):
 
 #: What the docs table prints in "Read by" for a key no stage reads.
 NOT_READ = "recorded here, read by no stage"
+
+
+def dialog_fields():
+    """[Key] for the settings dialog, in spec order.
+
+    The dialog used to carry three hand-written entries. Reading them from SPEC
+    means a key added there shows up in settings without anyone remembering to
+    edit a second list - which is the same reason config.example.json and the
+    docs table are generated rather than kept in step.
+    """
+    return [k for k in SPEC if k.ui]
 
 
 def docs_table():

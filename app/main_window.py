@@ -41,10 +41,13 @@ class _Job(QObject):
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, repo_root, scripts_dir=None):
+    def __init__(self, repo_root, scripts_dir=None, config_path=None):
         super().__init__()
         self.repo_root = repo_root
-        self.config_path = os.path.join(repo_root, "config.json")
+        # Whichever study the picker settled on. Falls back to the module's
+        # own resolution so the window can still be opened directly in a test.
+        import ls_config as LC
+        self.config_path = os.path.abspath(config_path or LC.resolve_path())
         # Frozen, the stages ship inside the bundle while config.json sits beside
         # the executable, so the two roots are not the same folder.
         self.scripts_dir = scripts_dir or os.path.join(repo_root, "scripts")
@@ -112,7 +115,8 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(split)
 
         self._build_menu()
-        self.statusBar().showMessage(f"out_root  {self.out_root}")
+        self.statusBar().showMessage(
+            f"{self._study_name()}   out_root  {self.out_root}")
         self._build_list()
         self.refresh()
         self._log(f"repo    {repo_root}")
@@ -140,7 +144,8 @@ class MainWindow(QMainWindow):
         """
         self._menu = self.menuBar().addMenu("&Pipeline")
         self._actions = []
-        for label, slot in (("Settings…", self._settings),
+        for label, slot in (("Studies…", self._studies),
+                            ("Settings…", self._settings),
                             (None, None),
                             ("Import curation state…", self._import_state),
                             ("Where is my curation state?", self._explain_state)):
@@ -151,16 +156,39 @@ class MainWindow(QMainWindow):
             act.triggered.connect(slot)
             self._actions.append(act)
 
+    def _studies(self):
+        """Switch to another study, or make one."""
+        from study_picker import StudyPicker
+        dlg = StudyPicker(self.repo_root, self)
+        if dlg.exec() and dlg.chosen and os.path.normcase(dlg.chosen) !=                 os.path.normcase(self.config_path):
+            self.config_path = dlg.chosen
+            self.runner.rebind(dlg.chosen)
+            self.importer.config_path = dlg.chosen
+            self._rebase()
+            self._log(f"study is now {self.config_path}")
+
+    def _rebase(self):
+        """Re-root everything that was pointed at the previous out_root."""
+        self.out_root = self._config()["out_root"]
+        # The server, the curator view and the curation store were all rooted
+        # at the old out_root; without this they keep serving and saving into
+        # the tree that was just moved away from.
+        self.server.stop()
+        self.server = LocalServer(self.out_root)
+        self.curator.rebase(self.server, self.out_root)
+        self.refresh()
+        self.statusBar().showMessage(f"{self._study_name()}   out_root  {self.out_root}")
+
+    def _study_name(self):
+        try:
+            return (self._config().get("study") or {}).get("name") or                 os.path.splitext(os.path.basename(self.config_path))[0]
+        except Exception:                                   # noqa: BLE001
+            return "?"
+
     def _settings(self):
-        if ConfigDialog(self.repo_root, self).exec():
-            self.out_root = self._config()["out_root"]
-            # The server, the curator view and the curation store were all
-            # rooted at the old out_root; without this they keep serving and
-            # saving into the tree that was just moved away from.
-            self.server.stop()
-            self.server = LocalServer(self.out_root)
-            self.curator.rebase(self.server, self.out_root)
-            self.refresh()
+        if ConfigDialog(self.repo_root, path=self.config_path,
+                        parent=self).exec():
+            self._rebase()
             self._log(f"config updated - out_root {self.out_root}, serving on "
                       f"127.0.0.1:{self.server.port}; stage modules reload on next run")
 

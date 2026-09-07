@@ -122,6 +122,23 @@ class Runner:
 
     # ---- module loading ---------------------------------------------------
 
+    def rebind(self, config_path):
+        """Point every future stage at a different study."""
+        self.config_path = os.path.abspath(config_path)
+        os.environ["LS_CONFIG"] = self.config_path
+        self._config_stamp = None
+        self._forget()
+
+    def _forget(self):
+        """Drop the cached stage modules AND the config module they read.
+
+        `ls_config` caches the parsed config and lives in `sys.modules`, which
+        this class does not own. Clearing only `self._modules` would reload
+        every stage and hand each one the config that was just replaced.
+        """
+        self._modules.clear()
+        sys.modules.pop("ls_config", None)
+
     def _config_changed(self):
         try:
             stamp = os.path.getmtime(self.config_path)
@@ -140,7 +157,7 @@ class Runner:
         prefix makes tracebacks say which stage they came from.
         """
         if self._config_changed():
-            self._modules.clear()
+            self._forget()
         if script in self._modules:
             return self._modules[script]
 

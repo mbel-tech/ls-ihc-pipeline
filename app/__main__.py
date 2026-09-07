@@ -32,6 +32,11 @@ else:
 
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
+# The app reads the same config module the stages do, rather than a second
+# opinion about where settings live. Runner puts this on the path only while it
+# loads a stage; the app itself needs it for the whole session.
+if SCRIPTS not in sys.path:
+    sys.path.insert(0, SCRIPTS)
 
 CRASH_LOG = os.path.join(REPO, "lsapp-crash.log")
 SELFTEST_LOG = os.path.join(REPO, "lsapp-selftest.log")
@@ -95,12 +100,17 @@ def main():
     app.setApplicationName("LS IHC pipeline")
 
     try:
-        from config_dialog import ensure_config
-        if not ensure_config(REPO):
-            return 0                       # the user cancelled setup
+        from study_picker import ensure_study
+        study = ensure_study(REPO)
+        if study is None:
+            return 0                       # the user backed out of the picker
+
+        # Everything below - the window, the runner, every stage - reads this
+        # one answer, so it is settled here and nowhere else.
+        os.environ["LS_CONFIG"] = study
 
         from main_window import MainWindow
-        w = MainWindow(REPO, scripts_dir=SCRIPTS)
+        w = MainWindow(REPO, scripts_dir=SCRIPTS, config_path=study)
         w.show()
 
         if "--self-test" in sys.argv:

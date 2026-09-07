@@ -291,6 +291,25 @@ chk("a pending key is never also documented-only",
     [k.path for k in C.SPEC
      if k.consumers_pending and k.status == C.DOCUMENTED], [])
 
+# The settings dialog is built from this, so a key that reaches it without a
+# label or a hint reaches the operator as a blank row.
+fields = C.dialog_fields()
+chk("the dialog offers something", len(fields) > 10, True)
+chk("every offered key has a label", [k.path for k in fields if not k.label], [])
+chk("every offered key has a hint", [k.path for k in fields if not k.doc], [])
+chk("no label is left as a bare leaf name",
+    [k.path for k in fields if k.label.lower() in ("dir", "enabled", "name")], [])
+chk("every widget kind is one the dialog can build",
+    sorted({k.ui for k in fields}) ,
+    ["bool", "choice", "dir", "file", "int", "number", "outdir", "text"])
+chk("a choice field actually has choices",
+    [k.path for k in fields if k.ui == "choice" and not k.choices], [])
+chk("nothing the pipeline does not read is offered",
+    [k.path for k in fields if k.status != C.LIVE], [])
+chk("every required key is offered, so it can be filled in",
+    [k.path for k in C.SPEC if k.required and not k.ui and k.path != "schema_version"],
+    [])
+
 print()
 print("ALL PASS" if not failures else f"{len(failures)} FAILED")
 sys.exit(1 if failures else 0)
