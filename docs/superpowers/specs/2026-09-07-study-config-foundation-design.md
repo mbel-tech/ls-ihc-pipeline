@@ -25,7 +25,7 @@ with open(CONFIG_PATH, encoding="utf-8") as _fh:
 ```
 
 is copy-pasted verbatim into 37 scripts. There is no schema, no validation, no defaults,
-and eight config keys are read by no code at all — including `blinding`, whose `_note`
+and eleven config keys are read by no code at all — including `blinding`, whose `_note`
 declares the rule that no stage before 06b may read a group label, and which nothing
 enforces. `tests/test_config_resolver.py:66` greps each stage's *source text* for the
 string `os.environ.get("LS_CONFIG")`, because there is no object to ask.
@@ -96,7 +96,11 @@ convenience layer above `LS_CONFIG`, not a replacement for it.
 
 Dropped, because nothing reads them: `triage_target_um_per_px`,
 `detection_target_um_per_px`, `section_interval_um`, `channels.exposure_ms`, `flatfield`,
-and `blinding.enabled`. The last is dropped rather than wired because blinding is now
+`blinding.enabled`, and `detection.local_contrast_inner_factor`,
+`local_contrast_outer_factor` and `local_contrast_threshold` — the last three describe
+the 03a calibration sweep that no longer exists as a stage, left behind when StarDist
+replaced the local-contrast detector. `local_contrast_threshold`'s note calls it "the most
+consequential parameter in the pipeline", which has not been true since that change. The last is dropped rather than wired because blinding is now
 always on — a toggle that never toggled anything is worse than no toggle.
 
 One caveat on `flatfield`: it is dead to every Python stage, but `01a_flatfield.groovy`
