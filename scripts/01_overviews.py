@@ -45,6 +45,7 @@ if _HERE not in sys.path:
 # the whole process. Imported, not re-implemented: this block used to be four
 # lines copy-pasted into every stage.
 from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
+import czi_read as CR  # noqa: E402
 
 SOURCE_DIR = CONFIG["source_dir"]
 OUT_ROOT = CONFIG["out_root"]
@@ -151,11 +152,14 @@ def to_8bit(image, lo, hi):
 
 # ---------------------------------------------------------------- czi access
 
-def read_scene(czidoc, rect, channel, zoom):
-    """One scene, one channel, at the requested zoom, as 2-D uint16."""
-    arr = czidoc.read(roi=(rect.x, rect.y, rect.w, rect.h),
-                      plane={"C": channel}, zoom=zoom)
-    return np.squeeze(arr)
+def read_scene(czidoc, rect, channel, zoom, *, scene):
+    """One scene, one channel, at the requested zoom, as 2-D uint16.
+
+    Delegates to czi_read, which names the scene. Without that, a read of this
+    rectangle composites whichever neighbouring scenes overlap it - which is
+    2241 of the 2572 scenes in this dataset.
+    """
+    return CR.read_plane(czidoc, rect, channel, scene=scene, zoom=zoom)
 
 
 def load_manifest():
@@ -246,8 +250,8 @@ def sample_display_ranges(scenes, fields, zoom, force):
                 s = int(r["scene_index"])
                 if s not in rects:
                     continue
-                dapi = apply_tile_field(read_scene(czidoc, rects[s], 0, zoom), fields.get(0), 1 / zoom)
-                mark = apply_tile_field(read_scene(czidoc, rects[s], 1, zoom), fields.get(1), 1 / zoom)
+                dapi = apply_tile_field(read_scene(czidoc, rects[s], 0, zoom, scene=s), fields.get(0), 1 / zoom)
+                mark = apply_tile_field(read_scene(czidoc, rects[s], 1, zoom, scene=s), fields.get(1), 1 / zoom)
                 mask = dapi > tissue_threshold(dapi)
                 if mask.sum() < 500:
                     continue
@@ -321,8 +325,8 @@ def export(scenes, fields, ranges, ceilings, zoom, limit, force):
                         failed += 1
                         continue
 
-                    dapi_raw = read_scene(czidoc, rects[s], 0, zoom)
-                    mark_raw = read_scene(czidoc, rects[s], 1, zoom)
+                    dapi_raw = read_scene(czidoc, rects[s], 0, zoom, scene=s)
+                    mark_raw = read_scene(czidoc, rects[s], 1, zoom, scene=s)
                     # Clipping is measured HERE, before the field is applied.
                     # Dividing by a gain above 1 lifts a pixel off the 16-bit
                     # ceiling and it stops counting as clipped - but the value is

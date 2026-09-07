@@ -113,6 +113,33 @@ try:
 except CR.ReadError:
     chk("asking for no channels raises", True, True)
 
+# --------------------------------------------------------------------------
+print()
+print("--- 01_overviews reads through it ---")
+
+import importlib.util                                       # noqa: E402
+
+sys.path.insert(0, HERE)
+from _fixture import use_temp_study                         # noqa: E402
+
+use_temp_study()
+spec = importlib.util.spec_from_file_location(
+    "probe_ov", os.path.join(REPO, "scripts", "01_overviews.py"))
+OV = importlib.util.module_from_spec(spec)
+sys.modules["probe_ov"] = OV
+spec.loader.exec_module(OV)
+
+doc = FakeDoc()
+OV.read_scene(doc, RECT, 1, 0.125, scene=7)
+chk("01_overviews passes the scene down", doc.calls[0]["scene"], 7)
+chk("...and still the plane it asked for", doc.calls[0]["plane"], {"C": 1})
+
+try:
+    OV.read_scene(FakeDoc(), RECT, 1, 0.125)
+    chk("a caller that forgot the scene fails at the call", False, True)
+except TypeError:
+    chk("a caller that forgot the scene fails at the call", True, True)
+
 print()
 print("ALL PASS" if not failures else f"{len(failures)} FAILED")
 sys.exit(1 if failures else 0)
