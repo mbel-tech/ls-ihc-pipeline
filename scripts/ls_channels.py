@@ -91,11 +91,29 @@ def resolve(channels, czi_channel_names):
     of each entry `czi_meta` returns, which may be None.
     """
     names = list(czi_channel_names)
-    lowered = {str(n).lower(): i for i, n in enumerate(names) if n}
+
+    # Built as a list per name rather than a dict, so a file with two planes
+    # under the same name is caught instead of the later one quietly winning.
+    # Picking one of two identically-named planes is precisely the plausible
+    # wrong answer this module exists to prevent.
+    by_name = {}
+    for i, n in enumerate(names):
+        if n:
+            by_name.setdefault(str(n).lower(), []).append(i)
+
     out = {}
     for chan in channels:
-        if chan.czi_name and str(chan.czi_name).lower() in lowered:
-            out[chan.name] = lowered[str(chan.czi_name).lower()]
+        wanted = str(chan.czi_name).lower() if chan.czi_name else None
+        found = by_name.get(wanted, []) if wanted else []
+        if len(found) > 1:
+            raise ChannelError(
+                f"channel {chan.name!r} is declared as {chan.czi_name!r}, and "
+                f"this file has {len(found)} planes with that name "
+                f"(planes {', '.join(str(i) for i in found)}). Which one is "
+                f"meant cannot be guessed; rename them at the microscope, or "
+                f"declare this channel by index instead of by name.")
+        if len(found) == 1:
+            out[chan.name] = found[0]
             continue
         if chan.index is not None and 0 <= chan.index < len(names):
             out[chan.name] = chan.index
@@ -141,7 +159,8 @@ def validate(block, layout):
         if not chan.name or not NAME_RE.match(str(chan.name)):
             errors.append(
                 f"channel name {chan.name!r} is not usable - it becomes a "
-                f"folder name and a CSV value.")
+                f"folder name and a CSV value. Use letters, digits, spaces, "
+                f"and any of _ . + - starting with a letter or digit.")
         elif chan.name in seen:
             errors.append(f"two channels are both called {chan.name!r}.")
         seen.add(chan.name)

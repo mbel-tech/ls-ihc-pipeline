@@ -74,6 +74,16 @@ except CH.ChannelError as exc:
     chk("...and names the channel it wanted", "pERK" in str(exc), True)
     chk("...and what the file actually has", "DAPI" in str(exc), True)
 
+# Two planes under one name is not something to pick between silently.
+try:
+    CH.resolve(CH.parse([{"name": "N", "role": "nuclear",
+                          "czi_name": "DAPI", "index": 0}]),
+               ["DAPI", "DAPI"])
+    chk("two planes with the same name raises", False, True)
+except CH.ChannelError as exc:
+    chk("two planes with the same name raises", True, True)
+    chk("...and says which planes they are", "planes 0, 1" in str(exc), True)
+
 print()
 print("--- what a study may not declare ---")
 
@@ -85,6 +95,8 @@ def errs(block, layout="multiplex"):
 chk("a valid table has nothing to say", errs(BLOCK), [])
 chk("two channels cannot share a name",
     len(errs([BLOCK[0], dict(BLOCK[1], name="DAPI")])), 1)
+chk("...and says which name",
+    "both called" in errs([BLOCK[0], dict(BLOCK[1], name="DAPI")])[0], True)
 # Each of these declares an otherwise-valid table, so the count below is the
 # fault under test and not an echo of it: a block with no valid marker would
 # also report "nothing to measure", which is true but is a second fault.
@@ -92,10 +104,18 @@ chk("a name has to be usable as a folder",
     len(errs([dict(BLOCK[0], name="a/b"), BLOCK[1]])), 1)
 chk("there is at most one nuclear channel",
     len(errs([BLOCK[0], BLOCK[1], dict(BLOCK[2], role="nuclear")])), 1)
+chk("...and says how many there are",
+    "marked nuclear" in errs([BLOCK[0], BLOCK[1],
+                              dict(BLOCK[2], role="nuclear")])[0], True)
 chk("something has to be a marker",
     len(errs([BLOCK[0]])), 1)
+chk("...and says there is nothing to measure",
+    "nothing to measure" in errs([BLOCK[0]])[0], True)
 chk("an unknown role is refused",
     len(errs([BLOCK[0], BLOCK[1], dict(BLOCK[2], role="whatever")])), 1)
+chk("...and lists the roles there are",
+    "registration" in errs([BLOCK[0], BLOCK[1],
+                            dict(BLOCK[2], role="whatever")])[0], True)
 
 # Independent faults are reported together. Returning only the first would
 # mean fixing a config one error per attempt.
@@ -108,6 +128,14 @@ bad = errs([BLOCK[0], dict(BLOCK[1], segment="own", backend="stardist",
                            nucleus_shaped=False)])
 chk("stardist on a non-nuclear marker is refused", len(bad), 1)
 chk("...and says why", "nucleus" in bad[0].lower(), True)
+
+seg = errs([BLOCK[0], dict(BLOCK[1], segment="sideways")])
+chk("an unknown segment is refused", len(seg), 1)
+chk("...and lists the segments there are", "own" in seg[0], True)
+
+back = errs([BLOCK[0], dict(BLOCK[1], segment="own", backend="magic")])
+chk("an unknown backend is refused", len(back), 1)
+chk("...and lists the backends there are", "threshold" in back[0], True)
 
 chk("segment: nuclear needs a nuclear channel to segment",
     len(errs([dict(BLOCK[1], segment="nuclear")])), 1)
