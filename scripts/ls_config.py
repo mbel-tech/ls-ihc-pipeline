@@ -141,12 +141,9 @@ SPEC = [
         "Regex matching your slide filenames, with a named group 'subject'. "
         "Optional named groups 'slide' and 'replicate'; any others are "
         "carried through as manifest columns.",
+        required=True,
         example=r"^(?P<subject>[A-Za-z]+\d+)_(?P<slide>\d+)(?P<replicate>[a-z])?\.czi$",
-        consumers_pending=True,
-        note="NOT YET REQUIRED - it becomes required in the same change that "
-             "makes 00_manifest read it, because requiring a key before "
-             "anything consumes it only breaks configs that were working. "
-             "Built by the app's pattern builder, and editable by hand. A "
+        note="Built by the app's pattern builder, and editable by hand. A "
              "filename that does not match is REPORTED, never silently "
              "skipped - an invisible file is the failure mode this whole "
              "block exists to prevent. `subject` becomes the `animal` column "
@@ -156,12 +153,12 @@ SPEC = [
 
     Key("slide_naming.example", "str",
         "One real filename, used by the app to preview the parse.",
-        default="", example="AB12_3a.czi", consumers_pending=True,
+        default="", example="AB12_3a.czi",
         consumers=["app/slides"]),
 
     Key("slide_naming.case_insensitive", "bool",
         "Match filenames case-insensitively.",
-        default=True, consumers_pending=True,
+        default=True,
         consumers=["00_manifest", "app/slides"]),
 
     # ---- acquisition geometry -------------------------------------------

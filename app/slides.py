@@ -21,11 +21,24 @@ import re
 import shutil
 
 
-# The grammar is 00_manifest's, imported rather than restated - see
-# name_pattern(). This is only the fallback for the case where config.json does
-# not exist yet, which is the one situation the stage module cannot be loaded in.
+# The grammar belongs to the study, not to this file - see name_pattern().
+# This is the bootstrap only: before a study exists there is no grammar to read
+# and the screen still has to draw something, which is also the one situation
+# in which the stage module cannot be loaded.
 _FALLBACK_NAME_RE = re.compile(
-    r"^(LS\d+)_(\d+)([a-z])(-?)(_[A-Za-z0-9]+)?\.czi$", re.IGNORECASE)
+    r"^(?P<subject>[A-Za-z]+\d+)_(?P<slide>\d+)(?P<replicate>[a-z])?\.czi$",
+    re.IGNORECASE)
+
+def _natural_key(text):
+    """LS7 < LS22 < LS120, and Fish-3 < Fish-12, with no grammar assumed.
+
+    The previous key was `int(a[2:]) if a[2:].isdigit() else 0`, which sorted
+    every id that was not two letters and digits into one bucket. ls_naming
+    owns the real one; this is the copy the app can use before a study exists.
+    """
+    return tuple((1, int(part)) if part.isdigit() else (0, part.lower())
+                 for part in re.split(r"(\d+)", str(text)) if part != "")
+
 
 SLIDE_EXTS = (".czi", ".zip")          # 00_manifest reads zips of czis too
 
@@ -39,7 +52,7 @@ def name_pattern(runner=None):
     """
     if runner is not None:
         try:
-            return runner.load("00_manifest.py").NAME_RE
+            return runner.load("00_manifest.py").name_pattern()
         except Exception:                                  # noqa: BLE001
             pass
     return _FALLBACK_NAME_RE
@@ -67,10 +80,15 @@ class SlideFile:
 
         m = pattern.match(stem)
         if m:
+            g = m.groupdict()
             self.recognised = True
-            self.animal, self.slide, self.marker = m.group(1), m.group(2), m.group(3)
+            # groupdict, not positional groups: a study's pattern may capture
+            # anything it likes, and only these three have a meaning here.
+            self.animal = g.get("subject") or ""
+            self.slide = g.get("slide") or ""
+            self.marker = g.get("replicate") or ""
         else:
-            self.reason = "name does not match the manifest pattern (e.g. LS45_8b.czi)"
+            self.reason = "name does not match this study's slide_naming.pattern"
 
     @property
     def parent(self):
@@ -104,8 +122,7 @@ def scan_paths(paths, pattern):
 def summarise(files):
     ok = [f for f in files if f.recognised]
     bad = [f for f in files if not f.recognised]
-    animals = sorted({f.animal for f in ok if f.animal},
-                     key=lambda a: int(a[2:]) if a[2:].isdigit() else 0)
+    animals = sorted({f.animal for f in ok if f.animal}, key=_natural_key)
     return {
         "n": len(files), "n_ok": len(ok), "n_bad": len(bad),
         "bytes": sum(f.size for f in files),

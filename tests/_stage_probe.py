@@ -74,8 +74,15 @@ def _flatten(value, subs):
         return value
     if isinstance(value, re.Pattern):
         # The pattern text and the flags both change behaviour, so both are
-        # part of the constant.
-        return {"regex": _norm(value.pattern, subs), "flags": int(value.flags)}
+        # part of the constant. Its backslashes are escapes, not separators -
+        # running it through _norm turned every `\d` into `/d`, which would
+        # have hidden a real change to a character class behind a cosmetic one.
+        pattern = value.pattern
+        for real, token in subs:
+            if real:
+                pattern = re.sub(re.escape(real), token, pattern,
+                                 flags=re.IGNORECASE)
+        return {"regex": pattern, "flags": int(value.flags)}
     if isinstance(value, (list, tuple, set, frozenset)):
         items = [_flatten(v, subs) for v in
                  (sorted(value, key=repr) if isinstance(value, (set, frozenset))

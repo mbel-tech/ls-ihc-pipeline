@@ -45,6 +45,7 @@ if _HERE not in sys.path:
 # the whole process. Imported, not re-implemented: this block used to be four
 # lines copy-pasted into every stage.
 from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
+import ls_naming as NM  # noqa: E402
 
 SOURCE_DIR = CONFIG["source_dir"]
 OUT_ROOT = CONFIG["out_root"]
@@ -56,7 +57,20 @@ SLIDEMAP_DIR = os.path.join(OUT_ROOT, "qc", "slidemaps")
 QC_DIR = os.path.join(OUT_ROOT, "qc")
 
 # Filenames look like LS45_8b.czi, LS85_7b-.czi, LS53_2b-_A568.czi
-NAME_RE = re.compile(r"^(LS\d+)_(\d+)([a-z])(-?)(_[A-Za-z0-9]+)?\.czi$", re.IGNORECASE)
+_PATTERN = None
+
+
+def name_pattern():
+    """The study's filename grammar, compiled once.
+
+    Lazy rather than module-level so a study that has not set one yet still
+    lets the app load its stage list; the failure belongs to the stage that
+    reads a filename, not to importing it.
+    """
+    global _PATTERN
+    if _PATTERN is None:
+        _PATTERN = NM.compile_pattern(CONFIG.get("slide_naming"))
+    return _PATTERN
 
 # A gap larger than this fraction of the median scene dimension starts a new
 # row/column. Scenes on a slide are separated by far more than their own size,
@@ -143,16 +157,18 @@ def discover_sources(stack):
 
 
 def parse_name(member):
-    base = os.path.basename(member)
-    m = NAME_RE.match(base)
-    if not m:
+    """Read one filename with the study's grammar, or None.
+
+    `animal` and `variant` are kept as aliases of ls_naming's `subject` and
+    `replicate`: those two are column names in every table on disk and in the
+    R scripts, so renaming them here would be a data migration, not a tidy-up.
+    """
+    parsed = NM.parse_name(member, name_pattern())
+    if parsed is None:
         return None
-    return {
-        "animal": m.group(1).upper(),
-        "slide": int(m.group(2)),
-        "variant": m.group(3).lower(),
-        "name_suffix": (m.group(4) or "") + (m.group(5) or ""),
-    }
+    return {**parsed,
+            "animal": parsed["subject"],
+            "variant": parsed["replicate"]}
 
 
 # ---------------------------------------------------------------- slide grid
@@ -451,7 +467,9 @@ def main():
             base = os.path.basename(member)
             parsed = parse_name(member)
             if parsed is None:
-                failures.append((source, member, "filename did not match LS<animal>_<slide><variant>"))
+                failures.append((source, member, "filename did not match "
+                                 "slide_naming.pattern (example: "
+                                 f"{CONFIG.get('slide_naming', {}).get('example') or 'none set'})"))
                 continue
 
             if base in seen_names:
@@ -538,7 +556,7 @@ def main():
             for i, sc in enumerate(scenes):
                 scene_rows.append(
                     {
-                        "scene_uid": f"{parsed['animal']}_s{parsed['slide']:02d}{parsed['variant']}_sc{sc['index']:02d}",
+                        "scene_uid": NM.scene_uid(parsed, sc["index"]),
                         "file": base,
                         "animal": parsed["animal"],
                         "slide": parsed["slide"],
