@@ -140,6 +140,35 @@ try:
 except TypeError:
     chk("a caller that forgot the scene fails at the call", True, True)
 
+
+# --------------------------------------------------------------------------
+print()
+print("--- no stage reads a plane without naming its scene ---")
+
+# Task 4 left 01k calling read_scene() without a scene and the whole suite
+# still passed: a throwaway study has no CZI files, so the broken call was
+# never reached. Only a static check catches that.
+import glob                                                 # noqa: E402
+import re as _re                                            # noqa: E402
+
+ALLOWED = {"czi_read.py", "00d_czi_selftest.py"}
+offenders = []
+for path in sorted(glob.glob(os.path.join(REPO, "scripts", "*.py"))):
+    name = os.path.basename(path)
+    if name in ALLOWED:
+        continue
+    with open(path, encoding="utf-8") as fh:
+        text = fh.read()
+    for call in _re.findall(r"\.read\(\s*roi=.*?\)", text, _re.S):
+        if "scene=" not in call:
+            offenders.append(f"{name}: {' '.join(call.split())[:70]}")
+    for call in _re.findall(r"read_scene\(.*?\)", text, _re.S):
+        if "def read_scene" in call or "scene=" in call:
+            continue
+        offenders.append(f"{name}: {' '.join(call.split())[:70]}")
+
+chk("every pixel read outside czi_read names its scene", offenders, [])
+
 print()
 print("ALL PASS" if not failures else f"{len(failures)} FAILED")
 sys.exit(1 if failures else 0)
