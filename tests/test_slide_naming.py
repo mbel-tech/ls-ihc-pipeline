@@ -145,6 +145,16 @@ for spec, name in ((LS, "LS105_10a.czi"),
 
 chk("slide_key is the section's slide, which 06d groups by",
     NM.split_uid("LS105_s10a_sc03")["slide_key"], "LS105_s10a")
+
+# subject_of replaced six copies of uid.split("_")[0]. It must agree with them
+# on every uid this pipeline has ever built, and degrade to them on anything
+# else rather than raising.
+chk("subject_of reads a real uid", NM.subject_of("LS105_s10a_sc03"), "LS105")
+chk("...and one with no replicate", NM.subject_of("AB12_s03_sc05"), "AB12")
+chk("...and one with no slide", NM.subject_of("Fish07_sc05"), "Fish07")
+chk("...and falls back on something it did not build",
+    NM.subject_of("whatever_else_here"), "whatever")
+chk("...without raising on an empty string", NM.subject_of(""), "")
 chk("a string this did not build is not a uid", NM.split_uid("nonsense"), None)
 chk("...nor is an empty one", NM.split_uid(""), None)
 

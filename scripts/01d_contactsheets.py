@@ -33,6 +33,7 @@ if _HERE not in sys.path:
 # the whole process. Imported, not re-implemented: this block used to be four
 # lines copy-pasted into every stage.
 from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
+import ls_naming as NM  # noqa: E402
 
 OUT_ROOT = CONFIG["out_root"]
 OVERVIEW_DIR = os.path.join(OUT_ROOT, "overviews")
@@ -259,7 +260,7 @@ def build_gallery(by_key, sheets, kind):
         f"Showing <b>{kind}</b>. Red border = QC flag.</p>",
     ]
 
-    for (animal, marker) in sorted(by_key, key=lambda k: (int(k[0][2:]), k[1])):
+    for (animal, marker) in sorted(by_key, key=lambda k: (NM.natural_key(k[0]), k[1])):
         rows = sorted(by_key[(animal, marker)], key=lambda r: r["section_order"])
         focus_floor = quantile([r["focus_score"] for r in rows], FOCUS_LOW_QUANTILE)
         parts.append(f"<h2>{html.escape(animal)} &mdash; {html.escape(marker)} "
@@ -305,7 +306,7 @@ def main():
         by_key[(r["animal"], r["marker_channel"])].append(r)
 
     sheets = []
-    for (animal, marker), group in sorted(by_key.items(), key=lambda kv: (int(kv[0][0][2:]), kv[0][1])):
+    for (animal, marker), group in sorted(by_key.items(), key=lambda kv: (NM.natural_key(kv[0][0]), kv[0][1])):
         written = build_sheet(group, animal, marker, args.kind, args.cols, args.thumb, SHEET_DIR)
         sheets.extend(written)
         print(f"  {animal:<7} {marker:<6} {len(group):>4} sections -> {len(written)} page(s)")

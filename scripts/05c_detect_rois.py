@@ -57,6 +57,7 @@ if _HERE not in sys.path:
 # the whole process. Imported, not re-implemented: this block used to be four
 # lines copy-pasted into every stage.
 from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
+import ls_naming as NM  # noqa: E402
 OUT_ROOT = G5.OUT_ROOT
 REFORMAT_DIR = G5.REFORMAT_DIR
 RESULTS = os.path.join(OUT_ROOT, "results")
@@ -222,13 +223,13 @@ def balanced_order(uids, done=()):
     # animal -> its sections, in order
     per = {}
     for u in uids:
-        per.setdefault(u.split("_")[0], []).append(u)
+        per.setdefault(NM.subject_of(u), []).append(u)
     for v in per.values():
         v.sort()
 
     order = [g for g in (groups.get("order") or []) if g] or sorted(
         {by_animal.get(a, "") for a in per} - {""})
-    arms = {g: [a for a in sorted(per, key=lambda x: int(x[2:]))
+    arms = {g: [a for a in sorted(per, key=NM.natural_key)
                 if by_animal.get(a) == g] for g in order}
     unknown = [a for a in per if by_animal.get(a) not in order]
     if unknown:
@@ -243,7 +244,7 @@ def balanced_order(uids, done=()):
     # the operator stops half way and looks at the numbers.
     cum = dict.fromkeys(order, 0)
     for u in (done or ()):
-        g = by_animal.get(u.split("_")[0])
+        g = by_animal.get(NM.subject_of(u))
         if g in cum:
             cum[g] += 1
     if any(cum.values()):

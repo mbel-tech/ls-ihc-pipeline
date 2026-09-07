@@ -78,6 +78,7 @@ if _HERE not in sys.path:
 # the whole process. Imported, not re-implemented: this block used to be four
 # lines copy-pasted into every stage.
 from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
+import ls_naming as NM  # noqa: E402
 OUT_ROOT = G5.OUT_ROOT
 RESULTS = os.path.join(OUT_ROOT, "results")
 NUCLEI_CSV = os.path.join(RESULTS, "roi_nuclei.csv")
@@ -358,7 +359,7 @@ def main(argv=None):
     by_section = []
     for uid in sorted(measured):
         n_roi, n_bg, regions, d_roi, d_bg = per_sec[uid]
-        an = animal_by.get(uid, uid.split("_")[0])
+        an = animal_by.get(uid, NM.subject_of(uid))
         by_section.append({
             "sample": an, "treatment": groups.get(an, ""),
             "environment": envs.get(an, ""), "scene_uid": uid,
@@ -377,8 +378,7 @@ def main(argv=None):
     # started, which is the one question this sheet exists to answer.
     coverage = []
     for an, mk in sorted({(b["animal"], b["marker"]) for b in boxes},
-                         key=lambda t: (int(t[0][2:]) if t[0][2:].isdigit() else 0,
-                                        t[1])):
+                         key=lambda t: (NM.natural_key(t[0]), t[1])):
         pl = {b["scene_uid"] for b in boxes
               if b["animal"] == an and b["marker"] == mk}
         coverage.append({

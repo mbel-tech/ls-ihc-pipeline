@@ -33,6 +33,7 @@ if _HERE not in sys.path:
 # the whole process. Imported, not re-implemented: this block used to be four
 # lines copy-pasted into every stage.
 from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
+import ls_naming as NM  # noqa: E402
 
 OUT_ROOT = CONFIG["out_root"]
 MANIFEST_DIR = os.path.join(OUT_ROOT, "manifest")
@@ -221,7 +222,7 @@ def main():
         print(f"  !! expected two marker channels, found {markers}")
     marker_a, marker_b = "AF568", "AF488"
 
-    animals = sorted({r["animal"] for r in rows}, key=lambda a: int(a[2:]))
+    animals = sorted({r["animal"] for r in rows}, key=NM.natural_key)
     pair_rows, offset_rows = [], []
 
     for animal in animals:
@@ -341,7 +342,7 @@ def _report(pair_rows, offset_rows, variant_notes):
     for r in pair_rows:
         by_animal[r["animal"]][r["status"]] += 1
     print("\nper animal (matched / total):")
-    for animal in sorted(by_animal, key=lambda a: int(a[2:])):
+    for animal in sorted(by_animal, key=NM.natural_key):
         d = by_animal[animal]
         tot = sum(d.values())
         print(f"  {animal:<7} {d.get('matched', 0):>4} / {tot:<4}"

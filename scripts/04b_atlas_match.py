@@ -54,6 +54,7 @@ if _HERE not in sys.path:
 # the whole process. Imported, not re-implemented: this block used to be four
 # lines copy-pasted into every stage.
 from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
+import ls_naming as NM  # noqa: E402
 
 OUT_ROOT = CONFIG["out_root"]
 OVERVIEW_DIR = os.path.join(OUT_ROOT, "overviews")
@@ -242,7 +243,7 @@ def main():
         by_animal.setdefault(r["animal"], []).append(r)
 
     proposals = []
-    for animal, group in sorted(by_animal.items(), key=lambda kv: int(kv[0][2:])):
+    for animal, group in sorted(by_animal.items(), key=lambda kv: NM.natural_key(kv[0])):
         group.sort(key=lambda r: int(r["section_order"]))
         sils, keep = [], []
         for r in group:

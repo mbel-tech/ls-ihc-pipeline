@@ -27,7 +27,6 @@ import argparse
 import collections
 import importlib.util
 import os
-import re
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _spec = importlib.util.spec_from_file_location(
@@ -43,18 +42,19 @@ if _HERE not in sys.path:
 # the whole process. Imported, not re-implemented: this block used to be four
 # lines copy-pasted into every stage.
 from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
+import ls_naming as NM  # noqa: E402
 RESULTS = G6C.RESULTS
 XLSX = os.path.join(RESULTS, "roi_dataset_by_slide.xlsx")
 
 # LS22_s01a_sc06 -> animal LS22, slide LS22_s01a, scene 06
-UID = re.compile(r"^(?P<animal>LS\d+)_s(?P<slide>\d+)(?P<variant>[a-z])_sc(?P<scene>\d+)$")
+# The uid grammar lives in ls_naming, which built it. This file used to
+# restate it with LS written in, so it could only read one study's uids.
 
 
 def slide_of(uid):
-    m = UID.match(uid)
-    if not m:
-        return uid.rsplit("_", 1)[0]
-    return f"{m['animal']}_s{m['slide']}{m['variant']}"
+    """The slide a section belongs to, for grouping."""
+    parsed = NM.split_uid(uid)
+    return parsed["slide_key"] if parsed else uid.rsplit("_", 1)[0]
 
 
 def group_rows(meas, keyfn, keyname, groups, envs):

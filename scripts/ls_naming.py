@@ -144,6 +144,19 @@ def split_uid(uid):
     return out
 
 
+def subject_of(uid):
+    """The subject a scene uid belongs to.
+
+    Six places did `uid.split("_")[0]` for this. That is right only while a
+    subject cannot contain "_" - which parse_name now enforces, but which
+    nothing enforced when those lines were written. Going through split_uid
+    means the rule lives in one place, and an id this module did not build
+    still degrades to the old behaviour rather than raising.
+    """
+    parsed = split_uid(uid)
+    return parsed["subject"] if parsed else str(uid).split("_")[0]
+
+
 _CHUNKS = re.compile(r"(\d+)")
 
 

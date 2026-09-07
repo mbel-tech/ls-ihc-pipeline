@@ -60,6 +60,7 @@ if _HERE not in sys.path:
 # the whole process. Imported, not re-implemented: this block used to be four
 # lines copy-pasted into every stage.
 from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
+import ls_naming as NM  # noqa: E402
 
 OUT_ROOT = CONFIG["out_root"]
 OVERVIEW_DIR = os.path.join(OUT_ROOT, "overviews")
@@ -309,7 +310,7 @@ def main():
         u568 = to568.get(uid)
         if u568:
             rows.append({"perk_scene_uid": u568, "pcna_scene_uid": uid,
-                         "animal": uid.split("_")[0], "extra_rotation": 0, "flip": 0,
+                         "animal": NM.subject_of(uid), "extra_rotation": 0, "flip": 0,
                          "excluded": 1, "align_iou": "", "final_iou_256": "",
                          "flip_margin": "", "confidence": "",
                          "reason": "PCNA partner excluded by the operator"})
@@ -321,8 +322,8 @@ def main():
         if not u568:
             n_nopair += 1
             continue
-        animal488, _ = chan.get(uid, (uid.split("_")[0], "AF488"))
-        animal, _ = chan.get(u568, (u568.split("_")[0], "AF568"))
+        animal488, _ = chan.get(uid, (NM.subject_of(uid), "AF488"))
+        animal, _ = chan.get(u568, (NM.subject_of(u568), "AF568"))
         p488 = os.path.join(OVERVIEW_DIR, animal488, "AF488", uid + "_DAPI.png")
         p568 = os.path.join(OVERVIEW_DIR, animal, "AF568", u568 + "_DAPI.png")
         if not (os.path.exists(p488) and os.path.exists(p568)):

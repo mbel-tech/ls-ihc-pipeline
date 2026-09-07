@@ -138,6 +138,7 @@ if _HERE not in sys.path:
 # the whole process. Imported, not re-implemented: this block used to be four
 # lines copy-pasted into every stage.
 from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
+import ls_naming as NM  # noqa: E402
 
 OUT_ROOT = CONFIG["out_root"]
 OVERVIEW_DIR = os.path.join(OUT_ROOT, "overviews")
@@ -391,7 +392,7 @@ def main():
         d[1] += 1 if r["in_analysis_set"] == 1 else 0
     print()
     print(f"  {'animal':<8}{label:>7}{'in set':>8}{'%':>6}")
-    for a in sorted(per, key=lambda x: int(x[2:])):
+    for a in sorted(per, key=NM.natural_key):
         t, k = per[a]
         print(f"  {a:<8}{t:>7}{k:>8}{100 * k / t:>5.0f}%")
     lost = [a for a, (t, k) in per.items() if k == 0]

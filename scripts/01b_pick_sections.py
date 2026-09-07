@@ -27,6 +27,7 @@ if _HERE not in sys.path:
 # the whole process. Imported, not re-implemented: this block used to be four
 # lines copy-pasted into every stage.
 from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
+import ls_naming as NM  # noqa: E402
 
 SOURCE_DIR = CONFIG["source_dir"]
 OUT_ROOT = CONFIG["out_root"]
@@ -110,7 +111,7 @@ def main():
         by_animal[r["animal"]] += 1
     print(f"picked {len(unique)} sections from {len({r['file'] for r in unique})} files")
     print(f"  per marker: {dict(by_marker)}")
-    print(f"  per animal: {dict(sorted(by_animal.items(), key=lambda kv: int(kv[0][2:])))}")
+    print(f"  per animal: {dict(sorted(by_animal.items(), key=lambda kv: NM.natural_key(kv[0])))}")
     print(f"wrote {OUT_CSV}")
 
 
