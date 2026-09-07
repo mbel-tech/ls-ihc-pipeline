@@ -66,6 +66,7 @@ Run:  python 04o_section_rgb.py
       python 04o_section_rgb.py --thumbs --all --marker AF488
 """
 
+import sys
 import argparse
 import csv
 import importlib.util
@@ -75,6 +76,14 @@ import numpy as np
 from PIL import Image
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
+_HERE = os.path.dirname(os.path.abspath(__file__))
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+# ls_config resolves LS_CONFIG, applies the defaults and validates once for
+# the whole process. Imported, not re-implemented: this block used to be four
+# lines copy-pasted into every stage.
+from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
+
 _spec = importlib.util.spec_from_file_location("_rf", os.path.join(_HERE, "04a_reformat.py"))
 RF = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(RF)

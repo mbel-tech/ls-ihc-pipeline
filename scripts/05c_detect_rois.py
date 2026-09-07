@@ -50,7 +50,13 @@ _spec = importlib.util.spec_from_file_location("_g5", os.path.join(_HERE, "05a_r
 G5 = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(G5)
 
-CONFIG = G5.CONFIG
+_HERE = os.path.dirname(os.path.abspath(__file__))
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+# ls_config resolves LS_CONFIG, applies the defaults and validates once for
+# the whole process. Imported, not re-implemented: this block used to be four
+# lines copy-pasted into every stage.
+from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
 OUT_ROOT = G5.OUT_ROOT
 REFORMAT_DIR = G5.REFORMAT_DIR
 RESULTS = os.path.join(OUT_ROOT, "results")

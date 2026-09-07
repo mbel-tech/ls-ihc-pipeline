@@ -26,6 +26,12 @@ BUILD="$TESTS/build"
 
 # Prefer the app venv, since that is the interpreter the pipeline is built on.
 PY="${PY:-$REPO/work/appenv/Scripts/python.exe}"
+
+# A suite that does not name its own config would fall through to the
+# operator's live config.json and then pass or fail on their data rather
+# than on its own. This makes that fallback an error instead. Suites that
+# want a config write one - see tests/_fixture.py.
+export LS_CONFIG_STRICT=1
 [ -x "$PY" ] || PY="python"
 
 mkdir -p "$BUILD"
@@ -35,7 +41,7 @@ mkdir -p "$BUILD"
 build_page () {
   local script="$1" name="$2"; shift 2
   echo "building $name..."
-  "$PY" "$REPO/scripts/$script" "$@" --out "$BUILD/$name.html" > /dev/null || {
+  LS_CONFIG="$BUILD_CONFIG" "$PY" "$REPO/scripts/$script" "$@" --out "$BUILD/$name.html" > /dev/null || {
     echo "could not generate $name"; exit 2; }
   "$PY" - "$BUILD/$name.html" "$BUILD/$name.js" <<'PYEOF' || exit 2
 import io, re, sys
@@ -46,16 +52,33 @@ print(f"  {len(js)} chars -> {sys.argv[2]}")
 PYEOF
 }
 
-build_page 04l_roi_curator.py curator --marker AF568 --worklist --rgb --no-seed
-build_page 04d_rotation_curator.py rotation_curator --no-proposals
-build_page 04k_level_curator.py level_curator
+# The three page builds are the one part of this run that cannot use a
+# throwaway study: --worklist reads reformatted/roi_worklist.csv, so a page is
+# generated from real pipeline outputs. They are handed the repo config
+# EXPLICITLY rather than inheriting it, so that dependency is stated rather
+# than accidental - and if there is no config, the page suites are skipped and
+# the Python suites still run, which is what a fresh clone gets.
+BUILD_CONFIG="${LS_BUILD_CONFIG:-$REPO/config.json}"
+SKIP_PAGES=0
+if [ ! -f "$BUILD_CONFIG" ]; then
+  echo "no $BUILD_CONFIG - skipping the curator page suites"
+  SKIP_PAGES=1
+fi
+
+if [ "$SKIP_PAGES" = "0" ]; then
+  build_page 04l_roi_curator.py curator --marker AF568 --worklist --rgb --no-seed
+  build_page 04d_rotation_curator.py rotation_curator --no-proposals
+  build_page 04k_level_curator.py level_curator
+fi
 
 fail=0
+if [ "$SKIP_PAGES" = "0" ]; then
 for t in "$TESTS"/*.test.js; do
   echo
   echo "=== $(basename "$t") ==="
   node "$t" || fail=1
 done
+fi
 
 # The Python suites run alongside rather than inside the Node harness: they
 # exercise the scripts directly and have no browser stub to share.

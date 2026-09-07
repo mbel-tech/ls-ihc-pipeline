@@ -230,10 +230,13 @@ with tempfile.TemporaryDirectory() as tmp:
     chk("the cache notices the file changed", C.load()["pixel_size_um"], 0.325)
 
     del os.environ["LS_CONFIG"]
+    _strict = os.environ.pop("LS_CONFIG_STRICT", None)
     C.clear_cache()
     chk("without LS_CONFIG the repo config is the fallback",
         os.path.normcase(C.resolve_path()),
         os.path.normcase(os.path.join(REPO, "config.json")))
+    if _strict is not None:
+        os.environ["LS_CONFIG_STRICT"] = _strict
 
     os.environ["LS_CONFIG"] = os.path.join(tmp, "absent.json")
     C.clear_cache()

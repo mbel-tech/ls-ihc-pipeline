@@ -38,14 +38,12 @@ sys.path.insert(0, SCRIPTS)
 import _stage_probe as P                                    # noqa: E402
 import ls_config as C                                       # noqa: E402
 
-#: Stages that still take config from a sibling module rather than importing
-#: ls_config themselves. Named rather than skipped, so the remaining work is
-#: visible and a stage cannot quietly rejoin the list.
-NO_OWN_LOADER = {
-    "04o_section_rgb.py", "05a_roi_geometry.py", "05c_detect_rois.py",
-    "06a_roi_dataset.py", "06b_join_sampling.py", "06c_excel_dataset.py",
-    "06d_excel_by_slide.py", "06e_refresh_loop.py",
-}
+#: Every stage now resolves config itself. Nine used to take it from a sibling
+#: module, which is why the check this replaced skipped them: it looked for
+#: `CONFIG_PATH` in the source and moved on when it was absent. An empty set
+#: here is the invariant, not a placeholder - a stage that goes back to
+#: borrowing a sibling's config fails this suite.
+NO_OWN_LOADER = set()
 
 failures = []
 
@@ -131,12 +129,27 @@ with tempfile.TemporaryDirectory() as tmp:
     print("--- the fallback, for a bare run with nothing set ---")
 
     saved = os.environ.pop("LS_CONFIG", None)
+    saved_strict = os.environ.pop("LS_CONFIG_STRICT", None)
     C.clear_cache()
     chk("without LS_CONFIG the repo config is used",
         os.path.normcase(C.resolve_path()),
         os.path.normcase(os.path.join(REPO, "config.json")))
-    if saved is not None:
-        os.environ["LS_CONFIG"] = saved
+
+    # And that fallback is exactly what a test must not get, which is what
+    # run.sh sets LS_CONFIG_STRICT for.
+    os.environ["LS_CONFIG_STRICT"] = "1"
+    try:
+        C.resolve_path()
+        chk("under LS_CONFIG_STRICT the fallback is refused", False, True)
+    except SystemExit as exc:
+        chk("under LS_CONFIG_STRICT the fallback is refused", True, True)
+        chk("and it says how a suite should name one",
+            "_fixture.py" in str(exc), True)
+
+    os.environ.pop("LS_CONFIG_STRICT", None)
+    for name, value in (("LS_CONFIG", saved), ("LS_CONFIG_STRICT", saved_strict)):
+        if value is not None:
+            os.environ[name] = value
     C.clear_cache()
 
 print()

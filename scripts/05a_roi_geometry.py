@@ -56,6 +56,7 @@ Run:  python 05a_roi_geometry.py
       python 05a_roi_geometry.py --verify
 """
 
+import sys
 import argparse
 import csv
 import datetime
@@ -78,7 +79,13 @@ _lsio = importlib.util.spec_from_file_location(
 IO = importlib.util.module_from_spec(_lsio)
 _lsio.loader.exec_module(IO)
 
-CONFIG = RF.CONFIG
+_HERE = os.path.dirname(os.path.abspath(__file__))
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+# ls_config resolves LS_CONFIG, applies the defaults and validates once for
+# the whole process. Imported, not re-implemented: this block used to be four
+# lines copy-pasted into every stage.
+from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
 OUT_ROOT = RF.OUT_ROOT
 REFORMAT_DIR = RF.REFORMAT_DIR
 # Where the curator files its exports, one DD.MM.YYYY_HH.MM folder per export.

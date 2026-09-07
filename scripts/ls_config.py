@@ -573,9 +573,16 @@ def require_path(dotted, cfg=None):
     cfg = cfg if cfg is not None else load()
     found, value = _get(cfg, dotted.split("."))
     if not found or not value or not os.path.exists(value):
+        try:
+            where = resolve_path()
+        except SystemExit:
+            # resolve_path raises when nothing names a config. Letting that
+            # escape here would replace the fault being reported with a
+            # different one - an error handler must not destroy its own error.
+            where = "<no config named>"
         raise SystemExit(
             f"`{dotted}` is {value!r}, which does not exist.\n"
-            f"  config: {resolve_path()}\n"
+            f"  config: {where}\n"
             f"  Fix it in the app under Pipeline > Settings, or edit the file.")
     return value
 
@@ -605,10 +612,20 @@ def resolve_path(explicit=None):
     Frozen, the fallback points inside `_internal/` at a file that is not
     there, which is the whole reason `LS_CONFIG` exists.
     """
-    return os.path.abspath(
-        explicit
-        or os.environ.get("LS_CONFIG")
-        or os.path.join(REPO, "config.json"))
+    named = explicit or os.environ.get("LS_CONFIG")
+    if named:
+        return os.path.abspath(named)
+
+    if os.environ.get("LS_CONFIG_STRICT"):
+        # tests/run.sh sets this. Without it a suite that forgets to name a
+        # config quietly analyses whichever study the operator happens to have
+        # open, and passes or fails on their data rather than on its own.
+        raise SystemExit(
+            "LS_CONFIG is not set and LS_CONFIG_STRICT forbids falling back to "
+            f"{os.path.join(REPO, 'config.json')}.\n"
+            "  A test must name its own config - see tests/_fixture.py.")
+
+    return os.path.abspath(os.path.join(REPO, "config.json"))
 
 
 _cache = {}

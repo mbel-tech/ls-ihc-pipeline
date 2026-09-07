@@ -54,6 +54,7 @@ Run:  work/appenv/Scripts/python.exe scripts/00d_czi_selftest.py
                                  dataset, for observed maxima
 """
 
+import sys
 import argparse
 import glob
 import importlib.util
@@ -61,10 +62,13 @@ import json
 import os
 import xml.etree.ElementTree as ET
 
-CONFIG_PATH = os.environ.get("LS_CONFIG") or os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config.json")
-with open(CONFIG_PATH, encoding="utf-8") as _fh:
-    CONFIG = json.load(_fh)
+_HERE = os.path.dirname(os.path.abspath(__file__))
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+# ls_config resolves LS_CONFIG, applies the defaults and validates once for
+# the whole process. Imported, not re-implemented: this block used to be four
+# lines copy-pasted into every stage.
+from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
 
 SOURCE_DIR = CONFIG["source_dir"]
 OUT_ROOT = CONFIG["out_root"]

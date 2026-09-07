@@ -17,6 +17,15 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 SCRIPTS = os.path.join(REPO, "scripts")
 
+# This suite imports stage modules, which read config at import. Without a
+# config of its own it would fall through to the operator's live study and
+# then pass or fail on their data. See tests/_fixture.py.
+if HERE not in sys.path:
+    sys.path.insert(0, HERE)
+from _fixture import use_temp_study  # noqa: E402
+
+STUDY = use_temp_study()
+
 fails = 0
 
 
@@ -98,8 +107,24 @@ chk("...and so does the deck", stamp("shotgun_plates_final_06.09.2026_18.20.pptx
 chk("an unstamped export has none", stamp("plate_boxes.csv"), None)
 chk("a date in the wrong order is not a stamp", stamp("x_2026.09.06_18.20.csv"), None)
 chk("a bare date with no time is not a stamp", stamp("x_06.09.2026.csv"), None)
-chk("the export root comes from config", root(r"D:\nowhere"),
-    __import__("json").load(open(os.path.join(REPO, "config.json"), encoding="utf-8"))["export_dir"])
+# This used to assert against the operator's live config.json, so it would have
+# started failing the day they chose a different export folder - a failure about
+# their data, not about this code. _export_root still finds config by guessing
+# its own location instead of honouring LS_CONFIG, so until that is fixed the
+# test points its idea of "beside me" at a config it wrote itself.
+with tempfile.TemporaryDirectory() as _tmp:
+    _app = os.path.join(_tmp, "app")
+    os.makedirs(_app)
+    _chosen = os.path.join(_tmp, "chosen-exports")
+    _cfg = os.path.join(_tmp, "config.json")
+    with open(_cfg, "w", encoding="utf-8") as _fh:
+        __import__("json").dump({"export_dir": _chosen}, _fh)
+    ns["HERE"] = _app
+    chk("the export root comes from config", root(r"D:\nowhere"), _chosen)
+
+    os.remove(_cfg)
+    chk("with no export_dir configured it falls back to out_root/exports",
+        root(os.path.join(_tmp, "out")), os.path.join(_tmp, "out", "exports"))
 
 print("\n" + ("ALL PASS" if not fails else f"{fails} FAILED"))
 raise SystemExit(1 if fails else 0)
