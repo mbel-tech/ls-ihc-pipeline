@@ -613,14 +613,21 @@ def validate(cfg, path="<config>", strict_paths=False):
     # about what is usable. A config with no acquisition block at all predates
     # the key and is left alone; apply_defaults gives it one.
     acquisition = cfg.get("acquisition")
-    if isinstance(acquisition, dict):
+    if acquisition is not None and not isinstance(acquisition, dict):
+        errors.append(
+            f"{path}: `acquisition` must be a block of settings, not a "
+            f"{type(acquisition).__name__}.")
+    elif isinstance(acquisition, dict):
         layout = acquisition.get("layout", "multiplex")
         if layout in ("multiplex", "paired"):
             try:
                 import ls_channels
-                for problem in ls_channels.validate(
-                        acquisition.get("channels"), layout):
+                chan_errors, chan_warnings = ls_channels.validate(
+                    acquisition.get("channels"), layout)
+                for problem in chan_errors:
                     errors.append(f"{path}: acquisition.channels - {problem}")
+                for problem in chan_warnings:
+                    warnings.append(f"{path}: acquisition.channels - {problem}")
             except ImportError:                             # pragma: no cover
                 pass
 

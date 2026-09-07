@@ -349,6 +349,21 @@ with tempfile.TemporaryDirectory() as tmp:
     chk("a config with no acquisition block at all is not an error",
         C.validate(minimal(tmp))[0], [])
 
+    for bad in ("a string", ["a", "list"], 42):
+        errs2, _ = C.validate(minimal(tmp, acquisition=bad))
+        chk(f"a {type(bad).__name__} where the acquisition block belongs",
+            len(errs2), 1)
+
+    errs2, _ = C.validate(minimal(
+        tmp, acquisition={"layout": "multiplex", "channels": "DAPI"}))
+    chk("a malformed channel table is reported, not raised on", len(errs2), 1)
+
+    # apply_defaults must not produce something validate then rejects: the
+    # settings dialog validates its dict and writes the defaulted version, so
+    # a contradiction here writes a config no stage can load.
+    chk("the defaults do not contradict the validator",
+        C.validate(C.apply_defaults(minimal(tmp)))[0], [])
+
 print()
 print("ALL PASS" if not failures else f"{len(failures)} FAILED")
 sys.exit(1 if failures else 0)

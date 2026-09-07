@@ -89,7 +89,11 @@ print("--- what a study may not declare ---")
 
 
 def errs(block, layout="multiplex"):
-    return CH.validate(block, layout)
+    return CH.validate(block, layout)[0]
+
+
+def warns(block, layout="multiplex"):
+    return CH.validate(block, layout)[1]
 
 
 chk("a valid table has nothing to say", errs(BLOCK), [])
@@ -146,8 +150,47 @@ chk("...but own-channel markers alone are fine",
 chk("the paired layout declares no channels",
     len(errs(BLOCK, layout="paired")), 1)
 chk("...and an empty table is what it wants", errs([], layout="paired"), [])
-chk("multiplex with no channels at all is refused",
-    len(errs([], layout="multiplex")), 1)
+# A multiplex study with no channels yet is a warning, not an error - see the
+# "not yet declared" section below. Kept split rather than folded into that
+# section since it belongs next to the paired-layout comparison it explains.
+chk("multiplex with no channels at all is not an error",
+    errs([], layout="multiplex"), [])
+chk("...but it is a warning", len(warns([], layout="multiplex")), 1)
+
+print()
+print("--- a table that cannot be read is reported, not raised on ---")
+chk("a string where a list belongs", len(errs("DAPI,AF568")), 1)
+chk("...and it says what it got", "not a str" in errs("DAPI,AF568")[0], True)
+chk("an entry that is not a block", len(errs([["not", "a", "dict"]])), 1)
+chk("a number", len(errs(42)), 1)
+
+print()
+print("--- a channel with no way to be found ---")
+chk("no czi_name and no index is refused",
+    len(errs([{"name": "D", "role": "nuclear"},
+              {"name": "A", "role": "marker", "index": 1}])), 1)
+chk("...and says what to give it",
+    "no way to find it" in errs([{"name": "D", "role": "nuclear"},
+                                 {"name": "A", "role": "marker",
+                                  "index": 1}])[0], True)
+chk("two channels claiming one czi_name is refused",
+    len(errs([dict(BLOCK[0], czi_name="AF568"), BLOCK[1]])), 1)
+
+print()
+print("--- not yet declared is a warning, not a failure ---")
+chk("multiplex with no channels warns", len(warns([])), 1)
+chk("...and is not an error", errs([]), [])
+
+print()
+print("--- two channels cannot land on one plane ---")
+two = CH.parse([{"name": "A", "role": "marker", "index": 1},
+                {"name": "B", "role": "marker", "index": 1}])
+try:
+    CH.resolve(two, ["DAPI", "AF568"])
+    chk("two channels on one plane raises", False, True)
+except CH.ChannelError as exc:
+    chk("two channels on one plane raises", True, True)
+    chk("...and names both", "'A'" in str(exc) and "'B'" in str(exc), True)
 
 print()
 print("ALL PASS" if not failures else f"{len(failures)} FAILED")

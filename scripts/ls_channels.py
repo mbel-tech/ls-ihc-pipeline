@@ -124,17 +124,50 @@ def resolve(channels, czi_channel_names):
             f"{[n for n in names] or 'no named channels'} - "
             f"{len(names)} plane(s). Fix the channel table in Settings, or "
             f"this file is not part of this study.")
+
+    # A file can still have two DECLARED channels land on the same plane, even
+    # with no duplicate CZI name in sight: two markers can both fall back to
+    # the same index. That is two markers measured off identical pixels -
+    # exactly the plausible wrong number this module exists to prevent.
+    taken = {}
+    for name, plane in out.items():
+        if plane in taken:
+            raise ChannelError(
+                f"channels {taken[plane]!r} and {name!r} both resolve to "
+                f"plane {plane} of this file, so they would be measured off "
+                f"identical pixels. Give them different czi_name or index "
+                f"values in the channel table.")
+        taken[plane] = name
     return out
 
 
 def validate(block, layout):
-    """Errors in a declared channel table. [] when it is usable.
+    """(errors, warnings) for a declared channel table.
 
-    Every fault is reported, not just the first. This returns a list rather
-    than raising so that someone with three things wrong in their channel
-    table learns all three in one pass instead of one per attempt.
+    A multiplex study with no channels declared yet is a WARNING, not an
+    error. Every stage reads config at import, so making it an error would
+    stop the whole pipeline loading for a study whose operator has simply not
+    reached the channel table yet - and the settings dialog writes defaults
+    that produce exactly that state. The stages that need channels ask for
+    them at the point of use instead.
+
+    Every other fault is reported, not just the first. This returns a pair of
+    lists rather than raising so that someone with three things wrong in
+    their channel table learns all three in one pass instead of one per
+    attempt - and so that the table itself, not just its content, can be
+    judged: a `channels` value that is a string or a number is exactly what
+    this function exists to catch, not something it should choke on.
     """
     errors = []
+    warnings = []
+
+    if block is not None and not isinstance(block, list):
+        # `list("abc")` silently succeeds and gives `['a', 'b', 'c']`, which
+        # is how a string channel table used to get as far as parse() and
+        # blow up on `.get`. Caught here, before entries is even built. `None`
+        # is not a fault - it is simply absent, same as an empty list.
+        return ([f"acquisition.channels must be a list of channels, not a "
+                 f"{type(block).__name__}."], [])
     entries = list(block or [])
 
     if layout == "paired":
@@ -144,13 +177,21 @@ def validate(block, layout):
                 "each scan carries the nuclear channel plus whichever marker "
                 "that pass used, so the marker is read per file rather than "
                 "declared once.")
-        return errors
+        return errors, warnings
 
     if not entries:
-        errors.append(
+        warnings.append(
             "acquisition.channels is empty. A multiplex study has to say what "
             "its channels are; nothing can be inferred safely from a file.")
-        return errors
+        return errors, warnings
+
+    bad_shape = [i for i, e in enumerate(entries) if not isinstance(e, dict)]
+    if bad_shape:
+        # parse() cannot run on these, and every later message would be noise
+        # about a table that has not been read.
+        return ([f"acquisition.channels entry {i} is a "
+                  f"{type(entries[i]).__name__}, not a block of settings."
+                  for i in bad_shape], [])
 
     channels = parse(entries)
 
@@ -169,6 +210,23 @@ def validate(block, layout):
             errors.append(
                 f"channel {chan.name!r} has role {chan.role!r}; it must be one "
                 f"of {', '.join(ROLES)}.")
+
+        if not chan.czi_name and chan.index is None:
+            errors.append(
+                f"channel {chan.name!r} declares neither czi_name nor index, "
+                f"so there is no way to find it in a file. Give it the name "
+                f"the microscope uses, or the plane it sits on.")
+
+    by_czi = {}
+    for chan in channels:
+        if chan.czi_name:
+            by_czi.setdefault(str(chan.czi_name).lower(), []).append(chan.name)
+    for czi_name, names in sorted(by_czi.items()):
+        if len(names) > 1:
+            errors.append(
+                f"channels {' and '.join(repr(n) for n in names)} all declare "
+                f"czi_name {czi_name!r}, so they would resolve to the same "
+                f"plane.")
 
     nuclei = [c for c in channels if c.role == NUCLEAR]
     if len(nuclei) > 1:
@@ -202,4 +260,19 @@ def validate(block, layout):
                     f"detector: on cytoplasmic or fibre staining it would "
                     f"under-detect and report no error. Use the threshold "
                     f"backend, or say the objects are nucleus-shaped.")
-    return errors
+    return errors, warnings
+
+
+def require(block, layout):
+    """The parsed channel table, or exit saying what is missing.
+
+    Called by a stage that cannot work without channels, so the failure lands
+    in that stage rather than at import of all forty-five.
+    """
+    errors, warnings = validate(block, layout)
+    if errors or warnings:
+        raise SystemExit(
+            "this study's channel table is not usable yet:\n  "
+            + "\n  ".join(errors + warnings)
+            + "\n  Set it in the app under Pipeline > Settings.")
+    return parse(block)
