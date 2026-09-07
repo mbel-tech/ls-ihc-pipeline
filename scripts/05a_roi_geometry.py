@@ -87,6 +87,7 @@ if _HERE not in sys.path:
 # lines copy-pasted into every stage.
 import ls_config as LC  # noqa: E402
 from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
+import czi_read as CR  # noqa: E402
 OUT_ROOT = RF.OUT_ROOT
 REFORMAT_DIR = RF.REFORMAT_DIR
 # Where the curator files its exports, one DD.MM.YYYY_HH.MM folder per export.
@@ -95,6 +96,17 @@ EXPORT_DIR = LC.export_dir(CONFIG)
 OVERVIEW_DIR = RF.OVERVIEW_DIR
 FOCUS_CSV = os.path.join(OUT_ROOT, "qc", "focus.csv")
 MANIFEST_CSV = os.path.join(OUT_ROOT, "manifest", "manifest_scenes.csv")
+
+# Plane 0 under the paired layout. The multiplex layout resolves this from the
+# channel table instead - see plan 2.
+DAPI_PLANE = 0
+
+
+class _Rect:
+    """czi_read takes a rectangle object; this file has loose coordinates."""
+
+    def __init__(self, x, y, w, h):
+        self.x, self.y, self.w, self.h = x, y, w, h
 
 # ---- output paths are PER MARKER, and that is not cosmetic ------------------
 #
@@ -784,8 +796,8 @@ def verify_czi(limit=4):
         zoom = float(g["native_um_px"]) / float(g["overview_um_px"])
         from pylibCZIrw import czi as pyczi
         with pyczi.open_czi(path) as doc:
-            a = np.squeeze(doc.read(roi=(rx, ry, rw, rh), plane={"C": 0},
-                                    zoom=zoom)).astype(np.float64)
+            a = CR.read_plane(doc, _Rect(rx, ry, rw, rh), DAPI_PLANE,
+                              scene=int(g["scene_index"]), zoom=zoom).astype(np.float64)
         same_shape = a.shape == stored.shape
         h, w = min(stored.shape[0], a.shape[0]), min(stored.shape[1], a.shape[1])
         r = np.corrcoef(stored[:h, :w].ravel(), a[:h, :w].ravel())[0, 1]

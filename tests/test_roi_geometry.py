@@ -276,5 +276,18 @@ else:
     else:
         note("   (no roi_geometry.csv - run the stage to check the CZI half)")
 
+
+# --------------------------------------------------------------------------
+print()
+print("--- 05a names the scene it checks against ---")
+
+import inspect                                              # noqa: E402
+
+src = inspect.getsource(G5)
+chk("05a reads through the shared helper", "CR.read_plane" in src, True)
+chk("no bare plane read is left in it", 'plane={"C": 0}' in src, False)
+chk("the scene comes from the geometry row",
+    'scene=int(g["scene_index"])' in src, True)
+
 print("\n" + (f"{fails} FAILED" if fails else "ALL PASS"))
 sys.exit(1 if fails else 0)
