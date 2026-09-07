@@ -156,12 +156,15 @@ def native_sample(scenes, n, ceilings, seed=20260901):
                 s = int(r["scene_index"])
                 if s not in rects:
                     continue
-                roi = (rects[s].x, rects[s].y, rects[s].w, rects[s].h)
-                low = np.squeeze(czidoc.read(roi=roi, plane={"C": 1}, zoom=0.125))
+                # This function's whole purpose is measuring how much the
+                # dilution ratio understates clipping at low zoom, so a
+                # rectangle that composites a neighbouring section's tissue
+                # corrupts the measurement itself, not merely a pixel count.
+                low = OV.read_scene(czidoc, rects[s], 1, 0.125, scene=s)
                 f_low = float((low >= ceiling).mean())
                 if f_low <= 0:
                     continue
-                hi = np.squeeze(czidoc.read(roi=roi, plane={"C": 1}, zoom=1.0))
+                hi = OV.read_scene(czidoc, rects[s], 1, 1.0, scene=s)
                 f_hi = float((hi >= ceiling).mean())
                 rows.append({
                     "scene_uid": r["scene_uid"], "file": fname,

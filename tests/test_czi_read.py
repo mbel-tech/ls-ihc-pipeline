@@ -162,12 +162,15 @@ for path in sorted(glob.glob(os.path.join(REPO, "scripts", "*.py"))):
     for call in _re.findall(r"\.read\(\s*roi=.*?\)", text, _re.S):
         if "scene=" not in call:
             offenders.append(f"{name}: {' '.join(call.split())[:70]}")
-    for call in _re.findall(r"read_scene\(.*?\)", text, _re.S):
-        if "def read_scene" in call or "scene=" in call:
+    for match in _re.finditer(r"(?<!def )read_scene\(.*?\)", text, _re.S):
+        call = match.group(0)
+        if "scene=" in call:
             continue
         offenders.append(f"{name}: {' '.join(call.split())[:70]}")
 
 chk("every pixel read outside czi_read names its scene", offenders, [])
+for line in offenders:
+    print(f"     {line}")
 
 print()
 print("ALL PASS" if not failures else f"{len(failures)} FAILED")
