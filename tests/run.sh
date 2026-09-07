@@ -63,6 +63,17 @@ SKIP_PAGES=0
 if [ ! -f "$BUILD_CONFIG" ]; then
   echo "no $BUILD_CONFIG - skipping the curator page suites"
   SKIP_PAGES=1
+else
+  # A config that exists but points at an out_root that does not is the state
+  # this machine is in whenever the data drive is unplugged, and the drive here
+  # does not merely drop writes - it goes away (see scripts/ls_io.py). The
+  # pages are generated from real pipeline outputs, so there is nothing to
+  # build; the Python suites do not need them and must still run.
+  BUILD_OUT="$("$PY" "$REPO/scripts/ls_config.py" --print out_root 2>/dev/null)"
+  if [ -z "$BUILD_OUT" ] || [ ! -d "$BUILD_OUT" ]; then
+    echo "out_root is not reachable - skipping the curator page suites"
+    SKIP_PAGES=1
+  fi
 fi
 
 if [ "$SKIP_PAGES" = "0" ]; then
