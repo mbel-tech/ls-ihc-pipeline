@@ -101,10 +101,15 @@ KEYS = ["scene_uid", "file", "animal", "slide", "variant", "marker_channel",
         "mask_path", "tilefield_applied", "reader"]
 
 
-def measure(czidoc, rect, fields, zoom, want_mask, ceiling=CEILING):
-    """Raw clipping for both channels, and the corrected figure for comparison."""
-    dapi_raw = OV.read_scene(czidoc, rect, 0, zoom)
-    mark_raw = OV.read_scene(czidoc, rect, 1, zoom)
+def measure(czidoc, rect, fields, zoom, want_mask, ceiling=CEILING, *, scene):
+    """Raw clipping for both channels, and the corrected figure for comparison.
+
+    `scene` is required: measuring clipping on a rectangle that composites a
+    neighbour's tissue is how the clipped fraction came to be overstated by up
+    to 2.6x in the first place.
+    """
+    dapi_raw = OV.read_scene(czidoc, rect, 0, zoom, scene=scene)
+    mark_raw = OV.read_scene(czidoc, rect, 1, zoom, scene=scene)
     clipped = mark_raw >= ceiling
     corrected = OV.apply_tile_field(mark_raw, fields.get(1), 1 / zoom)
     return {
@@ -295,7 +300,7 @@ def main():
                     uid = r["scene_uid"]
                     want = r["marker_channel"] in MASK_MARKERS
                     ceiling = OV.ceiling_for(ceilings, fname)
-                    m = measure(czidoc, rects[s], fields, zoom, want, ceiling)
+                    m = measure(czidoc, rects[s], fields, zoom, want, ceiling, scene=s)
 
                     mask_path = ""
                     if want:

@@ -30,6 +30,11 @@ _spec = importlib.util.spec_from_file_location(
 OV = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(OV)
 
+_spec_k = importlib.util.spec_from_file_location(
+    "k01", os.path.join(SCRIPTS, "01k_saturation_raw.py"))
+K = importlib.util.module_from_spec(_spec_k)
+_spec_k.loader.exec_module(K)
+
 fails = 0
 
 
@@ -98,6 +103,34 @@ with tempfile.TemporaryDirectory() as tmp:
     c = OV.load_ceilings()
     chk("missing manifest file -> empty mapping", c, {})
     chk("...and therefore the fallback", OV.ceiling_for(c, "anything.czi"), 65535)
+
+
+# --------------------------------------------------------------------------
+print()
+print("--- 01k names the scene it measures ---")
+
+
+class _Rect:
+    def __init__(self, x, y, w, h):
+        self.x, self.y, self.w, self.h = x, y, w, h
+
+
+class _FakeDoc:
+    def __init__(self):
+        self.calls = []
+
+    def read(self, **kwargs):
+        self.calls.append(kwargs)
+        import numpy as _np
+        return _np.zeros((4, 6), dtype=_np.uint16)
+
+
+_doc = _FakeDoc()
+K.measure(_doc, _Rect(0, 0, 6, 4), {}, 1.0, False, scene=9)
+chk("both channels are read from the named scene",
+    sorted({c["scene"] for c in _doc.calls}), [9])
+chk("...and they are the two channels it measures",
+    sorted(c["plane"]["C"] for c in _doc.calls), [0, 1])
 
 print()
 print("FAILURES" if fails else "ALL PASS")
