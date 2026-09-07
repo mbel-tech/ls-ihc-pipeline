@@ -52,7 +52,8 @@ class Key:
     """
 
     def __init__(self, path, type, doc, required=False, default=None,
-                 note=None, consumers=(), status=LIVE, choices=None):
+                 note=None, consumers=(), status=LIVE, choices=None,
+                 materialise=False):
         self.path = path
         self.type = type
         self.doc = doc
@@ -62,6 +63,10 @@ class Key:
         self.consumers = tuple(consumers)
         self.status = status
         self.choices = choices
+        # A key the Fiji/Groovy stages read straight out of the JSON. They
+        # cannot see a Python default, so it must be present as a literal in
+        # every written config or they get null.
+        self.materialise = materialise
 
     @property
     def parts(self):
@@ -87,14 +92,14 @@ SPEC = [
     # ---- paths -----------------------------------------------------------
     Key("source_dir", "path_dir",
         "The folder holding the .czi files.",
-        required=True,
+        required=True, materialise=True,
         consumers=["00_manifest", "00b", "00d", "01b_pick", "01e", "01h",
                    "01_overviews", "05a", "05c", "06b", "app"]),
 
     Key("out_root", "path_dir_create",
         "Where every result is written. Needs room - overviews alone run to "
         "several GB.",
-        required=True, consumers=["every stage"]),
+        required=True, materialise=True, consumers=["every stage"]),
 
     Key("atlas_pdf", "path_file",
         "The atlas the plates and region seeds are extracted from.",
@@ -153,7 +158,7 @@ SPEC = [
 
     Key("pixel_size_um", "float",
         "Camera pixel size at the objective used, in micrometres.",
-        required=True,
+        required=True, materialise=True,
         note="The CZI carries this too - czi_meta.py reads it from "
              "Scaling/Items/Distance[@Id='X'] - so a future revision should "
              "check this value against the files rather than trust it.",
@@ -171,7 +176,7 @@ SPEC = [
 
     Key("overview_target_um_per_px", "float",
         "Resolution the per-section overviews are exported at.",
-        required=True, default=5.2,
+        required=True, default=5.2, materialise=True,
         consumers=["01_overviews", "01_overviews.groovy"]),
 
     # ---- channels (replaced by the channels/markers sub-project) ---------
@@ -350,10 +355,7 @@ def _check(key, value):
     elif t in ("path_dir", "path_file", "path_dir_create", "path_dir_opt"):
         if not isinstance(value, str) or not value.strip():
             return "expected a path"
-        if t == "path_dir" and not os.path.isdir(value):
-            return f"is not a folder that exists: {value}"
-        if t == "path_file" and not os.path.isfile(value):
-            return f"is not a file that exists: {value}"
+        # Existence is deliberately NOT checked here - see `missing_paths`.
         # path_dir_create and path_dir_opt are made on demand by whoever
         # writes into them - out_root by the app, export_dir by the curator's
         # first export - so neither is required to exist yet.
@@ -418,12 +420,41 @@ def _unknown_paths(cfg):
     return sorted(found)
 
 
-def validate(cfg, path="<config>"):
+#: Path keys whose target must already exist to be usable. path_dir_create
+#: and path_dir_opt are made on demand by whoever writes into them.
+MUST_EXIST = {"path_dir": os.path.isdir, "path_file": os.path.isfile}
+
+
+def missing_paths(cfg):
+    """[(key, value)] for configured paths that are not there right now.
+
+    Kept apart from validate() because absence is not the same fault as a
+    malformed value. Forty of the forty-five stages never open `source_dir`,
+    and the drive it lives on has gone away mid-run before - see ls_io.py. A
+    stage list that refuses to load because a drive is unplugged is worse than
+    a stage that says so when it is actually run, which is `require_path`.
+    """
+    out = []
+    for key in SPEC:
+        test = MUST_EXIST.get(key.type)
+        if test is None:
+            continue
+        found, value = _get(cfg, key.parts)
+        if found and isinstance(value, str) and value.strip() and not test(value):
+            out.append((key, value))
+    return out
+
+
+def validate(cfg, path="<config>", strict_paths=False):
     """Return (errors, warnings) as lists of printable strings.
 
     Errors are fatal: a required key missing, or a value of the wrong shape.
-    Warnings are not: an unknown key is reported and ignored, because a stale
-    config should surface rather than abort a twelve-hour run.
+    Warnings are not: an unknown key, and a configured path that is not there,
+    are both reported and carried past - a stale config or an unplugged drive
+    should surface, not abort a twelve-hour run.
+
+    `strict_paths` promotes the path warnings to errors. The settings dialog
+    passes it, because that is the one place the user can act on them.
     """
     errors, warnings = [], []
 
@@ -432,16 +463,45 @@ def validate(cfg, path="<config>"):
         if not found or value is None:
             if key.required and key.default is None:
                 errors.append(f"{path}: `{key.path}` is required - {key.doc}")
+            elif key.materialise:
+                # The Fiji stages slurp this JSON directly and never see a
+                # Python default, so a defaulted-but-absent key reaches them
+                # as null.
+                errors.append(
+                    f"{path}: `{key.path}` must be written out, not left to "
+                    f"its default - the Fiji stages read this file directly "
+                    f"and cannot see Python defaults")
             continue
         problem = _check(key, value)
         if problem:
             errors.append(f"{path}: `{key.path}` {problem}\n    {key.doc}")
+
+    for key, value in missing_paths(cfg):
+        line = f"{path}: `{key.path}` does not exist: {value}"
+        (errors if strict_paths else warnings).append(line)
 
     for unknown in _unknown_paths(cfg):
         warnings.append(f"{path}: `{unknown}` is not a setting this pipeline "
                         f"reads - it is ignored")
 
     return errors, warnings
+
+
+def require_path(dotted, cfg=None):
+    """A configured path that must exist NOW. Call it where the file is opened.
+
+    The other half of missing_paths(): absence warns at import and fails here,
+    in the one stage that actually needs the thing, with the remedy attached.
+    """
+    cfg = cfg if cfg is not None else load()
+    found, value = _get(cfg, dotted.split("."))
+    if not found or not value or not os.path.exists(value):
+        raise SystemExit(
+            f"`{dotted}` is {value!r}, which does not exist.\n"
+            f"  config: {resolve_path()}\n"
+            f"  Fix it in the app under Pipeline > Settings, or edit the file.")
+    return value
+
 
 
 def apply_defaults(cfg):

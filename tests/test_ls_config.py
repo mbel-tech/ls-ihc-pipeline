@@ -79,8 +79,8 @@ with tempfile.TemporaryDirectory() as tmp:
     errs, _ = C.validate(minimal(tmp, section_order_convention="whatever"))
     chk("a value outside `choices` is an error", len(errs), 1)
 
-    errs, _ = C.validate(minimal(tmp, source_dir=os.path.join(tmp, "nope")))
-    chk("a source_dir that does not exist is an error", len(errs), 1)
+    errs, _ = C.validate(minimal(tmp, source_dir=17))
+    chk("a number where a path belongs is an error", len(errs), 1)
 
     errs, _ = C.validate(minimal(tmp, out_root=os.path.join(tmp, "not-yet")))
     chk("out_root need not exist yet", errs, [])
@@ -126,6 +126,52 @@ with tempfile.TemporaryDirectory() as tmp:
     cfg["groups"] = {"order": ["a", "b"], "by_animal": {"XX9": "a", "YY7": "b"}}
     errs, warns = C.validate(cfg)
     chk("a `raw` key's contents are data, not schema", (errs, warns), ([], []))
+
+# --------------------------------------------------------------------------
+print()
+print("--- the Fiji stages cannot see a Python default ---")
+
+with tempfile.TemporaryDirectory() as tmp:
+    chk("the four keys Groovy reads are marked materialise",
+        sorted(k.path for k in C.SPEC if k.materialise),
+        ["out_root", "overview_target_um_per_px", "pixel_size_um", "source_dir"])
+
+    cfg = minimal(tmp)
+    del cfg["overview_target_um_per_px"]
+    errs, _ = C.validate(cfg)
+    chk("omitting a materialise key is an error even though it has a default",
+        len(errs), 1)
+    chk("and the error says why", "cannot see Python defaults" in errs[0], True)
+    chk("...it would otherwise have been filled in silently",
+        C.apply_defaults(cfg)["overview_target_um_per_px"], 5.2)
+
+# --------------------------------------------------------------------------
+print()
+print("--- an unplugged drive warns; it does not stop 45 stages importing ---")
+
+with tempfile.TemporaryDirectory() as tmp:
+    gone = os.path.join(tmp, "unplugged")
+    cfg = minimal(tmp)
+    cfg["source_dir"] = gone
+    errs, warns = C.validate(cfg)
+    chk("a source_dir that is not there is a warning, not an error", errs, [])
+    chk("the warning names the path", any(gone in w for w in warns), True)
+    chk("missing_paths reports it",
+        [k.path for k, _ in C.missing_paths(cfg)], ["source_dir"])
+
+    errs, _ = C.validate(cfg, strict_paths=True)
+    chk("the settings dialog gets it as an error instead", len(errs), 1)
+
+    try:
+        C.require_path("source_dir", cfg)
+        chk("require_path raises where the file is opened", False, True)
+    except SystemExit as exc:
+        chk("require_path raises where the file is opened", True, True)
+        chk("and names the config to fix", "config:" in str(exc), True)
+
+    chk("require_path returns the path when it is there",
+        C.require_path("source_dir", minimal(tmp)),
+        os.path.join(tmp, "slides"))
 
 # --------------------------------------------------------------------------
 print()
