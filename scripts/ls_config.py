@@ -593,6 +593,18 @@ def unexpected_keys(cfg):
     return [p for p in _unknown_paths(cfg) if p not in RETIRED]
 
 
+def export_dir(cfg=None):
+    """Where the ROI curator files its exports.
+
+    `export_dir` when set, else `<out_root>/exports`. The rule was written out
+    three times - 04l, 05a and the app's download handler - and the app's copy
+    found config.json by guessing its own location, which stopped being right
+    the moment a study could live somewhere else.
+    """
+    cfg = cfg if cfg is not None else load()
+    return cfg.get("export_dir") or os.path.join(cfg["out_root"], "exports")
+
+
 def require_path(dotted, cfg=None):
     """A configured path that must exist NOW. Call it where the file is opened.
 

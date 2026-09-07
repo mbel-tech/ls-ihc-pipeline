@@ -218,6 +218,7 @@ if _HERE not in sys.path:
 # ls_config resolves LS_CONFIG, applies the defaults and validates once for
 # the whole process. Imported, not re-implemented: this block used to be four
 # lines copy-pasted into every stage.
+import ls_config as LC  # noqa: E402
 from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
 
 OUT_ROOT = CONFIG["out_root"]
@@ -496,7 +497,7 @@ PLATE_DIR = os.path.join(OUT_ROOT, "atlas", PLATE_SET)
 CURATOR_HTML = os.path.join(REFORMAT_DIR, "roi_curator.html")
 # Where exports are filed. Config so the app and this stage cannot disagree
 # about it; one dated folder per export is created inside it.
-EXPORT_DIR = CONFIG.get("export_dir") or os.path.join(OUT_ROOT, "exports")
+EXPORT_DIR = LC.export_dir(CONFIG)
 PROVENANCE_CSV = os.path.join(REFORMAT_DIR, "section_provenance.csv")
 
 # The Review mode needs one row per SCANNED section - 2,572, against the ~1,242

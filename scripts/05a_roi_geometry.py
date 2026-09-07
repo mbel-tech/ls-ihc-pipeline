@@ -85,12 +85,13 @@ if _HERE not in sys.path:
 # ls_config resolves LS_CONFIG, applies the defaults and validates once for
 # the whole process. Imported, not re-implemented: this block used to be four
 # lines copy-pasted into every stage.
+import ls_config as LC  # noqa: E402
 from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
 OUT_ROOT = RF.OUT_ROOT
 REFORMAT_DIR = RF.REFORMAT_DIR
 # Where the curator files its exports, one DD.MM.YYYY_HH.MM folder per export.
 # Same key 04l and the app read, so all three look in one place.
-EXPORT_DIR = CONFIG.get("export_dir") or os.path.join(OUT_ROOT, "exports")
+EXPORT_DIR = LC.export_dir(CONFIG)
 OVERVIEW_DIR = RF.OVERVIEW_DIR
 FOCUS_CSV = os.path.join(OUT_ROOT, "qc", "focus.csv")
 MANIFEST_CSV = os.path.join(OUT_ROOT, "manifest", "manifest_scenes.csv")

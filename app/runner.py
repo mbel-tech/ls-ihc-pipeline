@@ -26,6 +26,7 @@ import contextlib
 import importlib.util
 import io
 import json
+import hashlib
 import os
 import sys
 import threading
@@ -140,8 +141,17 @@ class Runner:
         sys.modules.pop("ls_config", None)
 
     def _config_changed(self):
+        """Whether the config file's CONTENT has changed since the last check.
+
+        This was the modification time. Two edits inside one filesystem
+        timestamp tick - which on a fast save is entirely possible - looked
+        identical, so the cached stage modules were served with the previous
+        config still baked into their constants. The file is a few kilobytes;
+        hashing it costs nothing next to importing a stage.
+        """
         try:
-            stamp = os.path.getmtime(self.config_path)
+            with open(self.config_path, "rb") as fh:
+                stamp = hashlib.sha256(fh.read()).hexdigest()
         except OSError:
             stamp = None
         if stamp != self._config_stamp:

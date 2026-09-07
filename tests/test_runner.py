@@ -126,6 +126,27 @@ with tempfile.TemporaryDirectory() as tmp:
 LC.clear_cache()
 
 
+# ------------------------------------------------- the cache notices an edit
+# This was the file's modification time. Two saves inside one filesystem
+# timestamp tick look identical that way, and the cached stage modules would be
+# handed back with the previous config still baked into their constants.
+with tempfile.TemporaryDirectory() as tmp:
+    cfg = os.path.join(tmp, "c.json")
+    with open(cfg, "w", encoding="utf-8") as fh:
+        fh.write('{"out_root": "/a"}')
+    run = R.Runner(os.path.join(REPO, "scripts"), cfg)
+
+    chk("the first look always counts as changed", run._config_changed(), True)
+    chk("an untouched file has not changed", run._config_changed(), False)
+
+    stat = os.stat(cfg)
+    with open(cfg, "w", encoding="utf-8") as fh:
+        fh.write('{"out_root": "/b"}')
+    os.utime(cfg, (stat.st_atime, stat.st_mtime))
+    chk("a different file with the same mtime HAS changed",
+        run._config_changed(), True)
+
+
 print()
 print("ALL PASS" if not failures else f"{len(failures)} FAILED")
 sys.exit(1 if failures else 0)

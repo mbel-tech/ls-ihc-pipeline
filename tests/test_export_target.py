@@ -107,24 +107,28 @@ chk("...and so does the deck", stamp("shotgun_plates_final_06.09.2026_18.20.pptx
 chk("an unstamped export has none", stamp("plate_boxes.csv"), None)
 chk("a date in the wrong order is not a stamp", stamp("x_2026.09.06_18.20.csv"), None)
 chk("a bare date with no time is not a stamp", stamp("x_06.09.2026.csv"), None)
-# This used to assert against the operator's live config.json, so it would have
-# started failing the day they chose a different export folder - a failure about
-# their data, not about this code. _export_root still finds config by guessing
-# its own location instead of honouring LS_CONFIG, so until that is fixed the
-# test points its idea of "beside me" at a config it wrote itself.
-with tempfile.TemporaryDirectory() as _tmp:
-    _app = os.path.join(_tmp, "app")
-    os.makedirs(_app)
-    _chosen = os.path.join(_tmp, "chosen-exports")
-    _cfg = os.path.join(_tmp, "config.json")
-    with open(_cfg, "w", encoding="utf-8") as _fh:
-        __import__("json").dump({"export_dir": _chosen}, _fh)
-    ns["HERE"] = _app
-    chk("the export root comes from config", root(r"D:\nowhere"), _chosen)
+# _export_root used to find config.json by guessing its own location, ignoring
+# LS_CONFIG entirely - so this test had to point its idea of "beside me" at a
+# file it wrote. It asks ls_config now, which is the same answer 04l and 05a
+# get, so the page and the handler that catches its downloads cannot disagree
+# about where an export went.
+sys.path.insert(0, SCRIPTS)
+import ls_config as LC                                      # noqa: E402
+from _fixture import temp_study                             # noqa: E402
 
-    os.remove(_cfg)
-    chk("with no export_dir configured it falls back to out_root/exports",
-        root(os.path.join(_tmp, "out")), os.path.join(_tmp, "out", "exports"))
+with tempfile.TemporaryDirectory() as _tmp:
+    _chosen = os.path.join(_tmp, "chosen-exports")
+    with temp_study(export_dir=_chosen):
+        chk("the export root is the study's export_dir",
+            root(os.path.join(_tmp, "unused")), _chosen)
+
+with temp_study(export_dir=None) as _study:
+    # A study that sets no export_dir derives one under its OWN out_root, so an
+    # export can never land beside a different study's results.
+    chk("with none set it is derived from that study's out_root",
+        root(os.path.join(_study.root, "unused")),
+        os.path.join(_study.out_root, "exports"))
+LC.clear_cache()
 
 print("\n" + ("ALL PASS" if not fails else f"{fails} FAILED"))
 raise SystemExit(1 if fails else 0)
