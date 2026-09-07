@@ -58,6 +58,7 @@ if _HERE not in sys.path:
 # lines copy-pasted into every stage.
 from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
 import ls_naming as NM  # noqa: E402
+import czi_read as CR  # noqa: E402
 OUT_ROOT = G5.OUT_ROOT
 REFORMAT_DIR = G5.REFORMAT_DIR
 RESULTS = os.path.join(OUT_ROOT, "results")
@@ -68,6 +69,13 @@ BASE_PX_UM = CONFIG["pixel_size_um"]
 DAPI_C = CONFIG["channels"]["dapi_index"]
 MARK_C = CONFIG["channels"]["marker_index"]
 NUC_UM = CONFIG["detection"]["nucleus_diameter_um"]
+
+
+class _Rect:
+    """czi_read takes a rectangle object; this file has loose coordinates."""
+
+    def __init__(self, x, y, w, h):
+        self.x, self.y, self.w, self.h = x, y, w, h
 
 COLUMNS = ["scene_uid", "animal", "marker", "roi_kind", "region", "seed_n",
            "roi_index", "nucleus_id",
@@ -451,9 +459,12 @@ def main():
                 bw, bh = int(b["czi_w"]), int(b["czi_h"])
                 if bw < 8 or bh < 8:
                     continue
-                roi = (x0, y0, bw, bh)
-                dapi = np.squeeze(doc.read(roi=roi, plane={"C": DAPI_C})).astype(np.float32)
-                mark = np.squeeze(doc.read(roi=roi, plane={"C": MARK_C})).astype(np.float32)
+                planes = CR.read_planes(
+                    doc, _Rect(x0, y0, bw, bh),
+                    {"dapi": DAPI_C, "mark": MARK_C},
+                    scene=int(g["scene_index"]))
+                dapi = planes["dapi"].astype(np.float32)
+                mark = planes["mark"].astype(np.float32)
                 if dapi.ndim != 2 or dapi.shape != mark.shape:
                     continue
                 # ALWAYS TILE. Untiled, StarDist takes 121 s on a 1.22 Mpx ROI;

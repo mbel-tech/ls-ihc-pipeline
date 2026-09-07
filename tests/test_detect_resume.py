@@ -169,6 +169,19 @@ def drop_check(tmp):
     chk("an emptied file keeps its header", lines, [",".join(G5C.COLUMNS)])
 
 
+# --------------------------------------------------------------------------
+print()
+print("--- 05c measures the scene, not its neighbours ---")
+
+import inspect                                              # noqa: E402
+
+src = inspect.getsource(G5C)
+chk("05c reads through the shared helper", "CR.read_planes" in src, True)
+chk("no bare plane read is left", "doc.read(roi=roi, plane=" in src, False)
+chk("the scene comes from the box's own row",
+    'scene=int(g["scene_index"])' in src, True)
+
+
 def main():
     tmp = tempfile.mkdtemp(prefix="ls5c_")
     try:
