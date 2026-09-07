@@ -151,7 +151,38 @@ print("--- no stage reads a plane without naming its scene ---")
 import glob                                                 # noqa: E402
 import re as _re                                            # noqa: E402
 
-ALLOWED = {"czi_read.py", "00d_czi_selftest.py"}
+def _balanced_calls(text, opener):
+    """Every call whose opening matches `opener` (a regex ending just before its
+    "("), extended to its OWN matching ")" rather than the nearest one.
+
+    The non-greedy `.*?\\)` this replaced stops at the first close-paren it
+    meets, which is the one belonging to a tuple or dict argument when the call
+    spans more than one line - e.g. `.read(roi=(x, y, w, strip_h), plane={...},
+    scene=largest, zoom=1.0)` closes its `roi=` tuple long before the call
+    itself ends, so `scene=` past that point was never seen. Balancing
+    parentheses instead means the call's own close is the one found, however
+    many tuples or dicts sit inside it.
+    """
+    for m in _re.finditer(opener, text):
+        start = m.end() - 1  # index of the call's own "("
+        depth = 0
+        i = start
+        while i < len(text):
+            if text[i] == "(":
+                depth += 1
+            elif text[i] == ")":
+                depth -= 1
+                if depth == 0:
+                    yield text[m.start():i + 1]
+                    break
+            i += 1
+        else:
+            # Unbalanced to end of file - still worth flagging as an offender
+            # rather than silently dropping it.
+            yield text[m.start():]
+
+
+ALLOWED = {"czi_read.py"}
 offenders = []
 for path in sorted(glob.glob(os.path.join(REPO, "scripts", "*.py"))):
     name = os.path.basename(path)
@@ -159,14 +190,13 @@ for path in sorted(glob.glob(os.path.join(REPO, "scripts", "*.py"))):
         continue
     with open(path, encoding="utf-8") as fh:
         text = fh.read()
-    for call in _re.findall(r"\.read\(\s*roi=.*?\)", text, _re.S):
+    for call in _balanced_calls(text, r"\.read\((?=\s*roi=)"):
         if "scene=" not in call:
             offenders.append(f"{name}: {' '.join(call.split())[:70]}")
-    for match in _re.finditer(r"(?<!def )read_scene\(.*?\)", text, _re.S):
-        call = match.group(0)
-        if "scene=" in call:
-            continue
-        offenders.append(f"{name}: {' '.join(call.split())[:70]}")
+    # (?<!def ) excludes the definition line, "def read_scene(...):".
+    for call in _balanced_calls(text, r"(?<!def )read_scene\("):
+        if "scene=" not in call:
+            offenders.append(f"{name}: {' '.join(call.split())[:70]}")
 
 chk("every pixel read outside czi_read names its scene", offenders, [])
 for line in offenders:

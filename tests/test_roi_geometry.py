@@ -279,15 +279,125 @@ else:
 
 # --------------------------------------------------------------------------
 print()
-print("--- 05a names the scene it checks against ---")
+print("--- verify_czi reads the scene and rectangle the geometry row names ---")
 
-import inspect                                              # noqa: E402
+# The substring check this replaced - 'scene=int(g["scene_index"])' in
+# inspect.getsource(G5) - asserts that a line of text exists somewhere in the
+# file. It would pass a verify_czi that read the right-looking line out of a
+# dead branch, or one where `g` was the wrong row, or where the rectangle
+# beside it did not match. What actually matters is what reaches doc.read():
+# drive the real function through a fake reader and look at the kwargs it
+# recorded, the same way tests/test_ceilings.py checks 01k.measure.
+#
+# 05a is the only place in this stage that reads a CZI pixel (grep for
+# "CR.read" - verify_czi is the one hit), so this exercises the whole surface.
 
-src = inspect.getsource(G5)
-chk("05a reads through the shared helper", "CR.read_plane" in src, True)
-chk("no bare plane read is left in it", 'plane={"C": 0}' in src, False)
-chk("the scene comes from the geometry row",
-    'scene=int(g["scene_index"])' in src, True)
+import csv                                                  # noqa: E402
+import shutil                                                # noqa: E402
+import tempfile                                              # noqa: E402
+
+from PIL import Image                                        # noqa: E402
+
+
+class _FakeCzi:
+    """Records the kwargs .read() was called with, and returns a fixed plane."""
+
+    def __init__(self, out):
+        self.calls = []
+        self.out = out
+
+    def read(self, **kwargs):
+        self.calls.append(kwargs)
+        return self.out
+
+
+class _FakeOpenCzi:
+    """Stands in for pylibCZIrw.czi.open_czi: a context manager around one doc."""
+
+    def __init__(self, doc):
+        self.doc = doc
+
+    def __call__(self, path, *a, **kw):
+        return self
+
+    def __enter__(self):
+        return self.doc
+
+    def __exit__(self, *exc):
+        return False
+
+
+try:
+    import pylibCZIrw.czi as _real_pyczi
+except ImportError:                                          # noqa: BLE001
+    _real_pyczi = None
+
+if _real_pyczi is None:
+    note("   (pylibCZIrw is not installed on this machine - verify_czi cannot "
+         "be exercised, even against a fake reader, since it imports the "
+         "package itself)")
+else:
+    tmp = tempfile.mkdtemp(prefix="ls5a_verifyczi_")
+    try:
+        animal, marker, uid = "AB12", "AF568", "AB12_1a-s0"
+        czi_file = "AB12_1a.czi"
+        stored_h, stored_w = 40, 50
+
+        overview_dir = os.path.join(tmp, "overview")
+        os.makedirs(os.path.join(overview_dir, animal, marker), exist_ok=True)
+        stored = np.random.default_rng(0).integers(
+            0, 255, (stored_h, stored_w)).astype(np.uint8)
+        Image.fromarray(stored, mode="L").save(
+            os.path.join(overview_dir, animal, marker, uid + "_DAPI.png"))
+
+        source_dir = os.path.join(tmp, "slides")
+        os.makedirs(source_dir, exist_ok=True)
+        open(os.path.join(source_dir, czi_file), "wb").close()
+
+        geom_row = {
+            "scene_uid": uid, "animal": animal, "marker": marker,
+            "czi_file": czi_file, "scene_index": "4",
+            "scene_x": "111", "scene_y": "222",
+            "scene_w": str(stored_w), "scene_h": str(stored_h),
+            "native_um_px": "0.65", "overview_um_px": "0.65",
+        }
+        geom_csv_path = os.path.join(tmp, "roi_geometry_test.csv")
+        with open(geom_csv_path, "w", newline="\n", encoding="utf-8") as fh:
+            w = csv.DictWriter(fh, fieldnames=list(geom_row))
+            w.writeheader()
+            w.writerow(geom_row)
+
+        # Same shape as the stored PNG, so verify_czi's own shape check does
+        # not short-circuit before the correlation math runs.
+        fake_doc = _FakeCzi(np.random.default_rng(1).random(
+            (stored_h, stored_w)).astype(np.float64))
+
+        saved_overview_dir = G5.OVERVIEW_DIR
+        saved_geom_csv = G5.GEOM_CSV
+        saved_source_dir = G5.CONFIG.get("source_dir")
+        saved_open_czi = _real_pyczi.open_czi
+        G5.OVERVIEW_DIR = overview_dir
+        G5.GEOM_CSV = geom_csv_path
+        G5.CONFIG["source_dir"] = source_dir
+        _real_pyczi.open_czi = _FakeOpenCzi(fake_doc)
+        try:
+            drop, checked = G5.verify_czi(limit=2)
+        finally:
+            G5.OVERVIEW_DIR = saved_overview_dir
+            G5.GEOM_CSV = saved_geom_csv
+            G5.CONFIG["source_dir"] = saved_source_dir
+            _real_pyczi.open_czi = saved_open_czi
+
+        chk("one section was checked", checked, 1)
+        chk("exactly one CZI read was made", len(fake_doc.calls), 1)
+        call = fake_doc.calls[0] if fake_doc.calls else {}
+        chk("the scene is the geometry row's scene_index",
+            call.get("scene"), int(geom_row["scene_index"]))
+        chk("the rectangle is the geometry row's scene_x/y/w/h", call.get("roi"),
+            (int(geom_row["scene_x"]), int(geom_row["scene_y"]),
+             int(geom_row["scene_w"]), int(geom_row["scene_h"])))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 print("\n" + (f"{fails} FAILED" if fails else "ALL PASS"))
 sys.exit(1 if fails else 0)

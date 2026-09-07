@@ -27,6 +27,8 @@ import os
 import shutil
 import tempfile
 
+import numpy as np
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCRIPTS = os.path.join(os.path.dirname(HERE), "scripts")
 
@@ -173,13 +175,140 @@ def drop_check(tmp):
 print()
 print("--- 05c measures the scene, not its neighbours ---")
 
-import inspect                                              # noqa: E402
+# The substring checks this replaced - 'scene=int(g["scene_index"])' in
+# inspect.getsource(G5C), and 'doc.read(roi=roi, plane=' NOT in it - assert
+# that a line of text exists (or does not) somewhere in the file. They would
+# pass an implementation that read the wrong row's scene, one where the
+# rectangle beside it did not match the box, or one missing a space in
+# plane={"C": 0} (a `not in` check on that literal text passes just as
+# happily against `plane={"C":0}`, with the space gone). 05c is where every
+# nucleus in the dataset gets measured, so what actually matters is what
+# reaches doc.read() - drive the real detection loop for one section and one
+# ROI box through a fake reader and a fake StarDist model, and check the
+# kwargs the reads recorded.
+#
+# What this exercises: main()'s CZI-reading path end to end - argument
+# parsing, section/box resume bookkeeping, the tissue-mask gate, and the two
+# CR.read_planes calls for the one box. What it does NOT exercise: real
+# segmentation or measurement. The fake model reports "no nuclei found",
+# which is enough to prove what reached read() without needing StarDist to
+# actually run, or csbdeep normalisation / regionprops to behave any
+# particular way on synthetic data.
 
-src = inspect.getsource(G5C)
-chk("05c reads through the shared helper", "CR.read_planes" in src, True)
-chk("no bare plane read is left", "doc.read(roi=roi, plane=" in src, False)
-chk("the scene comes from the box's own row",
-    'scene=int(g["scene_index"])' in src, True)
+
+class _FakeCzi:
+    """Records the kwargs .read() was called with, and returns a fixed plane."""
+
+    def __init__(self, shape):
+        self.calls = []
+        self._shape = shape
+
+    def read(self, **kwargs):
+        self.calls.append(kwargs)
+        return np.random.default_rng(len(self.calls)).random(self._shape)
+
+
+class _FakeOpenCzi:
+    """Stands in for pylibCZIrw.czi.open_czi: a context manager around one doc."""
+
+    def __init__(self, doc):
+        self.doc = doc
+
+    def __call__(self, path, *a, **kw):
+        return self
+
+    def __enter__(self):
+        return self.doc
+
+    def __exit__(self, *exc):
+        return False
+
+
+class _FakeModel:
+    """Stands in for the StarDist model: reports no nuclei, every time.
+
+    Segmentation is out of scope for this check (see the note above) - this
+    is enough to prove the read reached the model with its result unused
+    downstream, without loading a real pretrained model.
+    """
+
+    def predict_instances(self, img, **kw):
+        return np.zeros(img.shape, dtype=np.int32), {}
+
+
+def detect_read_check():
+    try:
+        import pylibCZIrw.czi as _real_pyczi
+    except ImportError:                                          # noqa: BLE001
+        print("   (pylibCZIrw is not installed on this machine - the "
+              "detection read cannot be exercised, even against a fake "
+              "reader, since 05c imports the package itself)")
+        return
+
+    uid, marker, czi_file = "AB12_1a-s0", "AF568", "AB12_1a.czi"
+    scene_index = 6
+    x0, y0, bw, bh = 300, 400, 24, 20
+
+    os.makedirs(G5C.REFORMAT_DIR, exist_ok=True)
+    G5C.G5.use_marker(marker)
+
+    geom_row = {
+        "scene_uid": uid, "animal": "AB12", "marker": marker,
+        "czi_file": czi_file, "scene_index": str(scene_index),
+        "m00": "1", "m01": "0", "m02": "0",
+        "m10": "0", "m11": "1", "m12": "0",
+    }
+    with open(G5C.G5.GEOM_CSV, "w", newline="\n", encoding="utf-8") as fh:
+        w = csv.DictWriter(fh, fieldnames=list(geom_row))
+        w.writeheader()
+        w.writerow(geom_row)
+
+    box_row = {
+        "scene_uid": uid, "animal": "AB12", "marker": marker,
+        "roi_kind": "roi", "region": "Dm", "seed_n": "1",
+        "czi_x0": str(x0), "czi_y0": str(y0),
+        "czi_w": str(bw), "czi_h": str(bh),
+        "sec_x": "128", "sec_y": "128", "sec_r": "50", "sec_poly": "",
+    }
+    with open(G5C.G5.BOX_CSV, "w", newline="\n", encoding="utf-8") as fh:
+        w = csv.DictWriter(fh, fieldnames=list(box_row))
+        w.writeheader()
+        w.writerow(box_row)
+
+    mask_dir = os.path.join(G5C.REFORMAT_DIR, f"sections_{marker}")
+    os.makedirs(mask_dir, exist_ok=True)
+    np.save(os.path.join(mask_dir, f"{uid}_mask.npy"),
+            np.ones((256, 256), dtype=bool))
+
+    fake_doc = _FakeCzi((bh, bw))
+    saved_open_czi = _real_pyczi.open_czi
+    saved_load_model = G5C.load_model
+    saved_argv = sys.argv
+    _real_pyczi.open_czi = _FakeOpenCzi(fake_doc)
+    G5C.load_model = lambda: _FakeModel()
+    sys.argv = ["05c_detect_rois.py", "--marker", marker, "--order", "uid"]
+    try:
+        rc = G5C.main()
+    finally:
+        _real_pyczi.open_czi = saved_open_czi
+        G5C.load_model = saved_load_model
+        sys.argv = saved_argv
+
+    chk("the run completed", rc, 0)
+    chk("two reads were made (dapi + marker) for the one box",
+        len(fake_doc.calls), 2)
+    chk("both reads named the same scene",
+        {c["scene"] for c in fake_doc.calls}, {scene_index})
+    chk("...which is the geometry row's scene_index",
+        fake_doc.calls[0]["scene"] if fake_doc.calls else None, scene_index)
+    chk("both reads used the box's own rectangle (czi_x0/y0/w/h)",
+        {c["roi"] for c in fake_doc.calls}, {(x0, y0, bw, bh)})
+    chk("...and the dapi/marker channel indices",
+        sorted(c["plane"]["C"] for c in fake_doc.calls),
+        sorted([G5C.DAPI_C, G5C.MARK_C]))
+
+
+detect_read_check()
 
 
 def main():
