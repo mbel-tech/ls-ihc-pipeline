@@ -51,6 +51,42 @@ class _PathRow(QWidget):
         return self.edit.text().strip()
 
 
+class _PatternRow(QWidget):
+    """The filename pattern, with the builder behind a button.
+
+    The builder needs real filenames to preview against, which is why it is
+    offered here rather than as a bare text box: the folder is one field above.
+    """
+
+    def __init__(self, value, source_getter, parent=None):
+        super().__init__(parent)
+        self.source_getter = source_getter
+        self.edit = QLineEdit("" if value is None else str(value))
+        btn = QPushButton("Build…")
+        btn.clicked.connect(self._build)
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.addWidget(self.edit, 1)
+        lay.addWidget(btn)
+
+    def _build(self):
+        from naming_dialog import NamingDialog, scan_names
+        names = scan_names(self.source_getter() or "")
+        if not names:
+            QMessageBox.warning(
+                self, "No files",
+                "Set the slides folder first - the pattern is checked against "
+                "the filenames that are actually there.")
+            return
+        dlg = NamingDialog(names, self.edit.text().strip(), self)
+        if dlg.exec() == QDialog.Accepted and dlg.result_block:
+            self.edit.setText(dlg.result_block["pattern"])
+            self.built = dlg.result_block
+
+    def value(self):
+        return self.edit.text().strip() or None
+
+
 def _widget_for(key, value):
     """The editor for one spec key, and a callable giving its typed value."""
     if key.ui in ("dir", "file", "outdir"):
@@ -103,7 +139,14 @@ class ConfigDialog(QDialog):
         self.rows = {}
         for key in LC.dialog_fields():
             found, value = LC._get(cfg, key.parts)
-            widget, getter = _widget_for(key, value if found else key.default)
+            if key.path == "slide_naming.pattern":
+                widget = _PatternRow(
+                    value if found else key.default,
+                    lambda: self.rows["source_dir"][1]())
+                getter = widget.value
+                self.pattern_row = widget
+            else:
+                widget, getter = _widget_for(key, value if found else key.default)
             self.rows[key.path] = (key, getter)
             form.addRow(key.label + ("  *" if key.required else ""), widget)
             hint = QLabel(key.doc)
@@ -165,6 +208,15 @@ class ConfigDialog(QDialog):
                     node.pop(parts[-1], None)
                 continue
             LC._set(cfg, key.parts, value)
+
+        built = getattr(getattr(self, "pattern_row", None), "built", None)
+        if built:
+            # The builder settled the example and the case rule too; saving
+            # only the regex would leave the other two describing a pattern
+            # that is no longer there.
+            LC._set(cfg, ["slide_naming", "example"], built["example"])
+            LC._set(cfg, ["slide_naming", "case_insensitive"],
+                    built["case_insensitive"])
 
         errors, _ = LC.validate(cfg, self.path, strict_paths=True)
         if errors:
