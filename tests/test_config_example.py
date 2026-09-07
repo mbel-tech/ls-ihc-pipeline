@@ -1,22 +1,21 @@
-"""config.example.json must not fall behind config.json.
+"""config.example.json is generated, so the drift it used to guard is gone.
 
-`config.json` is gitignored - it holds machine-specific absolute paths - so
-`config.example.json` is the only copy a fresh dataset ever sees. The two drift
-the same way every time: a key is added to the working config while a stage is
-being written, the stage reads it through `.get(...)`, and the template never
-gets it. Nothing fails loudly afterwards. The stage falls back to a default that
-is wrong for the new dataset and says nothing about it - `atlas_plate_set.dir`
-falling back to `plates` while the landmarks were made against `plates_final`
-is exactly that, and plate ids collide between the sets, so the mismatch shows
-up as a wrong image rather than as an error.
+This suite used to assert that every key path in `config.json` also existed in
+`config.example.json`, because the two drifted the same way every time: a key
+was added to the working config while a stage was being written, the stage read
+it through `.get(...)`, and the template never got it. Nothing failed loudly
+afterwards - the stage fell back to a default that was wrong for the new dataset
+and said nothing about it.
 
-So: every key path in `config.json` must also exist in `config.example.json`.
-Values are not compared - the template carries placeholders on purpose - only
-the shape. Keys starting with `_` are documentation and are skipped, though the
-template is expected to carry its own.
+The template is now generated from `SPEC` in `scripts/ls_config.py`, so it
+cannot fall behind: adding a key to the spec adds it to the template, and the
+check is a byte comparison rather than a key-path comparison.
 
-Skipped, not failed, when there is no config.json: on a fresh clone there is
-nothing to compare against.
+That leaves a different drift, and it points the other way. A study config can
+still carry a key that nothing has ever read - a typo, or a setting whose owner
+expected it to do something. Keys deliberately removed from the schema are
+listed in `ls_config.RETIRED` and reported as removed, with the reason. Anything
+left over after that is the real fault, and is what this suite now checks.
 
 Run:  python tests/test_config_example.py
 """
@@ -27,79 +26,91 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
+SCRIPTS = os.path.join(REPO, "scripts")
+sys.path.insert(0, SCRIPTS)
+
+import ls_config as C                                       # noqa: E402
+
 REAL = os.path.join(REPO, "config.json")
 EXAMPLE = os.path.join(REPO, "config.example.json")
 
-# Paths whose CHILDREN are data, not structure. `groups.by_animal` is keyed by
-# animal and `drop_inset_boxes` by figure, so requiring their keys in the
-# template would mean demanding this dataset's animal IDs - and this atlas's
-# figure numbers - from a file whose whole job is to be generic. The container
-# must exist; what is inside it is the operator's to fill in.
-DATA_MAPS = {
-    "groups.by_animal",
-    "atlas_figure_sections.drop_inset_boxes",
-}
+failures = []
 
 
-def load(path):
-    """Parse a config, reporting the file and position on a syntax error."""
-    with open(path, encoding="utf-8") as fh:
-        text = fh.read()
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError as exc:
-        raise SystemExit(f"FAIL {os.path.basename(path)} is not valid JSON: {exc}")
+def chk(name, got, want):
+    ok = got == want
+    print(f"{'ok  ' if ok else 'FAIL'} {name:62} {got!r}")
+    if not ok:
+        failures.append(name)
 
 
-def key_paths(node, prefix=""):
-    """Dotted paths of every non-underscore key, recursing into dicts only.
+# --------------------------------------------------------------------------
+print("--- the template is generated, not maintained ---")
 
-    Lists are values here, not structure: `atlas_scope.regions_to_add` differing
-    between the two files is the template being generic, not drift. The same goes
-    for anything under DATA_MAPS - see there.
-    """
-    out = []
-    if not isinstance(node, dict):
-        return out
-    for k, v in node.items():
-        if k.startswith("_"):
-            continue
-        path = f"{prefix}.{k}" if prefix else k
-        out.append(path)
-        if path not in DATA_MAPS:
-            out.extend(key_paths(v, path))
-    return out
+generated = C.example_text()
+chk("generation is deterministic", C.example_text() == generated, True)
 
+with open(EXAMPLE, encoding="utf-8") as fh:
+    committed = fh.read()
+chk("the committed template is what the spec generates",
+    committed == generated, True)
+if committed != generated:
+    print("     run: python scripts/ls_config.py --write-example")
+    print(f"     committed {len(committed)} bytes, generated {len(generated)}")
 
-def main():
-    if not os.path.exists(REAL):
-        print("SKIP no config.json in this checkout - nothing to compare against")
-        return 0
+chk("it parses as JSON", isinstance(json.loads(committed), dict), True)
 
-    real = load(REAL)
-    example = load(EXAMPLE)
-    print("both files parse as JSON")
+example = json.loads(committed)
+chk("every required key is present in the template",
+    [k.path for k in C.SPEC
+     if k.required and not C._get(example, k.parts)[0]], [])
+chk("every materialise key is a literal, not left to a default",
+    [k.path for k in C.SPEC
+     if k.materialise and not C._get(example, k.parts)[0]], [])
 
-    have = set(key_paths(example))
-    want = key_paths(real)
-    missing = [p for p in want if p not in have]
+errors, _ = C.validate(example, EXAMPLE)
+placeholder = [e for e in errors if "<" in e]
+chk("the template validates apart from its placeholders",
+    [e for e in errors if e not in placeholder], [])
 
-    extra = [p for p in sorted(have) if p not in set(want)]
-    if extra:
-        print(f"note: {len(extra)} key path(s) only in config.example.json: "
-              + ", ".join(extra))
+# --------------------------------------------------------------------------
+print()
+print("--- retired keys are named as retired, not as typos ---")
 
-    if missing:
-        print(f"FAIL {len(missing)} key path(s) in config.json are missing from "
-              "config.example.json:")
-        for p in missing:
-            print(f"  {p}")
-        print("Add them to the template with a generic placeholder and a _note.")
-        return 1
+chk("every retired key has a reason",
+    [k for k, why in C.RETIRED.items() if not why], [])
+chk("no key is both retired and in the spec",
+    sorted(set(C.RETIRED) & {k.path for k in C.SPEC}), [])
 
-    print(f"PASS all {len(want)} key paths in config.json exist in config.example.json")
-    return 0
+stale = dict(json.loads(committed))
+stale["flatfield"] = {"tile_sample_per_channel": 2000}
+stale["what_is_this"] = 3
+_, warns = C.validate(stale, "stale.json")
+chk("a retired key says it was removed, and why",
+    any("was removed in schema" in w and "flatfield" in w for w in warns), True)
+chk("a key nobody has heard of does not claim to have been removed",
+    any("what_is_this" in w and "was removed" not in w for w in warns), True)
+chk("unexpected_keys reports only the genuine unknown",
+    C.unexpected_keys(stale), ["what_is_this"])
 
+# --------------------------------------------------------------------------
+print()
+print("--- the live config, if this checkout has one ---")
 
-if __name__ == "__main__":
-    sys.exit(main())
+if not os.path.exists(REAL):
+    print("SKIP no config.json in this checkout")
+else:
+    with open(REAL, encoding="utf-8") as fh:
+        real = json.load(fh)
+    unexpected = C.unexpected_keys(real)
+    chk("config.json carries no key the spec has never heard of",
+        unexpected, [])
+    if unexpected:
+        print("     Either add them to SPEC, or to RETIRED with the reason.")
+    retired_present = [p for p in C._unknown_paths(real) if p in C.RETIRED]
+    print(f"note: {len(retired_present)} retired key(s) still in config.json: "
+          + ", ".join(retired_present))
+
+print()
+print("ALL PASS" if not failures else f"{len(failures)} FAILED")
+sys.exit(1 if failures else 0)

@@ -1,113 +1,65 @@
 {
-  "_comment": "Copy to config.json and fill in the three paths. The real config.json is gitignored because it holds machine-specific absolute paths.",
+  "_comment": "Copy this to a study config and fill in the placeholders. GENERATED from SPEC in scripts/ls_config.py by `python scripts/ls_config.py --write-example` - edit the spec, not this file.",
+  "schema_version": 1,
+  "study": {
+    "name": ""
+  },
   "source_dir": "<ABSOLUTE PATH TO THE FOLDER OF .czi FILES>",
   "out_root": "<ABSOLUTE PATH FOR PIPELINE OUTPUT>",
-  "atlas_pdf": "<ABSOLUTE PATH TO Salmon Atlas full.pdf>",
+  "atlas_pdf": "<ABSOLUTE PATH TO THE ATLAS PDF>",
+  "_export_dir_note": "One folder per export, named DD.MM.YYYY_HH.MM, with the same stamp on every file in it. Read by 04l (shown in the page, and the default for --export-dir) and by the app's download handler, so the two cannot disagree. A browser writes here only after the operator picks the folder with the page's Folder... button - a web page cannot be handed a path.",
+  "export_dir": "<ABSOLUTE PATH FOR CURATOR EXPORTS, OR EMPTY>",
+  "source_files": null,
+  "slide_naming": {
+    "_pattern_note": "Built by the app's pattern builder, and editable by hand. A filename that does not match is REPORTED, never silently skipped - an invisible file is the failure mode this whole block exists to prevent. `subject` becomes the `animal` column and the first field of every scene_uid, so it is the key the metadata join later runs on.",
+    "pattern": "^(?P<subject>[A-Za-z]+\\d+)_(?P<slide>\\d+)(?P<replicate>[a-z])?\\.czi$",
+    "example": "AB12_3a.czi",
+    "case_insensitive": true
+  },
+  "_section_order_convention_note": "Confirmed by user 2026-08-11 for the LS dataset. Serial order = scene index as acquired. The scanner ran column-major (s0 top-left, s1 below it, s2 next column top), and on staggered slides such as LS120_1a no grid model reproduces the physical layout at all.",
   "section_order_convention": "S_scan_order",
-  "_section_order_note": "Confirmed by user 2026-08-11. Serial order = scene index as acquired. The scanner ran column-major (s0 top-left, s1 below it, s2 next column top), and on staggered slides such as LS120_1a no grid model reproduces the physical layout at all.",
+  "_pixel_size_um_note": "The CZI carries this too - czi_meta.py reads it from Scaling/Items/Distance[@Id='X'] - so a future revision should check this value against the files rather than trust it.",
   "pixel_size_um": 0.65,
+  "_section_thickness_um_note": "NOT recoverable from the CZIs - they carry no size_z, being single-plane images of a physical section - so it has to be supplied. This is the number the Abercrombie correction needs; see detection.abercrombie below. 14.0 for the LS dataset, operator-stated 2026-08-30.",
   "section_thickness_um": 14.0,
-  "_section_thickness_note": "How thick the sections were cut. NOT recoverable from the CZIs - they carry no size_z, being single-plane images of a physical section - so it has to be supplied. This is the number the Abercrombie correction needs; see detection.abercrombie below. 14.0 for the LS dataset, operator-stated 2026-08-30.",
-  "section_interval_um": 14.0,
-  "_section_interval_note": "Sections are CONSECUTIVE - the interval equals the thickness, operator-stated 2026-08-30. Two consequences. (1) section_order * 14 um is rostrocaudal position within the block, so the ~115 sections per animal are a ~1.6 mm forebrain block, which is consistent with every ROI in this study being telencephalic or preoptic. (2) Adjacent sections are NOT independent tissue: a nucleus cut by the boundary appears in both, so summing or averaging raw profile counts across neighbours double-counts it. That is exactly what the Abercrombie correction below removes, which is why it is enabled rather than optional here.",
   "overview_target_um_per_px": 5.2,
-  "triage_target_um_per_px": 2.6,
-  "detection_target_um_per_px": 1.3,
   "channels": {
+    "_dapi_index_note": "Read only by 05c_detect_rois today; every earlier stage assumes plane 0 structurally. The channels/markers sub-project replaces this whole block with a per-channel role table, so it is left as-is rather than changed twice.",
     "dapi_index": 0,
-    "marker_index": 1,
-    "exposure_ms": {
-      "DAPI": 5.0,
-      "AF568": 1000.0,
-      "AF488": 300.0
-    }
+    "marker_index": 1
   },
-  "marker_identity": {
-    "_note": "Filled in by 00c_channel_identity.py, then confirmed by the user. Until then neither fluorophore may be referred to as pERK or PCNA downstream.",
-    "AF568": null,
-    "AF488": null,
-    "DAPI": {
-      "_note": "Nuclear counterstain excitation/emission in nm, as configured on the scope. Read them off the CZI channel metadata (ExcitationWavelength / EmissionWavelength, exposed by scripts/czi_meta.py) rather than quoting a datasheet - what matters is the filter set actually used, not the dye in the abstract. Left null until filled in.",
-      "excitation_nm": null,
-      "emission_nm": null
-    }
-  },
-  "flatfield": {
-    "tile_sample_per_channel": 2000,
-    "downsample_to_px": 128,
-    "smoothing_sigma_px": 4,
-    "_note": "Per-pixel median across many randomly-positioned tiles, computed at reduced resolution because vignetting is low-frequency. BaSiC is the fallback if the tile-pitch power-spectrum test does not pass."
-  },
+  "_marker_identity_note": "Fluorophore -> marker name, e.g. {\"AF568\": \"pERK\"}. Written by 00c --accept and read by no stage. Until it is filled in, no fluorophore may be referred to by a biological name downstream. For the nuclear counterstain, record excitation and emission in nm by reading them off the CZI channel metadata (ExcitationWavelength / EmissionWavelength, exposed by scripts/czi_meta.py) rather than quoting a datasheet - what matters is the filter set actually used, not the dye in the abstract. Kept because it is the only written record of the confirmed assignment; the channels/markers sub-project wires it.",
+  "marker_identity": {},
   "detection": {
     "nucleus_diameter_um": 7.0,
-    "local_contrast_inner_factor": 1.5,
-    "local_contrast_outer_factor": 4.0,
-    "local_contrast_threshold": null,
-    "_note": "Threshold is set once from the 03a calibration sweep, reviewed across more than one animal. With no negative control this is the most consequential parameter in the pipeline.",
     "abercrombie": {
-      "enabled": true,
-      "_note": "A single-plane image of a section counts nuclear PROFILES, not nuclei: a nucleus straddling the cut face still appears in the section it is cut into. Abercrombie N = n * T/(T + h), with T the section thickness and h the mean diameter of the counted object along the axis perpendicular to the section. At T=14 and h=7 the factor is 0.667 - uncorrected counts are 50% too high.",
-      "_h_source": "MEASURED per marker and region from the nuclear-counterstain segmentation, not taken from nucleus_diameter_um above. That value is a detection-scale assumption, and the factor moves from 0.737 to 0.583 across a plausible 5-10 um range, so using it would bury an unmeasured constant in every density.",
-      "_what_it_does_not_fix": "Abercrombie assumes spherical, randomly positioned objects and applies no lost-caps correction. The unbiased alternative is the optical or physical disector, which needs z-stacks a single-plane dataset does not have. Report raw and corrected counts side by side and say which is which.",
-      "_effect_on_the_comparison": "If h is similar between groups this is close to a constant multiplier, so it barely moves a between-group contrast. What it decides is whether a density can be quoted as cells per mm2 at all - a reporting fix, not a statistical one."
+      "_enabled_note": "A single-plane image of a section counts nuclear PROFILES, not nuclei: a nucleus straddling the cut face still appears in the section it is cut into. Abercrombie N = n * T/(T + h), with T the section thickness and h the mean diameter of the counted object along the axis perpendicular to the section. At T=14 and h=7 the factor is 0.667 - uncorrected counts are 50% too high. h is MEASURED per marker and region from the nuclear-counterstain segmentation, not taken from nucleus_diameter_um above: that value is a detection-scale assumption, and the factor moves from 0.737 to 0.583 across a plausible 5-10 um range, so using it would bury an unmeasured constant in every density. Abercrombie assumes spherical, randomly positioned objects and applies no lost-caps correction; the unbiased alternative is the optical or physical disector, which needs z-stacks a single-plane dataset does not have. Report raw and corrected counts side by side and say which is which. This is also why it is enabled rather than optional: where sections are cut consecutively, adjacent sections are not independent tissue - a nucleus cut by the boundary appears in both - so summing or averaging raw profile counts across neighbours double-counts it.",
+      "enabled": true
     }
   },
-  "atlas_scope": {
-    "mode": "sbn_nodes",
-    "_note": "Confirmed by user 2026-08-11, revised 2026-09-06 for Salmon Atlas full.pdf. The atlas now labels the telencephalon and POA (Dl, Dm, Vd, Vl, Vv, Vs, Vc, POA), Rm, and four tuberal regions the 2026-09 revision added. Names are recorded exactly as the atlas writes them - no abbreviating, no reinterpreting - so the anatomy stays the atlas author's statement rather than this file's. Wullimann 1996 and Nieuwenhuys 1982 remain the comparative guides.",
-    "existing_regions": [
-      "Dl",
-      "Dm",
-      "Vd",
-      "Vl",
-      "Vv",
-      "Vs",
-      "Vc",
-      "POA",
-      "Rm",
-      "Nucleus Anterior tuberal",
-      "Nucleus Lateral tuberal",
-      "Migrated posterior tuberal nucleus",
-      "Nucleus Posterior Tuberal"
-    ],
-    "regions_to_add": [
-      "vTn",
-      "TPp",
-      "PAG"
-    ],
-    "_regions_to_add_note": "Still absent from the atlas. PAG = periaqueductal / central grey: no legend on any page of Salmon Atlas full.pdf names it. vTn = ventral tuberal nucleus and TPp = periventricular nucleus of posterior tuberculum (dopaminergic) were the 2026-08 request; the 2026-09 atlas added 'Nucleus Lateral tuberal', 'Nucleus Posterior Tuberal' and 'Migrated posterior tuberal nucleus' in that territory, but whether those satisfy the vTn/TPp intent is the atlas author's call and has not been made, so this list is left standing."
-  },
-  "blinding": {
-    "enabled": true,
-    "_note": "No stage before 06b may read a group label. Outputs are keyed by animal ID only."
-  },
-  "_export_dir_note": "Where the ROI curator files its exports: one folder per export, named DD.MM.YYYY_HH.MM, with the same stamp on every file in it. Read by 04l (shown in the page, and the default for --export-dir) and by the app's download handler, so the two cannot disagree. A browser writes here only after the operator picks the folder with the page's Folder... button - a web page cannot be handed a path.",
-  "export_dir": "<ABSOLUTE PATH FOR CURATOR EXPORTS>",
   "atlas_plate_set": {
-    "_note": "Which plate set the ROI curator and the registration use. Both read this, so they cannot drift apart. IDs COLLIDE between sets - the same plate_NNN name exists in more than one set and points at a different image - so a landmark file records the set it was made against. Set this once, before any landmark is placed; changing it later invalidates landmarks made against the old set.",
-    "dir": "plates",
-    "_options": [
-      "plates",
-      "plates_merged",
-      "plates_final"
-    ],
-    "_options_note": "plates = one image per atlas page as extracted; plates_merged = one image per figure; plates_final = the curated set. Start at plates and move up as the atlas chain produces them."
+    "_dir_note": "Both read this, so they cannot drift apart. IDs COLLIDE between sets - the same plate_NNN name exists in more than one set and points at a different image - so a landmark file records the set it was made against. Set this once, before any landmark is placed; changing it later invalidates landmarks made against the old set. plates = one image per atlas page as extracted; plates_merged = one image per figure; plates_final = the curated set. Start at plates and move up as the atlas chain produces them.",
+    "dir": "plates"
   },
   "atlas_figure_sections": {
-    "_note": "How many sections each MERGED atlas figure holds, where geometry cannot recover it. Operator knowledge, not measurement: the band detector in 04a2 mis-counts when two sections touch (their legend text bridges every row, so no row is empty) and when one section is crossed by an internal white band (read as two). This declaration is the authority; the detector is not. 04a3b_enforce_sections.py takes the count from here and decides only WHERE to cut.",
+    "_two_sections_note": "Operator knowledge, not measurement: the band detector in 04a2 mis-counts when two sections touch (their legend text bridges every row, so no row is empty) and when one section is crossed by an internal white band (read as two). This declaration is the authority; the detector is not. 04a3b_enforce_sections.py takes the count from here and decides only WHERE to cut. Record the date and the reason alongside it when you fill it in.",
     "two_sections": null,
-    "_two_sections_note": "Inclusive figure-number range, as a string, of the merged figures holding two sections each - e.g. \"31-47\". null means every figure is left at whatever 04a2 detected. Record the date and the reason alongside it when you fill it in.",
-    "drop_inset_boxes": {
-      "_note": "Boxes that are labelled INSETS, not sections - a detached callout of a structure that is also shown attached and labelled inside a section elsewhere in the atlas. An inset is not a plate, and holds no region seed. Key = merged figure id, value = the 1-based index of the box to drop, counted top to bottom.",
-      "_shape_note": "Empty here on purpose: an entry is a claim about a figure in YOUR atlas, and a copied one would drop a real section box. Add them as \"mplate_020\": 2 once you have looked. Note that listing a figure here also exempts it from the two_sections count above, so list only the figures that really carry an inset."
-    }
+    "_drop_inset_boxes_note": "Boxes that are labelled INSETS, not sections - a detached callout of a structure that is also shown attached and labelled inside a section elsewhere in the atlas. An inset is not a plate, and holds no region seed. Empty by default on purpose: an entry is a claim about a figure in YOUR atlas, and a copied one would drop a real section box. Note that listing a figure here also exempts it from the two_sections count above, so list only the figures that really carry an inset.",
+    "drop_inset_boxes": {}
+  },
+  "_atlas_scope_note": "Read by no stage. Names are recorded exactly as the atlas writes them - no abbreviating, no reinterpreting - so the anatomy stays the atlas author's statement rather than this file's. Kept because it is the only written record of that scope decision; the replaceable-atlas sub-project wires it.",
+  "atlas_scope": {
+    "mode": "sbn_nodes",
+    "existing_regions": [],
+    "regions_to_add": []
   },
   "groups": {
-    "_note": "UNBLINDING KEY. Read by 04l_roi_curator.py, and by nothing else, to lay out the Shotgun deck - one atlas plate per slide, split left/right by treatment. This is a DELIBERATE EXCEPTION to blinding._note above ('no stage before 06b may read a group label'): a figure that compares groups cannot be built without knowing them. Nothing here reaches a count, a threshold or a curation decision - the curator's own state is written before this file is read and does not depend on it - but a deck laid out by group is, by construction, not blind. Leave by_animal empty to keep it that way; the Shotgun button disables itself when it is.",
-    "_order_note": "Which treatment is the LEFT half of every slide, and the order the halves are drawn in. Explicit because dict order is not a decision. Two entries: the slide splits in two.",
-    "order": ["<TREATMENT A>", "<TREATMENT B>"],
-    "_by_animal_note": "animal ID -> treatment, one per animal, using exactly the labels in order above. An animal left empty is reported and skipped rather than guessed at.",
-    "by_animal": {
-    }
+    "_order_note": "Explicit because dict order is not a decision. Two entries: the slide splits in two.",
+    "order": [
+      "<TREATMENT A>",
+      "<TREATMENT B>"
+    ],
+    "_by_animal_note": "UNBLINDING KEY. A DELIBERATE EXCEPTION to the blinding rule ('no stage before 06b may read a group label'): a figure that compares groups cannot be built without knowing them. Nothing here reaches a count, a threshold or a curation decision - the curator's own state is written before this file is read and does not depend on it - but a deck laid out by group is, by construction, not blind. Leave empty to keep it that way; the Shotgun button disables itself when it is. An animal left out is reported and skipped rather than guessed at. The metadata-join sub-project replaces this with a real table join.",
+    "by_animal": {}
   }
 }

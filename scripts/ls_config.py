@@ -1,7 +1,8 @@
 """The pipeline's configuration: one spec table, one loader, one validator.
 
-Until now the loader was six lines copy-pasted into 37 stages, with no schema,
-no defaults and no validation. A mistyped key was a `KeyError` at import; a key
+Until now the loader was six lines copy-pasted into 36 of the 45 numbered
+stages - the other 9 chained off a sibling module instead - with no schema, no
+defaults and no validation. A mistyped key was a `KeyError` at import; a key
 nobody read looked exactly like a key everybody read.
 
 `SPEC` below is the single source of truth. Every entry names a key, its type,
@@ -41,6 +42,9 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 #                sub-project will wire. Emitted into the example config.
 LIVE, DOCUMENTED = "live", "documented"
 
+#: Distinguishes "no example given" from an example that is legitimately None.
+_UNSET = object()
+
 
 class Key:
     """One configuration key.
@@ -53,12 +57,15 @@ class Key:
 
     def __init__(self, path, type, doc, required=False, default=None,
                  note=None, consumers=(), status=LIVE, choices=None,
-                 materialise=False):
+                 materialise=False, example=_UNSET):
         self.path = path
         self.type = type
         self.doc = doc
         self.required = required
         self.default = default
+        # What a generated config.example.json shows. Falls back to the
+        # default; a required key with neither gets a <PLACEHOLDER>.
+        self.example = example
         self.note = note
         self.consumers = tuple(consumers)
         self.status = status
@@ -93,23 +100,25 @@ SPEC = [
     Key("source_dir", "path_dir",
         "The folder holding the .czi files.",
         required=True, materialise=True,
+        example="<ABSOLUTE PATH TO THE FOLDER OF .czi FILES>",
         consumers=["00_manifest", "00b", "00d", "01b_pick", "01e", "01h",
                    "01_overviews", "05a", "05c", "06b", "app"]),
 
     Key("out_root", "path_dir_create",
         "Where every result is written. Needs room - overviews alone run to "
         "several GB.",
-        required=True, materialise=True, consumers=["every stage"]),
+        required=True, materialise=True,
+        example="<ABSOLUTE PATH FOR PIPELINE OUTPUT>", consumers=["every stage"]),
 
     Key("atlas_pdf", "path_file",
         "The atlas the plates and region seeds are extracted from.",
-        required=True,
+        required=True, example="<ABSOLUTE PATH TO THE ATLAS PDF>",
         consumers=["04a_atlas_extract", "04a2", "04a4", "app"]),
 
     Key("export_dir", "path_dir_opt",
         "Where the ROI curator files its exports. Empty means "
         "<out_root>/exports.",
-        default=None,
+        default=None, example="<ABSOLUTE PATH FOR CURATOR EXPORTS, OR EMPTY>",
         note="One folder per export, named DD.MM.YYYY_HH.MM, with the same "
              "stamp on every file in it. Read by 04l (shown in the page, and "
              "the default for --export-dir) and by the app's download handler, "
@@ -129,6 +138,7 @@ SPEC = [
         "Optional named groups 'slide' and 'replicate'; any others are "
         "carried through as manifest columns.",
         required=True,
+        example=r"^(?P<subject>[A-Za-z]+\d+)_(?P<slide>\d+)(?P<replicate>[a-z])?\.czi$",
         note="Built by the app's pattern builder, and editable by hand. A "
              "filename that does not match is REPORTED, never silently "
              "skipped - an invisible file is the failure mode this whole "
@@ -139,7 +149,7 @@ SPEC = [
 
     Key("slide_naming.example", "str",
         "One real filename, used by the app to preview the parse.",
-        default="", consumers=["app/slides"]),
+        default="", example="AB12_3a.czi", consumers=["app/slides"]),
 
     Key("slide_naming.case_insensitive", "bool",
         "Match filenames case-insensitively.",
@@ -158,7 +168,7 @@ SPEC = [
 
     Key("pixel_size_um", "float",
         "Camera pixel size at the objective used, in micrometres.",
-        required=True, materialise=True,
+        required=True, materialise=True, example=0.65,
         note="The CZI carries this too - czi_meta.py reads it from "
              "Scaling/Items/Distance[@Id='X'] - so a future revision should "
              "check this value against the files rather than trust it.",
@@ -166,7 +176,7 @@ SPEC = [
 
     Key("section_thickness_um", "float",
         "How thick the sections were cut, in micrometres.",
-        required=True,
+        required=True, example=14.0,
         note="NOT recoverable from the CZIs - they carry no size_z, being "
              "single-plane images of a physical section - so it has to be "
              "supplied. This is the number the Abercrombie correction needs; "
@@ -196,12 +206,17 @@ SPEC = [
     Key("marker_identity", "raw",
         "Which fluorophore is which marker. Filled in by "
         "00c_channel_identity.py, then confirmed by the operator.",
-        default=None, status=DOCUMENTED,
-        note="Written by 00c --accept and read by no stage. Until it is "
-             "filled in, neither fluorophore may be referred to by a "
-             "biological name downstream. Kept because it is the only written "
-             "record of the confirmed assignment; the channels/markers "
-             "sub-project wires it.",
+        default=None, status=DOCUMENTED, example={},
+        note="Fluorophore -> marker name, e.g. {\"AF568\": \"pERK\"}. Written "
+             "by 00c --accept and read by no stage. Until it is filled in, "
+             "no fluorophore may be referred to by a biological name "
+             "downstream. For the nuclear counterstain, record excitation and "
+             "emission in nm by reading them off the CZI channel metadata "
+             "(ExcitationWavelength / EmissionWavelength, exposed by "
+             "scripts/czi_meta.py) rather than quoting a datasheet - what "
+             "matters is the filter set actually used, not the dye in the "
+             "abstract. Kept because it is the only written record of the "
+             "confirmed assignment; the channels/markers sub-project wires it.",
         consumers=["00c (writes)"]),
 
     # ---- detection -------------------------------------------------------
@@ -227,7 +242,11 @@ SPEC = [
              "lost-caps correction; the unbiased alternative is the optical or "
              "physical disector, which needs z-stacks a single-plane dataset "
              "does not have. Report raw and corrected counts side by side and "
-             "say which is which.",
+             "say which is which. This is also why it is enabled rather than "
+             "optional: where sections are cut consecutively, adjacent "
+             "sections are not independent tissue - a nucleus cut by the "
+             "boundary appears in both - so summing or averaging raw profile "
+             "counts across neighbours double-counts it.",
         consumers=["06a"]),
 
     # ---- atlas -----------------------------------------------------------
@@ -276,6 +295,8 @@ SPEC = [
     Key("atlas_scope", "raw",
         "Which regions the atlas already labels, and which are still wanted.",
         default=None, status=DOCUMENTED,
+        example={"mode": "sbn_nodes", "existing_regions": [],
+                 "regions_to_add": []},
         note="Read by no stage. Names are recorded exactly as the atlas writes "
              "them - no abbreviating, no reinterpreting - so the anatomy stays "
              "the atlas author's statement rather than this file's. Kept "
@@ -287,7 +308,7 @@ SPEC = [
     Key("groups.order", "list_str",
         "Which treatment is the LEFT half of every Shotgun slide, and the "
         "order the halves are drawn in.",
-        default=[],
+        default=[], example=["<TREATMENT A>", "<TREATMENT B>"],
         note="Explicit because dict order is not a decision. Two entries: the "
              "slide splits in two.",
         consumers=["04l", "06c", "06d"]),
@@ -309,6 +330,37 @@ SPEC = [
 ]
 
 BY_PATH = {k.path: k for k in SPEC}
+
+
+#: Keys this schema version deliberately dropped, and why. A config written
+#: before the drop is not broken and its author is not confused - saying so is
+#: worth more than lumping them in with a typo.
+RETIRED = {
+    "triage_target_um_per_px":
+        "no stage resamples for triage",
+    "detection_target_um_per_px":
+        "05c detects at pixel_size_um directly, without resampling",
+    "section_interval_um":
+        "never read; the argument it carried is now in the "
+        "detection.abercrombie note",
+    "channels.exposure_ms":
+        "exposures are read per file from the CZI metadata by 00_manifest, so "
+        "a hand-copied duplicate could only go stale",
+    "flatfield":
+        "read only by 01a_flatfield.groovy, which is retired and NOT_LISTED",
+    "blinding":
+        "a convention this file cannot enforce; the rule is recorded on "
+        "groups.by_animal, and stage metadata is what marks the unblinding step",
+    "detection.local_contrast_inner_factor":
+        "the 03a calibration sweep is not a stage; StarDist replaced the "
+        "local-contrast detector",
+    "detection.local_contrast_outer_factor":
+        "the 03a calibration sweep is not a stage; StarDist replaced the "
+        "local-contrast detector",
+    "detection.local_contrast_threshold":
+        "the 03a calibration sweep is not a stage; StarDist replaced the "
+        "local-contrast detector",
+}
 
 
 # --------------------------------------------------------------------------
@@ -481,10 +533,26 @@ def validate(cfg, path="<config>", strict_paths=False):
         (errors if strict_paths else warnings).append(line)
 
     for unknown in _unknown_paths(cfg):
-        warnings.append(f"{path}: `{unknown}` is not a setting this pipeline "
-                        f"reads - it is ignored")
+        if unknown in RETIRED:
+            warnings.append(f"{path}: `{unknown}` was removed in schema "
+                            f"v{SCHEMA_VERSION} - {RETIRED[unknown]}. It is "
+                            f"ignored and can be deleted")
+        else:
+            warnings.append(f"{path}: `{unknown}` is not a setting this "
+                            f"pipeline reads - it is ignored")
 
     return errors, warnings
+
+
+def unexpected_keys(cfg):
+    """Keys that are neither in the spec nor knowingly retired.
+
+    This is the drift that still matters. The template can no longer fall
+    behind the spec, because it is generated from it - but a study config can
+    still carry a key nothing has ever read, and that one is a typo or a
+    setting someone expected to work.
+    """
+    return [p for p in _unknown_paths(cfg) if p not in RETIRED]
 
 
 def require_path(dotted, cfg=None):
@@ -599,3 +667,150 @@ def __getattr__(name):
     if name in _LAZY:
         return _LAZY[name](load())
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+# --------------------------------------------------------------------------
+# Generation. SPEC is the source; the example config and the docs table are
+# outputs, so neither can fall behind it the way a hand-kept copy did.
+# --------------------------------------------------------------------------
+
+EXAMPLE_HEADER = (
+    "Copy this to a study config and fill in the placeholders. GENERATED from "
+    "SPEC in scripts/ls_config.py by `python scripts/ls_config.py "
+    "--write-example` - edit the spec, not this file."
+)
+
+
+def _example_value(key):
+    if key.example is not _UNSET:
+        return key.example
+    return key.default
+
+
+def to_example():
+    """The contents of config.example.json, built from SPEC.
+
+    A note is emitted as an `_<leaf>_note` sibling immediately before its key.
+    The hand-written template mixed that with a `_note` inside the block; one
+    rule reads more easily and cannot be applied inconsistently.
+    """
+    out = {"_comment": EXAMPLE_HEADER}
+    for key in SPEC:
+        parts = key.parts
+        node = out
+        for part in parts[:-1]:
+            node = node.setdefault(part, {})
+        leaf = parts[-1]
+        if key.note:
+            node[f"_{leaf}_note"] = key.note
+        node[leaf] = _example_value(key)
+    return out
+
+
+def example_text():
+    return json.dumps(to_example(), indent=2, ensure_ascii=False) + "\n"
+
+
+def write_example(path=None):
+    path = path or os.path.join(REPO, "config.example.json")
+    text = example_text()
+    with open(path, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(text)
+    return path, text
+
+
+#: What the docs table prints in "Read by" for a key no stage reads.
+NOT_READ = "recorded here, read by no stage"
+
+
+def docs_table():
+    """A markdown table of every key, for the operator guide."""
+    rows = ["| Key | Type | Default | Read by | What it is |",
+            "|---|---|---|---|---|"]
+    for key in SPEC:
+        if key.required and key.default is None:
+            default = "*required*"
+        elif key.default is None:
+            default = ""
+        else:
+            default = "`" + json.dumps(key.default) + "`"
+        read_by = (NOT_READ if key.status == DOCUMENTED
+                   else ", ".join("`" + c + "`" for c in key.consumers))
+        rows.append("| `{}` | {} | {} | {} | {} |".format(
+            key.path, key.type, default, read_by, key.doc.replace("|", "\\|")))
+    return "\n".join(rows)
+
+
+BEGIN_DOCS = "<!-- BEGIN config-keys -->"
+END_DOCS = "<!-- END config-keys -->"
+
+
+def splice_docs(path):
+    """Write the table into a markdown file between the two sentinels.
+
+    Same shape as docs/make_versions_table.py:102-121, so the two generated
+    tables in this repo are maintained the same way.
+    """
+    with open(path, encoding="utf-8") as fh:
+        doc = fh.read()
+    if BEGIN_DOCS not in doc or END_DOCS not in doc:
+        raise SystemExit(f"{path} is missing the config-keys sentinels")
+    head, _, rest = doc.partition(BEGIN_DOCS)
+    _, _, tail = rest.partition(END_DOCS)
+    with open(path, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(head + BEGIN_DOCS + "\n\n" + docs_table() + "\n" + END_DOCS + tail)
+    return path
+
+
+def main(argv=None):
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if not argv or argv[0] in ("-h", "--help"):
+        print(__doc__)
+        return 0
+
+    cmd = argv[0]
+    if cmd == "--path":
+        print(resolve_path())
+        return 0
+    if cmd == "--print":
+        if len(argv) < 2:
+            print("--print needs a key, e.g. --print out_root", file=sys.stderr)
+            return 2
+        found, value = _get(load(), argv[1].split("."))
+        if not found:
+            print(f"no such key: {argv[1]}", file=sys.stderr)
+            return 2
+        print(value if not isinstance(value, (dict, list))
+              else json.dumps(value))
+        return 0
+    if cmd == "--check":
+        path = resolve_path()
+        with open(path, encoding="utf-8") as fh:
+            raw = json.load(fh)
+        errors, warnings = validate(raw, path)
+        for w in warnings:
+            print("warning: " + w)
+        for e in errors:
+            print("ERROR:   " + e)
+        live = [k for k in SPEC if k.status == LIVE]
+        print(f"\n{len(SPEC)} keys in the spec, {len(live)} read by a stage, "
+              f"{len(SPEC) - len(live)} recorded only.")
+        print(f"{len(errors)} error(s), {len(warnings)} warning(s) in {path}")
+        return 1 if errors else 0
+    if cmd == "--write-example":
+        path, _ = write_example(argv[1] if len(argv) > 1 else None)
+        print("wrote " + path)
+        return 0
+    if cmd == "--docs":
+        if len(argv) > 1:
+            print("spliced into " + splice_docs(argv[1]))
+        else:
+            print(docs_table())
+        return 0
+
+    print(f"unknown option {cmd}", file=sys.stderr)
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())
