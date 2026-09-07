@@ -601,6 +601,133 @@ def apply_defaults(cfg):
 # Loading
 # --------------------------------------------------------------------------
 
+# --------------------------------------------------------------------------
+# Studies. A study is one config file with a name; the app keeps a small
+# settings file beside them saying which was open last.
+# --------------------------------------------------------------------------
+
+def app_home():
+    """Where settings.json and the studies live.
+
+    One location on every platform rather than three conventional ones: it
+    halves what has to be documented and supported, it is easy to tell someone
+    to look at, and LS_HOME covers anyone who wants it elsewhere - including
+    the tests, which must never touch a real home directory.
+    """
+    return os.path.abspath(os.environ.get("LS_HOME")
+                           or os.path.join(os.path.expanduser("~"), ".ls-pipeline"))
+
+
+def settings_path():
+    return os.path.join(app_home(), "settings.json")
+
+
+def studies_dir():
+    """The folder holding the named study configs."""
+    return (os.environ.get("LS_STUDIES_DIR")
+            or read_settings().get("studies_dir")
+            or os.path.join(app_home(), "studies"))
+
+
+def read_settings():
+    """App-level settings, or {} when there are none yet."""
+    try:
+        with open(settings_path(), encoding="utf-8") as fh:
+            settings = json.load(fh)
+        return settings if isinstance(settings, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def write_settings(changes):
+    """Merge `changes` into settings.json, atomically. Never deletes."""
+    settings = read_settings()
+    settings.update(changes)
+    settings.setdefault("schema_version", SCHEMA_VERSION)
+    path = settings_path()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8", newline="\n") as fh:
+        json.dump(settings, fh, indent=2, ensure_ascii=False)
+        fh.write("\n")
+    os.replace(tmp, path)
+    return settings
+
+
+def slugify(name):
+    """A filename-safe study id from a human name."""
+    slug = re.sub(r"[^A-Za-z0-9]+", "-", str(name)).strip("-").lower()
+    if not slug:
+        raise SystemExit(f"{name!r} has no characters usable as a study name.")
+    return slug
+
+
+def study_path(slug):
+    return os.path.join(studies_dir(), f"{slugify(slug)}.json")
+
+
+def list_studies():
+    """[(slug, display name, path)] for every study on disk."""
+    root = studies_dir()
+    out = []
+    for entry in sorted(os.listdir(root)) if os.path.isdir(root) else []:
+        if not entry.endswith(".json"):
+            continue
+        path = os.path.join(root, entry)
+        slug = entry[:-5]
+        try:
+            with open(path, encoding="utf-8") as fh:
+                name = (json.load(fh).get("study") or {}).get("name") or slug
+        except (OSError, ValueError):
+            name = f"{slug}  (unreadable)"
+        out.append((slug, name, path))
+    return out
+
+
+def migrate(name, source=None):
+    """Copy a pre-study config into a named study. Returns its path.
+
+    The original is COPIED, not moved, and left where it was. Everything that
+    resolves to it keeps working - a bare `python scripts/XX.py`, run_all.sh, a
+    fresh clone - so this is reversible by deleting one file, and nothing has to
+    change in the same commit.
+    """
+    source = os.path.abspath(source or os.path.join(REPO, "config.json"))
+    if not os.path.exists(source):
+        raise SystemExit(f"there is no config at {source} to migrate.")
+
+    slug = slugify(name)
+    target = study_path(slug)
+    if os.path.exists(target):
+        raise SystemExit(
+            f"a study called {slug!r} already exists at {target}.\n"
+            f"  Pick another name, or delete that file first.")
+
+    with open(source, encoding="utf-8") as fh:
+        cfg = json.load(fh)
+    errors, _ = validate(cfg, source)
+    if errors:
+        raise SystemExit(
+            f"{source} cannot be migrated as it stands:\n  "
+            + "\n  ".join(errors))
+
+    cfg.setdefault("study", {})
+    cfg["study"]["name"] = str(name)
+    cfg["schema_version"] = SCHEMA_VERSION
+
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+    tmp = target + ".tmp"
+    with open(tmp, "w", encoding="utf-8", newline="\n") as fh:
+        json.dump(cfg, fh, indent=2, ensure_ascii=False)
+        fh.write("\n")
+    os.replace(tmp, target)
+
+    write_settings({"active_study": slug,
+                    "recent": [slug] + [s for s in read_settings().get("recent", [])
+                                        if s != slug][:9]})
+    return target
+
+
 def resolve_path(explicit=None):
     """Where the active config lives.
 
@@ -612,6 +739,28 @@ def resolve_path(explicit=None):
     named = explicit or os.environ.get("LS_CONFIG")
     if named:
         return os.path.abspath(named)
+
+    if not os.environ.get("LS_CONFIG_STRICT"):
+        # A study named on the command line, then the one the app last opened.
+        # Both are conveniences above LS_CONFIG, never a replacement for it:
+        # the app still exports LS_CONFIG before running anything, so a stage,
+        # run_all.sh and the Groovy stages all see the same single answer.
+        asked = os.environ.get("LS_STUDY")
+        if asked:
+            # Named explicitly, so a missing one is an error. Falling back to
+            # whichever study happens to be active would run the whole pipeline
+            # against different data than the caller asked for, and say nothing.
+            path = study_path(asked)
+            if not os.path.exists(path):
+                known = ", ".join(s for s, _, _ in list_studies()) or "none"
+                raise SystemExit(
+                    f"LS_STUDY names {asked!r}, and there is no study by that "
+                    f"name in {studies_dir()}\n  studies here: {known}")
+            return path
+
+        slug = read_settings().get("active_study")
+        if slug and os.path.exists(study_path(slug)):
+            return study_path(slug)
 
     if os.environ.get("LS_CONFIG_STRICT"):
         # tests/run.sh sets this. Without it a suite that forgets to name a
@@ -825,6 +974,25 @@ def main(argv=None):
               f"{len(SPEC) - len(live)} recorded only.")
         print(f"{len(errors)} error(s), {len(warnings)} warning(s) in {path}")
         return 1 if errors else 0
+    if cmd == "--studies":
+        rows = list_studies()
+        active = read_settings().get("active_study")
+        print(f"studies in {studies_dir()}")
+        for slug, name, path in rows:
+            print(f"  {'*' if slug == active else ' '} {slug:24} {name}")
+        if not rows:
+            print("  (none yet - see --migrate)")
+        print(f"\nactive config: {resolve_path()}")
+        return 0
+    if cmd == "--migrate":
+        if len(argv) < 2:
+            print('--migrate needs a name, e.g. --migrate "LS Dec 2025"',
+                  file=sys.stderr)
+            return 2
+        target = migrate(argv[1], argv[2] if len(argv) > 2 else None)
+        print(f"wrote {target}\nit is now the active study; the original "
+              f"config is untouched")
+        return 0
     if cmd == "--write-example":
         path, _ = write_example(argv[1] if len(argv) > 1 else None)
         print("wrote " + path)
