@@ -311,5 +311,44 @@ chk("every required key is offered, so it can be filled in",
     [])
 
 print()
+print("--- the acquisition block ---")
+
+CHANS = [
+    {"name": "DAPI", "role": "nuclear", "czi_name": "DAPI", "index": 0},
+    {"name": "pERK", "role": "marker", "czi_name": "AF568", "index": 1},
+]
+
+with tempfile.TemporaryDirectory() as tmp:
+    chk("layout defaults to multiplex",
+        C.apply_defaults(minimal(tmp))["acquisition"]["layout"], "multiplex")
+
+    ok = minimal(tmp, acquisition={"layout": "multiplex", "channels": CHANS})
+    chk("a declared channel table validates", C.validate(ok)[0], [])
+
+    errs, _ = C.validate(minimal(tmp, acquisition={"layout": "sideways",
+                                                   "channels": CHANS}))
+    chk("an unknown layout is an error", len(errs), 1)
+
+    # ls_channels owns the rules; ls_config must surface them rather than
+    # duplicating them, or the two will disagree about what is valid.
+    errs, _ = C.validate(minimal(
+        tmp, acquisition={"layout": "multiplex", "channels": [CHANS[0]]}))
+    chk("a channel-table fault is reported by the config validator",
+        any("marker" in e for e in errs), True)
+
+    errs, _ = C.validate(minimal(
+        tmp, acquisition={"layout": "paired", "channels": CHANS}))
+    chk("paired declaring channels is an error", len(errs), 1)
+
+    chk("paired with none is fine",
+        C.validate(minimal(tmp, acquisition={"layout": "paired"}))[0], [])
+
+    # A config written before this key existed must keep working. The live LS
+    # config is exactly that until it declares its layout, and every stage
+    # would stop importing if this failed.
+    chk("a config with no acquisition block at all is not an error",
+        C.validate(minimal(tmp))[0], [])
+
+print()
 print("ALL PASS" if not failures else f"{len(failures)} FAILED")
 sys.exit(1 if failures else 0)

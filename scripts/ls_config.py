@@ -228,6 +228,48 @@ SPEC = [
         consumers=["01_overviews", "01_overviews.groovy"]),
 
     # ---- channels (replaced by the channels/markers sub-project) ---------
+    # ---- acquisition ------------------------------------------------------
+    Key("acquisition.layout", "str",
+        "How the markers were imaged: one multi-channel scan per section, or "
+        "one scan per marker.",
+        required=True, default="multiplex", label="Acquisition layout",
+        choices=["multiplex", "paired"],
+        note="`multiplex` is one scan per section carrying every marker as a "
+             "channel, which is what a new study should be. `paired` is the "
+             "LS layout: each marker is a separate physical scan of the same "
+             "section, joined by 02_pair_passes. Paired declares no channel "
+             "table, because each of its scans carries the nuclear channel "
+             "plus whichever marker that pass used.",
+        consumers=["01_overviews", "02_pair_passes", "04a_reformat", "05c",
+                   "app"]),
+
+    Key("acquisition.channels", "raw",
+        "What each CZI channel is: its name, what it is for, and how it is "
+        "found in a file.",
+        default=[], label="Channels",
+        # Empty is the correct DEFAULT (paired declares no table), but it is
+        # not a usable EXAMPLE: a multiplex study - the case this template is
+        # mostly written for - fails ls_channels.validate on an empty table,
+        # and that failure is not a "<PLACEHOLDER>" the example-vs-placeholder
+        # check in test_config_example.py knows to excuse. Every suite that
+        # builds a throwaway study from config.example.json (tests/_fixture.py
+        # and tests/test_studies.py alike) would then fail to validate, for a
+        # reason having nothing to do with what it is testing. A minimal
+        # two-channel example keeps the shipped template self-consistent;
+        # default=[] is untouched, so a real paired study still gets [].
+        example=[{"name": "DAPI", "role": "nuclear", "czi_name": "DAPI",
+                  "index": 0},
+                 {"name": "Marker1", "role": "marker", "czi_name": "AF568",
+                  "index": 1}],
+        note="One entry per channel: `name` is the identity used in every "
+             "output path and the `marker` column; `role` is nuclear, marker, "
+             "registration or ignore; `czi_name` is what the microscope calls "
+             "it, which is how it is located in a file; `index` is the plane "
+             "to fall back on. A marker also carries `segment` (nuclear or "
+             "own), and for own, a `backend` and whether its objects are "
+             "`nucleus_shaped`. Empty for the paired layout.",
+        consumers=["01_overviews", "05c", "app"]),
+
     Key("channels.dapi_index", "int",
         "Which CZI channel plane is the nuclear counterstain.",
         required=True, default=0,
@@ -565,6 +607,22 @@ def validate(cfg, path="<config>", strict_paths=False):
         problem = _check(key, value)
         if problem:
             errors.append(f"{path}: `{key.path}` {problem}\n    {key.doc}")
+
+    # The channel table's rules live in ls_channels, which owns the concept.
+    # Restating them here would let the validator and the reader disagree
+    # about what is usable. A config with no acquisition block at all predates
+    # the key and is left alone; apply_defaults gives it one.
+    acquisition = cfg.get("acquisition")
+    if isinstance(acquisition, dict):
+        layout = acquisition.get("layout", "multiplex")
+        if layout in ("multiplex", "paired"):
+            try:
+                import ls_channels
+                for problem in ls_channels.validate(
+                        acquisition.get("channels"), layout):
+                    errors.append(f"{path}: acquisition.channels - {problem}")
+            except ImportError:                             # pragma: no cover
+                pass
 
     for key, value in missing_paths(cfg):
         line = f"{path}: `{key.path}` does not exist: {value}"

@@ -23,6 +23,25 @@
   "_section_thickness_um_note": "NOT recoverable from the CZIs - they carry no size_z, being single-plane images of a physical section - so it has to be supplied. This is the number the Abercrombie correction needs; see detection.abercrombie below. 14.0 for the LS dataset, operator-stated 2026-08-30.",
   "section_thickness_um": 14.0,
   "overview_target_um_per_px": 5.2,
+  "acquisition": {
+    "_layout_note": "`multiplex` is one scan per section carrying every marker as a channel, which is what a new study should be. `paired` is the LS layout: each marker is a separate physical scan of the same section, joined by 02_pair_passes. Paired declares no channel table, because each of its scans carries the nuclear channel plus whichever marker that pass used.",
+    "layout": "multiplex",
+    "_channels_note": "One entry per channel: `name` is the identity used in every output path and the `marker` column; `role` is nuclear, marker, registration or ignore; `czi_name` is what the microscope calls it, which is how it is located in a file; `index` is the plane to fall back on. A marker also carries `segment` (nuclear or own), and for own, a `backend` and whether its objects are `nucleus_shaped`. Empty for the paired layout.",
+    "channels": [
+      {
+        "name": "DAPI",
+        "role": "nuclear",
+        "czi_name": "DAPI",
+        "index": 0
+      },
+      {
+        "name": "Marker1",
+        "role": "marker",
+        "czi_name": "AF568",
+        "index": 1
+      }
+    ]
+  },
   "channels": {
     "_dapi_index_note": "Read only by 05c_detect_rois today; every earlier stage assumes plane 0 structurally. The channels/markers sub-project replaces this whole block with a per-channel role table, so it is left as-is rather than changed twice.",
     "dapi_index": 0,
