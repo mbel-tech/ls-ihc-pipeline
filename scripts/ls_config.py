@@ -977,20 +977,63 @@ BEGIN_DOCS = "<!-- BEGIN config-keys -->"
 END_DOCS = "<!-- END config-keys -->"
 
 
-def splice_docs(path):
-    """Write the table into a markdown file between the two sentinels.
+DOCS_HEADER = """# Configuration reference
 
-    Same shape as docs/make_versions_table.py:102-121, so the two generated
-    tables in this repo are maintained the same way.
+GENERATED from `SPEC` in `scripts/ls_config.py` by
+`python scripts/ls_config.py --docs docs/config-reference.md`.
+Edit the spec, not this file.
+
+Every setting a study can carry. **Read by** names the stages that consume a
+key; a key nothing reads says so, rather than looking like every other one.
+A key marked *required* has to be present before any stage will run.
+
+"""
+
+DOCS_FOOTER = """
+## Keys removed in schema v{version}
+
+A config written before these were dropped is not broken and its author was not
+confused. `python scripts/ls_config.py --check` reports them as removed, with
+the reason, rather than as mistakes.
+
+{retired}
+"""
+
+
+def docs_page():
+    """The whole reference as a standalone markdown document."""
+    retired = "\n".join(f"- `{k}` — {why}" for k, why in sorted(RETIRED.items()))
+    return (DOCS_HEADER + docs_table() + "\n"
+            + DOCS_FOOTER.format(version=SCHEMA_VERSION, retired=retired))
+
+
+BEGIN_DOCS = "<!-- BEGIN config-keys -->"
+END_DOCS = "<!-- END config-keys -->"
+
+
+def splice_docs(path):
+    """Write the reference to `path`.
+
+    A file carrying the two sentinels has just its table replaced, the way
+    docs/make_versions_table.py splices the software table into the methods
+    document. Anything else is written whole, so a generated reference can be
+    its own file without a hand-written frame to live inside.
     """
-    with open(path, encoding="utf-8") as fh:
-        doc = fh.read()
-    if BEGIN_DOCS not in doc or END_DOCS not in doc:
-        raise SystemExit(f"{path} is missing the config-keys sentinels")
-    head, _, rest = doc.partition(BEGIN_DOCS)
-    _, _, tail = rest.partition(END_DOCS)
+    try:
+        with open(path, encoding="utf-8") as fh:
+            doc = fh.read()
+    except OSError:
+        doc = ""
+
+    if BEGIN_DOCS in doc and END_DOCS in doc:
+        head, _, rest = doc.partition(BEGIN_DOCS)
+        _, _, tail = rest.partition(END_DOCS)
+        text = head + BEGIN_DOCS + "\n\n" + docs_table() + "\n" + END_DOCS + tail
+    else:
+        text = docs_page()
+
     with open(path, "w", encoding="utf-8", newline="\n") as fh:
-        fh.write(head + BEGIN_DOCS + "\n\n" + docs_table() + "\n" + END_DOCS + tail)
+        fh.write(text)
     return path
 
 

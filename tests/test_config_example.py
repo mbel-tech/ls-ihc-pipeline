@@ -60,6 +60,24 @@ if committed != generated:
 
 chk("it parses as JSON", isinstance(json.loads(committed), dict), True)
 
+# The docs reference is generated from the same table, so it is checked the
+# same way: a key added to the spec has to reach the document too.
+REFERENCE = os.path.join(REPO, "docs", "config-reference.md")
+if not os.path.exists(REFERENCE):
+    chk("the config reference exists", False, True)
+else:
+    with open(REFERENCE, encoding="utf-8") as fh:
+        reference = fh.read()
+    chk("the committed reference is what the spec generates",
+        reference == C.docs_page(), True)
+    if reference != C.docs_page():
+        print("     run: python scripts/ls_config.py "
+              "--docs docs/config-reference.md")
+    chk("every key is in it", [k.path for k in C.SPEC
+                              if f"`{k.path}`" not in reference], [])
+    chk("every retired key is in it too",
+        [k for k in C.RETIRED if f"`{k}`" not in reference], [])
+
 example = json.loads(committed)
 chk("every required key is present in the template",
     [k.path for k in C.SPEC
