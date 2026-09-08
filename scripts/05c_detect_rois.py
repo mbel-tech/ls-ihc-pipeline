@@ -12,6 +12,16 @@ single CZI. The rest of the pipeline already leans on DAPI for the same reason -
 `04a_reformat` decides all its geometry there because "the marker channel is a
 sparse signal and a poor silhouette".
 
+That is the DEFAULT, and it is what the live study does. A study may declare
+`segment: own` on a marker whose objects are not nuclei at all - fibre
+staining, processes, plaques - and then the argument above does not apply,
+because there is no nuclear mask those objects could be measured inside. The
+cost is exactly the one named above and is not avoidable for such a marker:
+the count and the positivity cut both come off one channel. Which route each
+marker took is recorded per row in `segmented_on` / `backend` /
+`nucleus_shaped`, so a reader can tell them apart without the config that made
+them. No study declares `segment: own` today.
+
 **StarDist, not threshold-and-watershed.** Not a general preference: watershed
 under-segments where nuclei touch, and Vv, Vd and POA are periventricular. The
 error would be worst in exactly those ROIs and mild in Dm and Dl, and a
@@ -59,6 +69,8 @@ if _HERE not in sys.path:
 from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
 import ls_naming as NM  # noqa: E402
 import czi_read as CR  # noqa: E402
+import ls_channels as CH  # noqa: E402
+import ls_segment as SG  # noqa: E402
 OUT_ROOT = G5.OUT_ROOT
 REFORMAT_DIR = G5.REFORMAT_DIR
 RESULTS = os.path.join(OUT_ROOT, "results")
@@ -69,6 +81,109 @@ BASE_PX_UM = CONFIG["pixel_size_um"]
 DAPI_C = CONFIG["channels"]["dapi_index"]
 MARK_C = CONFIG["channels"]["marker_index"]
 NUC_UM = CONFIG["detection"]["nucleus_diameter_um"]
+
+# ---- how each marker's objects are found -----------------------------------
+#
+# A study says this in its channel table: `segment: nuclear` measures the
+# marker inside the nuclear mask - the route this stage has always taken - and
+# `segment: own` segments the marker's own channel with a declared backend.
+#
+# THE LIVE STUDY HAS NO CHANNEL TABLE. It is `paired`, so it declares none by
+# definition: each of its scans carries the counterstain plus one marker. Every
+# helper below therefore has to answer from a fallback as well as from a
+# channel, and the fallback is exactly what this stage did before any of this
+# existed. `_BY_NAME` being empty is the normal case, not a fault.
+_ACQ = CONFIG.get("acquisition") or {}
+_CHANNELS = CH.parse(_ACQ.get("channels"))
+_NUCLEAR = CH.nuclear(_CHANNELS)
+_BY_NAME = {c.name: c for c in _CHANNELS}
+
+#: The declared nuclear channel's name, or None when there is no channel table.
+NUCLEAR_NAME = _NUCLEAR.name if _NUCLEAR else None
+
+#: What the `segmented_on` column records when the counterstain is real but
+#: undeclared. A paired study's nuclear plane has no name to record - writing
+#: an empty cell would leave a reader unable to tell "segmented on the
+#: counterstain" from "this column was not filled in".
+NUCLEAR_FALLBACK = "nuclear"
+
+#: Which plane the counterstain is on. The channel table when there is one,
+#: and the legacy `channels.dapi_index` when there is not.
+NUCLEAR_C = int(_NUCLEAR.index) if (
+    _NUCLEAR is not None and _NUCLEAR.index is not None) else DAPI_C
+
+_THRESH = (CONFIG.get("detection") or {}).get("threshold") or {}
+MAD_K = float(_THRESH.get("mad_k", 3.0))
+MIN_AREA_UM2 = float(_THRESH.get("min_area_um2", 5.0))
+
+
+def _segments_own(marker):
+    """Whether this marker's objects come from its own channel.
+
+    A marker that is in no channel table is NOT `own`. That is the live
+    study's case, and its markers are measured inside nuclei.
+    """
+    c = _BY_NAME.get(marker)
+    return c is not None and c.segment == CH.SEGMENT_OWN
+
+
+def segment_plane_for(marker):
+    """Which channel's pixels this marker's objects come from.
+
+    `segment: nuclear` measures a marker inside the nuclear mask, so the
+    objects are the nuclear channel's. `segment: own` segments the marker's own
+    channel. A study with no nuclear channel has every marker on `own`, which
+    ls_channels.parse already defaults for it.
+    """
+    if _segments_own(marker):
+        return marker
+    return NUCLEAR_NAME or NUCLEAR_FALLBACK
+
+
+def backend_for(marker):
+    """Which backend produces this marker's objects.
+
+    A nuclear-segmented marker inherits the nuclear channel's segmentation,
+    which is StarDist - that is the route this pipeline has always taken and
+    the one the LS numbers came from.
+    """
+    if not _segments_own(marker):
+        return "stardist"
+    return _BY_NAME[marker].backend or "stardist"
+
+
+def nucleus_shaped_for(marker):
+    """Whether this marker's objects are nucleus-shaped.
+
+    Nuclear-segmented objects ARE nuclei, whatever the marker declares about
+    itself - the shape belongs to the mask, not to the antibody. 06a's
+    Abercrombie gate is the consumer: N = n * T/(T+h) assumes spherical,
+    randomly positioned objects.
+    """
+    if not _segments_own(marker):
+        return True
+    return bool(_BY_NAME[marker].nucleus_shaped)
+
+
+def plane_index_for(marker):
+    """Which plane of the file this marker's pixels are on.
+
+    `channels.marker_index` is ONE index for the whole study, which is right
+    for `paired` - each scan carries the counterstain plus one marker - and
+    wrong for `multiplex`, where every marker is a different plane of the same
+    scan and reading them all off one index would measure the same pixels
+    under several names.
+
+    The declared index, not a resolution by `czi_name`: resolving by name needs
+    the channel names the FILE reports, and this stage does not read a file's
+    metadata. That is the fallback ls_channels.resolve() would have used
+    anyway, and a multiplex study whose planes move between files needs
+    czi_meta wired in here before this stage can be trusted with it.
+    """
+    c = _BY_NAME.get(marker)
+    if c is not None and c.index is not None:
+        return int(c.index)
+    return MARK_C
 
 
 class _Rect:
@@ -82,7 +197,11 @@ COLUMNS = ["scene_uid", "animal", "marker", "roi_kind", "region", "seed_n",
            "czi_x", "czi_y", "sec_x", "sec_y",
            "area_um2", "equiv_diam_um",
            "dapi_mean", "marker_mean", "marker_median", "marker_p90",
-           "censored", "artifact", "off_tissue"]
+           "censored", "artifact", "off_tissue",
+           # How this object was produced. Recorded per row rather than left to
+           # be re-derived from config, because a dataset outlives the config
+           # that made it and 06a's Abercrombie gate depends on the answer.
+           "segmented_on", "backend", "nucleus_shaped"]
 
 
 def point_in_poly(px, py, v):
@@ -134,8 +253,16 @@ def check_header(path, columns):
         f"!! {path} has a different header from the one this stage writes "
         f"({why}). Appending to it would give the new rows a different layout "
         f"from the old ones. If `off_tissue` is what is missing, run "
-        f"06g_flag_off_tissue.py to backfill it first; otherwise re-run "
-        f"05c_detect_rois.py --force to rewrite the file.")
+        f"06g_flag_off_tissue.py to backfill it first. If the provenance "
+        f"columns `segmented_on`, `backend` and `nucleus_shaped` are, there "
+        f"is no backfill stage for them: every object in a file written "
+        f"before they existed came from the nuclear channel via StarDist, "
+        f"which is exactly what 06a reads their absence as - so the dataset "
+        f"stays readable, but this stage cannot append to it. Move it aside "
+        f"and start a new file.\n"
+        f"   NOT --force: this check runs before the forced drop, so a "
+        f"re-run cannot get past it either. The advice to try that was here "
+        f"before the provenance columns were and was never true.")
 
 
 def drop_rows(path, marker, uids):
@@ -284,8 +411,13 @@ def mask_at(uid, kind):
     return np.load(p) if os.path.exists(p) else None
 
 
-def write_overlay(uid, bi, b, dapi, labels, kept):
-    """One PNG per ROI: the DAPI crop with the segmentation drawn on it.
+def write_overlay(uid, bi, b, image, labels, kept):
+    """One PNG per ROI: the SEGMENTED crop with the segmentation drawn on it.
+
+    `image` is whichever plane produced `labels` - the counterstain under
+    `segment: nuclear`, the marker's own channel under `segment: own`. Drawing
+    boundaries over a plane they were not found on would make a correct
+    segmentation look wrong and hide one that is.
 
     What this is for. The nucleus-diameter check in the docs says the
     segmentation is finding objects of about the right SIZE; it cannot say they
@@ -306,8 +438,8 @@ def write_overlay(uid, bi, b, dapi, labels, kept):
     """
     from PIL import Image
 
-    lo, hi = np.percentile(dapi, (1, 99.8))
-    g = np.clip((dapi - lo) / max(hi - lo, 1e-6), 0, 1)
+    lo, hi = np.percentile(image, (1, 99.8))
+    g = np.clip((image - lo) / max(hi - lo, 1e-6), 0, 1)
     rgb = np.repeat((g * 255).astype(np.uint8)[:, :, None], 3, axis=2)
 
     # A boundary pixel is one whose label differs from a neighbour. Computed
@@ -407,8 +539,16 @@ def main():
         return 0
     print(f"{len(todo)} sections, {sum(len(by_sec[u]) for u in todo)} ROIs")
 
-    model = load_model()
-    from csbdeep.utils import normalize
+    # The model is loaded only if something in this run needs it. A study whose
+    # markers are all `segment: own` with the threshold backend has no use for
+    # StarDist, and load_model() DOWNLOADS weights on first use - so making it
+    # unconditional would put a network fetch in front of a run that never
+    # calls it. Decided from the boxes rather than from --marker so a box file
+    # naming a different marker cannot reach SG.segment with model=None.
+    run_markers = {b["marker"] for u in todo for b in by_sec[u]}
+    model = (load_model()
+             if any(backend_for(m) == "stardist" for m in run_markers)
+             else None)
     from pylibCZIrw import czi as pyczi
     from skimage.measure import regionprops
 
@@ -439,6 +579,10 @@ def main():
         w.writerow(COLUMNS)
 
     px_area = BASE_PX_UM ** 2
+    # The threshold backend's minimum object area, in pixels. At 0.65 um/px
+    # the default 5 um2 is 12 px. Never below 1: a minimum of 0 would count
+    # every single-pixel excursion above the cut as an object.
+    min_area_px = max(1, int(round(MIN_AREA_UM2 / px_area)))
     total_nuc = 0
     no_tissue_mask = []
     for n, uid in enumerate(todo, 1):
@@ -466,30 +610,35 @@ def main():
                 bw, bh = int(b["czi_w"]), int(b["czi_h"])
                 if bw < 8 or bh < 8:
                     continue
+                marker = b["marker"]
                 planes = CR.read_planes(
                     doc, _Rect(x0, y0, bw, bh),
-                    {"dapi": DAPI_C, "mark": MARK_C},
+                    {"dapi": NUCLEAR_C, "mark": plane_index_for(marker)},
                     scene=int(g["scene_index"]))
                 dapi = planes["dapi"].astype(np.float32)
                 mark = planes["mark"].astype(np.float32)
                 if dapi.ndim != 2 or dapi.shape != mark.shape:
                     continue
-                # ALWAYS TILE. Untiled, StarDist takes 121 s on a 1.22 Mpx ROI;
-                # at n_tiles=(2,2) it takes 4.1 s and returns the identical 1177
-                # nuclei. The cost is wildly non-linear in image size - a
-                # quarter of the pixels ran in 0.7 s - so this is 30x on a
-                # typical ROI and the difference between a 75-minute run and a
-                # 62-hour one. Nothing about the answer changes.
+                # WHICH PLANE IS SEGMENTED is the study's declaration, and
+                # under `segment: own` it is the marker's OWN channel - which
+                # is the plane already read as `mark`, because the channel a
+                # marker is measured on and the channel it segments itself on
+                # are the same channel by definition. No second read: this is
+                # the one place a "segment on X, measure Y" study would need
+                # one, and no such study exists.
                 #
-                # Tiles of roughly 300k px, never fewer than 2x2. More tiles
-                # than that is slower again (5.1 s at 4x4, 11.1 s at 8x8): the
-                # per-tile overhead takes over.
-                nt = max(2, int(np.ceil(np.sqrt(dapi.size / 300_000))))
-                labels, _ = model.predict_instances(
-                    normalize(dapi, 1, 99.8), n_tiles=(nt, nt),
-                    verbose=False, show_tile_progress=False)
+                # The tiling that makes StarDist tractable moved to
+                # ls_segment.stardist_labels with the finding that justifies
+                # it; it is not a tuning knob and does not belong at a call
+                # site.
+                seg_img = mark if _segments_own(marker) else dapi
+                labels = SG.segment(seg_img, backend_for(marker), model=model,
+                                    k=MAD_K, min_area_px=min_area_px)
                 if labels.max() == 0:
                     continue
+                seg_on = segment_plane_for(marker)
+                seg_backend = backend_for(marker)
+                seg_shaped = int(nucleus_shaped_for(marker))
 
                 # Which nuclei are actually IN the ROI. The shape is drawn on
                 # the 256 grid and is something else here - a circle becomes an
@@ -538,9 +687,10 @@ def main():
                         round(float(vals.mean()), 1),
                         round(float(np.median(vals)), 1),
                         round(float(np.percentile(vals, 90)), 1),
-                        int(inb(cen)), int(inb(art)), off_tis])
+                        int(inb(cen)), int(inb(art)), off_tis,
+                        seg_on, seg_backend, seg_shaped])
                 if args.qc:
-                    write_overlay(uid, bi, b, dapi, labels, kept)
+                    write_overlay(uid, bi, b, seg_img, labels, kept)
         w.writerows(rows)
         fh.flush()
         total_nuc += len(rows)

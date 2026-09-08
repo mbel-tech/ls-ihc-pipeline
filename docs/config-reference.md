@@ -33,8 +33,8 @@ A key marked *required* has to be present before any stage will run.
 | `marker_identity` | raw |  | recorded here, read by no stage | Which fluorophore is which marker. Filled in by 00c_channel_identity.py, then confirmed by the operator. |
 | `detection.nucleus_diameter_um` | float | `7.0` | `05c` | Expected nucleus diameter, the scale StarDist is run at. |
 | `detection.abercrombie.enabled` | bool | `true` | `06a` | Correct counted nuclear profiles to nuclei. |
-| `detection.threshold.mad_k` | float | `3.0` | not read yet; will be `05c` | How many robust standard deviations above the background median a pixel must be to count as signal, for the `threshold` backend. |
-| `detection.threshold.min_area_um2` | float | `5.0` | not read yet; will be `05c` | The smallest object the `threshold` backend will report, in square micrometres. |
+| `detection.threshold.mad_k` | float | `3.0` | `05c` | How many robust standard deviations above the background median a pixel must be to count as signal, for the `threshold` backend. |
+| `detection.threshold.min_area_um2` | float | `5.0` | `05c` | The smallest object the `threshold` backend will report, in square micrometres. |
 | `atlas_plate_set.dir` | str | `"plates"` | `04e`, `04k`, `04l` | Which plate set the ROI curator and the registration use. |
 | `atlas_figure_sections.two_sections` | str_opt |  | `04a3b` | Inclusive figure-number range, as a string, of merged figures holding two sections each - e.g. "31-47". Empty leaves every figure at whatever 04a2 detected. |
 | `atlas_figure_sections.drop_inset_boxes` | raw | `{}` | `04a3b` | Merged figure id -> the 1-based index of the box to drop, counted top to bottom. |

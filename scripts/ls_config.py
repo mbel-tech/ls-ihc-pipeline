@@ -395,7 +395,7 @@ SPEC = [
              "file 06a has not written. Median and MAD rather than mean and "
              "SD because the objects are in the sample: a bright object would "
              "raise the very cut meant to find it.",
-        consumers=["05c"], consumers_pending=True),
+        consumers=["05c"]),
 
     Key("detection.threshold.min_area_um2", "float",
         "The smallest object the `threshold` backend will report, in square "
@@ -408,7 +408,7 @@ SPEC = [
              "5 um2 is well below a nucleus (a 7 um nucleus is ~38 um2) and "
              "well above sensor noise; a study counting something smaller "
              "must lower it deliberately.",
-        consumers=["05c"], consumers_pending=True),
+        consumers=["05c"]),
 
     # ---- atlas -----------------------------------------------------------
     Key("atlas_plate_set.dir", "str",
