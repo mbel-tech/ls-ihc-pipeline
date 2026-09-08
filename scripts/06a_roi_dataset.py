@@ -104,6 +104,30 @@ def roi_area_um2(b):
     return np.pi * float(b["axis_a_um"]) * float(b["axis_b_um"])
 
 
+def split_by_marker(boxes):
+    """One section's boxes, split per marker, each group keeping its own order.
+
+    THE JOIN KEY IS (scene_uid, marker, roi_index), NOT (scene_uid, roi_index).
+    05c_detect_rois numbers `roi_index` within THAT MARKER'S OWN box file,
+    from 1, and 05a.all_boxes() concatenates every marker's file. Under
+    `paired` the uids are disjoint - all_boxes() proves it - so a section has
+    exactly one group here and this returns the same list in the same order:
+    the join is byte-for-byte what it was.
+
+    Under `multiplex` the markers ARE one scan of one section, so all_boxes()
+    hands over both markers' boxes for the SAME uid and they interleave. A
+    section with 2 discs per marker gets positions 1..4, while `roi_index` only
+    ever runs 1..2 - so without this split the second marker's discs would be
+    unreachable and its nuclei would be pooled onto the first marker's. That
+    is the silent, plausible, wrong number the `paired` uid guard exists to
+    prevent, and relaxing that guard for `multiplex` moved the problem here.
+    """
+    out = {}
+    for b in boxes:
+        out.setdefault(b.get("marker", ""), []).append(b)
+    return out
+
+
 def check_join(nuc, box_by):
     """The nucleus-to-disc join is POSITIONAL. Check it before trusting it.
 
@@ -113,9 +137,14 @@ def check_join(nuc, box_by):
     the newest curator export, so a disc inserted or removed on a section after
     05c ran shifts every later index on it: the background disc's nuclei would
     be summed under an ROI, with a count and a density that look fine. The
-    nuclei rows also carry roi_kind and region, so for every (section, index)
-    the box at that position must agree on both - a mismatch means the boxes
-    changed under the measurements.
+    nuclei rows also carry roi_kind and region, so for every (section, marker,
+    index) the box at that position must agree on both - a mismatch means the
+    boxes changed under the measurements.
+
+    The MARKER is part of that key, and has to be: see split_by_marker. A
+    nucleus whose marker has no boxes on its section is fatal for the same
+    reason a shifted index is - the emit loop would otherwise report zero
+    nuclei for that marker while its nuclei were counted under another's disc.
 
     Sections present in the nuclei but absent from every box file are the
     other case: a stale row, or a box file regenerated without them. Those are
@@ -123,19 +152,27 @@ def check_join(nuc, box_by):
     fatal.
     """
     seen, bad, orphan = set(), {}, set()
+    split = {u: split_by_marker(bs) for u, bs in box_by.items()}
     for r in nuc:
         uid = r["scene_uid"]
-        key = (uid, r["roi_index"])
+        mk = r.get("marker", "")
+        key = (uid, mk, r["roi_index"])
         if key in seen:
             continue
         seen.add(key)
-        boxes = box_by.get(uid)
-        if not boxes:
+        groups = split.get(uid)
+        if not groups:
             orphan.add(uid)
+            continue
+        boxes = groups.get(mk)
+        if not boxes:
+            bad.setdefault(uid, f"nuclei for marker {mk!r} but this section's "
+                                f"boxes are {sorted(groups)}")
             continue
         i = int(r["roi_index"])
         if not 1 <= i <= len(boxes):
-            bad.setdefault(uid, f"roi_index {i} but only {len(boxes)} boxes")
+            bad.setdefault(uid, f"roi_index {i} but only {len(boxes)} boxes"
+                                f" for {mk}")
             continue
         b = boxes[i - 1]
         if b["roi_kind"] != r["roi_kind"] or b["region"] != r["region"]:
@@ -214,7 +251,8 @@ def main(argv=None):
     # part-written, leaving an xlsx openpyxl could not reopen. PCNA is roughly
     # six times this file, so the shape matters more than the current runtime.
     bg_by = collections.defaultdict(list)      # uid -> background values
-    by_idx = collections.defaultdict(list)     # (uid, roi_index) -> nuclei
+    # (uid, marker, roi_index) -> nuclei
+    by_idx = collections.defaultdict(list)
     diam_by = collections.defaultdict(list)    # (marker, region) -> diameters
     uids, d_all = set(), []
     for r in nuc:
@@ -222,9 +260,11 @@ def main(argv=None):
         uids.add(uid)
         d_all.append(r["_d"])
         # roi_index is what ties a nucleus to the disc it was found in - 05c
-        # numbers the discs in the order roi_boxes.csv lists them for a section,
-        # and the emit loop below enumerates the same list in the same order.
-        by_idx[(uid, int(r["roi_index"]))].append(r)
+        # numbers the discs in the order roi_boxes_<marker>.csv lists them for
+        # a section, WITHIN THAT MARKER, and the emit loop below enumerates the
+        # same per-marker list in the same order. The marker is in the key
+        # because it is in 05c's numbering; see split_by_marker.
+        by_idx[(uid, r["marker"], int(r["roi_index"]))].append(r)
         if r["roi_kind"] == "background":
             if not r["_cen"]:
                 bg_by[uid].append(r["_v"])
@@ -259,51 +299,55 @@ def main(argv=None):
     rows, spec = [], []
     for uid in sorted(uids):
         cut = cuts.get(uid)
-        for i, b in enumerate(box_by.get(uid, []), 1):
-            here = by_idx.get((uid, i), [])
-            area = roi_area_um2(b)
-            n_nuc = len(here)
-            usable = [r for r in here if not r["_cen"]]
-            # A censored nucleus counts as POSITIVE and is still dropped from
-            # `usable`. That is not an inconsistency: 04j_censor_clipped.py
-            # defines a censored pixel as right-censored at the 16-bit ceiling,
-            # so it is unambiguously above any cut, while including a ceiling
-            # value in a median would bias the intensity statistic. 04j states
-            # both halves outright - censoring "MUST NOT be excluded from
-            # detection or from positivity" and MUST be excluded from any
-            # intensity statistic. Do not "fix" this to drop them.
-            n_pos = (sum(1 for r in here if r["_cen"] or r["_v"] > cut)
-                     if cut is not None else "")
-            h = hs.get((b["marker"], b["region"]),
-                       h_by_marker.get(b["marker"], h_all))
-            ab = T_UM / (T_UM + h) if (AB_ON and h) else 1.0
-            row = {
-                "scene_uid": uid, "animal": b["animal"], "marker": b["marker"],
-                "roi_kind": b["roi_kind"], "region": b["region"],
-                "seed_n": b["seed_n"], "roi_index": i,
-                "plate_id": "", "sec_x": b["sec_x"], "sec_y": b["sec_y"],
-                "roi_area_um2": round(area, 1),
-                "roi_area_mm2": round(area / 1e6, 6),
-                "n_nuclei": n_nuc,
-                "n_positive": n_pos,
-                "frac_positive": (round(n_pos / n_nuc, 4) if (cut is not None and n_nuc)
-                                  else ""),
-                "profile_density_per_mm2": round(n_nuc / (area / 1e6), 1) if area else "",
-                "abercrombie_factor": round(ab, 4),
-                "mean_nucleus_diam_um": round(h, 2) if h else "",
-                "cell_density_per_mm2": (round(n_nuc * ab / (area / 1e6), 1)
-                                         if area else ""),
-                "positive_density_per_mm2": (round(n_pos * ab / (area / 1e6), 1)
-                                             if (cut is not None and area) else ""),
-                "marker_median_of_roi": (round(st.median([r["_v"] for r in usable]), 1)
-                                         if usable else ""),
-                "section_bg_level": round(bgstat[uid][0], 1) if uid in bgstat else "",
-                "section_bg_spread": round(bgstat[uid][1], 1) if uid in bgstat else "",
-                "section_bg_nuclei": bgstat[uid][2] if uid in bgstat else 0,
-                "section_positivity_cut": round(cut, 1) if cut is not None else "",
-                "n_censored": sum(1 for r in here if r["_cen"]),
-            }
-            rows.append(row)
+        # PER MARKER, so `i` restarts at 1 for each one - which is how 05c
+        # numbered them. Under `paired` there is exactly one group per section
+        # and this is the old single loop unchanged.
+        for mk, mboxes in split_by_marker(box_by.get(uid, [])).items():
+            for i, b in enumerate(mboxes, 1):
+                here = by_idx.get((uid, mk, i), [])
+                area = roi_area_um2(b)
+                n_nuc = len(here)
+                usable = [r for r in here if not r["_cen"]]
+                # A censored nucleus counts as POSITIVE and is still dropped from
+                # `usable`. That is not an inconsistency: 04j_censor_clipped.py
+                # defines a censored pixel as right-censored at the 16-bit ceiling,
+                # so it is unambiguously above any cut, while including a ceiling
+                # value in a median would bias the intensity statistic. 04j states
+                # both halves outright - censoring "MUST NOT be excluded from
+                # detection or from positivity" and MUST be excluded from any
+                # intensity statistic. Do not "fix" this to drop them.
+                n_pos = (sum(1 for r in here if r["_cen"] or r["_v"] > cut)
+                         if cut is not None else "")
+                h = hs.get((b["marker"], b["region"]),
+                           h_by_marker.get(b["marker"], h_all))
+                ab = T_UM / (T_UM + h) if (AB_ON and h) else 1.0
+                row = {
+                    "scene_uid": uid, "animal": b["animal"], "marker": b["marker"],
+                    "roi_kind": b["roi_kind"], "region": b["region"],
+                    "seed_n": b["seed_n"], "roi_index": i,
+                    "plate_id": "", "sec_x": b["sec_x"], "sec_y": b["sec_y"],
+                    "roi_area_um2": round(area, 1),
+                    "roi_area_mm2": round(area / 1e6, 6),
+                    "n_nuclei": n_nuc,
+                    "n_positive": n_pos,
+                    "frac_positive": (round(n_pos / n_nuc, 4) if (cut is not None and n_nuc)
+                                      else ""),
+                    "profile_density_per_mm2": round(n_nuc / (area / 1e6), 1) if area else "",
+                    "abercrombie_factor": round(ab, 4),
+                    "mean_nucleus_diam_um": round(h, 2) if h else "",
+                    "cell_density_per_mm2": (round(n_nuc * ab / (area / 1e6), 1)
+                                             if area else ""),
+                    "positive_density_per_mm2": (round(n_pos * ab / (area / 1e6), 1)
+                                                 if (cut is not None and area) else ""),
+                    "marker_median_of_roi": (round(st.median([r["_v"] for r in usable]), 1)
+                                             if usable else ""),
+                    "section_bg_level": round(bgstat[uid][0], 1) if uid in bgstat else "",
+                    "section_bg_spread": round(bgstat[uid][1], 1) if uid in bgstat else "",
+                    "section_bg_nuclei": bgstat[uid][2] if uid in bgstat else 0,
+                    "section_positivity_cut": round(cut, 1) if cut is not None else "",
+                    "n_censored": sum(1 for r in here if r["_cen"]),
+                }
+                rows.append(row)
 
         # what the background discs report about the detector, per section
         bgrows = [r for r in rows if r["scene_uid"] == uid

@@ -198,7 +198,14 @@ def all_boxes():
             # Under `multiplex` the markers are one scan of one section, so a
             # shared uid is what the data IS. The union below is then a
             # concatenation of the same sections' boxes, and roi_index stays
-            # meaningful because each marker's boxes keep their own order.
+            # meaningful ONLY BECAUSE the consumers split this list back out
+            # per marker before enumerating it: 06a.split_by_marker, and the
+            # same counter in 06c. Their join key is (scene_uid, marker,
+            # roi_index). Relaxing the guard here without that split pooled
+            # both markers' nuclei onto the first marker's discs and reported
+            # the second as empty - see 06a.split_by_marker for the shape of
+            # it. Anything new that consumes all_boxes() positionally must do
+            # the same split.
             if LAYOUT == CH.LAYOUT_PAIRED and uids.get(u, m) != m:
                 raise SystemExit(
                     f"scene_uid {u} appears under both {uids[u]} and {m}. "

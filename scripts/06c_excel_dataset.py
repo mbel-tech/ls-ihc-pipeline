@@ -316,14 +316,21 @@ def main(argv=None):
     # pivoting it. The two axis columns are the only thing 06a does not carry,
     # so they are joined back from roi_boxes.csv on (scene_uid, roi_index) -
     # rebuilding the index exactly the way 06a numbered the discs.
+    #
+    # PER MARKER, exactly as 06a numbers them: 05c's roi_index counts within
+    # one marker's own box file, and under `multiplex` all_boxes() returns
+    # both markers' boxes for the same uid. Counting them together would put
+    # the second marker's semi-axes on the first marker's discs. Under
+    # `paired` a uid belongs to one marker, so this is the old counter.
     axes, seen = {}, collections.Counter()
     for b in boxes:
-        seen[b["scene_uid"]] += 1
-        axes[(b["scene_uid"], seen[b["scene_uid"]])] = b
+        key = (b["scene_uid"], b["marker"])
+        seen[key] += 1
+        axes[(b["scene_uid"], b["marker"], seen[key])] = b
 
     by_disc = []
     for r in meas:
-        b = axes.get((r["scene_uid"], int(r["roi_index"])), {})
+        b = axes.get((r["scene_uid"], r["marker"], int(r["roi_index"])), {})
         by_disc.append({
             "sample": r["animal"], "treatment": groups.get(r["animal"], ""),
             "environment": envs.get(r["animal"], ""),
