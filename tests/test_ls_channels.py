@@ -167,9 +167,13 @@ chk("the paired layout declares no channels",
 chk("...and no table, with the markers named, is what it wants",
     errs([], layout="paired", markers=["AF568"]), [])
 # The markers are not optional under paired: with no channel table, that list
-# is the only record of what the study measures.
-chk("...but an empty table alone is not - paired must name its markers",
-    len(errs([], layout="paired")), 1)
+# is the only record of what the study measures. It warns rather than errors
+# for the same reason the empty multiplex table does - every stage validates
+# at import - and require() is where it is fatal.
+chk("...and an empty table with no markers named is a warning",
+    errs([], layout="paired"), [])
+chk("...which names the key that is missing",
+    any("acquisition.markers" in w for w in warns([], layout="paired")), True)
 # A multiplex study with no channels yet is a warning, not an error - see the
 # "not yet declared" section below. Kept split rather than folded into that
 # section since it belongs next to the paired-layout comparison it explains.

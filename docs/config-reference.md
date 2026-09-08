@@ -26,7 +26,7 @@ A key marked *required* has to be present before any stage will run.
 | `overview_target_um_per_px` | float | `5.2` | `01_overviews`, `01_overviews.groovy` | Resolution the per-section overviews are exported at. |
 | `acquisition.layout` | str | `"multiplex"` | `01_overviews`, `02_pair_passes`, `04a_reformat`, `05c`, `app` | How the markers were imaged: one multi-channel scan per section, or one scan per marker. |
 | `acquisition.channels` | raw | `[]` | `01_overviews`, `05c`, `app` | What each CZI channel is: its name, what it is for, and how it is found in a file. |
-| `acquisition.markers` | raw | `[]` | `01k_saturation_raw`, `04a_reformat`, `04g_artifact_mask`, `04j_censor_clipped`, `04l_roi_curator`, `04o_section_rgb`, `05a_roi_geometry` | The markers a `paired` study measures, in the order they should appear. Not used under `multiplex`. |
+| `acquisition.markers` | raw | `[]` | not read yet; will be `01k_saturation_raw`, `04a_reformat`, `04g_artifact_mask`, `04j_censor_clipped`, `04l_roi_curator`, `04o_section_rgb`, `05a_roi_geometry` | The markers a `paired` study measures, in the order they should appear. Not used under `multiplex`. |
 | `channels.dapi_index` | int | `0` | `05c` | Which CZI channel plane is the nuclear counterstain. |
 | `channels.marker_index` | int | `1` | `05c` | Which CZI channel plane carries the marker. |
 | `marker_identity` | raw |  | recorded here, read by no stage | Which fluorophore is which marker. Filled in by 00c_channel_identity.py, then confirmed by the operator. |

@@ -32,6 +32,24 @@ import os
 import re
 import sys
 
+try:
+    import ls_channels
+except ImportError:                                         # pragma: no cover
+    # Deliberately not fatal, and deliberately not moved into the validator
+    # either. ls_channels is a sibling in this same directory, so this import
+    # succeeds wherever `import ls_config` did - but ls_config is imported at
+    # the top of all 45 stages, and a hard dependency here would turn "the
+    # channel rules could not be loaded" into "no stage can start". The
+    # validator skips the channel rules when this is None, as it always has.
+    ls_channels = None
+
+#: The two acquisition layouts. From ls_channels, which owns the concept, so
+#: the spec's `choices` and the validator agree with the module that judges
+#: them. The literal is the fallback for the import above having failed, where
+#: there is nothing left to disagree with.
+LAYOUTS = tuple(ls_channels.LAYOUTS) if ls_channels else ("multiplex",
+                                                          "paired")
+
 SCHEMA_VERSION = 1
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -233,7 +251,7 @@ SPEC = [
         "How the markers were imaged: one multi-channel scan per section, or "
         "one scan per marker.",
         required=True, default="multiplex", label="Acquisition layout",
-        choices=["multiplex", "paired"],
+        choices=list(LAYOUTS),
         note="`multiplex` is one scan per section carrying every marker as a "
              "channel, which is what a new study should be. `paired` is the "
              "LS layout: each marker is a separate physical scan of the same "
@@ -283,6 +301,11 @@ SPEC = [
              "Output paths, CSV column values and workbook sheets are built "
              "from these names, so changing one renames real files.",
         example=[],
+        # Nothing reads it yet: 01k_saturation_raw and 05a_roi_geometry still
+        # carry hardcoded ("AF568", "AF488") tuples, and the rest of the list
+        # is what the marker sub-project will wire. The docs say so rather
+        # than naming seven readers that do not exist.
+        consumers_pending=True,
         consumers=["01k_saturation_raw", "04a_reformat", "04g_artifact_mask",
                    "04j_censor_clipped", "04l_roi_curator", "04o_section_rgb",
                    "05a_roi_geometry"]),
@@ -635,25 +658,20 @@ def validate(cfg, path="<config>", strict_paths=False):
             f"{path}: `acquisition` must be a block of settings, not a "
             f"{type(acquisition).__name__}.")
     elif isinstance(acquisition, dict):
-        layout = acquisition.get("layout", "multiplex")
-        if layout in ("multiplex", "paired"):
-            try:
-                import ls_channels
-                # The whole block, not just its channels: the marker rules
-                # live off `acquisition.markers`, and handing over the table
-                # alone is how they came to be checked by nothing at all.
-                chan_errors, chan_warnings = ls_channels.validate(
-                    acquisition, layout)
-                # Prefixed with the block, not a key inside it - these
-                # messages name their own key, and hardcoding
-                # `acquisition.channels` would file a marker fault under the
-                # channel table.
-                for problem in chan_errors:
-                    errors.append(f"{path}: acquisition - {problem}")
-                for problem in chan_warnings:
-                    warnings.append(f"{path}: acquisition - {problem}")
-            except ImportError:                             # pragma: no cover
-                pass
+        layout = acquisition.get("layout", LAYOUTS[0])
+        if ls_channels is not None and layout in LAYOUTS:
+            # The whole block, not just its channels: the marker rules live
+            # off `acquisition.markers`, and handing over the table alone is
+            # how they came to be checked by nothing at all.
+            chan_errors, chan_warnings = ls_channels.validate(
+                acquisition, layout)
+            # Prefixed with the block, not a key inside it - these messages
+            # name their own key, and hardcoding `acquisition.channels` would
+            # file a marker fault under the channel table.
+            for problem in chan_errors:
+                errors.append(f"{path}: acquisition - {problem}")
+            for problem in chan_warnings:
+                warnings.append(f"{path}: acquisition - {problem}")
 
     for key, value in missing_paths(cfg):
         line = f"{path}: `{key.path}` does not exist: {value}"

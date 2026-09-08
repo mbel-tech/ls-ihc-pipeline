@@ -347,10 +347,20 @@ with tempfile.TemporaryDirectory() as tmp:
 
     # The marker rules reach this path at all only because ls_config hands
     # ls_channels the whole acquisition block. It used to pass the channels
-    # list, and a paired study with no markers validated clean.
-    errs, _ = C.validate(minimal(tmp, acquisition={"layout": "paired"}))
-    chk("paired naming no markers is an error",
-        [e for e in errs if "acquisition.markers" in e] != [], True)
+    # list, and a paired study with no markers validated silently.
+    errs, warns = C.validate(minimal(tmp, acquisition={"layout": "paired"}))
+    chk("paired naming no markers is a warning",
+        [w for w in warns if "acquisition.markers" in w] != [], True)
+    chk("...and not an error, so every stage still imports", errs, [])
+
+    # A marker entry that is not a name at all. The dict is the likely
+    # mistake - it is the shape of the channel table - and it used to raise
+    # TypeError out of validate, past load(), at import of all 45 stages.
+    for bad in ([{"name": "AF568"}], [["AF568"]], ["AF568", None], ["1", 1]):
+        errs = C.validate(minimal(
+            tmp, acquisition={"layout": "paired", "markers": bad}))[0]
+        chk(f"markers={str(bad):22} is reported, not raised on",
+            len(errs) >= 1, True)
 
     # A config written before this key existed must keep working. The live LS
     # config is exactly that until it declares its layout, and every stage
@@ -372,6 +382,15 @@ with tempfile.TemporaryDirectory() as tmp:
     # a contradiction here writes a config no stage can load.
     chk("the defaults do not contradict the validator",
         C.validate(C.apply_defaults(minimal(tmp)))[0], [])
+    # The minimal config above has no acquisition block, so it defaults to
+    # multiplex and never exercised the paired half - which is the half that
+    # regressed: `markers` defaults to [], and an empty marker list under
+    # paired was an ERROR, so apply_defaults produced a config its own
+    # validator refused and load(strict=True) exited on.
+    for lay in C.LAYOUTS:
+        defaulted = C.apply_defaults(minimal(tmp, acquisition={"layout": lay}))
+        chk(f"the defaults do not contradict the validator under {lay}",
+            C.validate(defaulted)[0], [])
 
 print()
 print("ALL PASS" if not failures else f"{len(failures)} FAILED")

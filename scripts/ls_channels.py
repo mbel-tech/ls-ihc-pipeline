@@ -195,11 +195,12 @@ def validate(block, layout):
     """(errors, warnings) for a study's `acquisition` block.
 
     A multiplex study with no channels declared yet is a WARNING, not an
-    error. Every stage reads config at import, so making it an error would
-    stop the whole pipeline loading for a study whose operator has simply not
-    reached the channel table yet - and the settings dialog writes defaults
-    that produce exactly that state. The stages that need channels ask for
-    them at the point of use instead.
+    error, and so is a paired study that has not named its markers yet. Every
+    stage reads config at import, so making either an error would stop the
+    whole pipeline loading for a study whose operator has simply not reached
+    that part of the settings - and the settings dialog writes defaults that
+    produce exactly that state. The stages that need channels or markers ask
+    for them at the point of use instead, through require().
 
     Every other fault is reported, not just the first. This returns a pair of
     lists rather than raising so that someone with three things wrong in
@@ -239,16 +240,42 @@ def validate(block, layout):
 
     if layout == LAYOUT_PAIRED:
         if not declared and not malformed:
+            # A WARNING for the same reason an empty multiplex channel table
+            # is one, above: every stage validates config at import, so an
+            # error would stop the whole pipeline loading for an operator who
+            # has simply not named their markers yet - and apply_defaults
+            # writes `markers: []`, so that is the state a fresh paired study
+            # starts in. require() is where it is fatal, in the one stage that
+            # needs the names.
+            #
             # Not reported when the value was there but the wrong shape: that
             # is the same fault said twice, and the operator did name their
             # markers - just not as a list.
-            errors.append(
-                "`acquisition.markers` must name this study's markers. A "
-                "paired study declares no channel table - each scan "
+            warnings.append(
+                "`acquisition.markers` does not name this study's markers "
+                "yet. A paired study declares no channel table - each scan "
                 "carries the nuclear channel plus one marker - so this "
                 "list is the only record of what those markers are.")
         seen = set()
         for m in declared or []:
+            if not isinstance(m, str):
+                # Refused by type, before either rule below runs, because both
+                # of them have to be decided on the same value the output path
+                # is built from - and that value is `str(m)`. Judging `str(m)`
+                # while comparing the raw entry lets `["1", 1]` through as two
+                # distinct markers writing to one file, which is exactly what
+                # the duplicate rule exists to prevent; `[None]` likewise
+                # becomes a directory named `None`. A dict entry is the most
+                # likely mistake of all - it is the shape of the
+                # `acquisition.channels` table a few lines above this one in
+                # the same config file - and it used to raise TypeError here,
+                # unhashable, at import of every stage.
+                errors.append(
+                    f"marker {m!r} in `acquisition.markers` is a "
+                    f"{type(m).__name__}, not a name. This is a list of plain "
+                    f"marker names - [\"AF568\", \"AF488\"] - not a table of "
+                    f"settings like `acquisition.channels`.")
+                continue
             if m in seen:
                 errors.append(
                     f"marker {m!r} is declared twice in "
@@ -256,7 +283,7 @@ def validate(block, layout):
                     f"these names, so a repeat would have two markers "
                     f"writing to one file.")
             seen.add(m)
-            if not NAME_RE.match(str(m)):
+            if not NAME_RE.match(m):
                 errors.append(
                     f"marker name {m!r} is not usable in a file path. "
                     f"Use letters, digits, spaces, and . _ + - only.")
@@ -374,15 +401,21 @@ def validate(block, layout):
 def require(block, layout):
     """The parsed channel table, or exit saying what is missing.
 
-    Called by a stage that cannot work without channels, so the failure lands
-    in that stage rather than at import of all forty-five. `block` is the
-    `acquisition` block, same as validate().
+    Called by a stage that cannot work without channels - or, under paired,
+    without the marker list - so the failure lands in that stage rather than
+    at import of all forty-five. `block` is the `acquisition` block, same as
+    validate().
+
+    Warnings are fatal here, and only here. "Not declared yet" is a warning in
+    validate() so that the pipeline still imports for a half-configured study;
+    this is the point of use, where a missing channel table or a missing
+    marker list is simply the answer to a question the stage has to ask.
     """
     errors, warnings = validate(block, layout)
     table = block.get("channels") if isinstance(block, dict) else None
     if errors or warnings:
         raise SystemExit(
-            "this study's channel table is not usable yet:\n  "
+            "this study's acquisition settings are not usable yet:\n  "
             + "\n  ".join(errors + warnings)
-            + "\n  Set it in the app under Pipeline > Settings.")
+            + "\n  Set them in the app under Pipeline > Settings.")
     return parse(table)

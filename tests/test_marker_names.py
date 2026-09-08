@@ -60,13 +60,67 @@ errors, _ = CH.validate({"layout": "multiplex", "markers": ["X"], "channels": [
 chk("multiplex declaring acquisition.markers is an error",
     any("markers" in e for e in errors), True)
 
-errs, _ = CH.validate({"layout": "paired", "markers": []}, "paired")
-chk("paired with no markers is an error",
-    any("markers" in e for e in errs), True)
+# Not an error: every stage validates config at import, so a paired study
+# whose operator has not named their markers yet has to stay loadable. The
+# stage that needs the names fails instead, in require().
+errs, warns = CH.validate({"layout": "paired", "markers": []}, "paired")
+chk("paired with no markers is a warning, not an error", errs, [])
+chk("...and the warning names the key",
+    any("acquisition.markers" in w for w in warns), True)
+try:
+    CH.require({"layout": "paired", "markers": []}, "paired")
+    chk("require() refuses a paired study with no markers", False, True)
+except SystemExit as exc:
+    chk("require() refuses a paired study with no markers",
+        "acquisition.markers" in str(exc), True)
+chk("...but require() is happy once they are named",
+    CH.require({"layout": "paired", "markers": ["AF568"]}, "paired"), [])
 
 errs, _ = CH.validate({"layout": "paired", "markers": ["A", "A"]}, "paired")
 chk("a duplicate marker name is an error",
     any("twice" in e or "duplicate" in e for e in errs), True)
+
+print()
+print("--- a marker name becomes a directory, so it is judged as one ---")
+
+# The whole NAME_RE rule was deleted by a reviewer and all three suites still
+# passed, while the mutant accepted markers = ["../../AF568"]. These are what
+# was missing.
+for bad_name in ("..", "AF/568", "AF\\568", "", " AF568", "con:", "a" * 200):
+    e, _ = CH.validate({"layout": "paired", "markers": [bad_name]}, "paired")
+    chk(f"marker name {bad_name!r:12} is refused",
+        any("not usable in a file path" in x for x in e), True)
+
+for ok_name in ("AF568", "AF 568", "Marker_1", "p-ERK", "CD3.1", "AF568+"):
+    e, _ = CH.validate({"layout": "paired", "markers": [ok_name]}, "paired")
+    chk(f"marker name {ok_name!r:12} is accepted", e, [])
+
+print()
+print("--- an entry that is not a name at all ---")
+
+# Every one of these used to pass with ZERO errors or crash the validator:
+# the identity check compared raw values while the rule and the output path
+# were built from str(m), so ["1", 1] was two markers writing to one file.
+for bad in ([{"name": "AF568"}], [["AF568"]], ["AF568", None], [1, 2],
+            [True, "AF488"], [3.5]):
+    try:
+        e, _ = CH.validate({"layout": "paired", "markers": bad}, "paired")
+        chk(f"{str(bad):24} is reported, not raised on", len(e) >= 1, True)
+    except Exception as exc:                                # noqa: BLE001
+        chk(f"{str(bad):24} is reported, not raised on",
+            f"raised {type(exc).__name__}", True)
+
+e, _ = CH.validate({"layout": "paired", "markers": ["1", 1]}, "paired")
+chk("['1', 1] is refused - both would build the same output path",
+    len(e) >= 1, True)
+chk("...and it says what the offending entry is",
+    any("int" in x for x in e), True)
+
+# Three separate faults, three messages: fixing a config one error per
+# attempt is what accumulating exists to prevent.
+e, _ = CH.validate(
+    {"layout": "paired", "markers": [{"n": 1}, "AF/568", "A", "A"]}, "paired")
+chk("three unrelated marker faults are all reported", len(e), 3)
 
 errs, _ = CH.validate({"layout": "paired", "markers": "AF568"}, "paired")
 chk("a string instead of a list is judged, not crashed on",
@@ -99,8 +153,20 @@ def cfg_errors(acq):
     return [e for e in errs if "marker" in e.lower()]
 
 
-chk("a paired study with no markers is rejected by ls_config",
-    bool(cfg_errors({"layout": "paired"})), True)
+def cfg_warnings(acq):
+    full = dict(BASE)
+    full["acquisition"] = acq
+    _, warns = LC.validate(full, "<test>")
+    return [w for w in warns if "marker" in w.lower()]
+
+
+chk("a paired study with no markers warns through ls_config",
+    bool(cfg_warnings({"layout": "paired"})), True)
+chk("...and does not stop the config loading",
+    cfg_errors({"layout": "paired"}), [])
+chk("a marker entry that is not a name is rejected by ls_config",
+    bool(cfg_errors({"layout": "paired", "markers": [{"name": "AF568"}]})),
+    True)
 chk("markers as a string is rejected by ls_config",
     bool(cfg_errors({"layout": "paired", "markers": "AF568"})), True)
 chk("a duplicate marker is rejected by ls_config",
