@@ -81,6 +81,99 @@ Studies whose filenames carry less degrade on their own:
 | subject, slide | `AB12_s03_sc05` |
 | subject only | `Fish07_sc05` |
 
+## Choosing a segmentation backend
+
+Under `multiplex`, `acquisition.channels` says what each channel is. For a
+marker it also says **where its objects come from and what finds them** — three
+settings that decide what gets counted, and one of which changes how the
+numbers are corrected downstream.
+
+```json
+{"name": "pERK", "role": "marker", "czi_name": "AF568", "index": 1,
+ "segment": "nuclear"},
+{"name": "GFAP", "role": "marker", "czi_name": "AF647", "index": 2,
+ "segment": "own", "backend": "threshold", "nucleus_shaped": false}
+```
+
+**`segment`: whose pixels the objects come from.**
+
+- `nuclear` — the default wherever the study declares a nuclear channel. Nuclei
+  are segmented on the counterstain and the marker is measured *inside* each
+  nuclear mask. The count and the positivity cut then come off different
+  channels, so the cut can be changed later without re-reading a single CZI.
+  This is what the pipeline has always done and what every existing number came
+  from.
+- `own` — the marker's own channel is segmented. Use it when the objects are
+  not cells with nuclei: fibre staining, processes, plaques. The cost is real
+  and unavoidable for such a marker: the count and the positivity cut now both
+  come off one channel, so they cannot be varied independently. A study with no
+  nuclear channel at all gets `own` for every marker automatically, because
+  there is no nuclear mask to measure inside.
+
+**`backend`: what turns pixels into objects.** Only read under `segment: own`;
+a nuclear-segmented marker inherits the counterstain's segmentation, which is
+StarDist.
+
+- `stardist` — for anything nucleus-shaped. It separates touching nuclei, which
+  a threshold cannot, and that matters most in periventricular regions where an
+  under-segmentation error would look like an anatomical finding.
+- `threshold` — for everything else. Median + `detection.threshold.mad_k` ×
+  1.4826 × MAD of the frame being segmented, then connected components above
+  `detection.threshold.min_area_um2`. It finds stained **regions** and does not
+  pretend they are cells: two touching objects are one object here. That is a
+  limitation of connected components and it is the honest count for the things
+  this backend is for.
+
+**`backend: stardist` together with `nucleus_shaped: false` is refused**, at
+settings time, by `ls_config.py --check` and by the app. StarDist segments
+star-convex, nucleus-shaped objects; pointed at fibre or process staining it
+finds few objects and **reports no error at all**. The failure is a quiet
+undercount that announces itself nowhere later — not in a log, not in a count
+that looks wrong, not in a figure. There is no point downstream at which it
+could be caught, so it is caught here.
+
+**`nucleus_shaped` also decides whether the Abercrombie correction applies.**
+Sections are cut at a finite thickness and imaged in one plane, so what is
+counted is object *profiles*, and `N = n × T/(T+h)` converts them to objects.
+That formula assumes spherical, randomly positioned objects. A threshold region
+on a fibre-stained channel is neither, so for a marker declared
+`nucleus_shaped: false` the correction is **withheld**: the factor is 1.0, the
+corrected density equals the raw one, and
+`abercrombie_withheld_reason` — a column in `roi_measurements.csv` and on the
+workbook's `by_roi` sheet — says why, in the row itself. A blank there means
+the correction was applied. Withholding is recorded rather than silent
+precisely so that an uncorrected density is never mistaken for an omission.
+
+A `roi_nuclei.csv` written before these columns existed has none of them, and
+is read as nuclear / StarDist / nucleus-shaped — which is what every row in
+such a file is, since that was the only route detection had.
+
+**Co-localisation** is computed only under `multiplex`, and only between
+markers whose objects are actually different. **A is co-localised with B when
+A's centroid falls inside B's mask.** There is no overlap fraction and so no
+cutoff to tune: objects from two markers are not the same shapes — one may be a
+nuclear mask and another a threshold region — and a fraction would not be
+comparable between pairs. Containment is asymmetric, since a small object's
+centroid can sit inside a large one while the reverse is false, so **both
+directions are computed and both are written**, to
+`results/roi_colocalisation.csv`, with the direction named.
+
+Two cases produce no file rather than an empty one:
+
+- A `paired` study. Its markers are separate physical scans of *different*
+  sections, so their objects are not in one coordinate frame and relating them
+  would mean nothing. An empty `roi_colocalisation.csv` would read as "nothing
+  overlaps", which is a different claim from "the question does not apply".
+- Two markers that are both `segment: nuclear`. They share the same nuclear
+  objects, so every object would contain itself and the table would be a
+  diagonal.
+
+None of the `segment: own` path has met a real study yet. The backends, the
+co-localisation pairs and the withheld correction are covered by synthetic
+fixtures that check the rules are what is written above; they cannot check that
+the threshold backend segments a real fibre stain usefully. The first study to
+declare `segment: own` should expect to find things.
+
 ## Which config a stage actually reads
 
 In order:
