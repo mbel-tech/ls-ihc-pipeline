@@ -132,5 +132,59 @@ finally:
 chk("the layout was put back", RF.LAYOUT, "paired")
 
 print()
+print("--- 04g takes its default and its filenames from 04a, not from AF488 ---")
+
+# 04g masks ONE marker's pass per run, so its --marker default selects which
+# sections get written. A silent flip processes the wrong pass and says nothing
+# - a reviewer changed it to MARKERS[0] and the whole suite stayed green, which
+# is why this reads `action.default` off the BUILT PARSER rather than the help
+# text, the way 04a's default is pinned above.
+G4G = load_stage("04g_artifact_mask.py")
+
+
+def marker_default(mod):
+    ap = mod.build_parser()
+    return next(a.default for a in ap._actions if a.dest == "marker")
+
+
+chk("04g's --marker default is the SECOND declared marker",
+    marker_default(G4G), "AF488")
+chk("...which is the same marker 04a calls its default",
+    marker_default(G4G), RF.DEFAULT_MARKER)
+chk("04g's summary is unsuffixed for that default marker",
+    os.path.basename(G4G.summary_csv("AF488")), "artifact_summary.csv")
+chk("...and suffixed for the other",
+    os.path.basename(G4G.summary_csv("AF568")), "artifact_summary_AF568.csv")
+
+# AND UNDER MARKERS THAT ARE NOT FLUOROPHORES. 04g used to rebuild the reformat
+# filenames against the literal "AF488", which agrees with 04a only because
+# this study's second marker happens to be called AF488. Declare two markers
+# with other names and the two disagree: 04a writes Mk2's index unsuffixed
+# while 04g would look for reformat_index_Mk2.csv. A nested study, because
+# that is the only way to ask what these stages do for a marker list they were
+# not imported under.
+from _fixture import temp_study                                # noqa: E402
+
+with temp_study(acquisition={"layout": "paired",
+                             "markers": ["Mk1", "Mk2"]}) as _s:
+    _rf = load_stage("04a_reformat.py", name="lsstage_04a_alt")
+    _4g = load_stage("04g_artifact_mask.py", name="lsstage_04g_alt")
+    chk("a two-marker study still defaults 04g to the second",
+        marker_default(_4g), "Mk2")
+    for _m in ("Mk1", "Mk2"):
+        chk(f"04g reads the reformat index 04a WRITES for {_m}",
+            os.path.basename(_4g._RF.marker_paths(_m)["index"]),
+            os.path.basename(_rf.marker_paths(_m)["index"]))
+        chk(f"...and the excluded list 04a writes for {_m}",
+            os.path.basename(_4g._RF.marker_paths(_m)["excluded"]),
+            os.path.basename(_rf.marker_paths(_m)["excluded"]))
+    chk("Mk2's index is the UNSUFFIXED one, as 04a writes it",
+        os.path.basename(_rf.marker_paths("Mk2")["index"]), "reformat_index.csv")
+    chk("04g's own summary follows the same rule, not the literal AF488",
+        os.path.basename(_4g.summary_csv("Mk2")), "artifact_summary.csv")
+    chk("...leaving the first marker suffixed",
+        os.path.basename(_4g.summary_csv("Mk1")), "artifact_summary_Mk1.csv")
+
+print()
 print("ALL PASS" if not failures else f"{len(failures)} FAILED")
 sys.exit(1 if failures else 0)
