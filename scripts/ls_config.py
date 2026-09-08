@@ -383,6 +383,33 @@ SPEC = [
              "counts across neighbours double-counts it.",
         consumers=["06a"]),
 
+    Key("detection.threshold.mad_k", "float",
+        "How many robust standard deviations above the background median a "
+        "pixel must be to count as signal, for the `threshold` backend.",
+        default=3.0, label="Threshold: MAD multiplier",
+        note="3.0 is the same multiplier 06a uses for the positivity cut, so "
+             "the pipeline has one definition of `above background` rather "
+             "than two. Raising it finds fewer, brighter objects. It is "
+             "applied to the frame being segmented rather than to curated "
+             "background discs, because 05c runs before 06a and cannot read a "
+             "file 06a has not written. Median and MAD rather than mean and "
+             "SD because the objects are in the sample: a bright object would "
+             "raise the very cut meant to find it.",
+        consumers=["05c"], consumers_pending=True),
+
+    Key("detection.threshold.min_area_um2", "float",
+        "The smallest object the `threshold` backend will report, in square "
+        "micrometres.",
+        default=5.0, label="Threshold: minimum object area",
+        note="Not tidying. At k=3 over a whole frame, thousands of "
+             "single-pixel excursions clear the cut by chance and each one "
+             "would be counted as an object. This is what makes the count "
+             "mean `a stained region` rather than `a pixel that was noisy`. "
+             "5 um2 is well below a nucleus (a 7 um nucleus is ~38 um2) and "
+             "well above sensor noise; a study counting something smaller "
+             "must lower it deliberately.",
+        consumers=["05c"], consumers_pending=True),
+
     # ---- atlas -----------------------------------------------------------
     Key("atlas_plate_set.dir", "str",
         "Which plate set the ROI curator and the registration use.",

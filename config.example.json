@@ -60,6 +60,12 @@
     "abercrombie": {
       "_enabled_note": "A single-plane image of a section counts nuclear PROFILES, not nuclei: a nucleus straddling the cut face still appears in the section it is cut into. Abercrombie N = n * T/(T + h), with T the section thickness and h the mean diameter of the counted object along the axis perpendicular to the section. At T=14 and h=7 the factor is 0.667 - uncorrected counts are 50% too high. h is MEASURED per marker and region from the nuclear-counterstain segmentation, not taken from nucleus_diameter_um above: that value is a detection-scale assumption, and the factor moves from 0.737 to 0.583 across a plausible 5-10 um range, so using it would bury an unmeasured constant in every density. Abercrombie assumes spherical, randomly positioned objects and applies no lost-caps correction; the unbiased alternative is the optical or physical disector, which needs z-stacks a single-plane dataset does not have. Report raw and corrected counts side by side and say which is which. This is also why it is enabled rather than optional: where sections are cut consecutively, adjacent sections are not independent tissue - a nucleus cut by the boundary appears in both - so summing or averaging raw profile counts across neighbours double-counts it.",
       "enabled": true
+    },
+    "threshold": {
+      "_mad_k_note": "3.0 is the same multiplier 06a uses for the positivity cut, so the pipeline has one definition of `above background` rather than two. Raising it finds fewer, brighter objects. It is applied to the frame being segmented rather than to curated background discs, because 05c runs before 06a and cannot read a file 06a has not written. Median and MAD rather than mean and SD because the objects are in the sample: a bright object would raise the very cut meant to find it.",
+      "mad_k": 3.0,
+      "_min_area_um2_note": "Not tidying. At k=3 over a whole frame, thousands of single-pixel excursions clear the cut by chance and each one would be counted as an object. This is what makes the count mean `a stained region` rather than `a pixel that was noisy`. 5 um2 is well below a nucleus (a 7 um nucleus is ~38 um2) and well above sensor noise; a study counting something smaller must lower it deliberately.",
+      "min_area_um2": 5.0
     }
   },
   "atlas_plate_set": {
