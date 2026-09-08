@@ -337,11 +337,20 @@ with tempfile.TemporaryDirectory() as tmp:
         any("marker" in e for e in errs), True)
 
     errs, _ = C.validate(minimal(
-        tmp, acquisition={"layout": "paired", "channels": CHANS}))
+        tmp, acquisition={"layout": "paired", "channels": CHANS,
+                          "markers": ["AF568"]}))
     chk("paired declaring channels is an error", len(errs), 1)
 
-    chk("paired with none is fine",
-        C.validate(minimal(tmp, acquisition={"layout": "paired"}))[0], [])
+    chk("paired with markers and no channel table is fine",
+        C.validate(minimal(tmp, acquisition={
+            "layout": "paired", "markers": ["AF568"]}))[0], [])
+
+    # The marker rules reach this path at all only because ls_config hands
+    # ls_channels the whole acquisition block. It used to pass the channels
+    # list, and a paired study with no markers validated clean.
+    errs, _ = C.validate(minimal(tmp, acquisition={"layout": "paired"}))
+    chk("paired naming no markers is an error",
+        [e for e in errs if "acquisition.markers" in e] != [], True)
 
     # A config written before this key existed must keep working. The live LS
     # config is exactly that until it declares its layout, and every stage

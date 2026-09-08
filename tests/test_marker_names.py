@@ -79,5 +79,39 @@ chk("paired declaring a channel table is an error",
     any("channel" in e.lower() for e in errs), True)
 
 print()
+print("--- the rules fire through ls_config, not just in isolation ---")
+
+# The unit checks above passed while this was dead code: ls_config called
+# ls_channels.validate with the channels LIST, so nothing ever reached the
+# marker rules. A config-level check is the one that would have caught it.
+import ls_config as LC                                      # noqa: E402
+
+BASE = {"schema_version": 1, "study": {"name": "t"},
+        "source_dir": ".", "out_root": ".", "atlas_pdf": ".",
+        "pixel_size_um": 0.65, "overview_target_um_per_px": 4.0,
+        "section_thickness_um": 12.0}
+
+
+def cfg_errors(acq):
+    full = dict(BASE)
+    full["acquisition"] = acq
+    errs, _ = LC.validate(full, "<test>")
+    return [e for e in errs if "marker" in e.lower()]
+
+
+chk("a paired study with no markers is rejected by ls_config",
+    bool(cfg_errors({"layout": "paired"})), True)
+chk("markers as a string is rejected by ls_config",
+    bool(cfg_errors({"layout": "paired", "markers": "AF568"})), True)
+chk("a duplicate marker is rejected by ls_config",
+    bool(cfg_errors({"layout": "paired", "markers": ["A", "A"]})), True)
+chk("a well-formed paired study passes",
+    cfg_errors({"layout": "paired", "markers": ["AF568", "AF488"]}), [])
+chk("a well-formed multiplex study passes",
+    cfg_errors({"layout": "multiplex", "channels": [
+        {"name": "DAPI", "role": "nuclear", "index": 0},
+        {"name": "M1", "role": "marker", "index": 1}]}), [])
+
+print()
 print("ALL PASS" if not failures else f"{len(failures)} FAILED")
 sys.exit(1 if failures else 0)

@@ -639,12 +639,19 @@ def validate(cfg, path="<config>", strict_paths=False):
         if layout in ("multiplex", "paired"):
             try:
                 import ls_channels
+                # The whole block, not just its channels: the marker rules
+                # live off `acquisition.markers`, and handing over the table
+                # alone is how they came to be checked by nothing at all.
                 chan_errors, chan_warnings = ls_channels.validate(
-                    acquisition.get("channels"), layout)
+                    acquisition, layout)
+                # Prefixed with the block, not a key inside it - these
+                # messages name their own key, and hardcoding
+                # `acquisition.channels` would file a marker fault under the
+                # channel table.
                 for problem in chan_errors:
-                    errors.append(f"{path}: acquisition.channels - {problem}")
+                    errors.append(f"{path}: acquisition - {problem}")
                 for problem in chan_warnings:
-                    warnings.append(f"{path}: acquisition.channels - {problem}")
+                    warnings.append(f"{path}: acquisition - {problem}")
             except ImportError:                             # pragma: no cover
                 pass
 

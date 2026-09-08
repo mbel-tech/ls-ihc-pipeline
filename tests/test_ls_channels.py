@@ -88,12 +88,27 @@ print()
 print("--- what a study may not declare ---")
 
 
-def errs(block, layout="multiplex"):
-    return CH.validate(block, layout)[0]
+def block_of(table, layout, markers=None):
+    """The `acquisition` block a study with this channel table would have.
+
+    validate() judges the block, not the bare table: the `acquisition.markers`
+    rules read a key a list cannot carry, and the version that accepted either
+    shape skipped those rules on the list - which is how they came to be
+    checked by nothing in the real path. A paired study must name its markers,
+    so these helpers take them alongside the table.
+    """
+    block = {"layout": layout, "channels": table}
+    if markers is not None:
+        block["markers"] = markers
+    return block
 
 
-def warns(block, layout="multiplex"):
-    return CH.validate(block, layout)[1]
+def errs(table, layout="multiplex", markers=None):
+    return CH.validate(block_of(table, layout, markers), layout)[0]
+
+
+def warns(table, layout="multiplex", markers=None):
+    return CH.validate(block_of(table, layout, markers), layout)[1]
 
 
 chk("a valid table has nothing to say", errs(BLOCK), [])
@@ -148,8 +163,13 @@ chk("...but own-channel markers alone are fine",
                nucleus_shaped=True)]), [])
 
 chk("the paired layout declares no channels",
-    len(errs(BLOCK, layout="paired")), 1)
-chk("...and an empty table is what it wants", errs([], layout="paired"), [])
+    len(errs(BLOCK, layout="paired", markers=["AF568"])), 1)
+chk("...and no table, with the markers named, is what it wants",
+    errs([], layout="paired", markers=["AF568"]), [])
+# The markers are not optional under paired: with no channel table, that list
+# is the only record of what the study measures.
+chk("...but an empty table alone is not - paired must name its markers",
+    len(errs([], layout="paired")), 1)
 # A multiplex study with no channels yet is a warning, not an error - see the
 # "not yet declared" section below. Kept split rather than folded into that
 # section since it belongs next to the paired-layout comparison it explains.
@@ -163,6 +183,14 @@ chk("a string where a list belongs", len(errs("DAPI,AF568")), 1)
 chk("...and it says what it got", "not a str" in errs("DAPI,AF568")[0], True)
 chk("an entry that is not a block", len(errs([["not", "a", "dict"]])), 1)
 chk("a number", len(errs(42)), 1)
+
+# The block itself gets the same treatment as the table inside it - including
+# the old mistake of handing over the channels list, which is now a fault
+# with a message rather than a silent half-validation.
+for bad_block in ("acquisition", 42, [{"name": "DAPI"}]):
+    got = CH.validate(bad_block, "multiplex")[0]
+    chk(f"an acquisition block that is a {type(bad_block).__name__}",
+        len(got) == 1 and "acquisition" in got[0], True)
 
 print()
 print("--- a channel with no way to be found ---")
