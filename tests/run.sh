@@ -90,7 +90,16 @@ else
 fi
 
 if [ "$SKIP_PAGES" = "0" ]; then
-  build_page 04l_roi_curator.py curator --marker AF568 --worklist --rgb --no-seed
+  # NO --marker. It used to say `--marker AF568`, and 04l's choices are now
+  # derived from the study - so a second study makes argparse REJECT that
+  # value, build_page takes the `exit 2` branch, and the whole run ends there,
+  # taking the Python suites down with it. Those suites have nothing to do
+  # with the curator pages and must still run.
+  #
+  # Dropping it rather than deriving one: 04l already opens on MARKERS[0], the
+  # first declared marker, which for this study IS AF568. Checked, not
+  # assumed - the page built with and without the flag is byte-identical.
+  build_page 04l_roi_curator.py curator --worklist --rgb --no-seed
   build_page 04d_rotation_curator.py rotation_curator --no-proposals
   build_page 04k_level_curator.py level_curator
 fi
