@@ -182,9 +182,17 @@ def _balanced_calls(text, opener):
             yield text[m.start():]
 
 
-ALLOWED = {"czi_read.py"}
+# Two files may read without a scene, and both do it on purpose:
+#   czi_read.py         - the one place the scened read is implemented.
+#   scene_fix_report.py - reproduces the OLD behaviour next to the new one,
+#                         which is the only way to measure what the fix moved.
+# docs/ is scanned rather than skipped so that this second exception is a named
+# entry here instead of a blind spot: a report tool that quietly stopped
+# reproducing the old read would report no difference and look like good news.
+ALLOWED = {"czi_read.py", "scene_fix_report.py"}
 offenders = []
-for path in sorted(glob.glob(os.path.join(REPO, "scripts", "*.py"))):
+for path in sorted(glob.glob(os.path.join(REPO, "scripts", "*.py"))
+                   + glob.glob(os.path.join(REPO, "docs", "*.py"))):
     name = os.path.basename(path)
     if name in ALLOWED:
         continue
