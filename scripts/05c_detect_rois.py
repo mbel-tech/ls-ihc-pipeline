@@ -40,6 +40,17 @@ Writes `results/roi_nuclei.csv`, one row per nucleus. That is the artefact that
 matters - with per-nucleus intensities on disk the positivity cut becomes a
 decision about a table rather than a reason to re-read 130 CZI scenes.
 
+Under the `threshold` backend, and only there, an ROI whose frame breaks that
+backend's background assumption is written to
+`qc/roi_background_assumption.csv` and counted at the end of the run. The
+assumption is that most of a fluorescence frame is background, so its median
+estimates it; past about half coverage the median lands inside an object, the
+cut is derived from the object, and the ROI reports zero objects - which this
+stage answers with `continue`, so it contributes no rows and 06a publishes
+n = 0 and a density of 0.0 for it. That file is what makes such a zero
+different from an empty ROI's. Nothing in the live study reaches it: both its
+markers are `segment: nuclear`, which is StarDist.
+
 Under `multiplex`, and only there, it also writes
 `results/roi_colocalisation.csv`: which object of one marker contains which
 object of another, both directions recorded. Under `paired` that file is not
@@ -84,6 +95,24 @@ REFORMAT_DIR = G5.REFORMAT_DIR
 RESULTS = os.path.join(OUT_ROOT, "results")
 NUCLEI_CSV = os.path.join(RESULTS, "roi_nuclei.csv")
 QC_DIR = os.path.join(OUT_ROOT, "qc", "roi_detections")
+
+#: The ROIs whose frames broke the threshold backend's background assumption,
+#: one row each, with the numbers behind the flag - see
+#: ls_segment.background_check. Not a count and not an input to one: it is the
+#: trace that says a zero in roi_nuclei.csv means "the estimate failed here"
+#: rather than "nothing was stained here".
+#:
+#: WRITTEN ONLY WHEN SOMETHING FAILED. An empty file would read as "checked,
+#: nothing found", and it would sit beside every StarDist run - which checks
+#: nothing at all, because StarDist estimates no background. That is the same
+#: distinction `paired` writes no roi_colocalisation.csv for. It is appended to
+#: across resumes and dropped by --force with the measurements it describes, so
+#: it stays in step with roi_nuclei.csv rather than accumulating rows about
+#: objects that have since been re-segmented.
+BACKGROUND_CSV = os.path.join(OUT_ROOT, "qc", "roi_background_assumption.csv")
+BACKGROUND_COLUMNS = ["scene_uid", "roi_index", "marker", "segmented_on",
+                      "backend", "n_objects", "cut", "above_cut",
+                      "below_background"]
 
 BASE_PX_UM = CONFIG["pixel_size_um"]
 DAPI_C = CONFIG["channels"]["dapi_index"]
@@ -314,6 +343,44 @@ LEGACY_PROVENANCE = {"segmented_on": NUCLEAR_NAME or NUCLEAR_FALLBACK,
 LEGACY_COLUMNS = [c for c in COLUMNS if c not in LEGACY_PROVENANCE]
 
 
+def min_area_px_for(min_area_um2=None, px_um=None):
+    """The threshold backend's minimum object area, in pixels.
+
+    At 0.65 um/px the default 5 um2 is 12 px. The arguments exist so the rule
+    can be exercised at a value no config declares; both default to the
+    study's.
+
+    NEVER BELOW 1. `min_area_um2: 0` in a study config would otherwise ask for
+    a minimum of zero, and the minimum is the only thing between "a stained
+    region" and "a pixel that was noisy": at k=3 over a megapixel frame,
+    hundreds of single pixels clear the cut by chance.
+
+    The floor is a floor and not a filter, and it is worth being exact about
+    which: an object of exactly one pixel has area 1, `1 < 1` is False, and it
+    survives a minimum of 1 as it survives a minimum of 0. What the clamp
+    guarantees is that the comparison keeps meaning something - a zero or
+    negative minimum drops nothing at all and cannot be told apart from a
+    minimum nobody configured.
+    """
+    um2 = MIN_AREA_UM2 if min_area_um2 is None else float(min_area_um2)
+    px = BASE_PX_UM if px_um is None else float(px_um)
+    return max(1, int(round(um2 / (px ** 2))))
+
+
+def bg_row(uid, roi_index, marker, seg_on, backend, labels, report):
+    """One row of BACKGROUND_CSV: which ROI, and the numbers behind the flag.
+
+    `n_objects` is on it because the failure has two faces: the collapse to
+    zero, and the biased count before it. A row saying 0 is the silent zero
+    this file exists for; a row saying 40 is a count that was measured against
+    a cut derived from the objects themselves.
+    """
+    return [uid, roi_index, marker, seg_on, backend, int(labels.max()),
+            round(float(report.get("cut", 0.0)), 2),
+            round(float(report.get("above_cut", 0.0)), 4),
+            round(float(report.get("below_background", 0.0)), 4)]
+
+
 def point_in_poly(px, py, v):
     """Is (px, py) inside the ring `v`, an (N, 2) array of canonical-grid points?
 
@@ -376,6 +443,12 @@ def backfill_header(path, columns, legacy):
     return n
 
 
+def header_of(path):
+    """The first row of `path`, or [] when it has none."""
+    with open(path, newline="", encoding="utf-8") as rf:
+        return next(csv.reader(rf), None) or []
+
+
 def check_header(path, columns, legacy=None):
     """Refuse to append to a roi_nuclei.csv whose header is not `columns`.
 
@@ -401,8 +474,7 @@ def check_header(path, columns, legacy=None):
     default: a future append path that forgets it gets a refusal, never a file
     whose rows are two different widths.
     """
-    with open(path, newline="", encoding="utf-8") as rf:
-        header = next(csv.reader(rf), None) or []
+    header = header_of(path)
     if header == list(columns):
         return
     if legacy and header == [c for c in columns if c not in legacy]:
@@ -427,9 +499,11 @@ def check_header(path, columns, legacy=None):
         f"({why}). Appending to it would give the new rows a different layout "
         f"from the old ones. If `off_tissue` is what is missing, run "
         f"06g_flag_off_tissue.py to backfill it first - which leaves the file "
-        f"at the header this stage backfills the provenance columns onto, so "
-        f"the two together get an old file all the way to the current one. "
-        f"Anything else - a permuted header, a column this stage does not "
+        f"at the header 06h_backfill_provenance.py takes, so the two together "
+        f"get an old file all the way to the current one. (06h is also the way "
+        f"to add the provenance columns WITHOUT a detection run; this stage "
+        f"backfills them itself when it resumes onto a file that predates "
+        f"them.) Anything else - a permuted header, a column this stage does not "
         f"write - is not something to guess at: move the file aside and start "
         f"a new one.\n"
         f"   NOT --force: this check runs before the forced drop, so a "
@@ -776,11 +850,27 @@ def main():
                                   marker_col="marker_a")
         print(f"  --force: dropped {dropped} {args.marker} co-localisation "
               f"rows, kept {kept}")
+    # The same rule again for the background-assumption record: it describes
+    # the frames of the sections being redone, and those frames are about to be
+    # segmented again. A file whose header is not this one is started afresh
+    # rather than refused - it is a QC trace, and refusing to detect 130
+    # sections over the state of one is the wrong trade. roi_nuclei.csv, which
+    # is the dataset, keeps its refusal.
+    bg_exists = (os.path.exists(BACKGROUND_CSV)
+                 and header_of(BACKGROUND_CSV) == BACKGROUND_COLUMNS)
+    if bg_exists and args.force:
+        dropped, _ = drop_rows(BACKGROUND_CSV, args.marker, todo)
+        if dropped:
+            print(f"  --force: dropped {dropped} background-assumption rows")
 
     fh = open(NUCLEI_CSV, "a" if exists else "w", newline="", encoding="utf-8")
     w = csv.writer(fh)
     if not exists:
         w.writerow(COLUMNS)
+
+    # Opened on the first ROI that fails the check and not before - see
+    # BACKGROUND_CSV for why an empty one would be a claim rather than a file.
+    bfh = bgw = None
 
     # Opened only when something in this run has a partner, so a study that
     # cannot co-localise has no such file to explain. An EMPTY one would read
@@ -795,12 +885,10 @@ def main():
             cw.writerow(COLOC_COLUMNS)
 
     px_area = BASE_PX_UM ** 2
-    # The threshold backend's minimum object area, in pixels. At 0.65 um/px
-    # the default 5 um2 is 12 px. Never below 1: a minimum of 0 would count
-    # every single-pixel excursion above the cut as an object.
-    min_area_px = max(1, int(round(MIN_AREA_UM2 / px_area)))
+    min_area_px = min_area_px_for()
     total_nuc = 0
     total_rel = 0
+    total_bg = 0
     no_tissue_mask = []
     for n, uid in enumerate(todo, 1):
         g = geom[uid]
@@ -822,6 +910,7 @@ def main():
         path = os.path.join(CONFIG["source_dir"], g["czi_file"])
         rows = []
         coloc_rows = []
+        bg_rows = []
         with pyczi.open_czi(path) as doc:
             for bi, b in enumerate(by_sec[uid], 1):
                 x0, y0 = int(b["czi_x0"]), int(b["czi_y0"])
@@ -856,13 +945,24 @@ def main():
                 # it; it is not a tuning knob and does not belong at a call
                 # site.
                 seg_img = mark if _segments_own(marker) else dapi
-                labels = SG.segment(seg_img, backend_for(marker), model=model,
-                                    k=MAD_K, min_area_px=min_area_px)
-                if labels.max() == 0:
-                    continue
                 seg_on = segment_plane_for(marker)
                 seg_backend = backend_for(marker)
                 seg_shaped = int(nucleus_shaped_for(marker))
+                report = {}
+                labels = SG.segment(seg_img, seg_backend, model=model,
+                                    k=MAD_K, min_area_px=min_area_px,
+                                    report=report)
+                # BEFORE the `continue`, which is the whole point of it being
+                # here: the frames this fires on are usually the ones that
+                # report no objects, an ROI with no objects writes no rows, and
+                # so a background estimate that failed reached 06a as n = 0 and
+                # a density of 0.0 with nothing anywhere to say so. `report` is
+                # empty under StarDist, which estimates no background.
+                if report.get("failed"):
+                    bg_rows.append(bg_row(uid, bi, marker, seg_on, seg_backend,
+                                          labels, report))
+                if labels.max() == 0:
+                    continue
 
                 # Which nuclei are actually IN the ROI. The shape is drawn on
                 # the 256 grid and is something else here - a circle becomes an
@@ -933,9 +1033,17 @@ def main():
                     o_img = planes["coloc_" + other].astype(np.float32)
                     if o_img.shape != labels.shape:
                         continue
-                    o_labels = SG.segment(o_img, backend_for(other),
-                                          model=model, k=MAD_K,
-                                          min_area_px=min_area_px)
+                    o_backend = backend_for(other)
+                    o_report = {}
+                    o_labels = SG.segment(o_img, o_backend, model=model,
+                                          k=MAD_K, min_area_px=min_area_px,
+                                          report=o_report)
+                    # The partner's plane is segmented in this run, so its
+                    # frames are this run's to report on too.
+                    if o_report.get("failed"):
+                        bg_rows.append(bg_row(uid, bi, other,
+                                              segment_plane_for(other),
+                                              o_backend, o_labels, o_report))
                     if o_labels.max() == 0:
                         continue
                     o_kept = objects_inside(o_labels, inside, Minv, x0, y0)
@@ -951,6 +1059,17 @@ def main():
                     write_overlay(uid, bi, b, seg_img, labels, kept)
         w.writerows(rows)
         fh.flush()
+        if bg_rows:
+            if bfh is None:
+                os.makedirs(os.path.dirname(BACKGROUND_CSV), exist_ok=True)
+                bfh = open(BACKGROUND_CSV, "a" if bg_exists else "w",
+                           newline="", encoding="utf-8")
+                bgw = csv.writer(bfh)
+                if not bg_exists:
+                    bgw.writerow(BACKGROUND_COLUMNS)
+            bgw.writerows(bg_rows)
+            bfh.flush()
+            total_bg += len(bg_rows)
         if cw is not None:
             # Flushed with the measurements, section by section, so a run that
             # stops half way leaves the two files describing the same sections.
@@ -963,9 +1082,21 @@ def main():
     fh.close()
     if cfh is not None:
         cfh.close()
+    if bfh is not None:
+        bfh.close()
     print(f"\n{total_nuc} nuclei -> {NUCLEI_CSV}")
     if coloc_wanted:
         print(f"{total_rel} co-localisation pairs -> {COLOC_CSV}")
+    if total_bg:
+        # Said once, at the end, rather than per ROI: this is a loop over
+        # thousands of them and a line each would be a line nobody reads.
+        print(f"!! {total_bg} ROI frames FAILED THE BACKGROUND CHECK - over "
+              f"{SG.BACKGROUND_FAILED:.0%} of the frame lay below the median "
+              f"the cut was derived from, so the median was inside an object "
+              f"rather than in the background. Those ROIs' counts are biased, "
+              f"and a zero among them means the estimate failed, NOT that "
+              f"nothing was stained.")
+        print(f"   one row each, with the numbers -> {BACKGROUND_CSV}")
     if no_tissue_mask:
         print(f"!! {len(no_tissue_mask)} sections SKIPPED for want of a tissue "
               f"mask in reformatted/: {no_tissue_mask[:5]}")

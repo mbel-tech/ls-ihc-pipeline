@@ -29,6 +29,7 @@ if HERE not in sys.path:
     sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(REPO, "scripts"))
 
+import ls_segment as SG                                      # noqa: E402
 from _fixture import temp_study, load_stage                  # noqa: E402
 
 failures = []
@@ -109,15 +110,19 @@ BOX = (100, 100, 24, 20)                   # x0, y0, w, h in CZI px
 SEC = (112, 110, 50)                       # sec_x, sec_y, sec_r on the 256 grid
 
 
-def drive(D5, marker, uid, planes, model_labels):
+def drive(D5, marker, uid, planes, model_labels, box=None):
     """Run 05c.main() over one section and one ROI. Returns (fake, model, rows).
 
     The affine is the identity, so a CZI coordinate IS a grid coordinate and
     the box at (100, 100) sits inside the disc at (112, 110) r=50.
+
+    `box` overrides the rectangle for the checks that need a frame big enough
+    for ls_segment's background check to speak - it declines below
+    MIN_CHECK_PX, and the default box here is 480 px.
     """
     import pylibCZIrw.czi as pyczi
 
-    x0, y0, bw, bh = BOX
+    x0, y0, bw, bh = box or BOX
     sx, sy, sr = SEC
     D5.G5.use_marker(marker)
     os.makedirs(D5.REFORMAT_DIR, exist_ok=True)
@@ -242,6 +247,15 @@ with temp_study(acquisition=MULTIPLEX) as study:
     print("--- the threshold backend's two settings are read here now ---")
     chk("mad_k comes from config", D5.MAD_K, 3.0)
     chk("min_area_um2 comes from config", D5.MIN_AREA_UM2, 5.0)
+    chk("5 um2 at 0.65 um/px is 12 px", D5.min_area_px_for(5.0, 0.65), 12)
+    chk("...and that is what the study's own settings give",
+        D5.min_area_px_for(), 12)
+    # The clamp. A study declaring `min_area_um2: 0` asks for a minimum of
+    # zero, and `areas < 0` drops nothing - which cannot be told apart from a
+    # minimum nobody set. Removing the max(1, ...) used to survive this suite.
+    chk("a study asking for no minimum still gets one",
+        D5.min_area_px_for(0.0, 0.65), 1)
+    chk("...however coarse its pixels", D5.min_area_px_for(0.0, 25.0), 1)
 
     print()
     print("--- 05c does not assume a nuclear channel exists ---")
@@ -421,6 +435,84 @@ with temp_study(acquisition=PAIRED) as study:
         # roi_colocalisation.csv beside them would read as "nothing overlaps".
         chk("and NO co-localisation file was written for it",
             os.path.exists(D5.COLOC_CSV), False)
+
+# --------------------------------------------------------------------------
+print()
+print("=== two ROIs that both report zero objects ===")
+print()
+
+# The threshold backend estimates background with the frame's own median, and
+# past about half coverage that median is inside an object: the cut is derived
+# from the object, nothing clears it, and the ROI reports NO objects. 05c
+# answers zero objects with `continue`, so such an ROI writes no rows at all
+# and 06a reads n = 0 and a density of 0.0 for it - the same as an ROI where
+# nothing was stained. These two drives are that pair, and the only thing that
+# tells them apart is qc/roi_background_assumption.csv.
+#
+# A fresh study for each, so "the file does not exist" means what it says.
+
+BIG = (100, 100, 40, 40)          # 1600 px: above ls_segment.MIN_CHECK_PX
+
+
+def noisy(shape, seed, frac=0.0):
+    """Background noise, `frac` of it replaced by signal.
+
+    Noise on purpose. The check measures how far below the median the frame's
+    floor lies IN UNITS OF THE FRAME'S OWN NOISE, and a flat synthetic field
+    gives it no unit - it reports such a frame unchecked rather than judging
+    it. A camera frame always has noise.
+    """
+    rng = np.random.default_rng(seed)
+    a = rng.normal(100, 10, shape).ravel()
+    n = int(round(frac * a.size))
+    a[:n] = rng.normal(1000, 100, n)
+    rng.shuffle(a)
+    return a.reshape(shape)
+
+
+if not HAVE_CZI:
+    print("   (pylibCZIrw is not installed - the detection loop cannot be "
+          "driven)")
+else:
+    bh, bw = BIG[3], BIG[2]
+    star = np.zeros((bh, bw), dtype=np.int32)
+
+    with temp_study(acquisition=MULTIPLEX) as study:
+        D5 = load_stage("05c_detect_rois.py")
+        print("--- an ROI where nothing was stained ---")
+        planes = {0: block((bh, bw), 100), 1: block((bh, bw), 150),
+                  2: noisy((bh, bw), seed=1)}
+        fake, model, rows = drive(D5, "GFAP", "AB12_3a-s0", planes, star,
+                                  box=BIG)
+        chk("no objects were found", rows, [])
+        chk("...and nothing was written about the background",
+            os.path.exists(D5.BACKGROUND_CSV), False)
+
+    with temp_study(acquisition=MULTIPLEX) as study:
+        D5 = load_stage("05c_detect_rois.py")
+        print()
+        print("--- an ROI where the stain covers the frame ---")
+        planes = {0: block((bh, bw), 100), 1: block((bh, bw), 150),
+                  2: noisy((bh, bw), seed=1, frac=0.6)}
+        fake, model, rows = drive(D5, "GFAP", "AB12_3a-s0", planes, star,
+                                  box=BIG)
+        chk("no objects were found here either", rows, [])
+        chk("...but the run recorded why",
+            os.path.exists(D5.BACKGROUND_CSV), True)
+        flagged = read_rows(D5.BACKGROUND_CSV)
+        chk("one row, for the one ROI", len(flagged), 1)
+        chk("...naming the section, the ROI and the marker",
+            [flagged[0]["scene_uid"], flagged[0]["roi_index"],
+             flagged[0]["marker"]], ["AB12_3a-s0", "1", "GFAP"])
+        chk("...the plane it was segmented on and the backend that failed",
+            [flagged[0]["segmented_on"], flagged[0]["backend"]],
+            ["GFAP", "threshold"])
+        chk("...the zero it is explaining", flagged[0]["n_objects"], "0")
+        chk("...and how much of the frame lay below its own background",
+            float(flagged[0]["below_background"]) > SG.BACKGROUND_FAILED, True)
+        chk("every line matches BACKGROUND_COLUMNS",
+            set(widths(D5.BACKGROUND_CSV)), {len(D5.BACKGROUND_COLUMNS)})
+
 
 print()
 print("ALL PASS" if not failures else f"{len(failures)} FAILED")
