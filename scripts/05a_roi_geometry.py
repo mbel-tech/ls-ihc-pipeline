@@ -87,6 +87,7 @@ if _HERE not in sys.path:
 # lines copy-pasted into every stage.
 import ls_config as LC  # noqa: E402
 from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
+import ls_channels as CH  # noqa: E402
 import czi_read as CR  # noqa: E402
 OUT_ROOT = RF.OUT_ROOT
 REFORMAT_DIR = RF.REFORMAT_DIR
@@ -117,10 +118,11 @@ class _Rect:
 # have quietly lost the geometry they were measured against. Nothing would have
 # errored.
 #
-# AF568 and AF488 sections have DISJOINT scene_uids - they are separate
+# The markers of a `paired` study have DISJOINT scene_uids - they are separate
 # acquisitions - so the two files never overlap and downstream stages that want
-# everything can simply read both.
-MARKERS = ("AF568", "AF488")
+# everything can simply read both. Under `multiplex` they are the SAME scan, so
+# the uids collide by construction; all_boxes() knows the difference.
+MARKERS = tuple(CH.marker_names(CONFIG))
 
 # Everything written before 2026-09-01 is AF568 and has no suffix. Read as a
 # fallback so an existing out_root keeps working; never written to again.
@@ -142,13 +144,19 @@ def resolve_paths(marker):
     # Both legacy files or neither. Deciding on the box file alone would hand
     # back LEGACY_GEOM for a repo that already has roi_geometry_AF568.csv, and
     # that path may not exist.
+    #
+    # The literal is deliberate: these are files that exist on disk from before
+    # 2026-09-01, under that exact name. It is a fact about this out_root, not
+    # a fact about the study's markers.
     if (marker == "AF568" and not os.path.exists(b) and not os.path.exists(g)
             and os.path.exists(LEGACY_BOX) and os.path.exists(LEGACY_GEOM)):
         return LEGACY_GEOM, LEGACY_BOX
     return g, b
 
 
-MARKER = "AF568"
+# The first declared marker is the default, so a study that declares one marker
+# needs no --marker anywhere. For LS that is AF568, which is what this was.
+MARKER = MARKERS[0] if MARKERS else None
 GEOM_CSV, BOX_CSV = resolve_paths(MARKER)
 
 
@@ -833,8 +841,8 @@ def main():
     if args.verify:
         # --verify reads GEOM_CSV, and the marker is normally inferred from the
         # export - which --verify does not read. Without this it would check the
-        # AF568 geometry and print PASS whatever --marker said.
-        use_marker(args.marker or "AF568")
+        # first marker's geometry and print PASS whatever --marker said.
+        use_marker(args.marker or MARKER)
         print(f"marker: {MARKER}  ({os.path.basename(GEOM_CSV)})")
         print("grid -> overview  (coordinate planes through the same transform)")
         worst, checked = verify()
@@ -877,7 +885,7 @@ def main():
               f"one, since the two are separate acquisitions with their own "
               f"sections. Re-export from 04l with a single --marker.")
         return 1
-    marker = seen_markers[0] if seen_markers else (args.marker or "AF568")
+    marker = seen_markers[0] if seen_markers else (args.marker or MARKER)
     if args.marker and args.marker != marker:
         print(f"--marker {args.marker} but the export says {marker}. Refusing "
               f"rather than writing one marker's boxes to the other's file.")

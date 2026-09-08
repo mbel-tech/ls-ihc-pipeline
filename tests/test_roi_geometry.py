@@ -399,5 +399,31 @@ else:
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
+print()
+print("--- the marker list comes from the study, not from a literal ---")
+
+import ls_channels as _CH                                   # noqa: E402
+
+
+def _raises(fn, exc):
+    try:
+        fn()
+    except exc:
+        return True
+    except Exception:                                        # noqa: BLE001
+        return False
+    return False
+
+
+chk("05a's markers are the configured ones",
+    list(G5.MARKERS), _CH.marker_names(G5.CONFIG))
+chk("...which for this temp study is the example's one marker",
+    list(G5.MARKERS), ["Marker1"])
+chk("the default marker is the first declared",
+    G5.MARKER, G5.MARKERS[0])
+chk("an unknown marker is still refused",
+    _raises(lambda: G5.use_marker("nope"), ValueError), True)
+
+
 print("\n" + (f"{fails} FAILED" if fails else "ALL PASS"))
 sys.exit(1 if fails else 0)
