@@ -51,6 +51,13 @@ chk("segment defaults to nuclear when a nuclear channel exists",
 chk("a marker on its own channel defaults to stardist",
     CH.parse([{"name": "X", "role": "marker", "index": 0,
                "segment": "own"}])[0].backend, "stardist")
+# The other direction of the same default, and the one a study with no
+# counterstain depends on: with no nuclear channel to segment on, a marker
+# segments itself. That is what lets such a study declare nothing about
+# segmentation and still be read correctly.
+chk("segment defaults to own when there is no nuclear channel",
+    [c.segment for c in CH.markers(CH.parse(
+        [{"name": "X", "role": "marker", "index": 0}]))], ["own"])
 
 print()
 print("--- resolving a declared channel to a plane in one file ---")
@@ -161,6 +168,11 @@ chk("segment: nuclear needs a nuclear channel to segment",
 chk("...but own-channel markers alone are fine",
     errs([dict(BLOCK[1], segment="own", backend="stardist",
                nucleus_shaped=True)]), [])
+# ...including when the table says nothing about segmentation at all. A study
+# with no counterstain is a supported study, not a half-declared one, and
+# parse's default above is what makes its markers segment themselves.
+chk("a study may declare no nuclear channel at all",
+    errs([{"name": "GFAP", "role": "marker", "index": 0}]), [])
 
 chk("the paired layout declares no channels",
     len(errs(BLOCK, layout="paired", markers=["AF568"])), 1)
