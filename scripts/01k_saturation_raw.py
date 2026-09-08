@@ -57,6 +57,7 @@ from PIL import Image
 # the whole process. Imported, not re-implemented: this block used to be four
 # lines copy-pasted into every stage.
 from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
+import ls_channels as CH  # noqa: E402
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _spec = importlib.util.spec_from_file_location("_ov", os.path.join(_HERE, "01_overviews.py"))
@@ -89,7 +90,7 @@ CEILING = 65535
 # had was the 8-bit proxy, and AF488's display high is 37,263: a PNG value of
 # 255 there means "at or above the display high", not "at the sensor ceiling",
 # so the question could not even be asked. Raw 16-bit measurement can ask it.
-MASK_MARKERS = ("AF568", "AF488")
+MASK_MARKERS = tuple(CH.marker_names(CONFIG))
 
 KEYS = ["scene_uid", "file", "animal", "slide", "variant", "marker_channel",
         "scene_index", "section_order", "width", "height", "um_px", "zoom",

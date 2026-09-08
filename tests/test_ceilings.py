@@ -133,5 +133,15 @@ chk("...and they are the two channels it measures",
     sorted(c["plane"]["C"] for c in _doc.calls), [0, 1])
 
 print()
+print("--- masks are written for the study's markers ---")
+
+import ls_channels as _CH                                   # noqa: E402
+
+chk("01k's mask markers are the configured ones",
+    list(K.MASK_MARKERS), _CH.marker_names(K.CONFIG))
+chk("...which for this temp study is the example's one marker",
+    list(K.MASK_MARKERS), ["Marker1"])
+
+print()
 print("FAILURES" if fails else "ALL PASS")
 sys.exit(1 if fails else 0)
