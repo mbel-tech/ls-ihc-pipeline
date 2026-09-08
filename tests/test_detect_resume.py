@@ -13,6 +13,16 @@ ways of quietly corrupting it are pinned here:
     and then re-measure only N sections, silently discarding the rest. It
     must drop exactly the sections it is about to redo, and nothing of the
     other marker.
+  * RESUMING ONTO A PRE-PROVENANCE HEADER. COLUMNS gained `segmented_on`,
+    `backend` and `nucleus_shaped` on 2026-09-08, and the check above then
+    refused the operator's live 961,233-row file - hours of StarDist that
+    cannot be resumed onto. Unlike `off_tissue`, the absence of these three
+    has a meaning: before them this stage segmented the counterstain with
+    StarDist and had no other route, so every such row is nuclear / stardist /
+    nucleus-shaped. The resume backfills them and goes ahead, and what it must
+    NOT do is leave the file half 21 fields and half 24 - csv.DictReader
+    returns None for the fields a header does not name, None is falsy, and 06a
+    would withhold the Abercrombie correction from every correctly-nuclear row.
 
 05c imports StarDist lazily inside load_model(), so the module itself loads on
 a machine without it. Synthetic files throughout.
@@ -86,6 +96,14 @@ def row(uid, marker, n):
     return [r[c] for c in G5C.COLUMNS]
 
 
+def legacy_row(uid, marker, n):
+    """The same row under the header a file had before the provenance columns."""
+    r = dict.fromkeys(G5C.COLUMNS, "0")
+    r.update(scene_uid=uid, marker=marker, nucleus_id=str(n),
+             roi_kind="roi", region="Dm")
+    return [r[c] for c in G5C.LEGACY_COLUMNS]
+
+
 def header_check(tmp):
     """A resume onto a pre-off_tissue file must stop and say what to run."""
     old = os.path.join(tmp, "old_nuclei.csv")
@@ -99,6 +117,60 @@ def header_check(tmp):
     chk("...and the message names 06g_flag_off_tissue.py",
         "06g_flag_off_tissue.py" in got, True)
     chk("...and names the missing column", "off_tissue" in got, True)
+
+    # A file written before the provenance columns is a DIFFERENT case from
+    # the one above, and the difference is that its absence has a meaning.
+    # Before those columns existed 05c segmented the counterstain with StarDist
+    # and had no other route, so every row in such a file is nuclear/stardist/
+    # nucleus-shaped - which is exactly what the backfill writes. Refusing it
+    # instead cost the operator's 961,233-row file its resume.
+    leg = os.path.join(tmp, "legacy_nuclei.csv")
+    write(leg, G5C.LEGACY_COLUMNS,
+          [legacy_row("A1", "AF568", 1), legacy_row("A1", "AF568", 2)])
+    try:
+        G5C.check_header(leg, G5C.COLUMNS)
+        got = "no exit"
+    except SystemExit:
+        got = "exit"
+    chk("a legacy header with no `legacy` mapping is still refused", got, "exit")
+
+    try:
+        G5C.check_header(leg, G5C.COLUMNS, legacy=G5C.LEGACY_PROVENANCE)
+        got = "accepted"
+    except SystemExit as exc:
+        got = str(exc)
+    chk("...and accepted with one", got, "accepted")
+    rows = read(leg)
+    chk("...the file now carries the current header",
+        list(rows[0].keys()) == G5C.COLUMNS, True)
+    # The counterstain as THIS study names it. A study with no channel table -
+    # which is every `paired` one, including the live study - has no declared
+    # name for it and gets NUCLEAR_FALLBACK, "nuclear"; the example study this
+    # suite runs under declares a channel table, so it gets "DAPI". Either way
+    # a backfilled row says what a freshly appended one says, which is the
+    # check below.
+    chk("...every old row reads as the counterstain",
+        {r["segmented_on"] for r in rows},
+        "{%r}" % G5C.LEGACY_PROVENANCE["segmented_on"])
+    chk("...which is what a nuclear-segmented marker records anyway",
+        G5C.LEGACY_PROVENANCE["segmented_on"],
+        G5C.segment_plane_for(G5C.G5.MARKER))
+    chk("...and with no channel table that is the plain word",
+        G5C.NUCLEAR_FALLBACK, "nuclear")
+    chk("...segmented by stardist", {r["backend"] for r in rows}, "{'stardist'}")
+    chk("...and nucleus-shaped", {r["nucleus_shaped"] for r in rows}, "{'1'}")
+    chk("...with nothing else touched",
+        [r["nucleus_id"] for r in rows], "['1', '2']")
+    with open(leg, newline="", encoding="utf-8") as fh:
+        widths = {len(r) for r in csv.reader(fh)}
+    chk("...and one width for every line, header included",
+        widths, "{%d}" % len(G5C.COLUMNS))
+    try:
+        G5C.check_header(leg, G5C.COLUMNS, legacy=G5C.LEGACY_PROVENANCE)
+        got = "accepted"
+    except SystemExit as exc:
+        got = str(exc)
+    chk("...and the upgraded file passes the plain check", got, "accepted")
 
     cur = os.path.join(tmp, "cur_nuclei.csv")
     write(cur, G5C.COLUMNS, [row("A1", "AF568", 1)])
@@ -320,6 +392,123 @@ def detect_read_check():
 
 
 detect_read_check()
+
+
+class _OneNucleusModel:
+    """Stands in for StarDist and reports exactly one object, centred.
+
+    The other fake reports none, which is enough to prove what reached read().
+    This one has to produce a row, because the thing under test is that an
+    APPENDED row and a BACKFILLED one end up the same width in the same file.
+    """
+
+    def predict_instances(self, img, **kw):
+        lab = np.zeros(img.shape, dtype=np.int32)
+        h, w = img.shape
+        lab[h // 2 - 2:h // 2 + 2, w // 2 - 2:w // 2 + 2] = 1
+        return lab, {}
+
+
+def legacy_resume_check():
+    """The real resume path, onto a file written before the provenance columns.
+
+    header_check() drives check_header directly; this drives main(), because
+    what matters operationally is that a resume ONTO THE OPERATOR'S FILE goes
+    ahead and that what comes out is one width. Their live roi_nuclei.csv is
+    961,233 rows under the 21-column header, and re-running the stage instead
+    means re-segmenting every one of them with StarDist.
+    """
+    try:
+        import pylibCZIrw.czi as _real_pyczi
+    except ImportError:                                          # noqa: BLE001
+        print("   (pylibCZIrw is not installed - the legacy resume cannot be "
+              "driven through main())")
+        return
+
+    uid, czi_file = "AB12_9a-s0", "AB12_9a.czi"
+    marker = G5C.G5.MARKER
+    x0, y0, bw, bh = 0, 0, 24, 20
+    G5C.G5.use_marker(marker)
+    os.makedirs(G5C.RESULTS, exist_ok=True)
+
+    geom_row = {
+        "scene_uid": uid, "animal": "AB12", "marker": marker,
+        "czi_file": czi_file, "scene_index": "0",
+        "m00": "1", "m01": "0", "m02": "0",
+        "m10": "0", "m11": "1", "m12": "0",
+    }
+    with open(G5C.G5.GEOM_CSV, "w", newline="\n", encoding="utf-8") as fh:
+        w = csv.DictWriter(fh, fieldnames=list(geom_row))
+        w.writeheader()
+        w.writerow(geom_row)
+
+    box_row = {
+        "scene_uid": uid, "animal": "AB12", "marker": marker,
+        "roi_kind": "roi", "region": "Dm", "seed_n": "1",
+        "czi_x0": str(x0), "czi_y0": str(y0),
+        "czi_w": str(bw), "czi_h": str(bh),
+        "sec_x": "12", "sec_y": "10", "sec_r": "50", "sec_poly": "",
+    }
+    with open(G5C.G5.BOX_CSV, "w", newline="\n", encoding="utf-8") as fh:
+        w = csv.DictWriter(fh, fieldnames=list(box_row))
+        w.writeheader()
+        w.writerow(box_row)
+
+    mask_dir = os.path.join(G5C.REFORMAT_DIR, "sections")
+    os.makedirs(mask_dir, exist_ok=True)
+    np.save(os.path.join(mask_dir, f"{uid}_mask.npy"),
+            np.ones((256, 256), dtype=bool))
+
+    # A pre-provenance file holding another section's measurements. Another
+    # section, so this run has something to do: a resume that finds its work
+    # already done would stop before it ever opened the file for append.
+    write(G5C.NUCLEI_CSV, G5C.LEGACY_COLUMNS,
+          [legacy_row("AB12_8a-s0", marker, 1)])
+
+    fake_doc = _FakeCzi((bh, bw))
+    saved_open_czi = _real_pyczi.open_czi
+    saved_load_model = G5C.load_model
+    saved_argv = sys.argv
+    _real_pyczi.open_czi = _FakeOpenCzi(fake_doc)
+    G5C.load_model = lambda: _OneNucleusModel()
+    sys.argv = ["05c_detect_rois.py", "--marker", marker, "--order", "uid"]
+    try:
+        rc = G5C.main()
+    finally:
+        _real_pyczi.open_czi = saved_open_czi
+        G5C.load_model = saved_load_model
+        sys.argv = saved_argv
+
+    chk("a resume onto a pre-provenance file completes", rc, 0)
+    with open(G5C.NUCLEI_CSV, newline="", encoding="utf-8") as fh:
+        lines = list(csv.reader(fh))
+    chk("...the file carries the current header", lines[0] == G5C.COLUMNS, True)
+    chk("...one width for every line, old rows and new",
+        {len(r) for r in lines}, "{%d}" % len(G5C.COLUMNS))
+    rows = read(G5C.NUCLEI_CSV)
+    chk("...the appended nucleus is there",
+        sorted(r["scene_uid"] for r in rows), "['AB12_8a-s0', '%s']" % uid)
+    old = [r for r in rows if r["scene_uid"] == "AB12_8a-s0"][0]
+    chk("...the backfilled row reads as the counterstain",
+        old["segmented_on"], G5C.segment_plane_for(marker))
+    chk("...segmented by stardist", old["backend"], "stardist")
+    chk("...and nucleus-shaped", old["nucleus_shaped"], "1")
+    # The failure this whole fix exists to prevent: DictReader gives None for a
+    # field the header does not name, None is falsy, and 06a would then withhold
+    # the Abercrombie correction from every correctly-nuclear row.
+    chk("...and no row has a field the header does not name",
+        any(None in r for r in rows), False)
+    # The invariant that matters: one file, one answer. A backfilled row and a
+    # row this run measured must not describe the same segmentation two ways.
+    new = [r for r in rows if r["scene_uid"] == uid][0]
+    chk("the newly measured nucleus carries the same provenance",
+        (new["segmented_on"], new["backend"], new["nucleus_shaped"]),
+        (old["segmented_on"], old["backend"], old["nucleus_shaped"]))
+
+
+print()
+print("--- a resume onto a file written before the provenance columns ---")
+legacy_resume_check()
 
 
 def main():

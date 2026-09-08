@@ -288,6 +288,31 @@ COLUMNS = ["scene_uid", "animal", "marker", "roi_kind", "region", "seed_n",
            # that made it and 06a's Abercrombie gate depends on the answer.
            "segmented_on", "backend", "nucleus_shaped"]
 
+#: What the three provenance columns mean when a file predates them, and the
+#: EXACT strings they get filled in with - the same ones the emit loop writes
+#: today for a nuclear-segmented marker, so an upgraded file is
+#: indistinguishable from one written fresh.
+#:
+#: This is not a guess about old rows. Before the provenance columns existed
+#: this stage had exactly one route: segment the counterstain with StarDist and
+#: measure the marker inside the nuclear mask. Every object in such a file came
+#: that way, so absence means nuclear - which is also how 06a's Abercrombie
+#: gate reads a missing column, for the same reason.
+#:
+#: `segmented_on` is the counterstain's name AS THIS STUDY DECLARES IT, not the
+#: literal "nuclear", so a backfilled row and a freshly appended one in the
+#: same file say the same thing rather than two spellings of it. For the live
+#: study that string IS "nuclear": it is paired, so it declares no channel
+#: table and its counterstain has no declared name - which is what
+#: NUCLEAR_FALLBACK exists for.
+LEGACY_PROVENANCE = {"segmented_on": NUCLEAR_NAME or NUCLEAR_FALLBACK,
+                     "backend": "stardist",
+                     "nucleus_shaped": "1"}
+
+#: The header of a roi_nuclei.csv written before the provenance columns: the
+#: current columns with those three removed, in the order they were in.
+LEGACY_COLUMNS = [c for c in COLUMNS if c not in LEGACY_PROVENANCE]
+
 
 def point_in_poly(px, py, v):
     """Is (px, py) inside the ring `v`, an (N, 2) array of canonical-grid points?
@@ -314,7 +339,44 @@ def point_in_poly(px, py, v):
     return inside
 
 
-def check_header(path, columns):
+def backfill_header(path, columns, legacy):
+    """Rewrite `path` under `columns`, filling in the ones it does not have.
+
+    EVERY row, not just the new ones. The alternative - accept the old header
+    and let new rows carry the extra fields - produces a file whose rows are
+    two different widths, and csv.DictReader hands the absent fields back as
+    None rather than raising. None is falsy, so 06a would read
+    `nucleus_shaped=None` on the 961,233 rows that are perfectly nuclear and
+    withhold the Abercrombie correction from every one of them. That is the
+    failure this rewrite exists to make impossible: after it, the file is one
+    width and every row says what it is.
+
+    Through a temp file and one atomic replace, for the reason `drop_rows`
+    gives: this runs against a drive that has dropped writes, and a
+    half-rewritten roi_nuclei.csv is the whole dataset. Columns are matched by
+    NAME here rather than by position, because the point is to move rows from
+    one header to another.
+
+    Returns the number of rows rewritten.
+    """
+    tmp = path + ".tmp"
+    n = 0
+    with open(path, newline="", encoding="utf-8") as rf, \
+            open(tmp, "w", newline="", encoding="utf-8") as tf:
+        rd, tw = csv.reader(rf), csv.writer(tf)
+        old = next(rd, None) or []
+        at = {c: i for i, c in enumerate(old)}
+        tw.writerow(list(columns))
+        for row in rd:
+            if not row:
+                continue
+            tw.writerow([row[at[c]] if c in at else legacy[c] for c in columns])
+            n += 1
+    os.replace(tmp, path)
+    return n
+
+
+def check_header(path, columns, legacy=None):
     """Refuse to append to a roi_nuclei.csv whose header is not `columns`.
 
     This stage appends positionally, and the file is shared across runs and
@@ -325,10 +387,36 @@ def check_header(path, columns):
     06g_flag_off_tissue.py cannot backfill a file that is half old and half
     new. Order is checked too, not just the set: a permuted header would take
     every appended row scrambled.
+
+    `legacy` names the columns a file may be missing and what their absence
+    means, and turns that one case from a refusal into a rewrite: the file is
+    backfilled to `columns` in place, atomically, and the resume goes ahead.
+    COLUMNS gained the three provenance columns on 2026-09-08, and refusing
+    them cost more than the check was worth - the operator's live file holds
+    961,233 rows and re-running the stage means re-segmenting all of them with
+    StarDist. Nothing else is guessed at: the header must be exactly `columns`
+    minus the legacy ones, in the same order.
+
+    Callers that do NOT pass `legacy` are unchanged, and that is the safe
+    default: a future append path that forgets it gets a refusal, never a file
+    whose rows are two different widths.
     """
     with open(path, newline="", encoding="utf-8") as rf:
         header = next(csv.reader(rf), None) or []
     if header == list(columns):
+        return
+    if legacy and header == [c for c in columns if c not in legacy]:
+        # Said out loud, because it rewrites the operator's dataset - and
+        # names what the filled-in values are, since "absence means nuclear"
+        # is a claim about their data, not a formatting detail.
+        print(f"  {os.path.basename(path)} predates "
+              f"{', '.join(legacy)} - backfilling "
+              f"{', '.join(f'{k}={v!r}' for k, v in legacy.items())}, which "
+              f"is what every row in it already is: before those columns "
+              f"existed this stage segmented the counterstain with StarDist "
+              f"and had no other route.")
+        n = backfill_header(path, columns, legacy)
+        print(f"  {n} rows rewritten under the current header")
         return
     missing = [c for c in columns if c not in header]
     extra = [c for c in header if c not in columns]
@@ -338,13 +426,12 @@ def check_header(path, columns):
         f"!! {path} has a different header from the one this stage writes "
         f"({why}). Appending to it would give the new rows a different layout "
         f"from the old ones. If `off_tissue` is what is missing, run "
-        f"06g_flag_off_tissue.py to backfill it first. If the provenance "
-        f"columns `segmented_on`, `backend` and `nucleus_shaped` are, there "
-        f"is no backfill stage for them: every object in a file written "
-        f"before they existed came from the nuclear channel via StarDist, "
-        f"which is exactly what 06a reads their absence as - so the dataset "
-        f"stays readable, but this stage cannot append to it. Move it aside "
-        f"and start a new file.\n"
+        f"06g_flag_off_tissue.py to backfill it first - which leaves the file "
+        f"at the header this stage backfills the provenance columns onto, so "
+        f"the two together get an old file all the way to the current one. "
+        f"Anything else - a permuted header, a column this stage does not "
+        f"write - is not something to guess at: move the file aside and start "
+        f"a new one.\n"
         f"   NOT --force: this check runs before the forced drop, so a "
         f"re-run cannot get past it either. The advice to try that was here "
         f"before the provenance columns were and was never true.")
@@ -605,7 +692,10 @@ def main():
     if exists:
         # Before anything else: appending to a file with a different header
         # corrupts it quietly (see check_header), and the check is one line.
-        check_header(NUCLEI_CSV, COLUMNS)
+        # LEGACY_PROVENANCE is passed here and NOWHERE ELSE: this is the only
+        # path that appends to roi_nuclei.csv, so it is the only one that can
+        # backfill it, and every other caller keeps the plain refusal.
+        check_header(NUCLEI_CSV, COLUMNS, legacy=LEGACY_PROVENANCE)
 
     # Which markers this run must relate its own objects to. Empty for every
     # study that exists: LS is paired, and co-localisation is a multiplex
