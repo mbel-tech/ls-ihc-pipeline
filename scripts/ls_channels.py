@@ -24,6 +24,10 @@ SEGMENTS = (SEGMENT_NUCLEAR, SEGMENT_OWN)
 #: What finds them when they are found on the marker's own channel.
 BACKENDS = ("stardist", "threshold")
 
+# The two acquisition layouts, so no caller writes the string itself.
+LAYOUT_MULTIPLEX, LAYOUT_PAIRED = "multiplex", "paired"
+LAYOUTS = (LAYOUT_MULTIPLEX, LAYOUT_PAIRED)
+
 #: A channel name becomes a directory and a CSV value, so it has to survive
 #: both. Deliberately narrow: a name is typed once and lives for years.
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 _.+-]{0,63}$")
@@ -82,6 +86,52 @@ def nuclear(channels):
 def markers(channels):
     """The channels that get measured, in declared order."""
     return [c for c in channels if c.role == MARKER]
+
+
+def marker_names(cfg):
+    """The markers this study measures, in declared order, as plain names.
+
+    Layout-aware because the two layouts genuinely know it differently:
+
+      multiplex  one scan carries every marker, so the channel table says
+                 which channels are markers and what they are called.
+      paired     each scan carries the nuclear channel plus ONE marker, so
+                 there is no table to read - the study declares the list.
+
+    Deliberately NOT derived from the manifest's marker_channel column, though
+    the values are there. Every caller of this is a module-level constant
+    evaluated at import, the manifest lives under out_root, and out_root may be
+    absent or on an unplugged drive - which is the exact failure P0 removed by
+    making a missing path warn rather than kill all 45 stages at import. Stage
+    00 also WRITES the manifest, so it would depend on its own output to
+    import.
+
+    Takes the whole config, not the acquisition block, because which of the two
+    sources to read is itself decided by `acquisition.layout`. A config that is
+    malformed anywhere on that path yields no markers rather than raising: this
+    is called at import of module-level constants, where a traceback would take
+    every stage down with it.
+    """
+    cfg = cfg if isinstance(cfg, dict) else {}
+    acq = cfg.get("acquisition")
+    if not isinstance(acq, dict):
+        return []
+    if acq.get("layout") == LAYOUT_PAIRED:
+        declared = acq.get("markers") or []
+        # A string is iterable, so list("AF568") would "succeed" and give six
+        # single-letter markers. Judged, not crashed on and not accepted.
+        if not isinstance(declared, (list, tuple)):
+            return []
+        return [str(m) for m in declared]
+    table = acq.get("channels")
+    if not isinstance(table, (list, tuple)):
+        # Same trap the other way round: parse() would read a string channel
+        # table one letter at a time. validate() is what says so; this only
+        # declines to invent markers out of it.
+        return []
+    if not all(isinstance(e, dict) or e is None for e in table):
+        return []
+    return [c.name for c in markers(parse(table))]
 
 
 def resolve(channels, czi_channel_names):
@@ -157,20 +207,71 @@ def validate(block, layout):
     attempt - and so that the table itself, not just its content, can be
     judged: a `channels` value that is a string or a number is exactly what
     this function exists to catch, not something it should choke on.
+
+    `block` is either the whole `acquisition` block or, as callers older than
+    `acquisition.markers` pass it, just its `channels` list. Only the former
+    can be judged for markers: a bare list does not carry the key, and
+    reporting it missing from a caller that never had it to give would fail
+    every study that has not been migrated yet.
     """
     errors = []
     warnings = []
+
+    acquisition = block if isinstance(block, dict) else None
+    if acquisition is not None:
+        block = acquisition.get("channels")
+
+    if acquisition is not None:
+        declared = acquisition.get("markers")
+        malformed = declared is not None and not isinstance(
+            declared, (list, tuple))
+        if malformed:
+            errors.append(
+                f"`acquisition.markers` must be a list of marker names, not a "
+                f"{type(declared).__name__}. A string would be read one letter "
+                f"at a time.")
+            declared = None
+
+        if layout == LAYOUT_PAIRED:
+            if not declared and not malformed:
+                # Not reported when the value was there but the wrong shape:
+                # that is the same fault said twice, and the operator did name
+                # their markers - just not as a list.
+                errors.append(
+                    "`acquisition.markers` must name this study's markers. A "
+                    "paired study declares no channel table - each scan "
+                    "carries the nuclear channel plus one marker - so this "
+                    "list is the only record of what those markers are.")
+            seen = set()
+            for m in declared or []:
+                if m in seen:
+                    errors.append(
+                        f"marker {m!r} is declared twice in "
+                        f"`acquisition.markers`. Output paths are built from "
+                        f"these names, so a repeat would have two markers "
+                        f"writing to one file.")
+                seen.add(m)
+                if not NAME_RE.match(str(m)):
+                    errors.append(
+                        f"marker name {m!r} is not usable in a file path. "
+                        f"Use letters, digits, spaces, and . _ + - only.")
+        elif declared:
+            errors.append(
+                "`acquisition.markers` applies to `paired` studies only. Under "
+                "`multiplex` the channel table already says which channels are "
+                "markers, and two sources for one fact is how they drift.")
 
     if block is not None and not isinstance(block, list):
         # `list("abc")` silently succeeds and gives `['a', 'b', 'c']`, which
         # is how a string channel table used to get as far as parse() and
         # blow up on `.get`. Caught here, before entries is even built. `None`
         # is not a fault - it is simply absent, same as an empty list.
-        return ([f"acquisition.channels must be a list of channels, not a "
-                 f"{type(block).__name__}."], [])
+        errors.append(f"acquisition.channels must be a list of channels, not "
+                      f"a {type(block).__name__}.")
+        return errors, warnings
     entries = list(block or [])
 
-    if layout == "paired":
+    if layout == LAYOUT_PAIRED:
         if entries:
             errors.append(
                 "acquisition.channels must be empty for the paired layout: "
@@ -189,9 +290,10 @@ def validate(block, layout):
     if bad_shape:
         # parse() cannot run on these, and every later message would be noise
         # about a table that has not been read.
-        return ([f"acquisition.channels entry {i} is a "
-                  f"{type(entries[i]).__name__}, not a block of settings."
-                  for i in bad_shape], [])
+        errors.extend(f"acquisition.channels entry {i} is a "
+                      f"{type(entries[i]).__name__}, not a block of settings."
+                      for i in bad_shape)
+        return errors, warnings
 
     channels = parse(entries)
 
@@ -270,6 +372,10 @@ def require(block, layout):
     in that stage rather than at import of all forty-five.
     """
     errors, warnings = validate(block, layout)
+    if isinstance(block, dict):
+        # Same two calling conventions validate() takes; parse() only ever
+        # reads the table.
+        block = block.get("channels")
     if errors or warnings:
         raise SystemExit(
             "this study's channel table is not usable yet:\n  "

@@ -270,6 +270,23 @@ SPEC = [
              "`nucleus_shaped`. Empty for the paired layout.",
         consumers=["01_overviews", "05c", "app"]),
 
+    Key("acquisition.markers", "raw",
+        "The markers a `paired` study measures, in the order they should "
+        "appear. Not used under `multiplex`.",
+        default=[], label="Markers (paired only)",
+        note="A paired study declares no channel table, because each of its "
+             "scans carries the nuclear channel plus whichever marker that "
+             "pass used - so this list is the only record of what the markers "
+             "are. It is NOT derived from the manifest's marker_channel "
+             "column: every constant built from it is evaluated at import, "
+             "and the manifest lives under out_root, which may be absent. "
+             "Output paths, CSV column values and workbook sheets are built "
+             "from these names, so changing one renames real files.",
+        example=[],
+        consumers=["01k_saturation_raw", "04a_reformat", "04g_artifact_mask",
+                   "04j_censor_clipped", "04l_roi_curator", "04o_section_rgb",
+                   "05a_roi_geometry"]),
+
     Key("channels.dapi_index", "int",
         "Which CZI channel plane is the nuclear counterstain.",
         required=True, default=0,
