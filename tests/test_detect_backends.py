@@ -165,6 +165,14 @@ def drive(D5, marker, uid, planes, model_labels):
     return fake, model, rows
 
 
+def read_rows(path):
+    """A CSV as a list of dicts, or [] when it was never written."""
+    if not os.path.exists(path):
+        return []
+    with open(path, newline="", encoding="utf-8") as fh:
+        return list(csv.DictReader(fh))
+
+
 def widths(path):
     """The field count of the header and of every data row."""
     with open(path, newline="", encoding="utf-8") as fh:
@@ -298,6 +306,62 @@ with temp_study(acquisition=MULTIPLEX) as study:
         chk("every line has exactly len(COLUMNS) fields",
             set(widths(D5.NUCLEI_CSV)), {len(D5.COLUMNS)})
 
+        print()
+        print("--- co-localisation, computed in the same pass ---")
+
+        # GFAP's run owns no pair - pERK is declared first, so pERK's run
+        # relates the two - and a run that owns none must not create the file.
+        # The GFAP drive above ran first, and the pERK drive after it did own
+        # the pair, so by now the file exists; what is checked is which run
+        # wrote rows into it.
+        rel = read_rows(D5.COLOC_CSV)
+        chk("the file exists once a run that owns a pair has run",
+            os.path.exists(D5.COLOC_CSV), True)
+        chk("...and the flat partner plane related nothing", rel, [])
+
+        # Now a section where BOTH markers have an object, overlapping.
+        # pERK's nucleus is the model's block at rows/cols 2-7; GFAP's is the
+        # bright square at 4-9. Each centroid lands inside the other.
+        planes = {0: block((bh, bw), 100), 1: block((bh, bw), 150),
+                  2: block((bh, bw), 200, patch=(4, 4, 6, 6, 9000))}
+        fake, model, rows = drive(D5, "pERK", "AB12_1c-s0", planes, star)
+        rel = read_rows(D5.COLOC_CSV)
+        chk("three planes were read - the partner's too", len(fake.calls), 3)
+        chk("...including GFAP's own", sorted(c["plane"]["C"] for c in
+                                              fake.calls), [0, 1, 2])
+        chk("one relation was written", len(rel), 1)
+        chk("...naming both markers and both object ids",
+            [rel[0]["marker_a"], rel[0]["object_a"],
+             rel[0]["marker_b"], rel[0]["object_b"]],
+            ["pERK", "1", "GFAP", "1"])
+        chk("...with both directions recorded",
+            [rel[0]["a_centroid_in_b"], rel[0]["b_centroid_in_a"]], ["1", "1"])
+        chk("the join table's lines match COLOC_COLUMNS",
+            set(widths(D5.COLOC_CSV)), {len(D5.COLOC_COLUMNS)})
+
+        # The object ids are the join to roi_nuclei.csv, not fresh numbering.
+        nuc = [r for r in read_rows(D5.NUCLEI_CSV)
+               if r["scene_uid"] == "AB12_1c-s0"]
+        chk("object_a is a nucleus_id of the same (uid, roi_index)",
+            [(r["nucleus_id"], r["roi_index"]) for r in nuc],
+            [(rel[0]["object_a"], rel[0]["roi_index"])])
+
+        print()
+        print("--- --force drops the relations of the sections it redoes ---")
+        # The join table has no `marker` column - its rows belong to the run
+        # of `marker_a` - so the drop that keeps the two files in step has to
+        # be told which column names the owner. Checked last, because it
+        # deletes the row the assertions above read.
+        dropped, kept = D5.drop_rows(D5.COLOC_CSV, "pERK", ["AB12_1c-s0"],
+                                     marker_col="marker_a")
+        chk("the pair of the redone section goes", dropped, 1)
+        chk("...and nothing else does", kept, 0)
+        chk("...the header survives",
+            widths(D5.COLOC_CSV), [len(D5.COLOC_COLUMNS)])
+        chk("a section that is NOT being redone is untouched",
+            D5.drop_rows(D5.COLOC_CSV, "pERK", ["AB12_1z-s0"],
+                         marker_col="marker_a"), (0, 0))
+
 
 # --------------------------------------------------------------------------
 print()
@@ -351,6 +415,12 @@ with temp_study(acquisition=PAIRED) as study:
         chk("nucleus_shaped is true", rows[0]["nucleus_shaped"], "1")
         chk("every line has exactly len(COLUMNS) fields",
             set(widths(D5.NUCLEI_CSV)), {len(D5.COLUMNS)})
+
+        # THE REFUSAL WITH A REASON. Not an empty file - a paired study's
+        # markers are separate scans of different sections, and an empty
+        # roi_colocalisation.csv beside them would read as "nothing overlaps".
+        chk("and NO co-localisation file was written for it",
+            os.path.exists(D5.COLOC_CSV), False)
 
 print()
 print("ALL PASS" if not failures else f"{len(failures)} FAILED")

@@ -40,6 +40,13 @@ Writes `results/roi_nuclei.csv`, one row per nucleus. That is the artefact that
 matters - with per-nucleus intensities on disk the positivity cut becomes a
 decision about a table rather than a reason to re-read 130 CZI scenes.
 
+Under `multiplex`, and only there, it also writes
+`results/roi_colocalisation.csv`: which object of one marker contains which
+object of another, both directions recorded. Under `paired` that file is not
+written AT ALL, because paired markers are separate scans of different
+sections and an empty file would read as "nothing overlaps" rather than "the
+question does not apply". The live study is paired, so it has no such file.
+
 Run:  python 05c_detect_rois.py
       python 05c_detect_rois.py --limit 5
       python 05c_detect_rois.py --qc            # also write overlay crops to
@@ -71,6 +78,7 @@ import ls_naming as NM  # noqa: E402
 import czi_read as CR  # noqa: E402
 import ls_channels as CH  # noqa: E402
 import ls_segment as SG  # noqa: E402
+import ls_coloc as CO  # noqa: E402
 OUT_ROOT = G5.OUT_ROOT
 REFORMAT_DIR = G5.REFORMAT_DIR
 RESULTS = os.path.join(OUT_ROOT, "results")
@@ -186,6 +194,83 @@ def plane_index_for(marker):
     return MARK_C
 
 
+# ---- co-localisation -------------------------------------------------------
+#
+# A is co-localised with B when A's centroid falls inside B's mask. That needs
+# B's MASK, not just its centroid, so it cannot be done from roi_nuclei.csv
+# afterwards, and persisting every object mask would cost far more disk than
+# this pipeline uses. It is computed here, where the label images exist.
+#
+# THIS STAGE MEASURES ONE MARKER PER RUN (--marker), so "both markers' labels
+# are already in memory" is not true: the partner's plane is read and segmented
+# in the same pass, in the run of whichever marker is declared FIRST, so a pair
+# is computed once rather than twice and mirrored.
+#
+# Under `paired` it is not computed at all and the file is not written. Those
+# markers are separate physical scans of DIFFERENT sections, so their objects
+# are not in one coordinate frame; an empty roi_colocalisation.csv would read
+# as "nothing overlaps", which is a different claim from "the question does not
+# apply".
+LAYOUT = G5.LAYOUT
+COLOC_CSV = os.path.join(RESULTS, "roi_colocalisation.csv")
+COLOC_COLUMNS = ["scene_uid", "roi_index", "marker_a", "object_a",
+                 "marker_b", "object_b", "a_centroid_in_b", "b_centroid_in_a"]
+
+
+def coloc_applies(marker_a, marker_b):
+    """Whether relating these two markers' objects means anything.
+
+    Markers that are both `segment: nuclear` share the SAME nuclear objects,
+    so every object would contain itself and the table would be a diagonal.
+    That is what the plane comparison catches.
+    """
+    if marker_a == marker_b:
+        return False
+    if LAYOUT != CH.LAYOUT_MULTIPLEX:
+        return False
+    return segment_plane_for(marker_a) != segment_plane_for(marker_b)
+
+
+def coloc_partners(marker):
+    """The markers this marker's run is responsible for relating it to.
+
+    Declared order decides ownership: the pair (A, B) is computed in A's run
+    and B's run does nothing with it. Both runs would otherwise write the same
+    relation, once as (A, B) and once as (B, A) - the same fact twice, in a
+    table where a reader counting rows would double it.
+    """
+    order = list(G5.MARKERS)
+    if marker not in order:
+        return []
+    return [m for m in order[order.index(marker) + 1:]
+            if coloc_applies(marker, m)]
+
+
+def objects_inside(labels, inside, Minv, x0, y0):
+    """The label ids whose centroid maps back inside the ROI shape.
+
+    The same membership rule the measurement loop applies to its own marker,
+    for the PARTNER's objects: a co-localisation row must point at two rows
+    that exist in roi_nuclei.csv, and an object outside the ROI is not one.
+    """
+    from skimage.measure import regionprops
+
+    ids = set()
+    for p in regionprops(labels):
+        cy, cx = p.centroid
+        gx, gy = G5.apply_affine(Minv, x0 + cx, y0 + cy)
+        if inside(gx, gy):
+            ids.add(int(p.label))
+    return ids
+
+
+def only(labels, ids):
+    """`labels` with everything outside `ids` set to background."""
+    if not ids:
+        return np.zeros_like(labels)
+    return np.where(np.isin(labels, list(ids)), labels, 0)
+
+
 class _Rect:
     """czi_read takes a rectangle object; this file has loose coordinates."""
 
@@ -265,7 +350,7 @@ def check_header(path, columns):
         f"before the provenance columns were and was never true.")
 
 
-def drop_rows(path, marker, uids):
+def drop_rows(path, marker, uids, marker_col="marker"):
     """Rewrite `path` without the rows of `marker` whose scene_uid is in `uids`.
 
     THE ONLY PATH IN THE PIPELINE THAT DELETES MEASURED DATA, so it is exact:
@@ -273,6 +358,12 @@ def drop_rows(path, marker, uids):
     `--force --limit N` used to drop EVERY row of the marker and then
     re-measure N sections, silently discarding the rest; the caller now passes
     its todo list and nothing outside it is touched.
+
+    `marker_col` is which column names the owner of a row: `marker` in
+    roi_nuclei.csv, `marker_a` in roi_colocalisation.csv, whose rows belong to
+    the run of the first-declared marker of the pair. The two files are forced
+    together and must be dropped by the same rule, or a re-run would leave a
+    section's old relations beside its new measurements.
 
     Through a temp file and one atomic replace, because this stage runs against
     a drive that has dropped writes and a half-written roi_nuclei.csv is the
@@ -285,13 +376,13 @@ def drop_rows(path, marker, uids):
             open(tmp, "w", newline="", encoding="utf-8") as tf:
         rd, tw = csv.reader(rf), csv.writer(tf)
         header = next(rd, None)
-        if not header or "marker" not in header or "scene_uid" not in header:
+        if not header or marker_col not in header or "scene_uid" not in header:
             tf.close()
             os.remove(tmp)
-            raise SystemExit(f"!! {path} has no marker/scene_uid column - "
-                             f"cannot tell whose rows to drop")
+            raise SystemExit(f"!! {path} has no {marker_col}/scene_uid column "
+                             f"- cannot tell whose rows to drop")
         tw.writerow(header)
-        mi, ui = header.index("marker"), header.index("scene_uid")
+        mi, ui = header.index(marker_col), header.index("scene_uid")
         for row in rd:
             if row and row[mi] == marker and row[ui] in uids:
                 dropped += 1
@@ -515,6 +606,16 @@ def main():
         # Before anything else: appending to a file with a different header
         # corrupts it quietly (see check_header), and the check is one line.
         check_header(NUCLEI_CSV, COLUMNS)
+
+    # Which markers this run must relate its own objects to. Empty for every
+    # study that exists: LS is paired, and co-localisation is a multiplex
+    # question. Decided from the box file's marker column rather than from
+    # --marker so the loop below and this decision cannot disagree.
+    coloc_by_marker = {m: coloc_partners(m) for m in {b["marker"] for b in boxes}}
+    coloc_wanted = any(coloc_by_marker.values())
+    coloc_exists = coloc_wanted and os.path.exists(COLOC_CSV)
+    if coloc_exists:
+        check_header(COLOC_CSV, COLOC_COLUMNS)
     done = set()
     if exists and not args.force:
         # Streamed with csv.reader, not load_csv: this needs one column and
@@ -546,6 +647,10 @@ def main():
     # calls it. Decided from the boxes rather than from --marker so a box file
     # naming a different marker cannot reach SG.segment with model=None.
     run_markers = {b["marker"] for u in todo for b in by_sec[u]}
+    # A co-localisation partner is segmented in this run too, so its backend
+    # decides whether the model is needed just as much as the run's own.
+    run_markers |= {p for m in set(run_markers)
+                    for p in coloc_by_marker.get(m, ())}
     model = (load_model()
              if any(backend_for(m) == "stardist" for m in run_markers)
              else None)
@@ -572,11 +677,32 @@ def main():
         dropped, kept = drop_rows(NUCLEI_CSV, args.marker, todo)
         print(f"  --force: dropped {dropped} {args.marker} rows over {len(todo)} "
               f"sections, kept {kept}")
+    if coloc_exists and args.force:
+        # The relations of a section are derived from its measurements, so
+        # they are dropped by the same rule and at the same moment. Leaving
+        # them would pair the new objects of a re-measured section with the
+        # old object ids of its partner.
+        dropped, kept = drop_rows(COLOC_CSV, args.marker, todo,
+                                  marker_col="marker_a")
+        print(f"  --force: dropped {dropped} {args.marker} co-localisation "
+              f"rows, kept {kept}")
 
     fh = open(NUCLEI_CSV, "a" if exists else "w", newline="", encoding="utf-8")
     w = csv.writer(fh)
     if not exists:
         w.writerow(COLUMNS)
+
+    # Opened only when something in this run has a partner, so a study that
+    # cannot co-localise has no such file to explain. An EMPTY one would read
+    # as "nothing overlaps", which is a different claim from "the question
+    # does not apply to this layout".
+    cfh = cw = None
+    if coloc_wanted:
+        cfh = open(COLOC_CSV, "a" if coloc_exists else "w", newline="",
+                   encoding="utf-8")
+        cw = csv.writer(cfh)
+        if not coloc_exists:
+            cw.writerow(COLOC_COLUMNS)
 
     px_area = BASE_PX_UM ** 2
     # The threshold backend's minimum object area, in pixels. At 0.65 um/px
@@ -584,6 +710,7 @@ def main():
     # every single-pixel excursion above the cut as an object.
     min_area_px = max(1, int(round(MIN_AREA_UM2 / px_area)))
     total_nuc = 0
+    total_rel = 0
     no_tissue_mask = []
     for n, uid in enumerate(todo, 1):
         g = geom[uid]
@@ -604,6 +731,7 @@ def main():
             continue
         path = os.path.join(CONFIG["source_dir"], g["czi_file"])
         rows = []
+        coloc_rows = []
         with pyczi.open_czi(path) as doc:
             for bi, b in enumerate(by_sec[uid], 1):
                 x0, y0 = int(b["czi_x0"]), int(b["czi_y0"])
@@ -611,9 +739,15 @@ def main():
                 if bw < 8 or bh < 8:
                     continue
                 marker = b["marker"]
+                partners = coloc_by_marker.get(marker, ())
+                # One read call, so every plane of this ROI comes off the same
+                # scene rectangle. A partner's plane is only in here when this
+                # run owns that pair; for every study that exists it is not.
+                want = {"dapi": NUCLEAR_C, "mark": plane_index_for(marker)}
+                for other in partners:
+                    want["coloc_" + other] = plane_index_for(other)
                 planes = CR.read_planes(
-                    doc, _Rect(x0, y0, bw, bh),
-                    {"dapi": NUCLEAR_C, "mark": plane_index_for(marker)},
+                    doc, _Rect(x0, y0, bw, bh), want,
                     scene=int(g["scene_index"]))
                 dapi = planes["dapi"].astype(np.float32)
                 mark = planes["mark"].astype(np.float32)
@@ -689,15 +823,59 @@ def main():
                         round(float(np.percentile(vals, 90)), 1),
                         int(inb(cen)), int(inb(art)), off_tis,
                         seg_on, seg_backend, seg_shaped])
+
+                # CO-LOCALISATION, while both label images exist for this ROI.
+                #
+                # Both sides are cut down to the objects that are IN the ROI
+                # first, because a row of this table points at two rows of
+                # roi_nuclei.csv and an object outside the shape has none.
+                #
+                # THE ROI IS ASSUMED TO BE THE SAME ROI for both markers. Under
+                # multiplex the two markers are one scan of one section, so the
+                # box at index `bi` is the same region for both - but each
+                # marker has its OWN roi_boxes file, exported separately, and
+                # nothing here checks that the two exports agree. A multiplex
+                # study whose markers were curated to different boxes would
+                # join `object_b` to the partner's own run under a roi_index
+                # that means something else there. That is the first thing to
+                # check when a real multiplex study arrives.
+                for other in partners:
+                    o_img = planes["coloc_" + other].astype(np.float32)
+                    if o_img.shape != labels.shape:
+                        continue
+                    o_labels = SG.segment(o_img, backend_for(other),
+                                          model=model, k=MAD_K,
+                                          min_area_px=min_area_px)
+                    if o_labels.max() == 0:
+                        continue
+                    o_kept = objects_inside(o_labels, inside, Minv, x0, y0)
+                    for rel in CO.pairs(only(labels, kept),
+                                        only(o_labels, o_kept)):
+                        coloc_rows.append([
+                            uid, bi, marker, rel["object_a"],
+                            other, rel["object_b"],
+                            int(rel["a_centroid_in_b"]),
+                            int(rel["b_centroid_in_a"])])
+
                 if args.qc:
                     write_overlay(uid, bi, b, seg_img, labels, kept)
         w.writerows(rows)
         fh.flush()
+        if cw is not None:
+            # Flushed with the measurements, section by section, so a run that
+            # stops half way leaves the two files describing the same sections.
+            cw.writerows(coloc_rows)
+            cfh.flush()
+            total_rel += len(coloc_rows)
         total_nuc += len(rows)
         print(f"\r  {n}/{len(todo)}  {uid}  {len(rows)} nuclei  "
               f"({total_nuc} total)          ", end="")
     fh.close()
+    if cfh is not None:
+        cfh.close()
     print(f"\n{total_nuc} nuclei -> {NUCLEI_CSV}")
+    if coloc_wanted:
+        print(f"{total_rel} co-localisation pairs -> {COLOC_CSV}")
     if no_tissue_mask:
         print(f"!! {len(no_tissue_mask)} sections SKIPPED for want of a tissue "
               f"mask in reformatted/: {no_tissue_mask[:5]}")
