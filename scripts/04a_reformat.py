@@ -64,6 +64,20 @@ import ls_channels as CH  # noqa: E402
 # to one study.
 MARKERS = list(CH.marker_names(CONFIG))
 
+# Which acquisition layout this study used. `paired` means each marker is a
+# separate physical scan of the same sections, so the reformat is decided once
+# per marker; `multiplex` means one scan carries every marker, so it is decided
+# once per SCENE. Defaulted to multiplex to match ls_channels and the example
+# config: a study that declares no layout is a new one.
+LAYOUT = (CONFIG.get("acquisition") or {}).get("layout", CH.LAYOUT_MULTIPLEX)
+
+# 04a and 04g have always defaulted to the SECOND marker (AF488 = PCNA on the
+# LS study): it is the pass that was curated first, and its outputs are the
+# unsuffixed ones. Kept rather than adopting the first-declared default,
+# because this default selects which sections get written and a silent flip
+# would process the wrong pass.
+DEFAULT_MARKER = MARKERS[1] if len(MARKERS) > 1 else (MARKERS[0] if MARKERS else None)
+
 OUT_ROOT = CONFIG["out_root"]
 OVERVIEW_DIR = os.path.join(OUT_ROOT, "overviews")
 PLATE_DIR = os.path.join(OUT_ROOT, "atlas", "plates")
@@ -398,12 +412,30 @@ def reformat(path, light_background, extra_angle=0.0, flip=False, artifact=None,
 def marker_paths(marker):
     """Per-marker output paths and override source.
 
-    The two markers are separate acquisitions of the same sections, so they get
-    separate index files and separate section directories. Scene uids differ
-    anyway (`..._s03b_...` vs `..._s03a_...`), but sharing an index would let one
-    run silently overwrite the other's.
+    **Paired only.** The two markers are separate acquisitions of the same
+    sections, so they get separate index files and separate section
+    directories. Scene uids differ anyway (`..._s03b_...` vs `..._s03a_...`),
+    but sharing an index would let one run silently overwrite the other's.
+
+    Under `multiplex` there is one scan per section carrying every marker, so
+    every marker answers with the SAME set of paths - see the branch below.
+
+    The unsuffixed set belongs to `DEFAULT_MARKER`, the pass that was curated
+    first, not to a fluorophore this stage names itself.
     """
-    if marker == "AF488":
+    if LAYOUT == CH.LAYOUT_MULTIPLEX:
+        # One scan carries every marker, so there is ONE frame per scene and
+        # the reformat is decided once. Suffixing these by marker would write
+        # the same pixels several times under different names, and would let
+        # two markers of one section disagree about where the section is -
+        # which is the thing the curator then has to reconcile by hand.
+        return {"overrides": os.path.join(REFORMAT_DIR, "rotation_overrides.csv"),
+                "uid_col": "scene_uid",
+                "sections": os.path.join(REFORMAT_DIR, "sections"),
+                "index": os.path.join(REFORMAT_DIR, "reformat_index.csv"),
+                "excluded": os.path.join(REFORMAT_DIR, "excluded_sections.csv"),
+                "lost": os.path.join(REFORMAT_DIR, "lost_sections.csv")}
+    if marker == DEFAULT_MARKER:
         return {"overrides": os.path.join(REFORMAT_DIR, "rotation_overrides.csv"),
                 "uid_col": "scene_uid",
                 "sections": os.path.join(REFORMAT_DIR, "sections"),
@@ -446,10 +478,19 @@ def apply_review(excluded, marker):
     with open(REVIEW_CSV, newline="", encoding="utf-8") as fh:
         for r in csv.DictReader(fh):
             uid = r.get("scene_uid", "")
-            # Rows for the other marker belong to the other run's index and
-            # would never match a section here; skipping them keeps the counts
-            # honest rather than reporting decisions this run did not apply.
-            if not uid or (r.get("marker") and r["marker"] != marker):
+            # Paired: rows for the other marker belong to the other run's
+            # index and would never match a section here; skipping them keeps
+            # the counts honest rather than reporting decisions this run did
+            # not apply.
+            #
+            # Multiplex: there is one frame per scene, so a decision is about
+            # THAT frame whatever marker the reviewer happened to have on
+            # screen when they made it. Filtering by marker here would let two
+            # markers of one section disagree about whether it is excluded,
+            # which is exactly what one frame per scene exists to prevent.
+            other_marker = (LAYOUT != CH.LAYOUT_MULTIPLEX
+                            and r.get("marker") and r["marker"] != marker)
+            if not uid or other_marker:
                 continue
             if r.get("mask_rejected") == "1":
                 rejected.add(uid)
@@ -465,6 +506,24 @@ def apply_review(excluded, marker):
     return out, rejected
 
 
+def frames_for(rows, marker):
+    """The QC rows this run reformats - one frame per SCENE.
+
+    Paired: each marker is its own physical scan, so a run takes the rows for
+    that scan and the other marker's rows belong to the other run.
+
+    Multiplex: one scan carries every marker, so there is a single frame per
+    scene and every scene is reformatted once. `marker_channel` is filled by
+    00_manifest from the file's SECOND channel name, so under multiplex it
+    names at most one of the declared markers - filtering by it would silently
+    reformat nothing for all the others. The overview path is built from each
+    row's own `marker_channel`, not from `marker`, so it still resolves.
+    """
+    if LAYOUT == CH.LAYOUT_MULTIPLEX:
+        return list(rows)
+    return [r for r in rows if r["marker_channel"] == marker]
+
+
 def load_overrides(paths=None, write=False):
     """Manual rotation corrections from 04d_rotation_curator.py.
 
@@ -472,7 +531,7 @@ def load_overrides(paths=None, write=False):
     absolute orientation, so improving the auto-rotation later does not
     invalidate the manual work.
     """
-    paths = paths or marker_paths("AF488")
+    paths = paths or marker_paths(DEFAULT_MARKER)
     path, uid_col = paths["overrides"], paths["uid_col"]
     if not os.path.exists(path):
         return {}, {}
@@ -569,11 +628,8 @@ def select_only(spec, excluded):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--preview", type=int, default=8)
-    # 04a and 04g have always defaulted to the SECOND marker (AF488 = PCNA):
-    # it is the pass that was curated first. Kept rather than adopting the
-    # first-declared default, because this default selects which sections get
-    # written and a silent flip would process the wrong pass.
-    _default = MARKERS[1] if len(MARKERS) > 1 else (MARKERS[0] if MARKERS else None)
+    # The pass that was curated first; see DEFAULT_MARKER.
+    _default = DEFAULT_MARKER
     ap.add_argument("--marker", default=_default, choices=MARKERS,
                     help=f"which marker to process (default {_default})")
     ap.add_argument("--censor", action="store_true",
@@ -635,7 +691,7 @@ def main():
     print(f"plates reformatted: {ok}/{len(plates)}")
 
     with open(QC_CSV, newline="", encoding="utf-8") as fh:
-        secs = [r for r in csv.DictReader(fh) if r["marker_channel"] == args.marker]
+        secs = frames_for(csv.DictReader(fh), args.marker)
 
     # A PARTIAL RUN REPAIRS PICTURES AND NOTHING ELSE.
     #
