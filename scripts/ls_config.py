@@ -301,11 +301,11 @@ SPEC = [
              "Output paths, CSV column values and workbook sheets are built "
              "from these names, so changing one renames real files.",
         example=[],
-        # Nothing reads it yet: 01k_saturation_raw and 05a_roi_geometry still
-        # carry hardcoded ("AF568", "AF488") tuples, and the rest of the list
-        # is what the marker sub-project will wire. The docs say so rather
-        # than naming seven readers that do not exist.
-        consumers_pending=True,
+        # All seven now call ls_channels.marker_names(CONFIG) at import; the
+        # hardcoded ("AF568", "AF488") tuples in 01k_saturation_raw and
+        # 05a_roi_geometry that this flag was waiting on are gone. Leaving
+        # consumers_pending set made docs/config-reference.md say "not read
+        # yet" about a key seven stages build their output paths from.
         consumers=["01k_saturation_raw", "04a_reformat", "04g_artifact_mask",
                    "04j_censor_clipped", "04l_roi_curator", "04o_section_rgb",
                    "05a_roi_geometry"]),
