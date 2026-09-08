@@ -245,7 +245,13 @@ def detect_read_check():
               "reader, since 05c imports the package itself)")
         return
 
-    uid, marker, czi_file = "AB12_1a-s0", "AF568", "AB12_1a.czi"
+    # The marker is the STUDY's, not a literal. This suite runs under
+    # use_temp_study(), whose one marker is whatever config.example.json
+    # declares, and 05a's use_marker() refuses a marker the study never
+    # declared. The literal used to work only because 05a's MARKERS was the
+    # LS pair written into the file.
+    uid, czi_file = "AB12_1a-s0", "AB12_1a.czi"
+    marker = G5C.G5.MARKER
     scene_index = 6
     x0, y0, bw, bh = 300, 400, 24, 20
 
@@ -275,7 +281,12 @@ def detect_read_check():
         w.writeheader()
         w.writerow(box_row)
 
-    mask_dir = os.path.join(G5C.REFORMAT_DIR, f"sections_{marker}")
+    # Where 05c's own mask_at() will look. It tries `sections_AF568` first and
+    # falls back to `sections`, so the fallback is the one directory that is
+    # right for any study - the literal in mask_at is a separate genericisation
+    # job, and writing to `sections_<this study's marker>` here would only pass
+    # while that marker happened to be AF568.
+    mask_dir = os.path.join(G5C.REFORMAT_DIR, "sections")
     os.makedirs(mask_dir, exist_ok=True)
     np.save(os.path.join(mask_dir, f"{uid}_mask.npy"),
             np.ones((256, 256), dtype=bool))
