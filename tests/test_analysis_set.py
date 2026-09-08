@@ -45,6 +45,27 @@ def chk(label, got, want):
 J = load("j", "04j_censor_clipped.py")
 M = load("m", "04m_sections_dataset.py")
 
+# THESE TWO FILENAMES NAME FILES THAT EXIST ON THE OPERATOR'S DRIVE.
+#
+# They are not a naming convention and nothing derives them: 04j's
+# LEGACY_ANALYSIS_SET maps AF568 -> perk_analysis_set.csv and AF488 ->
+# pcna_analysis_set.csv because both files were already written under those
+# names. FIVE other places read them - 04l:232, 04m:126, 04p:246,
+# app/stages.py (three sites) and this suite's own temp path below - so
+# swapping or renaming either one moves live paths, and until this check
+# existed nothing noticed: a reviewer exchanged the two values and the entire
+# suite stayed green.
+#
+# Called with the marker names spelled out, not with whatever the configured
+# study declares. This suite runs under a throwaway study whose marker list is
+# ["Marker1"], and the mapping is a module constant that does not depend on it.
+chk("AF568's analysis set is still perk_analysis_set.csv",
+    os.path.basename(J.analysis_set_path("AF568")), "perk_analysis_set.csv")
+chk("AF488's analysis set is still pcna_analysis_set.csv",
+    os.path.basename(J.analysis_set_path("AF488")), "pcna_analysis_set.csv")
+chk("...and any other marker gets a name derived from itself",
+    os.path.basename(J.analysis_set_path("Mk9")), "Mk9_analysis_set.csv")
+
 row = J.unmeasured_row("U1", "LS1", "7")
 chk("an unmeasured row is blank, not zero", row["in_analysis_set"], "")
 chk("...and says why", row["reason"], "no raw clipping mask - run 01k_saturation_raw.py")
