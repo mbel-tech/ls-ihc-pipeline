@@ -151,9 +151,29 @@ OVERVIEW_DIR = os.path.join(OUT_ROOT, "overviews")
 REFORMAT_DIR = os.path.join(OUT_ROOT, "reformatted")
 QC_CSV = os.path.join(OUT_ROOT, "qc", "focus.csv")
 CENSOR_DIR = os.path.join(OUT_ROOT, "censor")
-# Per-marker output. AF568 keeps the name every downstream stage already reads.
-ANALYSIS_SET = {"AF568": os.path.join(REFORMAT_DIR, "perk_analysis_set.csv"),
-                "AF488": os.path.join(REFORMAT_DIR, "pcna_analysis_set.csv")}
+# Per-marker output.
+#
+# LEGACY_ANALYSIS_SET is a fact about FILES THAT EXIST on the operator's drive,
+# not a fact about what a marker is called anywhere. `perk_analysis_set.csv` is
+# read by 04l, 04m and 04p and by the app's stage table, and both files are
+# already written on the live drive, so these two names cannot move. Every
+# other marker - and every other study - gets a name derived from the marker
+# itself, which is why the lookup below is .get() and not [].
+LEGACY_ANALYSIS_SET = {"AF568": "perk_analysis_set.csv",
+                       "AF488": "pcna_analysis_set.csv"}
+
+
+def analysis_set_path(marker):
+    """Where this marker's analysis set is written."""
+    return os.path.join(REFORMAT_DIR, LEGACY_ANALYSIS_SET.get(
+        marker, f"{marker}_analysis_set.csv"))
+
+
+#: The same table the old dict literal was, now built for whatever markers the
+#: study declares. Kept for readers and for anything that wants to see all of
+#: them at once; the single use site calls analysis_set_path() so that a marker
+#: outside this table is a derived name rather than a KeyError.
+ANALYSIS_SET = {m: analysis_set_path(m) for m in MARKERS}
 # Display names for the markers, when the study gives them one. A paired study
 # names its markers by fluorophore, so this is usually empty and the marker's
 # own name is what gets shown.
@@ -310,7 +330,7 @@ def main():
     args = ap.parse_args()
     marker = args.marker
     label = LABEL.get(marker, marker)
-    out_csv = ANALYSIS_SET[marker]
+    out_csv = analysis_set_path(marker)
     os.makedirs(CENSOR_DIR, exist_ok=True)
     # Scene uids carry the pass letter (..._s03a_ vs ..._s03b_), so both markers
     # can share one censor directory without colliding.

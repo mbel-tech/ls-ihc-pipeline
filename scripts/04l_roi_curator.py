@@ -227,6 +227,27 @@ import ls_channels as CH  # noqa: E402
 # to one study.
 MARKERS = list(CH.marker_names(CONFIG))
 
+# What the channel selector calls each marker.
+#
+# LEGACY_LABEL names a DISPLAY CONVENTION for this study, not a rule about what
+# a fluorophore means. This study's paired layout declares its markers by
+# fluorophore, so there is no channel table to read a friendlier name out of,
+# and these are the two labels this page has always shown. Any other study
+# either names its channels - a multiplex table typically carries the antibody
+# name - or sees the marker's own name, which beats every marker being labelled
+# "PCNA".
+LEGACY_LABEL = {"AF568": "pERK", "AF488": "PCNA"}
+# Derived the same way 04j_censor_clipped.py derives its LABEL: the study's own
+# channel table where it declares one.
+LABEL = {c.name: c.name for c in
+         CH.markers(CH.parse((CONFIG.get("acquisition") or {}).get("channels")))}
+
+
+def marker_label(marker):
+    """The display name for one marker: study, then legacy, then the name."""
+    return LABEL.get(marker) or LEGACY_LABEL.get(marker, marker)
+
+
 OUT_ROOT = CONFIG["out_root"]
 REFORMAT_DIR = os.path.join(OUT_ROOT, "reformatted")
 ANALYSIS_CSV = os.path.join(REFORMAT_DIR, "perk_analysis_set.csv")
@@ -4758,7 +4779,7 @@ def main():
     for mk in MARKERS:
         got, subset, before = build(mk)
         per_marker[mk] = (got, subset, before)
-        markers.append({"id": mk, "label": "pERK" if mk == "AF568" else "PCNA",
+        markers.append({"id": mk, "label": marker_label(mk),
                         "n": len(got), "sub": subset})
     data = [row for mk in MARKERS for row in per_marker[mk][0]]
 

@@ -342,9 +342,16 @@ def main():
                     help="write one overlay PNG per ROI to qc/roi_detections: "
                          "DAPI with nucleus boundaries, green counted, red "
                          "found but outside the disc")
-    ap.add_argument("--marker", choices=G5.MARKERS, default="AF568",
-                    help="which marker's boxes to measure (default AF568). "
-                         "Appends to the same roi_nuclei.csv - the two markers "
+    # argparse does NOT validate a string default against `choices`, so a
+    # hardcoded default here is not caught by the derived choices beside it: on
+    # a study without that fluorophore, omitting --marker would run the
+    # nucleus-measuring stage under a marker the study does not have, silently.
+    # The first declared marker is what the rest of the pipeline already treats
+    # as the default side.
+    _default = G5.MARKERS[0] if G5.MARKERS else None
+    ap.add_argument("--marker", choices=G5.MARKERS, default=_default,
+                    help=f"which marker's boxes to measure (default {_default}). "
+                         "Appends to the same roi_nuclei.csv - the markers "
                          "have disjoint sections.")
     ap.add_argument("--force", action="store_true", help="redo finished sections")
     args = ap.parse_args()
