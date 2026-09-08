@@ -35,6 +35,15 @@ here per region and marker from the segmentation rather than taken from the
 7.0 um in config - the factor moves from 0.74 to 0.58 across a plausible range,
 and an assumed h would bury that in every density.
 
+**And only where the objects are nuclei.** N = n * T/(T+h) assumes spherical,
+randomly positioned objects; a threshold region on a fibre-stained channel is
+neither, so a study declaring `nucleus_shaped: false` for a marker gets the raw
+count, a factor of 1.0, and a `abercrombie_withheld_reason` saying so in the
+row itself rather than in a config a reader would have to go and find. A
+roi_nuclei.csv with no such column is read as nuclear, which is what every row
+written before 2026-09-08 is. No study declares `nucleus_shaped: false` today,
+so nothing in the withheld path has met real data.
+
 Writes, all still keyed by animal only:
     results/roi_measurements.csv       one row per placed ROI
     results/detector_specificity.csv   what the background discs found
@@ -86,6 +95,59 @@ STAT = "marker_median"
 def mad(xs):
     m = st.median(xs)
     return st.median([abs(x - m) for x in xs])
+
+
+def reads_nucleus_shaped(value):
+    """How a `nucleus_shaped` cell reads, INCLUDING when there is no cell.
+
+    THE LS COMPATIBILITY RULE, and it is the reason this is a function rather
+    than `== "1"` inline. A roi_nuclei.csv written before 2026-09-08 has no
+    such column, and every object in it came from the nuclear channel
+    segmented by StarDist, because that was the only route 05c had. Its
+    silence is therefore not "unknown" - it is True, and any other reading
+    would withhold the Abercrombie correction from 961,233 rows that are
+    nuclei. 05c backfills the column with exactly this reading when it resumes
+    onto such a file.
+    """
+    if value is None or value == "":
+        return True
+    return str(value).strip().lower() not in ("0", "false", "no")
+
+
+def abercrombie_reason(segmented_on, nucleus_shaped, enabled=True):
+    """Why the correction is withheld, or "" when it applies.
+
+    A string rather than a boolean, because the output has to say WHY. A reader
+    six months from now finds a density that is not corrected and needs to know
+    whether that was a decision or an omission.
+
+    `enabled` is the study's own switch, and it is here so that a blank cell
+    means one thing only: the correction was applied. Otherwise a study with
+    `detection.abercrombie.enabled: false` would emit factor 1.0 beside an
+    empty reason, which reads as "corrected, and the factor happened to be 1".
+    """
+    if not enabled:
+        return ("detection.abercrombie.enabled is false for this study, so no "
+                "count is corrected; the densities here are of nuclear "
+                "profiles, not of nuclei")
+    if nucleus_shaped:
+        return ""
+    return (f"objects segmented on {segmented_on} are not nucleus-shaped; "
+            f"Abercrombie assumes spherical, randomly positioned objects and "
+            f"does not hold for them, so counts here are raw")
+
+
+def abercrombie_factor(h, apply=True):
+    """T/(T+h), or 1.0 when the correction does not apply.
+
+    1.0 rather than blank so that the corrected column is always a number and
+    always comparable; the withheld_reason column is what says it was not
+    corrected. A blank would make every consumer handle a missing value, and
+    the ones that forgot would silently drop the row.
+    """
+    if not apply or not h:
+        return 1.0
+    return T_UM / (T_UM + float(h))
 
 
 def roi_area_um2(b):
@@ -221,6 +283,12 @@ def main(argv=None):
         # 06g_flag_off_tissue.py to backfill it.
         r["_off"] = r.get("off_tissue") == "1"
         r["_d"] = float(r["equiv_diam_um"])
+        # What KIND of object this row is, which decides whether Abercrombie
+        # applies to it. Read off the row rather than re-derived from config,
+        # because a dataset outlives the config that made it. Absent means
+        # nuclear - see reads_nucleus_shaped.
+        r["_shaped"] = reads_nucleus_shaped(r.get("nucleus_shaped"))
+        r["_segon"] = r.get("segmented_on") or "the nuclear channel"
 
     # Artifact pixels are not tissue and leave the analysis entirely. Censored
     # ones are RIGHT-censored - value lost, but at least the ceiling - so they
@@ -254,6 +322,11 @@ def main(argv=None):
     # (uid, marker, roi_index) -> nuclei
     by_idx = collections.defaultdict(list)
     diam_by = collections.defaultdict(list)    # (marker, region) -> diameters
+    # marker -> (segmented_on, nucleus_shaped), for a disc that has no nuclei
+    # of its own to read it off. Not-nucleus-shaped wins over nucleus-shaped:
+    # one config cannot produce both for one marker, and if a file somehow
+    # carries both the correction is the thing to withhold, not to apply.
+    shape_by = {}
     uids, d_all = set(), []
     for r in nuc:
         uid = r["scene_uid"]
@@ -265,6 +338,9 @@ def main(argv=None):
         # same per-marker list in the same order. The marker is in the key
         # because it is in 05c's numbering; see split_by_marker.
         by_idx[(uid, r["marker"], int(r["roi_index"]))].append(r)
+        seen = shape_by.get(r["marker"])
+        if seen is None or (seen[1] and not r["_shaped"]):
+            shape_by[r["marker"]] = (r["_segon"], r["_shaped"])
         if r["roi_kind"] == "background":
             if not r["_cen"]:
                 bg_by[uid].append(r["_v"])
@@ -320,7 +396,24 @@ def main(argv=None):
                          if cut is not None else "")
                 h = hs.get((b["marker"], b["region"]),
                            h_by_marker.get(b["marker"], h_all))
-                ab = T_UM / (T_UM + h) if (AB_ON and h) else 1.0
+                # ABERCROMBIE APPLIES WHERE THE OBJECTS ARE NUCLEI. N = n *
+                # T/(T+h) assumes spherical, randomly positioned objects; a
+                # threshold region on a fibre-stained channel is neither, and
+                # correcting it would put a made-up number into a density.
+                #
+                # This disc's own nuclei answer first. A disc with none falls
+                # back to the marker's other rows, and a marker with no rows at
+                # all to nucleus-shaped - which is what every file written
+                # before the provenance columns is, LS's included.
+                shaped = all(r["_shaped"] for r in here) if here else None
+                if shaped is None:
+                    seg_on, shaped = shape_by.get(b["marker"],
+                                                  ("the nuclear channel", True))
+                else:
+                    seg_on = next((r["_segon"] for r in here
+                                   if not r["_shaped"]), "")
+                why = abercrombie_reason(seg_on, shaped, enabled=AB_ON)
+                ab = abercrombie_factor(h, apply=not why)
                 row = {
                     "scene_uid": uid, "animal": b["animal"], "marker": b["marker"],
                     "roi_kind": b["roi_kind"], "region": b["region"],
@@ -334,6 +427,12 @@ def main(argv=None):
                                       else ""),
                     "profile_density_per_mm2": round(n_nuc / (area / 1e6), 1) if area else "",
                     "abercrombie_factor": round(ab, 4),
+                    # EVERY row carries this key, blank included. There is no
+                    # COLUMNS constant here - the header is the first emitted
+                    # row's keys (see the write below) - so a key present on
+                    # some rows and absent from others either vanishes from the
+                    # header or raises in the writer.
+                    "abercrombie_withheld_reason": why,
                     "mean_nucleus_diam_um": round(h, 2) if h else "",
                     "cell_density_per_mm2": (round(n_nuc * ab / (area / 1e6), 1)
                                              if area else ""),
@@ -409,10 +508,20 @@ def main(argv=None):
         print(f"{head}sections with a cut : {len(m_cuts)} of {len(m_uids)}"
               f"   (needs >=5 background nuclei)")
         if AB_ON and m_hs:
+            # The console must not print a factor this stage did not apply.
+            # h is still measured for a withheld marker - it is a property of
+            # the objects - but quoting the factor beside it would contradict
+            # the 1.0 in every one of that marker's rows.
+            m_why = abercrombie_reason(*shape_by.get(
+                mk, ("the nuclear channel", True)), enabled=AB_ON)
             lo, hi = min(m_hs.values()), max(m_hs.values())
-            print(f"{head}Abercrombie         : T={T_UM} um, measured h "
-                  f"{lo:.1f}-{hi:.1f} um -> factor "
-                  f"{T_UM/(T_UM+hi):.3f}-{T_UM/(T_UM+lo):.3f}")
+            if m_why:
+                print(f"{head}Abercrombie         : WITHHELD - {m_why} "
+                      f"(measured h {lo:.1f}-{hi:.1f} um)")
+            else:
+                print(f"{head}Abercrombie         : T={T_UM} um, measured h "
+                      f"{lo:.1f}-{hi:.1f} um -> factor "
+                      f"{T_UM/(T_UM+hi):.3f}-{T_UM/(T_UM+lo):.3f}")
         fp = [s["false_positive_rate"] for s in m_spec
               if s["false_positive_rate"] != ""]
         if fp:
