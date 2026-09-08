@@ -177,16 +177,17 @@ def run_06a(tmp, stem, **kw):
         with open(A6.MEAS_CSV, newline="", encoding="utf-8") as fh:
             header = next(csv.reader(fh))
         meas = G5.load_csv(A6.MEAS_CSV)
+        paths = (npath, bpath, A6.MEAS_CSV)
     finally:
         A6.NUCLEI_CSV, A6.MEAS_CSV, A6.SPEC_CSV, G5.all_boxes = keep
-    return rc, header, meas
+    return rc, header, meas, paths
 
 
 def emit_check(tmp):
     print()
     print("--- through the emit path, which is where the header comes from ---")
 
-    rc, header, meas = run_06a(tmp, "gate")
+    rc, header, meas, _ = run_06a(tmp, "gate")
     chk("06a exits 0", rc, 0)
     chk("abercrombie_withheld_reason is a column of the written file",
         "abercrombie_withheld_reason" in header, True)
@@ -225,7 +226,7 @@ def legacy_check(tmp):
     print()
     print("--- a file with no provenance columns is corrected, as it was ---")
 
-    rc, header, meas = run_06a(tmp, "legacy", drop_provenance=True)
+    rc, header, meas, _ = run_06a(tmp, "legacy", drop_provenance=True)
     chk("06a exits 0 on a pre-provenance file", rc, 0)
     chk("...the column is still emitted",
         "abercrombie_withheld_reason" in header, True)
@@ -233,6 +234,55 @@ def legacy_check(tmp):
         {r["abercrombie_withheld_reason"] for r in meas}, {""})
     chk("...and every factor is the corrected one",
         all(float(r["abercrombie_factor"]) < 1.0 for r in meas), True)
+
+
+def workbook_check(tmp):
+    """And it has to REACH the workbook: a reason only in a CSV is not reported.
+
+    06c owns no number - 06a computes each one once - so what is checked here
+    is that the reason is CARRIED, and that the sheet's corrected density and
+    its raw one agree wherever it is set.
+    """
+    print()
+    print("--- the reason reaches the workbook ---")
+
+    rc, header, meas, paths = run_06a(tmp, "wb")
+    npath, bpath, mpath = paths
+    C6 = load_stage("06c_excel_dataset.py")
+    C6.NUCLEI_CSV, C6.MEAS_CSV = npath, mpath
+    C6.G5.BOX_CSV = bpath
+    C6.G5.all_boxes = lambda: C6.G5.load_csv(bpath)
+    # No sampling workbook on a test machine, and the join is not what is
+    # under test here.
+    C6.animal_environment = lambda: {}
+    out = os.path.join(tmp, "wb.xlsx")
+    try:
+        rc = C6.main(["--out", out])
+        from openpyxl import load_workbook
+    except ModuleNotFoundError as exc:                          # openpyxl
+        print(f"skip  06c ({exc})")
+        return
+    chk("06c exits 0", rc, 0)
+
+    rows = list(load_workbook(out)["by_roi"].values)
+    cols = list(rows[0])
+    recs = [dict(zip(cols, r)) for r in rows[1:]]
+    chk("abercrombie_withheld_reason is a by_roi column",
+        "abercrombie_withheld_reason" in cols, True)
+    by_mk = {r["marker"]: r for r in recs}
+    # openpyxl reads an empty cell back as None, not as the "" that was
+    # written. The property is "no reason"; both spellings satisfy it.
+    chk("the nuclear marker's cell is blank",
+        by_mk["pERK"]["abercrombie_withheld_reason"] in ("", None), True)
+    chk("the fibre marker's cell carries 06a's reason",
+        "nucleus-shaped" in (by_mk["GFAP"]["abercrombie_withheld_reason"] or ""),
+        True)
+    chk("...beside a factor of 1.0",
+        by_mk["GFAP"]["abercrombie_factor"], 1.0)
+    chk("...so cells_per_mm2 is the uncorrected profile density",
+        by_mk["GFAP"]["cells_per_mm2"], by_mk["GFAP"]["profiles_per_mm2"])
+    chk("...while the nuclear marker's is corrected",
+        by_mk["pERK"]["cells_per_mm2"] < by_mk["pERK"]["profiles_per_mm2"], True)
 
 
 def main():
@@ -243,6 +293,7 @@ def main():
     try:
         emit_check(tmp)
         legacy_check(tmp)
+        workbook_check(tmp)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     print()

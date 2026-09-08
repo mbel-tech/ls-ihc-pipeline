@@ -21,6 +21,15 @@ The requested sheet is `by_roi`: one row per ROI per sample.
     treatment                control / exercise
     total_tissue_area_mm2    summed area of the discs those nuclei came from
 
+**`cells_per_mm2` is corrected, unless the last column says it is not.**
+`abercrombie_withheld_reason` is blank wherever the Abercrombie correction was
+applied, and carries 06a's reason wherever it was not - objects that are not
+nucleus-shaped, for which N = n * T/(T+h) does not hold, or a study that
+switched the correction off. The factor is 1.0 in those rows, so
+`cells_per_mm2` equals `profiles_per_mm2` there and the two columns can be read
+side by side. The reason is CARRIED from 06a, not re-derived: a factor of 1.0
+on its own cannot be told apart from a correction that came out at 1.0.
+
 **Positivity sits alongside the count, not instead of it.** `n_positive`,
 `frac_positive` and `positive_cells_per_mm2` come from 06a's per-section cut.
 They are blank where a section carried fewer than 5 background nuclei and no cut
@@ -249,7 +258,7 @@ def main(argv=None):
     a_by = collections.Counter()               # (animal, region) -> area mm2
     d_by = collections.Counter()               # key -> discs
     sec_by = collections.defaultdict(set)      # key -> scene_uids
-    h_by, ab_by = {}, {}
+    h_by, ab_by, why_by = {}, {}, {}
     pos_known = collections.Counter()          # discs whose section had a cut
 
     # THE MARKER IS PART OF THE KEY. Without it a row is AF568 + AF488 summed:
@@ -273,6 +282,16 @@ def main(argv=None):
         # the same pair - taking the last is taking the only one.
         h_by[key] = num(r["mean_nucleus_diam_um"])
         ab_by[key] = num(r["abercrombie_factor"]) or 1.0
+        # CARRIED, NOT RE-DERIVED. Whether the correction applies is 06a's
+        # decision - it is the stage that can see `nucleus_shaped` on the
+        # nuclei - and a factor of 1.0 alone cannot be told apart from a
+        # correction that happened to come out at 1.0. Same key, same "the last
+        # one is the only one" argument as h and the factor above.
+        #
+        # .get, because a roi_measurements.csv written before 2026-09-08 has no
+        # such column. Blank then means what it means everywhere else here: the
+        # correction was applied.
+        why_by[key] = r.get("abercrombie_withheld_reason", "")
 
     by_roi = []
     for key in sorted(a_by):
@@ -310,6 +329,12 @@ def main(argv=None):
             "mean_nucleus_diam_um": round(h, 2) if h else "",
             "abercrombie_factor": round(ab, 4),
             "cells_per_mm2": round(n * ab / area, 1) if area else "",
+            # Beside the corrected density, because that is the number it is
+            # about. Blank means the correction was applied; anything else is
+            # 06a saying cells_per_mm2 is the profile count uncorrected, and
+            # why. A withheld correction that only ever appeared in a CSV
+            # nobody opens is not reported.
+            "abercrombie_withheld_reason": why_by.get(key, ""),
         })
 
     # by_disc keeps every individual placement so by_roi can be checked by
