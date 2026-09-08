@@ -526,26 +526,36 @@ def drop_rows(path, marker, uids, marker_col="marker"):
     together and must be dropped by the same rule, or a re-run would leave a
     section's old relations beside its new measurements.
 
+    It may also be a SEQUENCE of columns, and a row goes if the marker is
+    named in any of them. That is what roi_colocalisation.csv needs: a row
+    names two markers, ownership decides only which run computed it, and a
+    marker whose objects have just been re-segmented and renumbered is stale on
+    that row whichever side of it the marker sits. Keyed on `marker_a` alone,
+    a forced re-run of the SECOND-declared marker of a pair dropped nothing.
+
     Through a temp file and one atomic replace, because this stage runs against
     a drive that has dropped writes and a half-written roi_nuclei.csv is the
     whole dataset. Returns (dropped, kept).
     """
     uids = set(uids)
+    cols = [marker_col] if isinstance(marker_col, str) else list(marker_col)
     tmp = path + ".tmp"
     dropped = kept = 0
     with open(path, newline="", encoding="utf-8") as rf, \
             open(tmp, "w", newline="", encoding="utf-8") as tf:
         rd, tw = csv.reader(rf), csv.writer(tf)
         header = next(rd, None)
-        if not header or marker_col not in header or "scene_uid" not in header:
+        absent = [c for c in cols if not header or c not in header]
+        if not header or absent or "scene_uid" not in header:
             tf.close()
             os.remove(tmp)
-            raise SystemExit(f"!! {path} has no {marker_col}/scene_uid column "
-                             f"- cannot tell whose rows to drop")
+            raise SystemExit(f"!! {path} has no {'/'.join(cols)}/scene_uid "
+                             f"column - cannot tell whose rows to drop")
         tw.writerow(header)
-        mi, ui = header.index(marker_col), header.index("scene_uid")
+        mis = [header.index(c) for c in cols]
+        ui = header.index("scene_uid")
         for row in rd:
-            if row and row[mi] == marker and row[ui] in uids:
+            if row and row[ui] in uids and any(row[i] == marker for i in mis):
                 dropped += 1
                 continue
             tw.writerow(row)
@@ -778,7 +788,15 @@ def main():
     coloc_by_marker = {m: coloc_partners(m) for m in {b["marker"] for b in boxes}}
     coloc_wanted = any(coloc_by_marker.values())
     coloc_exists = coloc_wanted and os.path.exists(COLOC_CSV)
-    if coloc_exists:
+    # A FORCED RE-RUN HAS TO CLEAN UP RELATIONS IT DOES NOT OWN. `coloc_wanted`
+    # is false in the run of the SECOND-declared marker of a pair - ownership
+    # belongs to the first, so this run neither computes the pair nor writes
+    # it - but it does re-segment this marker's objects and renumber them, and
+    # every row of roi_colocalisation.csv naming this marker still points at
+    # the ids of the run before. So the drop below is decided by whether the
+    # FILE exists, not by whether this run would append to it.
+    coloc_present = os.path.exists(COLOC_CSV)
+    if coloc_exists or (coloc_present and args.force):
         check_header(COLOC_CSV, COLOC_COLUMNS)
     done = set()
     if exists and not args.force:
@@ -841,15 +859,22 @@ def main():
         dropped, kept = drop_rows(NUCLEI_CSV, args.marker, todo)
         print(f"  --force: dropped {dropped} {args.marker} rows over {len(todo)} "
               f"sections, kept {kept}")
-    if coloc_exists and args.force:
+    if coloc_present and args.force:
         # The relations of a section are derived from its measurements, so
         # they are dropped by the same rule and at the same moment. Leaving
         # them would pair the new objects of a re-measured section with the
         # old object ids of its partner.
+        #
+        # BOTH COLUMNS, because a row names two markers and this run has
+        # renumbered this marker's objects whichever side it is on. The rows
+        # that go as `marker_b` belong to another marker's run and are NOT
+        # recomputed here: they come back when that marker is re-run, and
+        # until then the pair is absent rather than wrong. Multiplex-only, so
+        # no study today has a row for this to reach.
         dropped, kept = drop_rows(COLOC_CSV, args.marker, todo,
-                                  marker_col="marker_a")
-        print(f"  --force: dropped {dropped} {args.marker} co-localisation "
-              f"rows, kept {kept}")
+                                  marker_col=("marker_a", "marker_b"))
+        print(f"  --force: dropped {dropped} co-localisation rows naming "
+              f"{args.marker} on either side, kept {kept}")
     # The same rule again for the background-assumption record: it describes
     # the frames of the sections being redone, and those frames are about to be
     # segmented again. A file whose header is not this one is started afresh

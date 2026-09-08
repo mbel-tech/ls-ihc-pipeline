@@ -110,7 +110,7 @@ BOX = (100, 100, 24, 20)                   # x0, y0, w, h in CZI px
 SEC = (112, 110, 50)                       # sec_x, sec_y, sec_r on the 256 grid
 
 
-def drive(D5, marker, uid, planes, model_labels, box=None):
+def drive(D5, marker, uid, planes, model_labels, box=None, force=False):
     """Run 05c.main() over one section and one ROI. Returns (fake, model, rows).
 
     The affine is the identity, so a CZI coordinate IS a grid coordinate and
@@ -118,7 +118,9 @@ def drive(D5, marker, uid, planes, model_labels, box=None):
 
     `box` overrides the rectangle for the checks that need a frame big enough
     for ls_segment's background check to speak - it declines below
-    MIN_CHECK_PX, and the default box here is 480 px.
+    MIN_CHECK_PX, and the default box here is 480 px. `force` adds --force,
+    which is the only way to reach the drop that keeps roi_colocalisation.csv
+    in step with the measurements.
     """
     import pylibCZIrw.czi as pyczi
 
@@ -157,7 +159,8 @@ def drive(D5, marker, uid, planes, model_labels, box=None):
     saved = (pyczi.open_czi, D5.load_model, sys.argv)
     pyczi.open_czi = FakeOpenCzi(fake)
     D5.load_model = lambda: model
-    sys.argv = ["05c_detect_rois.py", "--marker", marker, "--order", "uid"]
+    sys.argv = (["05c_detect_rois.py", "--marker", marker, "--order", "uid"]
+                + (["--force"] if force else []))
     try:
         rc = D5.main()
     finally:
@@ -512,6 +515,52 @@ else:
             float(flagged[0]["below_background"]) > SG.BACKGROUND_FAILED, True)
         chk("every line matches BACKGROUND_COLUMNS",
             set(widths(D5.BACKGROUND_CSV)), {len(D5.BACKGROUND_COLUMNS)})
+
+
+# --------------------------------------------------------------------------
+print()
+print("=== --force on the SECOND marker of a pair ===")
+print()
+
+# Pair ownership belongs to the first-declared marker: pERK's run computes
+# (pERK, GFAP) and GFAP's run computes nothing. But a forced GFAP run
+# RE-SEGMENTS GFAP's objects and renumbers them, and every row of
+# roi_colocalisation.csv naming GFAP still points at the ids of the run before
+# it. Those rows are stale, and the run that made them stale is the one that
+# has to drop them - the drop cannot be keyed on ownership, nor on `marker_a`
+# alone, because GFAP is never either.
+#
+# Multiplex-only: no study today computes a relation at all.
+
+if not HAVE_CZI:
+    print("   (pylibCZIrw is not installed - the detection loop cannot be "
+          "driven)")
+else:
+    with temp_study(acquisition=MULTIPLEX) as study:
+        D5 = load_stage("05c_detect_rois.py")
+        bh, bw = BOX[3], BOX[2]
+        star = np.zeros((bh, bw), dtype=np.int32)
+        star[2:8, 2:8] = 1
+        planes = {0: block((bh, bw), 100), 1: block((bh, bw), 150),
+                  2: block((bh, bw), 200, patch=(4, 4, 6, 6, 9000))}
+        drive(D5, "pERK", "AB12_4a-s0", planes, star)
+        drive(D5, "pERK", "AB12_4b-s0", planes, star)
+        rel = read_rows(D5.COLOC_CSV)
+        chk("pERK's runs related both sections",
+            sorted(r["scene_uid"] for r in rel),
+            ["AB12_4a-s0", "AB12_4b-s0"])
+        chk("...naming GFAP as marker_b, never as marker_a",
+            ({r["marker_a"] for r in rel}, {r["marker_b"] for r in rel}),
+            ({"pERK"}, {"GFAP"}))
+
+        drive(D5, "GFAP", "AB12_4b-s0", planes, star, force=True)
+        rel = read_rows(D5.COLOC_CSV)
+        chk("the re-run section's relation is gone",
+            [r["scene_uid"] for r in rel], ["AB12_4a-s0"])
+        chk("...and the section that was not re-run keeps its own",
+            len(rel), 1)
+        chk("...every line still matches COLOC_COLUMNS",
+            set(widths(D5.COLOC_CSV)), {len(D5.COLOC_COLUMNS)})
 
 
 print()
