@@ -13,6 +13,10 @@ ways of quietly corrupting it are pinned here:
     and then re-measure only N sections, silently discarding the rest. It
     must drop exactly the sections it is about to redo, and nothing of the
     other marker.
+  * RESUMING ONTO ANYTHING ELSE, WITH `legacy` SUPPLIED. `legacy` turns one
+    header into a rewrite of the file, and 05c.main() passes it on the only
+    path that appends to roi_nuclei.csv - so the refusal that matters is the
+    one with `legacy` in hand, and it is the one nothing used to check.
   * RESUMING ONTO A PRE-PROVENANCE HEADER. COLUMNS gained `segmented_on`,
     `backend` and `nucleus_shaped` on 2026-09-08, and the check above then
     refused the operator's live 961,233-row file - hours of StarDist that
@@ -191,6 +195,53 @@ def header_check(tmp):
     except SystemExit:
         got = "exit"
     chk("same columns, different order -> SystemExit", got, "exit")
+
+    # THE REFUSAL, WITH `legacy` SUPPLIED - which is how 05c.main() always
+    # calls it, and the only call that can rewrite the operator's file.
+    #
+    # Every refusal above passes `columns` alone, and none of them touches the
+    # branch that actually runs in production. Mutating
+    #
+    #     if legacy and header == [c for c in columns if c not in legacy]:
+    #
+    # to `if legacy:` survived this suite and the whole of tests/run.sh, and
+    # at the production call site it BACKFILLED a permuted 21-column file -
+    # 961,233 rows rewritten into columns they do not belong in - and raised
+    # KeyError('off_tissue') on the two headers below it. The backfill is a
+    # rewrite, so a refusal that had already rewritten the file would be no
+    # refusal at all: the bytes are checked, not just the exception.
+    def refuses(name, cols, rows):
+        path = os.path.join(tmp, name + ".csv")
+        write(path, cols, rows)
+        with open(path, "rb") as fh:
+            before = fh.read()
+        try:
+            G5C.check_header(path, G5C.COLUMNS, legacy=G5C.LEGACY_PROVENANCE)
+            got = "accepted"
+        except SystemExit:
+            got = "refused"
+        except Exception as exc:                                 # noqa: BLE001
+            got = f"{exc.__class__.__name__}: {exc}"
+        chk(f"legacy supplied, {name} -> refused", got, "refused")
+        with open(path, "rb") as fh:
+            chk(f"...and {name} was left exactly as it was",
+                fh.read() == before, True)
+
+    leg = legacy_row("A1", "AF568", 1)
+    # A permuted 21-column header. The set is right and the order is not,
+    # which is the case the mutant rewrote rather than refused.
+    refuses("permuted_21", list(reversed(G5C.LEGACY_COLUMNS)),
+            [list(reversed(leg))])
+    # 20 columns: the pre-off_tissue header. `legacy` says nothing about
+    # off_tissue, so this is not a file this stage may guess at - 06g is.
+    keep = [c for c in G5C.LEGACY_COLUMNS if c != "off_tissue"]
+    refuses("cols_20_no_off_tissue", keep,
+            [[v for c, v in zip(G5C.LEGACY_COLUMNS, leg) if c != "off_tissue"]])
+    # 21 columns, one of them renamed. A column this stage does not write is
+    # not something to guess at either.
+    refuses("renamed_column",
+            ["nuclei_id" if c == "nucleus_id" else c
+             for c in G5C.LEGACY_COLUMNS], [leg])
 
 
 def drop_check(tmp):
