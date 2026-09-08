@@ -123,6 +123,7 @@ class _Rect:
 # everything can simply read both. Under `multiplex` they are the SAME scan, so
 # the uids collide by construction; all_boxes() knows the difference.
 MARKERS = tuple(CH.marker_names(CONFIG))
+LAYOUT = (CONFIG.get("acquisition") or {}).get("layout", CH.LAYOUT_MULTIPLEX)
 
 # Everything written before 2026-09-01 is AF568 and has no suffix. Read as a
 # fallback so an existing out_root keeps working; never written to again.
@@ -173,9 +174,11 @@ def use_marker(marker):
 def all_boxes():
     """Every marker's boxes, concatenated, for stages that span both.
 
-    06a, 06c and 06d work off `roi_nuclei.csv`, which holds both markers once
-    the PCNA pass has run, so they need every box rather than one marker's.
-    Scene uids are disjoint across markers, so this is a union and not a merge.
+    06a, 06c and 06d work off `roi_nuclei.csv`, which holds every marker once
+    the second pass has run, so they need every box rather than one marker's.
+    This is a concatenation, never a merge: under `paired` the scene uids are
+    disjoint and the check below proves it; under `multiplex` they collide by
+    construction, because the markers are one scan of one section.
     """
     out, uids = [], {}
     for m in MARKERS:
@@ -183,19 +186,27 @@ def all_boxes():
         if not os.path.exists(p):
             continue
         rows = load_csv(p)
-        # THE DISJOINTNESS IS CHECKED, NOT ASSUMED. 06a joins a nucleus to its
-        # disc by (scene_uid, roi_index), where the index is the position of the
-        # box in this list for that uid. If two markers ever shared a uid their
-        # boxes would interleave and every nucleus on that section would be
-        # measured against the wrong disc - silently, with plausible numbers.
         for r in rows:
             u = r["scene_uid"]
-            if uids.get(u, m) != m:
+            # THE DISJOINTNESS IS CHECKED, NOT ASSUMED - under `paired`. 06a
+            # joins a nucleus to its disc by (scene_uid, roi_index), where the
+            # index is the position of the box in this list for that uid. If
+            # two PAIRED markers ever shared a uid their boxes would interleave
+            # and every nucleus on that section would be measured against the
+            # wrong disc - silently, with plausible numbers.
+            #
+            # Under `multiplex` the markers are one scan of one section, so a
+            # shared uid is what the data IS. The union below is then a
+            # concatenation of the same sections' boxes, and roi_index stays
+            # meaningful because each marker's boxes keep their own order.
+            if LAYOUT == CH.LAYOUT_PAIRED and uids.get(u, m) != m:
                 raise SystemExit(
                     f"scene_uid {u} appears under both {uids[u]} and {m}. "
-                    f"The per-marker box files must not overlap - every "
-                    f"downstream join is by (scene_uid, roi_index) and would "
-                    f"silently pair nuclei with the wrong discs.")
+                    f"Under the `paired` layout the per-marker box files must "
+                    f"not overlap - every downstream join is by (scene_uid, "
+                    f"roi_index) and would silently pair nuclei with the wrong "
+                    f"discs. If these markers are one multi-channel scan, the "
+                    f"study's acquisition.layout should be `multiplex`.")
             uids[u] = m
         out.extend(rows)
     return out

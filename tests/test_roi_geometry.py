@@ -424,6 +424,42 @@ chk("the default marker is the first declared",
 chk("an unknown marker is still refused",
     _raises(lambda: G5.use_marker("nope"), ValueError), True)
 
+print()
+print("--- the uid-collision guard knows which layout it is in ---")
+
+# Rows shaped like roi_boxes_*.csv: the guard only looks at scene_uid.
+COLLIDE = [{"scene_uid": "X_s01a_sc00", "roi_index": "0"}]
+
+
+def _boxes_under(layout, rows_by_marker):
+    """all_boxes() with the file reads faked, under a chosen layout."""
+    real_load, real_exists = G5.load_csv, os.path.exists
+    real_markers, real_layout = G5.MARKERS, G5.LAYOUT
+    real_resolve = G5.resolve_paths
+    try:
+        G5.MARKERS = tuple(rows_by_marker)
+        G5.LAYOUT = layout
+        G5.load_csv = lambda p: rows_by_marker[os.path.basename(p)]
+        os.path.exists = lambda p: True
+        G5.resolve_paths = lambda m: (m, m)
+        return G5.all_boxes()
+    finally:
+        G5.load_csv, os.path.exists = real_load, real_exists
+        G5.MARKERS, G5.LAYOUT = real_markers, real_layout
+        G5.resolve_paths = real_resolve
+
+
+both = {"A": list(COLLIDE), "B": list(COLLIDE)}
+chk("paired: a shared uid is still a hard stop",
+    _raises(lambda: _boxes_under("paired", both), SystemExit), True)
+chk("multiplex: a shared uid is the expected state",
+    len(_boxes_under("multiplex", both)), 2)
+
+apart = {"A": [{"scene_uid": "P_s01a_sc00", "roi_index": "0"}],
+         "B": [{"scene_uid": "Q_s01a_sc00", "roi_index": "0"}]}
+chk("paired: disjoint uids pass, as they always did",
+    len(_boxes_under("paired", apart)), 2)
+
 
 print("\n" + (f"{fails} FAILED" if fails else "ALL PASS"))
 sys.exit(1 if fails else 0)
