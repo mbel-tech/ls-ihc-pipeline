@@ -69,9 +69,22 @@ else
   # does not merely drop writes - it goes away (see scripts/ls_io.py). The
   # pages are generated from real pipeline outputs, so there is nothing to
   # build; the Python suites do not need them and must still run.
-  BUILD_OUT="$("$PY" "$REPO/scripts/ls_config.py" --print out_root 2>/dev/null)"
-  if [ -z "$BUILD_OUT" ] || [ ! -d "$BUILD_OUT" ]; then
-    echo "out_root is not reachable - skipping the curator page suites"
+  #
+  # LS_CONFIG is named here for the same reason build_page names it: this
+  # question is about the config the pages are built against, not about
+  # whichever config a bare ls_config would find. Naming it is also what makes
+  # the read work at all under the LS_CONFIG_STRICT set above - strict mode
+  # forbids the repo-config fallback, so the un-named form exited 1 and printed
+  # nothing on EVERY machine, which made BUILD_OUT always empty and skipped
+  # these three suites unconditionally from 3e6c250 until now.
+  BUILD_OUT="$(LS_CONFIG="$BUILD_CONFIG" "$PY" "$REPO/scripts/ls_config.py" \
+                 --print out_root 2>/dev/null)"
+  if [ -z "$BUILD_OUT" ]; then
+    # Two different faults, two different remedies, so say which one it is.
+    echo "could not read out_root from $BUILD_CONFIG - skipping the curator page suites"
+    SKIP_PAGES=1
+  elif [ ! -d "$BUILD_OUT" ]; then
+    echo "out_root $BUILD_OUT does not exist - skipping the curator page suites"
     SKIP_PAGES=1
   fi
 fi
