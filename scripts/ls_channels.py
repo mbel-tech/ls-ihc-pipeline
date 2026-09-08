@@ -134,6 +134,36 @@ def marker_names(cfg):
     return [c.name for c in markers(parse(table))]
 
 
+def marker_planes(cfg):
+    """{marker name: RGB plane index} for the composite. Blue is the nuclear
+    channel and is not in here.
+
+    Positional by default - first declared marker to red, second to green -
+    because that is what this pipeline has always produced, and the curator's
+    judgement of what a section looks like is trained on it. `display.composite`
+    names the markers instead, in plane order.
+
+    Beyond two markers the operator needs a channel picker in the curator;
+    until then the third and later declared markers are simply not composited,
+    which is visible rather than silently blended into one of the first two.
+    """
+    names = marker_names(cfg)
+    chosen = ((cfg or {}).get("display") or {}).get("composite")
+    if chosen:
+        if not isinstance(chosen, (list, tuple)):
+            raise ChannelError(
+                f"`display.composite` must be a list of marker names, not a "
+                f"{type(chosen).__name__}.")
+        for m in chosen:
+            if m not in names:
+                raise ChannelError(
+                    f"`display.composite` names {m!r}, which is not one of "
+                    f"this study's markers ({', '.join(names) or 'none'}). "
+                    f"The composite can only show a marker that is measured.")
+        names = list(chosen)
+    return {m: i for i, m in enumerate(names[:2])}
+
+
 def resolve(channels, czi_channel_names):
     """{channel name: plane index} for one file.
 

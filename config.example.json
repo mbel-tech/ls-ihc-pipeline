@@ -44,6 +44,10 @@
     "_markers_note": "A paired study declares no channel table, because each of its scans carries the nuclear channel plus whichever marker that pass used - so this list is the only record of what the markers are. It is NOT derived from the manifest's marker_channel column: every constant built from it is evaluated at import, and the manifest lives under out_root, which may be absent. Output paths, CSV column values and workbook sheets are built from these names, so changing one renames real files.",
     "markers": []
   },
+  "display": {
+    "_composite_note": "Empty means positional - the first declared marker to red, the second to green - which is what this pipeline has always produced. Beyond two markers a study must say which two it wants shown; the rest are measured but not composited, because blending a third into one of the first two would change what the curator is judging without saying so.",
+    "composite": []
+  },
   "channels": {
     "_dapi_index_note": "Read only by 05c_detect_rois today; every earlier stage assumes plane 0 structurally. The channels/markers sub-project replaces this whole block with a per-channel role table, so it is left as-is rather than changed twice.",
     "dapi_index": 0,

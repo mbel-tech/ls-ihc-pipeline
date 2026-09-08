@@ -100,7 +100,11 @@ WORKLIST_CSV = os.path.join(REFORMAT_DIR, "roi_worklist.csv")
 FOCUS_CSV = os.path.join(OUT_ROOT, "qc", "focus.csv")
 
 # Marker channel -> which RGB plane it lands in. DAPI always takes blue.
-MARKER_PLANE = {"AF568": 0, "AF488": 1}
+# Positional by default - first declared marker to red, second to green, which
+# is what this stage has always written - and named by `display.composite`
+# when a study wants otherwise. ls_channels owns the rule; naming a
+# fluorophore here would pin the stage to one study.
+MARKER_PLANE = CH.marker_planes(CONFIG)
 
 
 def write_thumbs(rgb_dir, size=RF.GRID, force=False):
@@ -216,7 +220,20 @@ def main():
     with open(index_path, newline="", encoding="utf-8") as fh:
         in_index = {r["id"] for r in csv.DictReader(fh) if r["kind"] == "section"}
 
-    plane = MARKER_PLANE[args.marker]
+    plane = MARKER_PLANE.get(args.marker)
+    if plane is None:
+        # Measured, but not one of the two the composite shows. Not a loop
+        # body - this stage builds one marker per run - so it stops here and
+        # says which markers ARE composited. Blending a third into red or
+        # green would change the picture the curator judges with no record of
+        # it, and defaulting to red would silently overwrite the first
+        # marker's plane.
+        shown = ", ".join(sorted(MARKER_PLANE, key=MARKER_PLANE.get))
+        print(f"{args.marker} is not composited: the RGB composite has two "
+              f"marker planes and this study gives them to {shown or 'nothing'}.")
+        print("  Set `display.composite` to name the two markers you want "
+              "shown, red then green.")
+        return
     made = skipped = mismatched = existing = 0
     missing = []
 

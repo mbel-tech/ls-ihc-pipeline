@@ -310,6 +310,20 @@ SPEC = [
                    "04j_censor_clipped", "04l_roi_curator", "04o_section_rgb",
                    "05a_roi_geometry"]),
 
+    # ---- display ----------------------------------------------------------
+    Key("display.composite", "raw",
+        "Which markers the RGB composite shows, in plane order: red then "
+        "green. The nuclear channel is always blue.",
+        default=[], label="Composite channels",
+        note="Empty means positional - the first declared marker to red, the "
+             "second to green - which is what this pipeline has always "
+             "produced. Beyond two markers a study must say which two it "
+             "wants shown; the rest are measured but not composited, because "
+             "blending a third into one of the first two would change what "
+             "the curator is judging without saying so.",
+        example=[],
+        consumers=["04o_section_rgb"]),
+
     Key("channels.dapi_index", "int",
         "Which CZI channel plane is the nuclear counterstain.",
         required=True, default=0,
@@ -672,6 +686,20 @@ def validate(cfg, path="<config>", strict_paths=False):
                 errors.append(f"{path}: acquisition - {problem}")
             for problem in chan_warnings:
                 warnings.append(f"{path}: acquisition - {problem}")
+
+    # `display.composite` names markers, so it can only be judged against the
+    # marker list - and that list is read from the whole config, because which
+    # source names the markers is itself decided by `acquisition.layout`.
+    # ls_channels.validate() takes the `acquisition` block alone and cannot
+    # see `display` from there, so the check is made here rather than by
+    # widening that signature. Reported, not raised: marker_planes() raises
+    # because its callers are module-level constants, and this is the one
+    # place that turns the same fault into a line among the others.
+    if ls_channels is not None and isinstance(cfg, dict):
+        try:
+            ls_channels.marker_planes(cfg)
+        except ls_channels.ChannelError as exc:
+            errors.append(f"{path}: {exc}")
 
     for key, value in missing_paths(cfg):
         line = f"{path}: `{key.path}` does not exist: {value}"
