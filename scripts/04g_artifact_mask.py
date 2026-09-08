@@ -83,6 +83,12 @@ if _HERE not in sys.path:
 # the whole process. Imported, not re-implemented: this block used to be four
 # lines copy-pasted into every stage.
 from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
+import ls_channels as CH  # noqa: E402
+
+# The markers this study measures, in declared order. ls_channels is the
+# single source of that list; naming a fluorophore here would pin the stage
+# to one study.
+MARKERS = list(CH.marker_names(CONFIG))
 
 OUT_ROOT = CONFIG["out_root"]
 OVERVIEW_DIR = os.path.join(OUT_ROOT, "overviews")
@@ -298,8 +304,13 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--preview", type=int, default=0, help="render N overlays and stop")
     ap.add_argument("--limit", type=int, default=0)
-    ap.add_argument("--marker", default="AF488", choices=["AF488", "AF568"],
-                    help="AF488 = PCNA (default), AF568 = pERK")
+    # 04a and 04g have always defaulted to the SECOND marker (AF488 = PCNA):
+    # it is the pass that was curated first. Kept rather than adopting the
+    # first-declared default, because this default selects which sections get
+    # written and a silent flip would process the wrong pass.
+    _default = MARKERS[1] if len(MARKERS) > 1 else (MARKERS[0] if MARKERS else None)
+    ap.add_argument("--marker", default=_default, choices=MARKERS,
+                    help=f"which marker to process (default {_default})")
     ap.add_argument("--include-excluded", action="store_true",
                     help="also mask sections in excluded_sections_<marker>.csv, so "
                          "they can be reviewed with a mask like every other "

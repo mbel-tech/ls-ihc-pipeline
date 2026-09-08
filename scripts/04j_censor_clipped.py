@@ -138,7 +138,13 @@ if _HERE not in sys.path:
 # the whole process. Imported, not re-implemented: this block used to be four
 # lines copy-pasted into every stage.
 from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
+import ls_channels as CH  # noqa: E402
 import ls_naming as NM  # noqa: E402
+
+# The markers this study measures, in declared order. ls_channels is the
+# single source of that list; naming a fluorophore here would pin the stage
+# to one study.
+MARKERS = list(CH.marker_names(CONFIG))
 
 OUT_ROOT = CONFIG["out_root"]
 OVERVIEW_DIR = os.path.join(OUT_ROOT, "overviews")
@@ -148,7 +154,11 @@ CENSOR_DIR = os.path.join(OUT_ROOT, "censor")
 # Per-marker output. AF568 keeps the name every downstream stage already reads.
 ANALYSIS_SET = {"AF568": os.path.join(REFORMAT_DIR, "perk_analysis_set.csv"),
                 "AF488": os.path.join(REFORMAT_DIR, "pcna_analysis_set.csv")}
-LABEL = {"AF568": "pERK", "AF488": "PCNA"}
+# Display names for the markers, when the study gives them one. A paired study
+# names its markers by fluorophore, so this is usually empty and the marker's
+# own name is what gets shown.
+LABEL = {c.name: c.name for c in
+         CH.markers(CH.parse((CONFIG.get("acquisition") or {}).get("channels")))}
 
 _spec = importlib.util.spec_from_file_location(
     "_rf", os.path.join(os.path.dirname(os.path.abspath(__file__)), "04a_reformat.py"))
@@ -294,11 +304,12 @@ def main():
     ap.add_argument("--allow-partial", action="store_true",
                     help="write the analysis set even if it has unmeasured sections "
                          "and the file on disk is complete")
-    ap.add_argument("--marker", default="AF568", choices=["AF568", "AF488"],
-                    help="AF568 = pERK (default), AF488 = PCNA")
+    _default = MARKERS[0] if MARKERS else None
+    ap.add_argument("--marker", default=_default, choices=MARKERS,
+                    help=f"which marker to process (default {_default})")
     args = ap.parse_args()
     marker = args.marker
-    label = LABEL[marker]
+    label = LABEL.get(marker, marker)
     out_csv = ANALYSIS_SET[marker]
     os.makedirs(CENSOR_DIR, exist_ok=True)
     # Scene uids carry the pass letter (..._s03a_ vs ..._s03b_), so both markers

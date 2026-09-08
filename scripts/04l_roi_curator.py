@@ -220,6 +220,12 @@ if _HERE not in sys.path:
 # lines copy-pasted into every stage.
 import ls_config as LC  # noqa: E402
 from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
+import ls_channels as CH  # noqa: E402
+
+# The markers this study measures, in declared order. ls_channels is the
+# single source of that list; naming a fluorophore here would pin the stage
+# to one study.
+MARKERS = list(CH.marker_names(CONFIG))
 
 OUT_ROOT = CONFIG["out_root"]
 REFORMAT_DIR = os.path.join(OUT_ROOT, "reformatted")
@@ -4661,11 +4667,12 @@ expRestoreDir();
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--animal", default=None)
-    ap.add_argument("--marker", choices=("AF488", "AF568"), default="AF568",
+    _default = MARKERS[0] if MARKERS else None
+    ap.add_argument("--marker", choices=MARKERS, default=_default,
                     help="which channel the page OPENS on. Both are always loaded - "
                          "the selector next to the sample selector switches - so this "
                          "chooses the starting view, not what is in the page. "
-                         "AF568 = pERK (the channel that gets quantified), AF488 = PCNA")
+                         f"Opens on {_default}.")
     ap.add_argument("--analysis-set", action="store_true",
                     help="narrow the pERK side to perk_analysis_set.csv. A pERK "
                          "subset only; PCNA keeps its full set")
@@ -4748,12 +4755,12 @@ def main():
         return out, subset, before
 
     per_marker, markers = {}, []
-    for mk in ("AF568", "AF488"):
+    for mk in MARKERS:
         got, subset, before = build(mk)
         per_marker[mk] = (got, subset, before)
         markers.append({"id": mk, "label": "pERK" if mk == "AF568" else "PCNA",
                         "n": len(got), "sub": subset})
-    data = per_marker["AF568"][0] + per_marker["AF488"][0]
+    data = [row for mk in MARKERS for row in per_marker[mk][0]]
 
     with open(os.path.join(PLATE_DIR, "plates.csv"), newline="", encoding="utf-8") as fh:
         plates = list(csv.DictReader(fh))

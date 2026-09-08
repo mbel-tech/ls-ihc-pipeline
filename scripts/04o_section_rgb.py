@@ -83,6 +83,12 @@ if _HERE not in sys.path:
 # the whole process. Imported, not re-implemented: this block used to be four
 # lines copy-pasted into every stage.
 from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
+import ls_channels as CH  # noqa: E402
+
+# The markers this study measures, in declared order. ls_channels is the
+# single source of that list; naming a fluorophore here would pin the stage
+# to one study.
+MARKERS = list(CH.marker_names(CONFIG))
 
 _spec = importlib.util.spec_from_file_location("_rf", os.path.join(_HERE, "04a_reformat.py"))
 RF = importlib.util.module_from_spec(_spec)
@@ -134,7 +140,9 @@ def write_thumbs(rgb_dir, size=RF.GRID, force=False):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--marker", choices=("AF488", "AF568"), default="AF568")
+    _default = MARKERS[0] if MARKERS else None
+    ap.add_argument("--marker", choices=MARKERS, default=_default,
+                    help=f"which marker to process (default {_default})")
     ap.add_argument("--tier", default=None, help="only this worklist tier")
     ap.add_argument("--scale", type=int, default=3, metavar="N",
                     help="render at N x the canonical 256 grid (default 3 = 768). "
