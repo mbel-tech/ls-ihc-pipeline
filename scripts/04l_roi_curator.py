@@ -278,14 +278,30 @@ REFORMAT_DIR = os.path.join(OUT_ROOT, "reformatted")
 # rather than 04a: this stage builds an HTML page and importing 04a would pull
 # numpy, scipy and PIL in to answer a question about a filename.
 NAMES = LP.for_config(CONFIG)
-# The FIRST marker's analysis set, under the name 04j actually writes it as.
-# `perk_analysis_set.csv` is not a rule about what a marker is called: it is a
-# fact about a file that exists on the operator's drive, which is why 04j keeps
-# it in `LEGACY_ANALYSIS_SET` and derives every other marker's name from the
-# marker itself. Read 04j_censor_clipped.LEGACY_ANALYSIS_SET before changing
-# this literal; the two have to name the same file.
-ANALYSIS_CSV = os.path.join(REFORMAT_DIR, "perk_analysis_set.csv")
 WORKLIST_CSV = os.path.join(REFORMAT_DIR, "roi_worklist.csv")
+
+
+def analysis_set_csv(marker):
+    """The analysis set 04j wrote for ONE marker.
+
+    This was the module constant `perk_analysis_set.csv`, restated here from
+    04j's LEGACY_ANALYSIS_SET with a comment in each file telling the reader
+    about the other. 04j returns a legacy name for those two markers only and
+    `<marker>_analysis_set.csv` for everybody else - so the literal named a
+    file 04j would never have written for any other study, and `analysis_uids`
+    now correctly lets MARKERS[0] through whatever it is called, which is what
+    makes that reachable rather than theoretical.
+
+    Per-marker rather than a constant because that is the shape of the
+    question: every use site already has a marker in hand.
+
+    ASKED OF ls_paths RATHER THAN OF 04j, for the reason 04m gives beside the
+    same call: 04j imports 04a_reformat, 900 lines of numpy, scipy and PIL, and
+    this stage builds an HTML page. The rule itself moved INTO ls_paths, beside
+    the LEGACY table it was already half-written in, so 04j and this now read
+    one copy instead of keeping two in step.
+    """
+    return NAMES.analysis_set_path(marker)
 
 # Regions that cannot be told apart without knowing the rostrocaudal level.
 # A telencephalic section is recognisable as telencephalon, but how far front or
@@ -703,7 +719,7 @@ def analysis_uids(marker):
             f"define one for {marker_label(marker)}.\n"
             f"Run {marker_label(marker)} without it: "
             f"python 04l_roi_curator.py --marker {marker}")
-    with open(ANALYSIS_CSV, newline="", encoding="utf-8") as fh:
+    with open(analysis_set_csv(marker), newline="", encoding="utf-8") as fh:
         perk = {r["scene_uid"] for r in csv.DictReader(fh) if r["in_analysis_set"] == "1"}
     return perk, len(perk), 0
 # Which plate set to use, from config. The two sets reuse the same plate_NNN
@@ -1100,7 +1116,7 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
   <button id="favBtn" class="btn-fav" onclick="toggleFav()">Favourite</button>
   <button id="noroiBtn" class="btn-excl" onclick="toggleNoRoi()">No ROI here</button>
   <button id="exclBtn" class="btn-kill" onclick="toggleExcl()">Exclude</button>
-  <button id="dapiBtn" class="btn-plate" onclick="toggleDapi()">DAPI</button>
+  <button id="dapiBtn" class="btn-plate" onclick="toggleDapi()">__NUCLEAR__</button>
   <button id="bgBtn" class="btn-bg" onclick="toggleBgMode()">Background</button>
   <button id="hullBtn" class="btn-region" onclick="toggleHulls()">Hulls</button>
   <button id="undoPolyBtn" class="btn-edit" onclick="undoPoly()">Undo region</button>
@@ -1175,7 +1191,7 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
         <canvas id="revOv"></canvas></div>
       <div class="kv" id="revImgNote" style="margin-top:4px"></div>
       <div class="deliver" style="flex-wrap:wrap;margin-top:4px">
-        <button id="revDapiBtn" class="btn-plate" onclick="revLayer('dapi')">DAPI</button>
+        <button id="revDapiBtn" class="btn-plate" onclick="revLayer('dapi')">__NUCLEAR__</button>
         <button id="revMarkBtn" class="btn-fav" onclick="revLayer('mark')">Marker</button>
         <button id="revArtBtn" class="btn-rot" onclick="revLayer('art')">Artifacts</button>
         <button id="revCenBtn" class="btn-kill" onclick="revLayer('cen')">Censored</button>
@@ -1630,7 +1646,10 @@ function dapiBtnState(){
   const rgb = hasRgb(active), on = rgb && dapiOn;
   el("dapiBtn").disabled = !rgb;
   el("dapiBtn").classList.toggle("mode-on", on);
-  el("dapiBtn").textContent = on ? "DAPI ✓" : "DAPI";
+  // FILTERS.nuclearLabel, not "DAPI". The label in the button's HTML comes
+  // from the study; relabelling it from a literal here would put the word back
+  // the first time a section was shown, so the template alone was never enough.
+  el("dapiBtn").textContent = FILTERS.nuclearLabel + (on ? " ✓" : "");
   el("dapiBtn").title = rgb ? ""
     : "no colour composite for this section - run 04o_section_rgb.py --all";
 }
@@ -4642,7 +4661,10 @@ function revImg(){
   on("revArtBtn",   REV.art,   !p.has_mask);
   on("revCenBtn",   REV.cen,   !hasCen);
   on("revApplyBtn", REV.apply, !p.has_mask);
-  el("revDapiBtn").textContent = REV.dapi ? "DAPI ✓" : "DAPI";
+  // Both buttons name their channel from the data the page was built with -
+  // the marker's from MARKERS, the counterstain's from FILTERS - so a study
+  // that calls either of them something else renames the buttons too.
+  el("revDapiBtn").textContent = FILTERS.nuclearLabel + (REV.dapi ? " ✓" : "");
   el("revMarkBtn").textContent = M.label + (REV.mark ? " ✓" : "");
   el("revCenBtn").title = hasCen ? "" :
     "no censor mask for this section - run 04j_censor_clipped.py";
@@ -4918,9 +4940,11 @@ def build_parser():
                          "the selector next to the sample selector switches - so this "
                          "chooses the starting view, not what is in the page. "
                          f"Opens on {_default}.")
+    _aset = (os.path.basename(analysis_set_csv(_default)) if _default
+             else "the first marker's analysis set")
     ap.add_argument("--analysis-set", action="store_true",
                     help=f"narrow the {_first} side to "
-                         f"{os.path.basename(ANALYSIS_CSV)}. Clipped-pixel "
+                         f"{_aset}. Clipped-pixel "
                          f"censoring is measured on that marker's own scans, "
                          f"so it defines a subset for it alone; {_rest}")
     ap.add_argument("--worklist", nargs="?", const=WORKLIST_CSV, default=None,
@@ -4976,7 +5000,11 @@ def main():
         if args.analysis_set and marker == first:
             keep, _n_first, _unpaired = analysis_uids(marker)
             rows = [r for r in rows if r["id"] in keep]
-            subset = "perk_analysis_set"
+            # The tag the page shows for this side, taken from the file the
+            # rows actually came from rather than named again. "perk" was the
+            # third copy of a name only one study has.
+            subset = os.path.splitext(os.path.basename(
+                analysis_set_csv(marker)))[0]
 
         # The worklist is keyed on the first marker's uids, because that is the
         # channel being quantified. Reaching the other marker's side means
@@ -5082,7 +5110,13 @@ def main():
         "__MARKER__": args.marker, "__SECDIRS__": section_dirs(),
         "__SECGRID__": SEC_GRID, "__GROUPS__": GROUPS,
         "__FILTERS__": review_filters(MARKERS, MARKER_COLOURS, NUCLEAR_COLOUR),
-        "__EXPORTDIR__": args.export_dir})
+        "__EXPORTDIR__": args.export_dir},
+        # The counterstain's name is the one value here that lands in HTML TEXT
+        # rather than in the script: it is the label on the two toggle buttons.
+        # Through the data argument it would arrive JSON-encoded, quote marks
+        # and all, so `text=` HTML-escapes it instead - same single pass, see
+        # ls_io.fill.
+        text={"__NUCLEAR__": NUCLEAR_NAME})
     with open(args.out, "w", encoding="utf-8") as fh:
         fh.write(page)
 

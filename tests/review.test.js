@@ -213,6 +213,25 @@ chk("the button names the channel",
 shown(true, false);
 chk("...and drops the tick when it is off",
     env.els.revMarkBtn.textContent, maskedMk.label);
+
+// And the counterstain button beside it, for the same reason and from the same
+// kind of source: FILTERS.nuclearLabel is what the study's channel table calls
+// the nuclear channel, defaulting to DAPI where a paired study declares no
+// table. It used to be the literal "DAPI" in both the button's HTML and here,
+// so a study counterstaining with Hoechst was offered a channel it does not
+// have - twice, and the script rewrote the HTML back on every state change.
+//
+// INERT UNDER THIS STUDY, like the "no two markers share a filter" check
+// above: the live study IS paired, so nuclearLabel is "DAPI" and a hardcoded
+// implementation passes too. What bites today is
+// tests/test_review_colour.py, which renders the template under a study that
+// names its counterstain. This is here so the page cannot drift back.
+shown(true, true);
+chk("the counterstain button names what the study counterstains with",
+    env.els.revDapiBtn.textContent, X.FILTERS.nuclearLabel + " ✓");
+X.REV.dapi = false; X.revImg();
+chk("...and drops the tick when it is off",
+    env.els.revDapiBtn.textContent, X.FILTERS.nuclearLabel);
 X.REV.dapi = true; X.REV.mark = true; X.revImg();
 
 X.REV.art = false;

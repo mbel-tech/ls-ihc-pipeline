@@ -86,7 +86,10 @@ ARTIFACTS = {
 #: pERK". A fresh study that happens to reuse the fluorophore name AF568 in an
 #: empty out_root never reaches one of these names: nothing is there to find.
 #:
-#: Nothing is ever WRITTEN under a legacy name - see Names.path.
+#: Nothing is ever WRITTEN under a legacy name - see Names.path. The single
+#: exception is the analysis set, whose two names 04j has always written
+#: unconditionally and still does; that is `Names.analysis_set_path`, stated
+#: there as an exception rather than smuggled into `path()`.
 LEGACY = {
     ("overrides",        "AF568"): "perk_overrides.csv",
     ("sections_dataset", "AF568"): "perk_sections_dataset.csv",
@@ -242,6 +245,35 @@ class Names:
         if marker in self.markers:
             return self
         return Names(self.out_root, self.markers + [marker], self.layout)
+
+    def analysis_set_path(self, marker):
+        """Where 04j WRITES this marker's analysis set - legacy name included.
+
+        The one artifact whose pre-rename names are PINNED rather than adopted
+        on sight, and the exception `path()`'s docstring refuses - which is why
+        it is a method of its own rather than a branch inside `path()`.
+
+        04j has always written `perk_analysis_set.csv` and
+        `pcna_analysis_set.csv` for those two markers. 04l, 04m, 04p and the
+        app's stage table all read them there, so the writer keeps writing
+        them, and existence cannot be what decides: the very first 04j run
+        creates the file that `read()` would only adopt once it was already
+        on the drive. Every marker outside `LEGACY` - so every study but this
+        one - gets the derived `<marker>_analysis_set.csv`.
+
+        This lived in 04j as a `LEGACY_ANALYSIS_SET` dict and, separately, as
+        the bare literal `perk_analysis_set.csv` in 04l, kept in step by a
+        comment in each telling the reader about the other. 04l's copy was
+        wrong for every study whose first marker is not AF568: it opened a
+        name 04j would never write. Both now ask here.
+
+        `including()` rather than `path()` outright: 04j's own suite asks for
+        AF568's name under a study whose markers are ["Marker1"], and this
+        question is a reader's - a marker the study did not declare has to get
+        an answer rather than the refusal a writer deserves.
+        """
+        legacy = self.legacy_path("analysis_set", marker)
+        return legacy or self.including(marker).path("analysis_set", marker)
 
     def legacy_path(self, artifact, marker):
         """The pre-rename basename for this pair, or None. Existence unchecked."""

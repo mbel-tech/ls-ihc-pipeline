@@ -23,6 +23,7 @@ Imported by path, like every other cross-script import here:
 
 import contextlib
 import csv
+import html
 import json
 import os
 import re
@@ -124,15 +125,49 @@ def embed(obj):
     return json.dumps(obj).replace("</", "<\\/").replace("<!--", "<\\!--")
 
 
-def fill(template, values):
+def fill(template, values, text=None):
     """Substitute every `__NAME__` placeholder in ONE pass.
 
     Chained `str.replace` calls re-scan the JSON just inserted, so a placeholder
     name inside a data value would be substituted as well. A placeholder the
     template does not carry is a programming error and raises.
+
+    TWO KINDS OF DESTINATION, because a page is not all script.
+
+    `values` land in a script block and are JSON-encoded by `embed`, which is
+    what every caller wanted until a page needed to NAME something. `text`
+    lands in HTML TEXT - a button's label, a heading - where `embed` would put
+    the JSON string's own quote marks on screen: `>"DAPI"<`. Those are
+    HTML-escaped instead, so a counterstain called `A&B` reaches the page as
+    itself rather than as markup.
+
+    Both go through the SAME pass, and that is the point of the parameter
+    rather than a second call: a str.replace before or after this one would
+    re-scan whatever the other had already inserted, which is the exact bug the
+    one-pass rule exists to prevent. A name given in both is refused - two
+    encodings for one placeholder is a caller that has not decided.
+
+    Nothing to substitute returns the template unchanged. An empty pattern
+    matches at every position, so the `re` route would rewrite the whole page.
     """
-    for name in values:
+    text = dict(text or {})
+    both = dict(values or {})
+    overlap = sorted(set(both) & set(text))
+    if overlap:
+        raise KeyError(f"placeholder(s) {overlap} are given as both script data "
+                       f"and page text; one placeholder, one encoding")
+    both.update(text)
+    if not both:
+        return template
+    for name in both:
         if name not in template:
             raise KeyError(f"placeholder {name} is not in the template")
-    pattern = re.compile("|".join(re.escape(k) for k in values))
-    return pattern.sub(lambda m: embed(values[m.group(0)]), template)
+    pattern = re.compile("|".join(re.escape(k) for k in both))
+
+    def one(match):
+        name = match.group(0)
+        if name in text:
+            return html.escape(str(text[name]))
+        return embed(both[name])
+
+    return pattern.sub(one, template)

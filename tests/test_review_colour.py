@@ -16,7 +16,9 @@ implementation from the hardcoded one. A study with the colours SWAPPED can,
 and needs only two markers to do it.
 """
 
+import importlib.util
 import os
+import re
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -26,6 +28,11 @@ if HERE not in sys.path:
 sys.path.insert(0, os.path.join(REPO, "scripts"))
 
 from _fixture import temp_study, load_stage                 # noqa: E402
+
+_spec = importlib.util.spec_from_file_location(
+    "lsio", os.path.join(REPO, "scripts", "ls_io.py"))
+IO = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(IO)
 
 failures = []
 
@@ -74,7 +81,36 @@ def build(mod):
     return filters, {d["id"]: d["values"] for d in filters["defs"]}
 
 
+def render(mod):
+    """The page as `main()` writes it, with the script's data stubbed out.
+
+    Only two things about the built page are asserted below - the labels on the
+    counterstain toggles - and building the real thing needs a reformat index,
+    an atlas and 2,572 provenance rows. So the placeholders are read off the
+    template itself and filled with nulls, EXCEPT the one that is page text
+    rather than script data.
+
+    Reading them off the template is also the check in the direction `fill()`
+    does not make for you: it raises for a value whose placeholder is missing,
+    and silently leaves a literal `__FOO__` for a placeholder with no value.
+    Everything the template carries is filled here, and the page is then
+    asserted to have none left.
+    """
+    tokens = set(re.findall(r"__[A-Z][A-Z0-9]*__", mod.PAGE))
+    text = {t: mod.NUCLEAR_NAME for t in tokens if t == "__NUCLEAR__"}
+    return IO.fill(mod.PAGE, {t: None for t in tokens - set(text)}, text=text)
+
+
 LS_MARKERS = {"layout": "paired", "markers": ["AF568", "AF488"]}
+OTHER_MARKERS = {"layout": "paired", "markers": ["Mk1", "Mk2"]}
+#: A study that counterstains with something else AND says so. A paired study
+#: declares no channel table - each scan is the counterstain plus one marker -
+#: so a multiplex one is the only shape that can name it.
+HOECHST = {"layout": "multiplex",
+           "channels": [{"name": "Hoechst", "role": "nuclear",
+                         "czi_name": "DAPI", "index": 0},
+                        {"name": "Ki67", "role": "marker",
+                         "czi_name": "AF568", "index": 1}]}
 
 print("--- THE ORACLE: a study whose colours are the other way round ---")
 #
@@ -191,6 +227,72 @@ with temp_study(acquisition={"layout": "paired", "markers": ["A", "B", "C"]},
     chk("three distinct filter pairs, no id reused", len(set(pairs)), 3)
     chk("every id the page can ask for is defined",
         sorted({i for p in pairs for i in p} - set(vals)), [])
+
+print()
+print("--- the analysis set 04l OPENS is the one 04j WROTE ---")
+#
+# 04l held the literal `perk_analysis_set.csv`, which is the name 04j writes
+# for AF568 and for no other marker: `analysis_set_path()` returns a legacy
+# name only for the two markers in its table and `<marker>_analysis_set.csv`
+# for everybody else. And `analysis_uids()` now correctly lets MARKERS[0]
+# through whatever it is called - so a study with other markers reached that
+# literal and opened a file 04j would never have written.
+#
+# The oracle is 04j itself, asked the same question. Nothing here restates the
+# rule; if the two ever answer differently the flag opens the wrong file.
+with temp_study(acquisition=OTHER_MARKERS):
+    curator = load_stage("04l_roi_curator.py")
+    censor = load_stage("04j_censor_clipped.py")
+    chk("--analysis-set opens the file 04j wrote for this study's first marker",
+        curator.analysis_set_csv("Mk1"), censor.analysis_set_path("Mk1"))
+    chk("...which is named after the marker, not after an antibody",
+        os.path.basename(curator.analysis_set_csv("Mk1")), "Mk1_analysis_set.csv")
+    helps = {a.dest: (a.help or "") for a in curator.build_parser()._actions}
+    chk("...and the flag help names that file rather than perk_analysis_set.csv",
+        "Mk1_analysis_set.csv" in helps["analysis_set"], True)
+
+# THE FILE ON THE OPERATOR'S DRIVE. 57,145 bytes of it, written before this
+# pipeline had a second marker. The name has to be derived for everyone else
+# WITHOUT moving for this study.
+with temp_study(acquisition=LS_MARKERS):
+    curator = load_stage("04l_roi_curator.py")
+    censor = load_stage("04j_censor_clipped.py")
+    chk("the live study still opens perk_analysis_set.csv",
+        os.path.basename(curator.analysis_set_csv("AF568")),
+        "perk_analysis_set.csv")
+    chk("...at the same path 04j writes it to",
+        curator.analysis_set_csv("AF568"), censor.analysis_set_path("AF568"))
+    chk("...and the second marker is still pcna_analysis_set.csv",
+        os.path.basename(curator.analysis_set_csv("AF488")),
+        "pcna_analysis_set.csv")
+
+print()
+print("--- the page's counterstain toggles say what the study counterstains with ---")
+#
+# The Review pane's HEADER already took the counterstain's colour, lift and
+# name from the config. The two TOGGLE BUTTONS did not: `dapiBtn` and
+# `revDapiBtn` were the static string "DAPI" in the template, and the script
+# script rewrote them back to that same literal, ticked or not, on every
+# state change - so fixing only the template would not have shown. A study
+# counterstaining with Hoechst was given two buttons naming a channel it does
+# not have.
+with temp_study(acquisition=HOECHST):
+    mod = load_stage("04l_roi_curator.py")
+    page = render(mod)
+    chk("both counterstain toggles carry the study's own name for it",
+        page.count(">Hoechst</button>"), 2)
+    chk("...and neither still names DAPI",
+        ">DAPI</button>" in page, False)
+    chk("...and the script does not relabel them back to DAPI on the next state change",
+        "DAPI ✓" in page, False)
+    chk("every placeholder the template carries got a value",
+        sorted(set(re.findall(r"__[A-Z][A-Z0-9]*__", page))), [])
+
+with temp_study(acquisition=LS_MARKERS):
+    mod = load_stage("04l_roi_curator.py")
+    page = render(mod)
+    chk("a paired study declares no table, so the live page still says DAPI",
+        page.count(">DAPI</button>"), 2)
 
 print()
 print("ALL PASS" if not failures else f"{len(failures)} FAILED")

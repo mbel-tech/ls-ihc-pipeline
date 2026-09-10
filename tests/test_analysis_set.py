@@ -47,14 +47,15 @@ M = load("m", "04m_sections_dataset.py")
 
 # THESE TWO FILENAMES NAME FILES THAT EXIST ON THE OPERATOR'S DRIVE.
 #
-# They are not a naming convention and nothing derives them: 04j's
-# LEGACY_ANALYSIS_SET maps AF568 -> perk_analysis_set.csv and AF488 ->
+# They are not a naming convention and nothing derives them:
+# ls_paths.LEGACY maps AF568 -> perk_analysis_set.csv and AF488 ->
 # pcna_analysis_set.csv because both files were already written under those
-# names. FIVE other places read them - 04l:232, 04m:126, 04p:246,
-# app/stages.py (three sites) and this suite's own temp path below - so
-# swapping or renaming either one moves live paths, and until this check
-# existed nothing noticed: a reviewer exchanged the two values and the entire
-# suite stayed green.
+# names, and `Names.analysis_set_path` - which 04j calls, and which is asked
+# for below - hands them back unconditionally rather than on sight. FIVE other
+# places read them - 04l, 04m, 04p, app/stages.py (three sites) and this
+# suite's own temp path below - so swapping or renaming either one moves live
+# paths, and until this check existed nothing noticed: a reviewer exchanged the
+# two values and the entire suite stayed green.
 #
 # Called with the marker names spelled out, not with whatever the configured
 # study declares. This suite runs under a throwaway study whose marker list is

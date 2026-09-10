@@ -140,6 +140,7 @@ if _HERE not in sys.path:
 from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
 import ls_channels as CH  # noqa: E402
 import ls_naming as NM  # noqa: E402
+import ls_paths as LP  # noqa: E402
 
 # The markers this study measures, in declared order. ls_channels is the
 # single source of that list; naming a fluorophore here would pin the stage
@@ -153,20 +154,24 @@ QC_CSV = os.path.join(OUT_ROOT, "qc", "focus.csv")
 CENSOR_DIR = os.path.join(OUT_ROOT, "censor")
 # Per-marker output.
 #
-# LEGACY_ANALYSIS_SET is a fact about FILES THAT EXIST on the operator's drive,
-# not a fact about what a marker is called anywhere. `perk_analysis_set.csv` is
-# read by 04l, 04m and 04p and by the app's stage table, and both files are
-# already written on the live drive, so these two names cannot move. Every
-# other marker - and every other study - gets a name derived from the marker
-# itself, which is why the lookup below is .get() and not [].
-LEGACY_ANALYSIS_SET = {"AF568": "perk_analysis_set.csv",
-                       "AF488": "pcna_analysis_set.csv"}
+# The name is ls_paths' to state, not this stage's. It was a LEGACY_ANALYSIS_SET
+# dict here and, separately, the bare literal `perk_analysis_set.csv` in 04l -
+# two copies of one fact, kept in step by a comment in each pointing at the
+# other, and 04l's copy was wrong for every study whose first marker is not
+# AF568. ls_paths already carried both names in its LEGACY table; the rule that
+# reads them now lives beside it.
+#
+# What the rule says has not changed: `perk_analysis_set.csv` and
+# `pcna_analysis_set.csv` are FILES THAT EXIST on the operator's drive, read by
+# 04l, 04m and 04p and by the app's stage table, so those two names cannot
+# move; every other marker - and every other study - gets a name derived from
+# the marker itself.
+NAMES = LP.for_config(CONFIG)
 
 
 def analysis_set_path(marker):
     """Where this marker's analysis set is written."""
-    return os.path.join(REFORMAT_DIR, LEGACY_ANALYSIS_SET.get(
-        marker, f"{marker}_analysis_set.csv"))
+    return NAMES.analysis_set_path(marker)
 
 
 #: The same table the old dict literal was, now built for whatever markers the
