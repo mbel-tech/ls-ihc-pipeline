@@ -38,8 +38,14 @@ if _HERE not in sys.path:
 # the whole process. Imported, not re-implemented: this block used to be four
 # lines copy-pasted into every stage.
 from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
+import ls_channels as CH  # noqa: E402
 
 _REPO = os.path.dirname(_HERE)
+
+# The markers this study declares, in declared order. The order is load-bearing
+# here - see marker_list below - so it is taken from the study rather than from
+# whatever order the measurements file happens to yield.
+MARKERS = list(CH.marker_names(CONFIG))
 
 
 def _load(name, filename):
@@ -124,21 +130,30 @@ def marker_list():
 
     Read from `roi_measurements.csv` rather than from config or a constant, so
     the loop plots what exists rather than what was expected to exist. Falls
-    back to the R default if the column or the file is missing, which is what a
-    dataset built before the column existed looks like.
+    back to the FIRST DECLARED MARKER if the column or the file is missing,
+    which is what a dataset built before the column existed looks like - and is
+    the same marker `roi_plots.R` falls back to when LS_MARKER is unset.
+
+    `MARKERS[0]`, not `"AF568"`, in all three places. The two fallbacks were
+    merely wrong for another study; the ORDER below was wrong SILENTLY. Its
+    whole purpose is to re-plot the watched marker before any other, and a
+    literal that matches nothing degrades it to plain `sorted()` - alphabetical
+    - with no error and no output to say the intent was dropped.
     """
+    watched = MARKERS[0] if MARKERS else None
     path = G6C.MEAS_CSV
     if not os.path.exists(path):
-        return ["AF568"]
+        return MARKERS[:1]
     rows = G5.load_csv(path)
     seen = sorted({r.get("marker") for r in rows if r.get("marker")})
     if not seen:
-        return ["AF568"]
-    # AF568 FIRST. A plotting failure ends the loop, and plain sorted() puts
-    # AF488 in front - so an untested marker on the thinnest data would take the
-    # loop down before the pERK figures had been redrawn even once.
-    return ([m for m in seen if m == "AF568"]
-            + [m for m in seen if m != "AF568"])
+        return MARKERS[:1]
+    # THE WATCHED MARKER FIRST. A plotting failure ends the loop, and plain
+    # sorted() orders by name - so an untested marker on the thinnest data
+    # would take the loop down before the marker the operator is actually
+    # watching had been redrawn even once.
+    return ([m for m in seen if m == watched]
+            + [m for m in seen if m != watched])
 
 
 def progress():

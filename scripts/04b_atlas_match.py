@@ -54,7 +54,10 @@ if _HERE not in sys.path:
 # the whole process. Imported, not re-implemented: this block used to be four
 # lines copy-pasted into every stage.
 from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
+import ls_channels as CH  # noqa: E402
 import ls_naming as NM  # noqa: E402
+
+MARKERS = list(CH.marker_names(CONFIG))
 
 OUT_ROOT = CONFIG["out_root"]
 OVERVIEW_DIR = os.path.join(OUT_ROOT, "overviews")
@@ -213,11 +216,33 @@ def best_path(sim):
     return path
 
 
-def main():
+def build_parser():
+    """The parser, built separately so a test can read the marker choices and
+    default off the object argparse will actually use.
+
+    `--marker` used to be `default="AF488"` with NO `choices=` at all - the one
+    shape argparse cannot validate: it accepted any string, the `marker_channel`
+    filter matched nothing, and the stage walked zero sections and wrote zero
+    atlas proposals without erroring. Derived choices make a marker this study
+    does not have a usage error instead.
+
+    The default is the SECOND declared marker. That is not a fluorophore fact:
+    the sections registered against the atlas are the pass whose geometry every
+    other stage is expressed in, which is `04a.DEFAULT_MARKER`, and under
+    `paired` that is `MARKERS[1]`. Deriving `MARKERS[0]` here would silently
+    register the other pass - the trap this migration keeps meeting, since the
+    marker with the unsuffixed outputs is the second declared.
+    """
     ap = argparse.ArgumentParser()
     ap.add_argument("--animal", default=None, help="restrict to one animal")
-    ap.add_argument("--marker", default="AF488", help="channel whose DAPI is used")
-    args = ap.parse_args()
+    _default = MARKERS[1] if len(MARKERS) > 1 else (MARKERS[0] if MARKERS else None)
+    ap.add_argument("--marker", default=_default, choices=MARKERS,
+                    help=f"channel whose DAPI is used (default {_default})")
+    return ap
+
+
+def main():
+    args = build_parser().parse_args()
     os.makedirs(REPORT_DIR, exist_ok=True)
 
     with open(os.path.join(PLATE_DIR, "plates.csv"), newline="", encoding="utf-8") as fh:

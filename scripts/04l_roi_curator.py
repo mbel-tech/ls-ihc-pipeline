@@ -259,6 +259,17 @@ NUCLEAR_COLOUR = CH.nuclear_colour(CONFIG)
 # The same map in the operator's language, for the button that names it.
 MARKER_COLOUR_NAMES = CH.marker_colour_names(CONFIG)
 
+#: What the counterstain is CALLED. Its colour and its lift already came from
+#: the config; its name was the literal "DAPI" in the Review pane's header, so
+#: a study counterstaining with Hoechst was shown a header naming a dye it does
+#: not use. Read from the channel table, which is where a multiplex study names
+#: it. A paired study declares no table - each scan carries the counterstain
+#: plus one marker - so there is nothing to read and "DAPI" stands, which is
+#: also the name every `_DAPI.png` this pipeline writes already carries.
+_NUCLEAR_CHANNEL = CH.nuclear(CH.parse((CONFIG.get("acquisition") or {}).get("channels")))
+NUCLEAR_NAME = (_NUCLEAR_CHANNEL.name if _NUCLEAR_CHANNEL
+                and _NUCLEAR_CHANNEL.name else "DAPI")
+
 
 OUT_ROOT = CONFIG["out_root"]
 REFORMAT_DIR = os.path.join(OUT_ROOT, "reformatted")
@@ -581,7 +592,7 @@ def _matrix(colour, nuclear, lift):
     return "  ".join(" ".join(_num(v) for v in row) for row in rows)
 
 
-def review_filters(markers, colours, nuclear, lift=DAPI_LIFT):
+def review_filters(markers, colours, nuclear, lift=DAPI_LIFT, name=None):
     """The Review pane's colour filters, as DATA rather than as HTML.
 
     The arithmetic is here, in Python, beside the composite's - one rule, so
@@ -595,12 +606,15 @@ def review_filters(markers, colours, nuclear, lift=DAPI_LIFT):
              "defs":        [{"id": id, "values": "<20 numbers>"}],
              "dapiOnly":    id, "blank": id, "lumAlpha": id,
              "fallback":    {"dapi": id, "only": id},
+             "nuclearLabel": what the counterstain is called,
              "nuclearName": the counterstain's colour as a word,
              "lift":        how far it is lifted}
 
-    The last two are for the pane's own header, which used to read "DAPI blue
-    x4" as a literal and would have gone quietly wrong the moment a study set
-    `display.nuclear_colour`.
+    The last three are for the pane's own header, which read "DAPI blue x4" as
+    a literal. The colour and the lift were fixed first; the NAME was still
+    hardcoded in the page, so a study counterstaining with Hoechst was told it
+    was looking at DAPI. All three now come from the study, so the header can
+    only be wrong if the config is.
 
     `fallback` is grey, for a marker this study declared no colour for - it is
     absent from `byMarker`, so the page resolves it with `byMarker[m] ||
@@ -663,6 +677,7 @@ def review_filters(markers, colours, nuclear, lift=DAPI_LIFT):
     return {"byMarker": by_marker, "defs": defs,
             "dapiOnly": FILTER_DAPI_ONLY, "blank": FILTER_BLANK,
             "lumAlpha": FILTER_LUM_ALPHA, "fallback": fallback,
+            "nuclearLabel": NUCLEAR_NAME if name is None else name,
             "nuclearName": CH.colour_name(nuclear), "lift": lift}
 
 
@@ -4635,10 +4650,10 @@ function revImg(){
   // The lift is named rather than left to be noticed. A viewer that quietly
   // rescales one channel invites reading brightness off the screen, and the
   // counterstain here is several times further from its neighbours than it
-  // looks. Both the colour word and the factor come from FILTERS: written out
-  // as "DAPI blue x4" they would go quietly wrong the moment a study set
-  // display.nuclear_colour.
-  const nuc = `DAPI ${FILTERS.nuclearName} x${FILTERS.lift}`;
+  // looks. The NAME, the colour word and the factor all come from FILTERS:
+  // written out as "DAPI blue x4" this went quietly wrong the moment a study
+  // set display.nuclear_colour - or counterstained with anything but DAPI.
+  const nuc = `${FILTERS.nuclearLabel} ${FILTERS.nuclearName} x${FILTERS.lift}`;
   // The label, then the colour it is drawn in - the study's word for it, so
   // the pane says what it is doing rather than restating a convention. A
   // marker with no colour says so; it is on screen in grey. The old version
@@ -4882,23 +4897,37 @@ expRestoreDir();
 """
 
 
-def main():
+def build_parser():
+    """The parser, built separately so a test can read the marker default and
+    the flag help off the object argparse will actually use.
+
+    The help text is DERIVED for the same reason the choices are. Both subset
+    flags narrow the first declared marker and leave every other marker on its
+    own full set - that is a rule about declared order, not about pERK - and
+    the help said "pERK" and "PCNA", which are this study's antibodies. An
+    operator of another study reading `--analysis-set` was told the flag
+    applied to a marker they do not have.
+    """
     ap = argparse.ArgumentParser()
     ap.add_argument("--animal", default=None)
     _default = MARKERS[0] if MARKERS else None
+    _first = marker_label(_default) if _default else "the first declared marker"
+    _rest = "every other marker keeps its full set"
     ap.add_argument("--marker", choices=MARKERS, default=_default,
                     help="which channel the page OPENS on. Both are always loaded - "
                          "the selector next to the sample selector switches - so this "
                          "chooses the starting view, not what is in the page. "
                          f"Opens on {_default}.")
     ap.add_argument("--analysis-set", action="store_true",
-                    help="narrow the pERK side to perk_analysis_set.csv. A pERK "
-                         "subset only; PCNA keeps its full set")
+                    help=f"narrow the {_first} side to "
+                         f"{os.path.basename(ANALYSIS_CSV)}. Clipped-pixel "
+                         f"censoring is measured on that marker's own scans, "
+                         f"so it defines a subset for it alone; {_rest}")
     ap.add_argument("--worklist", nargs="?", const=WORKLIST_CSV, default=None,
                     metavar="CSV",
-                    help="order the pERK side by 04n_roi_worklist.py, so stopping "
+                    help=f"order the {_first} side by 04n_roi_worklist.py, so stopping "
                          "part way still leaves every animal and every level covered. "
-                         "Keyed on pERK uids, so PCNA keeps its full set")
+                         f"Keyed on {_first} uids, so {_rest}")
     ap.add_argument("--tier", default=None,
                     help="with --worklist: only this tier (e.g. core)")
     ap.add_argument("--no-seed", action="store_true",
@@ -4920,7 +4949,11 @@ def main():
                     help="where to write the page (default: the live curator under "
                          "out_root). tests/run.sh points this at tests/build/ so a "
                          "test run never rewrites the page being curated in")
-    args = ap.parse_args()
+    return ap
+
+
+def main():
+    args = build_parser().parse_args()
     if args.worklist and not os.path.exists(args.worklist):
         raise SystemExit(f"--worklist: {args.worklist} not found - run 04n_roi_worklist.py first")
 

@@ -64,6 +64,9 @@ if _HERE not in sys.path:
 # the whole process. Imported, not re-implemented: this block used to be four
 # lines copy-pasted into every stage.
 from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
+import ls_channels as CH  # noqa: E402
+
+MARKERS = list(CH.marker_names(CONFIG))
 
 OUT_ROOT = CONFIG["out_root"]
 OVERVIEW_DIR = os.path.join(OUT_ROOT, "overviews")
@@ -265,15 +268,35 @@ def figure(samples, path):
     plt.close(fig)
 
 
-def main():
+def build_parser():
+    """The parser, built separately so a test can read the marker choices and
+    default off the object argparse will actually use.
+
+    `--marker` used to be `default="AF568"` with NO `choices=` at all, which is
+    the one shape argparse cannot validate under any circumstances: it accepted
+    any string, `marker_channel == args.marker` matched nothing, and the stage
+    printed `0 <marker> sections` and wrote a `saturation_<marker>.csv` holding
+    a header and no rows - a file `app/stages.py` declares as this stage's
+    output, so the app would show the stage as done. Derived choices turn a
+    marker this study does not have into a usage error before any of that.
+    """
     ap = argparse.ArgumentParser()
     ap.add_argument("--figures", type=int, default=8)
-    ap.add_argument("--marker", default="AF568")
+    # The FIRST declared marker: clipping is measured on the pass that clips,
+    # which is the one this census exists for, and for the live study that is
+    # AF568 - the literal this replaces.
+    _default = MARKERS[0] if MARKERS else None
+    ap.add_argument("--marker", default=_default, choices=MARKERS,
+                    help=f"which marker's sections to measure (default {_default})")
     ap.add_argument("--proxy", action="store_true",
                     help="measure clipping with the OLD 8-bit >=254 proxy instead "
                          "of the raw masks, writing saturation_<marker>_proxy.csv. "
                          "For reproducing the pre-fix census with current code.")
-    args = ap.parse_args()
+    return ap
+
+
+def main():
+    args = build_parser().parse_args()
     # Per run, not per process: the app runs stages in-process, and a
     # module-level list reported the PREVIOUS run's sections on the second.
     fallbacks = []

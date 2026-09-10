@@ -122,6 +122,23 @@ def measure(czidoc, rect, fields, zoom, want_mask, ceiling=CEILING, *, scene):
     }
 
 
+def clip_pool(scenes):
+    """The scenes the dilution ratio may be measured on: the FIRST declared
+    marker's.
+
+    One marker only, and on purpose: the ratio needs sections that clip at all,
+    and the pass that clips at a measurable scale is the one this census exists
+    for. `MASK_MARKERS[0]`, not `"AF568"` - the literal matched nothing for any
+    other study, so `native_sample` sampled an EMPTY pool, wrote no rows, and
+    the resolution-dilution factor came back as "no data" with no message. A
+    measured constant silently replaced by an assumption is exactly the failure
+    this stage was written to remove.
+    """
+    if not MASK_MARKERS:
+        return []
+    return [r for r in scenes if r.get("marker_channel") == MASK_MARKERS[0]]
+
+
 def native_sample(scenes, n, ceilings, seed=20260901):
     """Measure the resolution-dilution factor instead of assuming it.
 
@@ -133,9 +150,8 @@ def native_sample(scenes, n, ceilings, seed=20260901):
     from pylibCZIrw import czi as pyczi
 
     rng = np.random.default_rng(seed)
-    # AF568 only: it is the marker that clips at a measurable scale, so it is
-    # the only one where a dilution ratio has a denominator worth dividing by.
-    pool = [r for r in scenes if r["marker_channel"] == "AF568"]
+    # One marker only - see clip_pool for which and why.
+    pool = clip_pool(scenes)
     rng.shuffle(pool)
     by_file = {}
     for r in pool:

@@ -152,6 +152,39 @@ def composite(marker_img, dapi_img, colour, nuclear=(0., 0., 1.)):
     return rgb
 
 
+def worklist_uid_column(marker, fields):
+    """Which `roi_worklist.csv` column carries this marker's scene uid.
+
+    The worklist is keyed on the pass being quantified, and reaches the other
+    pass only through the pairing - so one marker reads the row's own uid and
+    the other reads the partner's. Which is which was `args.marker == "AF488"`,
+    a literal that was true for exactly one study; every marker of any other
+    study took the `else` branch and both passes were built from the SAME uids,
+    silently.
+
+    `RF.DEFAULT_MARKER` is the comparison, not `MARKERS[1]` spelled out here:
+    the partner column belongs to whichever pass owns the unsuffixed outputs,
+    and 04a is where that is decided.
+
+    NOT `RF.marker_paths(marker)["uid_col"]`, which the plan for this change
+    suggested. That table names 04a's OVERRIDE columns - `perk_scene_uid` for
+    the non-default marker, `scene_uid` for the default - and this file's
+    columns are `scene_uid` and `partner_scene_uid`. Taking the name from
+    there would ask a header that has never had a `perk_scene_uid` column for
+    one, which `pick_column` would refuse, and would hand the DEFAULT marker
+    `scene_uid`, which is the other pass's section.
+
+    `pick_column`, not a literal and not `.get()`: 04n renamed this column from
+    `pcna_scene_uid` to `partner_scene_uid`, so a worklist under either
+    spelling has to keep working, and a `.get()` on the wrong one yields an
+    empty uid list and a run that builds no composites at all without saying so.
+    """
+    if marker == RF.DEFAULT_MARKER:
+        return IO.pick_column(fields, "partner_scene_uid", "pcna_scene_uid",
+                              what=os.path.basename(WORKLIST_CSV))
+    return "scene_uid"
+
+
 def write_thumbs(rgb_dir, size=RF.GRID, force=False):
     """Downscale every composite in `rgb_dir` into `<rgb_dir>_thumb`.
 
@@ -258,19 +291,8 @@ def main():
         # The worklist is keyed on the measured pass. Building the other side
         # from it means following the pairing to the partner scene, which the
         # 30 unpaired sections do not have - hence --all, which reads the
-        # marker's own index.
-        #
-        # `pick_column`, not a literal: 04n renamed this column from
-        # `pcna_scene_uid` to `partner_scene_uid`, and the read here was a
-        # `.get()` - so a worklist under either spelling had to keep working,
-        # and the one that did not would have yielded an empty `uids` and a run
-        # that built no composites at all without saying so.
-        if args.marker == "AF488":
-            uid_col = IO.pick_column(fields, "partner_scene_uid",
-                                     "pcna_scene_uid",
-                                     what=os.path.basename(WORKLIST_CSV))
-        else:
-            uid_col = "scene_uid"
+        # marker's own index. Which column that is, see worklist_uid_column.
+        uid_col = worklist_uid_column(args.marker, fields)
         uids = [u for u in ((w.get(uid_col) or "").strip() for w in want) if u]
 
     # The index is the definition of "survived", so it is also the definition of
