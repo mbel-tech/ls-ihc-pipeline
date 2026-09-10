@@ -29,8 +29,9 @@ Tiers come first, order second. A section's tier says whether it belongs in the
 main job at all:
 
     core                 421   paired, from an animal that can carry an estimate
-    unpaired_unchecked    30   no PCNA partner - and the only analysis-set rows
-                               whose rotation was never checked against anything
+    unpaired_unchecked    30   no partner in the geometry-source pass - and the
+                               only analysis-set rows whose rotation was never
+                               checked against anything
     animal_underpowered    3   LS85, which contributes too few to estimate from
 
 Nothing is deleted. The excluded tiers are written into the same file with their
@@ -52,9 +53,15 @@ Run:  python 04n_roi_worklist.py
 import sys
 import argparse
 import csv
+import importlib.util
 import json
 import os
 from collections import defaultdict
+
+_lsio = importlib.util.spec_from_file_location(
+    "_lsio", os.path.join(os.path.dirname(os.path.abspath(__file__)), "ls_io.py"))
+IO = importlib.util.module_from_spec(_lsio)
+_lsio.loader.exec_module(IO)
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 if _HERE not in sys.path:
@@ -63,11 +70,33 @@ if _HERE not in sys.path:
 # the whole process. Imported, not re-implemented: this block used to be four
 # lines copy-pasted into every stage.
 from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
+import ls_channels as CH  # noqa: E402
+import ls_paths as LP  # noqa: E402
 
 OUT_ROOT = CONFIG["out_root"]
 REFORMAT_DIR = os.path.join(OUT_ROOT, "reformatted")
-DATASET_CSV = os.path.join(REFORMAT_DIR, "perk_sections_dataset.csv")
-INDEX_CSV = os.path.join(REFORMAT_DIR, "reformat_index_AF568.csv")
+
+# The queue is over the MEASURED pass - the one 04m's table has a row per - so
+# the marker is the one that is not the geometry source. Asked of ls_paths
+# rather than derived as MARKERS[0]: the geometry source is the SECOND declared
+# marker, and every copy of that rule this repo wrote by hand came out inverted.
+MARKERS = list(CH.marker_names(CONFIG))
+LAYOUT = (CONFIG.get("acquisition") or {}).get("layout", CH.LAYOUT_MULTIPLEX)
+NAMES = LP.for_config(CONFIG)
+PARTNER = LP.geometry_source(MARKERS, LAYOUT)
+MARKER = next((m for m in MARKERS if m != PARTNER), PARTNER)
+
+
+def dataset_csv():
+    """04m's table. `read()`, so the operator's `perk_sections_dataset.csv` is
+    still found after 04m started writing `sections_dataset_<marker>.csv`."""
+    return NAMES.read("sections_dataset", MARKER)
+
+
+def index_csv():
+    return NAMES.read("index", MARKER)
+
+
 OUT_CSV = os.path.join(REFORMAT_DIR, "roi_worklist.csv")
 
 # An animal with fewer than this many measurable sections cannot support a
@@ -135,15 +164,36 @@ def main():
     args = ap.parse_args()
     min_sections = args.min_sections
 
-    with open(DATASET_CSV, newline="", encoding="utf-8") as fh:
-        rows = [r for r in csv.DictReader(fh) if r["status"] == "analysis_set"]
+    dataset = dataset_csv()
+    with open(dataset, newline="", encoding="utf-8") as fh:
+        rd = csv.DictReader(fh)
+        fields = list(rd.fieldnames or [])
+        rows = [r for r in rd if r["status"] == "analysis_set"]
+
+    # THE PARTNER COLUMNS, RESOLVED ONCE AGAINST THE HEADER - not per row, and
+    # never with `.get()`. `num(r, k)` below used to do exactly that, so the day
+    # 04m renamed `pcna_focus_score` this stage would have written a worklist
+    # with the right number of rows, the right columns and an empty string in
+    # every partner cell - a blank that is indistinguishable from a section
+    # whose partner genuinely had no score. `pick_column` refuses instead, with
+    # both spellings in the message.
+    what = os.path.basename(dataset)
+    col_uid = IO.pick_column(fields, "partner_scene_uid", "pcna_scene_uid",
+                             what=what)
+    col_focus = IO.pick_column(fields, "partner_focus_score",
+                               "pcna_focus_score", what=what)
+    col_pieces = IO.pick_column(fields, "partner_n_pieces", "pcna_n_pieces",
+                                what=what)
+    col_largest = IO.pick_column(fields, "partner_largest_piece_mm2",
+                                 "pcna_largest_piece_mm2", what=what)
 
     # Every uid must have a reformatted image or the curator cannot show it.
-    with open(INDEX_CSV, newline="", encoding="utf-8") as fh:
+    with open(index_csv(), newline="", encoding="utf-8") as fh:
         have_image = {r["id"] for r in csv.DictReader(fh) if r["kind"] == "section"}
     missing = [r["scene_uid"] for r in rows if r["scene_uid"] not in have_image]
     if missing:
-        raise SystemExit(f"{len(missing)} analysis-set sections have no AF568 image: {missing[:5]}")
+        raise SystemExit(f"{len(missing)} analysis-set sections have no "
+                         f"{MARKER} image: {missing[:5]}")
 
     per_animal_total = defaultdict(int)
     for r in rows:
@@ -158,7 +208,8 @@ def main():
 
     reason = {
         "core": "",
-        "unpaired_unchecked": "no PCNA partner; rotation never checked against anything",
+        "unpaired_unchecked": "no partner in the geometry-source pass; "
+                              "rotation never checked against anything",
         "animal_underpowered": f"animal has <{min_sections} measurable sections",
     }
 
@@ -176,26 +227,31 @@ def main():
         ordered.extend((tier, r) for r in interleave_proportional(queues))
 
     def num(r, k):
+        # `k` is a column name that came out of pick_column above, so it is
+        # present in the header. The blank this can still return is a blank
+        # CELL, which is a real answer; a missing column is no longer one of
+        # the ways to reach it.
         v = r.get(k, "").strip()
         return v if v not in ("", "nan") else ""
 
     with open(OUT_CSV, "w", newline="", encoding="utf-8") as fh:
         w = csv.writer(fh, lineterminator="\n")
-        w.writerow(["rank", "tier", "tier_reason", "scene_uid", "pcna_scene_uid",
-                    "animal", "section_order",
+        w.writerow(["rank", "tier", "tier_reason", "scene_uid",
+                    "partner_scene_uid", "animal", "section_order",
                     "rotation_unchecked", "pair_confidence", "pair_align_iou",
-                    "pcna_focus_score", "pcna_n_pieces", "pcna_largest_piece_mm2"])
+                    "partner_focus_score", "partner_n_pieces",
+                    "partner_largest_piece_mm2"])
         n = 0
         for tier, r in ordered:
             if args.tier and tier != args.tier:
                 continue
             n += 1
-            w.writerow([n, tier, reason[tier], r["scene_uid"], r.get("pcna_scene_uid", ""),
+            w.writerow([n, tier, reason[tier], r["scene_uid"], r[col_uid],
                         r["animal"], r["section_order"],
                         1 if r["paired"] == "0" else 0,
                         r["pair_confidence"], num(r, "pair_align_iou"),
-                        num(r, "pcna_focus_score"), num(r, "pcna_n_pieces"),
-                        num(r, "pcna_largest_piece_mm2")])
+                        num(r, col_focus), num(r, col_pieces),
+                        num(r, col_largest)])
 
     counts = defaultdict(int)
     for tier, _ in ordered:

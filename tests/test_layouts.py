@@ -33,6 +33,16 @@ chk("02_pair_passes is paired-only",
     LY.layouts_for("02_pair_passes.py"), ("paired",))
 chk("04i_propagate_to_perk is paired-only",
     LY.layouts_for("04i_propagate_to_perk.py"), ("paired",))
+# 04m is the two-pass join; without a second pass every row reads paired=0,
+# partner_kept=0, which is what a paired study looks like when the pairing
+# FAILED. 04p_section_provenance.py is the per-scene table a multiplex study
+# wants, and it is not restricted.
+chk("04m_sections_dataset is paired-only",
+    LY.layouts_for("04m_sections_dataset.py"), ("paired",))
+chk("04n_roi_worklist is not - it orders a table it is handed",
+    LY.layouts_for("04n_roi_worklist.py"), CH.LAYOUTS)
+chk("04p_section_provenance is not - it is the multiplex-shaped table",
+    LY.layouts_for("04p_section_provenance.py"), CH.LAYOUTS)
 chk("an ordinary stage applies to both",
     LY.layouts_for("05c_detect_rois.py"), CH.LAYOUTS)
 chk("a stage nobody classified still applies to both",
@@ -42,9 +52,10 @@ chk("a paired study runs the paired-only stage",
     LY.applies("02_pair_passes.py", "paired"), True)
 chk("a multiplex study does not",
     LY.applies("02_pair_passes.py", "multiplex"), False)
-chk("a multiplex study skips exactly those two",
+chk("a multiplex study skips exactly those three",
     LY.skipped("multiplex"),
-    ["02_pair_passes.py", "04i_propagate_to_perk.py"])
+    ["02_pair_passes.py", "04i_propagate_to_perk.py",
+     "04m_sections_dataset.py"])
 chk("a paired study skips nothing", LY.skipped("paired"), [])
 
 print()
@@ -70,8 +81,9 @@ chk("every restricted name is a script that exists", missing, [])
 
 print()
 print("--- the exceptions are named, and only the named ones ---")
-chk("exactly two stages are layout-restricted",
-    sorted(LY.RESTRICTED), ["02_pair_passes.py", "04i_propagate_to_perk.py"])
+chk("exactly three stages are layout-restricted",
+    sorted(LY.RESTRICTED), ["02_pair_passes.py", "04i_propagate_to_perk.py",
+                            "04m_sections_dataset.py"])
 
 
 print()

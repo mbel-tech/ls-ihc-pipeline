@@ -29,6 +29,18 @@ import ls_channels as CH
 RESTRICTED = {
     "02_pair_passes.py": (CH.LAYOUT_PAIRED,),
     "04i_propagate_to_perk.py": (CH.LAYOUT_PAIRED,),
+    # 04m's universe is the two-pass join itself: one row per section of the
+    # measured pass, joined to its partner in the geometry-source pass. A
+    # multiplex study has one scan per section, so there is no second pass and
+    # `partner_kept` is a column with no question behind it - every row would
+    # read paired=0, partner_kept=0, which is exactly what a paired study looks
+    # like when the pairing failed. 04p_section_provenance.py already does the
+    # multiplex-shaped job: one row per SCENE, no join.
+    #
+    # 04n is deliberately NOT here. It reads whatever table it is given and
+    # orders it; if 04m did not run there is nothing to read, and that is a
+    # missing file rather than a stage that quietly produced nothing.
+    "04m_sections_dataset.py": (CH.LAYOUT_PAIRED,),
 }
 
 

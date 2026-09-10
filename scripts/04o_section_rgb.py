@@ -94,6 +94,11 @@ _spec = importlib.util.spec_from_file_location("_rf", os.path.join(_HERE, "04a_r
 RF = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(RF)
 
+_lsio = importlib.util.spec_from_file_location(
+    "_lsio", os.path.join(_HERE, "ls_io.py"))
+IO = importlib.util.module_from_spec(_lsio)
+_lsio.loader.exec_module(IO)
+
 OUT_ROOT = RF.OUT_ROOT
 REFORMAT_DIR = RF.REFORMAT_DIR
 WORKLIST_CSV = os.path.join(REFORMAT_DIR, "roi_worklist.csv")
@@ -207,11 +212,25 @@ def main():
             uids = [r["id"] for r in csv.DictReader(fh) if r["kind"] == "section"]
     else:
         with open(WORKLIST_CSV, newline="", encoding="utf-8") as fh:
-            want = [r for r in csv.DictReader(fh) if not args.tier or r["tier"] == args.tier]
-        # The worklist is keyed on pERK. Building the PCNA side from it means
-        # following the pairing to the partner scene, which the 30 unpaired
-        # sections do not have - hence --all, which reads the marker's own index.
-        uid_col = "pcna_scene_uid" if args.marker == "AF488" else "scene_uid"
+            rd = csv.DictReader(fh)
+            fields = list(rd.fieldnames or [])
+            want = [r for r in rd if not args.tier or r["tier"] == args.tier]
+        # The worklist is keyed on the measured pass. Building the other side
+        # from it means following the pairing to the partner scene, which the
+        # 30 unpaired sections do not have - hence --all, which reads the
+        # marker's own index.
+        #
+        # `pick_column`, not a literal: 04n renamed this column from
+        # `pcna_scene_uid` to `partner_scene_uid`, and the read here was a
+        # `.get()` - so a worklist under either spelling had to keep working,
+        # and the one that did not would have yielded an empty `uids` and a run
+        # that built no composites at all without saying so.
+        if args.marker == "AF488":
+            uid_col = IO.pick_column(fields, "partner_scene_uid",
+                                     "pcna_scene_uid",
+                                     what=os.path.basename(WORKLIST_CSV))
+        else:
+            uid_col = "scene_uid"
         uids = [u for u in ((w.get(uid_col) or "").strip() for w in want) if u]
 
     # The index is the definition of "survived", so it is also the definition of

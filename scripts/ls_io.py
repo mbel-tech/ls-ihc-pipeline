@@ -60,6 +60,39 @@ def atomic_write_csv(path, rows, keys, attempts=5):
     _retry(go, path, attempts)
 
 
+def pick_column(fieldnames, *candidates, what=None):
+    """The first candidate present in a CSV header, or a refusal naming all of
+    them.
+
+    Never defaults. `r[uid_col]` raising KeyError 400 rows into a loop is worse
+    than refusing at the header, and `.get()` returning "" for a moved column is
+    worse than both: a blank cell and a renamed column look identical.
+
+    That last shape is not hypothetical here. `04n_roi_worklist.py` read its
+    partner columns through a `num(r, k)` helper built on `.get()`, so the day
+    04m renamed `pcna_focus_score` the worklist would have kept its column,
+    kept its 454 rows and written an empty string into every one of them - a
+    file that is the right size, the right shape and silently carries no
+    numbers. Asked once against `fieldnames`, before the loop, a rename is a
+    stop with both names in the message instead.
+
+    `what` names the file for the message, since a header on its own does not
+    say which of five CSVs a stage was reading.
+
+    Raises SystemExit, the refusal every stage in this pipeline uses, so an
+    operator gets the message rather than a traceback.
+    """
+    have = list(fieldnames or [])
+    for candidate in candidates:
+        if candidate in have:
+            return candidate
+    where = f" in {what}" if what else ""
+    raise SystemExit(
+        f"none of the columns {list(candidates)} is{where} - the header is "
+        f"{have}. One of them was renamed, or this is not the file it should "
+        f"be; either way the value cannot be read and a blank is not an answer.")
+
+
 @contextlib.contextmanager
 def atomic_save(path, attempts=5):
     """`with atomic_save(path) as tmp:` - write to `tmp`; `path` is swapped in
