@@ -161,34 +161,40 @@ for m in ("AF568", "AF488"):
         chk(f"{key} for {m} is byte-identical to 04a's",
             live.path(key, m), RF.marker_paths(m)[key])
 
-# DIFFERENCE 1 - `overrides`. 04a returns `perk_overrides.csv` for AF568: a
-# basename that exists on one operator's drive, not a naming convention. The
-# ARTIFACTS table's current name is rotation_overrides_AF568.csv, and path()
-# is a WRITE path so it must say so. read() is what adopts the file that is
-# actually there.
-chk("04a still returns the legacy overrides name for AF568",
-    base(RF.marker_paths("AF568")["overrides"]), "perk_overrides.csv")
-chk("...while path(), being a writer, gives the current name",
-    base(live.path("overrides", "AF568")), "rotation_overrides_AF568.csv")
-chk("...and that IS the difference: they disagree by design",
-    live.path("overrides", "AF568") == RF.marker_paths("AF568")["overrides"],
-    False)
+# `overrides` - the key the rule was WRONGEST in, and now the fifth path that
+# has to be byte-identical. 04a used to hand back the literal
+# `perk_overrides.csv` for every marker that is not the geometry source: no
+# marker in it, so a three-marker study named two different markers' rotation
+# files after the same antibody and whichever ran second overwrote the first.
+# It is the same expression as the other four now, so the two cannot drift.
+chk("overrides for AF568 is derived from the marker, not from an antibody",
+    base(RF.marker_paths("AF568")["overrides"]), "rotation_overrides_AF568.csv")
+chk("...and is exactly what ls_paths resolves for a READER",
+    RF.marker_paths("AF568")["overrides"],
+    live.read("overrides", "AF568", announce=lambda _m: None))
 chk("the geometry source's overrides file agrees with 04a exactly",
     live.path("overrides", "AF488"), RF.marker_paths("AF488")["overrides"])
-chk("legacy_path names the file 04a returns",
-    live.legacy_path("overrides", "AF568"),
-    RF.marker_paths("AF568")["overrides"])
+chk("legacy_path still names the operator's own basename",
+    base(live.legacy_path("overrides", "AF568")), "perk_overrides.csv")
 
-# ...and with that file on disk, read() resolves to it - so a reader routed
-# through ls_paths lands on the same bytes 04a's callers land on today. Laid
-# down in a temp tree; the operator's drive is never written to by a suite.
-with tempfile.TemporaryDirectory(prefix="lspaths_ov_") as _tmp:
-    n = P.Names(_tmp, ["AF568", "AF488"], "paired")
-    os.makedirs(os.path.join(_tmp, "reformatted"), exist_ok=True)
-    open(n.legacy_path("overrides", "AF568"), "w").close()
-    chk("read() adopts the legacy overrides file when it is on the drive",
-        base(n.read("overrides", "AF568", announce=lambda _m: None)),
-        base(RF.marker_paths("AF568")["overrides"]))
+# THE LIVE STUDY, which must keep working. 82,893 bytes of hand-entered
+# rotations and exclusions for 130 curated sections are in
+# `perk_overrides.csv` on the operator's drive, and `04a.load_overrides`
+# returns ({}, {}) for a file that is not there - a missed fallback drops all
+# of it with no error at all. So with the legacy file present and the derived
+# one absent, 04a must still resolve to the legacy one. Laid down in a temp
+# tree: a suite never writes to the operator's drive.
+with temp_study(acquisition={"layout": "paired",
+                             "markers": ["AF568", "AF488"]}) as legacy_study:
+    os.makedirs(os.path.join(legacy_study.out_root, "reformatted"), exist_ok=True)
+    open(os.path.join(legacy_study.out_root, "reformatted",
+                      "perk_overrides.csv"), "w").close()
+    legacy_rf = load_stage("04a_reformat.py", name="lsstage_04a_legacy")
+    chk("with perk_overrides.csv on the drive, 04a still reads it",
+        base(legacy_rf.marker_paths("AF568")["overrides"]), "perk_overrides.csv")
+    chk("...and the geometry source is untouched by the fallback",
+        base(legacy_rf.marker_paths("AF488")["overrides"]),
+        "rotation_overrides.csv")
 
 # DIFFERENCE 2 - `uid_col`. This key is NOT a path. It is a CSV COLUMN NAME
 # ("perk_scene_uid" / "scene_uid") that 04i writes into the overrides file, so
@@ -196,7 +202,7 @@ with tempfile.TemporaryDirectory(prefix="lspaths_ov_") as _tmp:
 # it. Pinned here rather than left unmentioned, so that the count of keys this
 # module does and does not own is stated where somebody comparing the two will
 # read it. (The plan for this task describes all six keys as paths. They are
-# not; five of six is the wrong count either way.)
+# not: five of the six are, and the sixth is a column name.)
 chk("uid_col is not an artifact this module names",
     "uid_col" in P.ARTIFACTS, False)
 chk("04a's uid_col for the geometry source, pinned",
@@ -363,16 +369,36 @@ with temp_study(acquisition={"layout": "paired",
         for key in ("sections", "index", "excluded", "lost"):
             chk(f"Mk study: {key} for {m} agrees with 04a",
                 alt.path(key, m), alt_rf.marker_paths(m)[key])
-    # ...except `overrides`, and here the disagreement is not cosmetic. 04a
-    # returns the LITERAL perk_overrides.csv for every non-default marker, so a
-    # study whose markers are Mk1/Mk2 is told to write its rotations into a
-    # file named after an antibody it does not measure. Pinned as it stands;
-    # routing 04a through this module is a later task, and until then this
-    # assertion is what says the two differ and why.
-    chk("Mk study: 04a still hands Mk1 the operator's own basename",
-        base(alt_rf.marker_paths("Mk1")["overrides"]), "perk_overrides.csv")
-    chk("...while ls_paths derives one from the marker",
-        base(alt.path("overrides", "Mk1")), "rotation_overrides_Mk1.csv")
+    # ...`overrides` included, and this one is the whole point. 04a used to
+    # return the LITERAL perk_overrides.csv for every non-source marker, so a
+    # study whose markers are Mk1/Mk2 was told to keep its rotations in a file
+    # named after an antibody it does not measure - and the file laid down
+    # above is proof that being on the drive is not enough to be adopted: the
+    # legacy table is keyed on the MARKER NAME, and Mk1 is not AF568.
+    chk("Mk study: overrides for Mk1 agrees with 04a",
+        alt.path("overrides", "Mk1"), alt_rf.marker_paths("Mk1")["overrides"])
+    chk("...and names the marker, not the operator's antibody",
+        base(alt_rf.marker_paths("Mk1")["overrides"]),
+        "rotation_overrides_Mk1.csv")
+    chk("Mk study: overrides for the geometry source agrees with 04a",
+        alt.path("overrides", "Mk2"), alt_rf.marker_paths("Mk2")["overrides"])
+
+print()
+print("--- three markers, three override files ---")
+# The collision the literal caused, stated as a test. With `perk_overrides.csv`
+# hardcoded for every non-source marker, Mk1 and Mk3 were handed the SAME file
+# and whichever ran second overwrote the first's curation. Two markers, one
+# file, no error.
+with temp_study(acquisition={"layout": "paired",
+                             "markers": ["Mk1", "Mk2", "Mk3"]}) as three:
+    tri = load_stage("04a_reformat.py", name="lsstage_04a_three")
+    tri_ov = [base(tri.marker_paths(m)["overrides"]) for m in ("Mk1", "Mk2", "Mk3")]
+    chk("three markers get three distinct override files", len(set(tri_ov)), 3)
+    chk("...each named after itself, the geometry source unsuffixed", tri_ov,
+        ["rotation_overrides_Mk1.csv", "rotation_overrides.csv",
+         "rotation_overrides_Mk3.csv"])
+    chk("...and the geometry source really is the SECOND declared",
+        tri.DEFAULT_MARKER, "Mk2")
 
 print()
 print("ALL PASS" if not failures else f"{len(failures)} FAILED")

@@ -67,7 +67,6 @@ OVERVIEW_DIR = os.path.join(OUT_ROOT, "overviews")
 REFORMAT_DIR = os.path.join(OUT_ROOT, "reformatted")
 SEC_DIR = os.path.join(REFORMAT_DIR, "sections")
 PAIRS_CSV = os.path.join(OUT_ROOT, "pairs.csv")
-OUT_CSV = os.path.join(REFORMAT_DIR, "perk_overrides.csv")
 OVERRIDE_KEYS = ["perk_scene_uid", "pcna_scene_uid", "animal", "extra_rotation", "flip",
                  "excluded", "align_iou", "final_iou_256", "flip_margin", "confidence",
                  "reason"]
@@ -93,6 +92,23 @@ _lsio = importlib.util.spec_from_file_location(
     "_lsio", os.path.join(os.path.dirname(os.path.abspath(__file__)), "ls_io.py"))
 IO = importlib.util.module_from_spec(_lsio)
 _lsio.loader.exec_module(IO)
+
+# The pass being propagated ONTO: the one that does not own the unsuffixed
+# names. 04i is paired-only (ls_layouts.RESTRICTED), so there are exactly two
+# and this is the other one - derived, because `AF568` here would be a third
+# copy of a rule that already exists twice too often.
+TARGET_MARKER = next((m for m in _RF.MARKERS if m != _RF.DEFAULT_MARKER),
+                     _RF.DEFAULT_MARKER)
+
+# Written through the SAME expression `04a.load_overrides` reads, so the writer
+# and the reader cannot end up naming different files. That matters more than
+# it looks: load_overrides returns ({}, {}) for a file it cannot find, so a
+# writer that drifted one basename away from its reader would drop every
+# rotation and exclusion in here with no error at all. On the operator's drive
+# this still resolves to the 82,893-byte `perk_overrides.csv` that 130 curated
+# sections point at; a study that never had one gets a name with its own
+# marker in it.
+OUT_CSV = _RF.marker_paths(TARGET_MARKER)["overrides"]
 
 
 def physical_mask(png_path, canvas):

@@ -58,6 +58,7 @@ if _HERE not in sys.path:
 # lines copy-pasted into every stage.
 from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
 import ls_channels as CH  # noqa: E402
+import ls_paths as LP  # noqa: E402
 
 # The markers this study measures, in declared order. ls_channels is the
 # single source of that list; naming a fluorophore here would pin the stage
@@ -83,6 +84,11 @@ OVERVIEW_DIR = os.path.join(OUT_ROOT, "overviews")
 PLATE_DIR = os.path.join(OUT_ROOT, "atlas", "plates")
 QC_CSV = os.path.join(OUT_ROOT, "qc", "focus.csv")
 REFORMAT_DIR = os.path.join(OUT_ROOT, "reformatted")
+
+# The naming rule, borrowed rather than restated. ls_paths owns it; this
+# module is one of its callers. See marker_paths below for what still is not
+# routed through it and why.
+NAMES = LP.for_config(CONFIG)
 
 GRID = 256                  # normalised output is GRID x GRID
 MIN_COMPONENT_FRACTION = 0.12   # debris threshold, relative to the largest component
@@ -409,6 +415,36 @@ def reformat(path, light_background, extra_angle=0.0, flip=False, artifact=None,
     return out_i, out_m, angle % 360.0, out_a, out_c, out_p
 
 
+def _overrides_path(marker):
+    """The rotation-override file for one marker. Delegated to ls_paths.
+
+    This key used to be the literal `perk_overrides.csv` for every marker that
+    is not the geometry source - an ANTIBODY name, with no marker in it. For
+    the LS study that reads as a quirk; for a paired study with three markers
+    it is a collision, because the first and third markers were both handed
+    the same file and whichever ran second overwrote the other's curation.
+    Nothing raised.
+
+    `read()`, not `path()`, and the distinction is the whole risk here. The
+    operator's `perk_overrides.csv` is 82,893 bytes of hand-entered rotations
+    and exclusions covering 130 curated sections, and `load_overrides` returns
+    ({}, {}) for a file that is not there - so a reader that stopped resolving
+    to it would drop every one of them with no error at all. Every writer of
+    this file goes through this same function (04i), so the writer and the
+    reader cannot name different files.
+
+    A marker this study did not declare is given the derived name rather than
+    the refusal `Names` would normally raise: `marker_paths` has always
+    answered for any string - `tests/test_reformat_layout.py` flips LAYOUT and
+    asks for two invented names - and turning that into a ValueError is a
+    behaviour change this does not make. Appending the stranger to the list
+    leaves the geometry source where it is, so the rule is still ls_paths'.
+    """
+    names = (NAMES if marker in MARKERS
+             else LP.Names(OUT_ROOT, MARKERS + [marker], LAYOUT))
+    return names.read("overrides", marker)
+
+
 def marker_paths(marker):
     """Per-marker output paths and override source.
 
@@ -429,20 +465,20 @@ def marker_paths(marker):
         # the same pixels several times under different names, and would let
         # two markers of one section disagree about where the section is -
         # which is the thing the curator then has to reconcile by hand.
-        return {"overrides": os.path.join(REFORMAT_DIR, "rotation_overrides.csv"),
+        return {"overrides": _overrides_path(marker),
                 "uid_col": "scene_uid",
                 "sections": os.path.join(REFORMAT_DIR, "sections"),
                 "index": os.path.join(REFORMAT_DIR, "reformat_index.csv"),
                 "excluded": os.path.join(REFORMAT_DIR, "excluded_sections.csv"),
                 "lost": os.path.join(REFORMAT_DIR, "lost_sections.csv")}
     if marker == DEFAULT_MARKER:
-        return {"overrides": os.path.join(REFORMAT_DIR, "rotation_overrides.csv"),
+        return {"overrides": _overrides_path(marker),
                 "uid_col": "scene_uid",
                 "sections": os.path.join(REFORMAT_DIR, "sections"),
                 "index": os.path.join(REFORMAT_DIR, "reformat_index.csv"),
                 "excluded": os.path.join(REFORMAT_DIR, "excluded_sections.csv"),
                 "lost": os.path.join(REFORMAT_DIR, "lost_sections.csv")}
-    return {"overrides": os.path.join(REFORMAT_DIR, f"perk_overrides.csv"),
+    return {"overrides": _overrides_path(marker),
             # 04i writes the pERK scene under its own column name.
             "uid_col": "perk_scene_uid",
             "sections": os.path.join(REFORMAT_DIR, f"sections_{marker}"),
