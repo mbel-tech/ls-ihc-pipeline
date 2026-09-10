@@ -7,11 +7,17 @@ Those images are already cut and tilted; what they are not is the two-colour
 picture the section is actually read as, and the marker channel - the thing being
 quantified - is not in them at all.
 
-This writes the same sections as RGB composites in the *same* frame:
+This writes the same sections as RGB composites in the *same* frame: the
+counterstain in its colour - blue unless `display.nuclear_colour` says
+otherwise, and it is the geometry channel, exactly what the curator showed
+before - plus ONE marker in its own, from `display.colours`.
 
-    blue   DAPI    - the geometry channel, exactly what the curator showed before
-    red    AF568   - pERK
-    green  AF488   - PCNA
+One marker, because this stage builds one marker per run (`--marker`) into that
+marker's own `sections*_rgb/`. Under the paired layout a composite is therefore
+a marker and the counterstain, never two markers: the two markers are separate
+physical sections and have separate directories. The set across two runs is
+red-and-green; no single picture is. An earlier version of this docstring
+listed both markers here, which is how a reader comes to believe otherwise.
 
 The frame has to be identical or every landmark placed on it is placed on the
 wrong picture, so the marker is not reformatted separately. It rides through
@@ -104,12 +110,46 @@ REFORMAT_DIR = RF.REFORMAT_DIR
 WORKLIST_CSV = os.path.join(REFORMAT_DIR, "roi_worklist.csv")
 FOCUS_CSV = os.path.join(OUT_ROOT, "qc", "focus.csv")
 
-# Marker channel -> which RGB plane it lands in. DAPI always takes blue.
-# Positional by default - first declared marker to red, second to green, which
-# is what this stage has always written - and named by `display.composite`
-# when a study wants otherwise. ls_channels owns the rule; naming a
-# fluorophore here would pin the stage to one study.
-MARKER_PLANE = CH.marker_planes(CONFIG)
+# Marker -> the colour it is drawn in, and the counterstain's own colour.
+# Positional by default - first marker shown red, second green, which is what
+# this stage has always written - and named by `display.colours` when a study
+# wants otherwise. ls_channels owns the rule, and the curator's Review pane
+# reads the SAME function: naming a fluorophore or a plane index here is how
+# the pane and the composites came to disagree about what colour a section is.
+MARKER_COLOURS = CH.marker_colours(CONFIG)
+NUCLEAR_COLOUR = CH.nuclear_colour(CONFIG)
+
+
+def composite(marker_img, dapi_img, colour, nuclear=(0., 0., 1.)):
+    """One marker in its own colour, over the counterstain in its own.
+
+    Per plane the two contributions are combined with MAX, not sum. For a
+    marker with no blue in it - which is every marker this pipeline has ever
+    had - max(0, dapi) is dapi exactly, so the blue plane is still the
+    byte-for-byte greyscale the geometry was decided on and --verify still
+    means what it meant.
+
+    Where they DO share a plane - a magenta marker is red plus blue, and blue
+    is the counterstain - max keeps both readable and never clips. Sum was the
+    alternative: it makes overlap brighter, the conventional way to read
+    co-localisation, but it saturates to 255 and then a very bright marker and
+    a marker-over-counterstain look identical. This picture exists so somebody
+    can judge whether a section is measurable, so not clipping wins.
+
+    Both images are uint8 and both coefficients are exact in binary for every
+    colour in the table, so a plane whose coefficient is 1.0 comes back as the
+    input array byte for byte. tests/test_composite.py pins that with
+    np.array_equal against the plane assignment this replaced, because the
+    constants probe cannot see pixels and 130 curated sections carry landmark
+    coordinates placed on the composites already on disk.
+    """
+    mark = np.asarray(marker_img, dtype=np.float64)
+    dapi = np.asarray(dapi_img, dtype=np.float64)
+    rgb = np.zeros(mark.shape + (3,), np.uint8)
+    for p in range(3):
+        plane = np.maximum(colour[p] * mark, nuclear[p] * dapi)
+        rgb[..., p] = np.clip(np.rint(plane), 0, 255).astype(np.uint8)
+    return rgb
 
 
 def write_thumbs(rgb_dir, size=RF.GRID, force=False):
@@ -239,19 +279,20 @@ def main():
     with open(index_path, newline="", encoding="utf-8") as fh:
         in_index = {r["id"] for r in csv.DictReader(fh) if r["kind"] == "section"}
 
-    plane = MARKER_PLANE.get(args.marker)
-    if plane is None:
-        # Measured, but not one of the two the composite shows. Not a loop
-        # body - this stage builds one marker per run - so it stops here and
-        # says which markers ARE composited. Blending a third into red or
-        # green would change the picture the curator judges with no record of
-        # it, and defaulting to red would silently overwrite the first
-        # marker's plane.
-        shown = ", ".join(sorted(MARKER_PLANE, key=MARKER_PLANE.get))
-        print(f"{args.marker} is not composited: the RGB composite has two "
-              f"marker planes and this study gives them to {shown or 'nothing'}.")
-        print("  Set `display.composite` to name the two markers you want "
-              "shown, red then green.")
+    colour = MARKER_COLOURS.get(args.marker)
+    if colour is None:
+        # Measured, but this study never said what colour to draw it in. Not a
+        # loop body - this stage builds one marker per run - so it stops here
+        # and says which markers DO have a colour. Picking one for it would be
+        # a marker silently wearing another marker's colour, which is the
+        # fault `display.colours` exists to remove; drawing it black would be
+        # a picture of nothing that looks like a failed render.
+        shown = ", ".join(sorted(MARKER_COLOURS))
+        print(f"{args.marker} is not composited: this study gives a colour to "
+              f"{shown or 'no marker'}, and the first two markers shown get "
+              f"red and green by default.")
+        print(f"  Give it one: `display.colours: {{\"{args.marker}\": "
+              f"\"magenta\"}}` in config.json.")
         return
     made = skipped = mismatched = existing = 0
     missing = []
@@ -298,10 +339,7 @@ def main():
                     print(f"  MISMATCH {uid}")
                 continue
 
-        rgb = np.zeros(img.shape + (3,), np.uint8)
-        rgb[..., plane] = comp
-        rgb[..., 2] = img
-        Image.fromarray(rgb).save(out_path)
+        Image.fromarray(composite(comp, img, colour, NUCLEAR_COLOUR)).save(out_path)
         made += 1
 
     if args.verify:

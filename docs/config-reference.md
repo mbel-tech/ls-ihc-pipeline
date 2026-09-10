@@ -27,7 +27,9 @@ A key marked *required* has to be present before any stage will run.
 | `acquisition.layout` | str | `"multiplex"` | `01_overviews`, `02_pair_passes`, `04a_reformat`, `05c`, `app` | How the markers were imaged: one multi-channel scan per section, or one scan per marker. |
 | `acquisition.channels` | raw | `[]` | `01_overviews`, `05c`, `app` | What each CZI channel is: its name, what it is for, and how it is found in a file. |
 | `acquisition.markers` | raw | `[]` | `01k_saturation_raw`, `04a_reformat`, `04g_artifact_mask`, `04j_censor_clipped`, `04l_roi_curator`, `04o_section_rgb`, `05a_roi_geometry` | The markers a `paired` study measures, in the order they should appear. Not used under `multiplex`. |
-| `display.composite` | raw | `[]` | `04o_section_rgb` | Which markers the RGB composite shows, in plane order: red then green. The nuclear channel is always blue. |
+| `display.composite` | raw | `[]` | `04l_roi_curator`, `04o_section_rgb` | Which markers are shown in the composite and the curator's Review pane, and in what order. What colour each one is drawn in is `display.colours`. |
+| `display.colours` | raw | `{}` | `04l_roi_curator`, `04o_section_rgb` | What colour each marker is drawn in, as marker -> colour name or #rrggbb. The nuclear counterstain has its own key below. |
+| `display.nuclear_colour` | str | `"blue"` | `04l_roi_curator`, `04o_section_rgb` | What colour the nuclear counterstain is drawn in. |
 | `channels.dapi_index` | int | `0` | `05c` | Which CZI channel plane is the nuclear counterstain. |
 | `channels.marker_index` | int | `1` | `05c` | Which CZI channel plane carries the marker. |
 | `marker_identity` | raw |  | recorded here, read by no stage | Which fluorophore is which marker. Filled in by 00c_channel_identity.py, then confirmed by the operator. |

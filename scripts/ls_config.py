@@ -50,6 +50,14 @@ except ImportError:                                         # pragma: no cover
 LAYOUTS = tuple(ls_channels.LAYOUTS) if ls_channels else ("multiplex",
                                                           "paired")
 
+#: The colours a marker or the counterstain may be drawn in. From ls_channels
+#: for the same reason LAYOUTS is: the settings dialog's choice widget, the
+#: generated docs and the parser that judges a written value have to be one
+#: list, or a study can be offered a colour the pipeline then refuses.
+COLOUR_NAMES = tuple(sorted(ls_channels.NAMED_COLOURS)) if ls_channels else (
+    "blue", "cyan", "green", "grey", "magenta", "orange", "red", "white",
+    "yellow")
+
 SCHEMA_VERSION = 1
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -312,17 +320,53 @@ SPEC = [
 
     # ---- display ----------------------------------------------------------
     Key("display.composite", "raw",
-        "Which markers the RGB composite shows, in plane order: red then "
-        "green. The nuclear channel is always blue.",
+        "Which markers are shown in the composite and the curator's Review "
+        "pane, and in what order. What colour each one is drawn in is "
+        "`display.colours`.",
         default=[], label="Composite channels",
-        note="Empty means positional - the first declared marker to red, the "
-             "second to green - which is what this pipeline has always "
-             "produced. Beyond two markers a study must say which two it "
-             "wants shown; the rest are measured but not composited, because "
-             "blending a third into one of the first two would change what "
-             "the curator is judging without saying so.",
+        note="Empty means every declared marker, in declared order. This "
+             "order is what the positional colour default reads - the first "
+             "marker listed here is red, the second green - so a study can "
+             "swap two markers' colours either by reordering this or by "
+             "naming the colours in `display.colours`. A marker left out of a "
+             "non-empty list is still measured; it is simply not drawn, which "
+             "is visible rather than silently blended into another marker's "
+             "colour.",
         example=[],
-        consumers=["04o_section_rgb"]),
+        consumers=["04l_roi_curator", "04o_section_rgb"]),
+
+    Key("display.colours", "raw",
+        "What colour each marker is drawn in, as marker -> colour name or "
+        "#rrggbb. The nuclear counterstain has its own key below.",
+        default={}, label="Marker colours", ui=False,
+        note="Empty means positional: the first marker shown is red, the "
+             "second green, and any marker beyond the second HAS NO COLOUR. "
+             "A marker with no colour is measured but NOT DRAWN - absent from "
+             "the section composites, which say so and stop rather than "
+             "building them, and grey in the curator's Review pane, which "
+             "labels it \"no colour set\". Both say so rather than picking "
+             "one, because a marker silently wearing another marker's colour "
+             "is exactly the fault this key was added to remove: the Review "
+             "pane used to draw every marker but one in green while the "
+             "composites beside it drew the first in red. Names: "
+             + ", ".join(COLOUR_NAMES) +
+             ". Anything else must be six hex digits.",
+        example={},
+        consumers=["04l_roi_curator", "04o_section_rgb"]),
+
+    Key("display.nuclear_colour", "str",
+        "What colour the nuclear counterstain is drawn in.",
+        default="blue", label="Counterstain colour",
+        choices=list(COLOUR_NAMES),
+        note="Blue is what every composite and every curator page this "
+             "pipeline has produced has used, and the geometry channel is "
+             "the counterstain - so the blue plane of a composite is the "
+             "byte-for-byte greyscale the landmarks were placed on, and "
+             "`04o --verify` checks exactly that. Changing this changes what "
+             "--verify is comparing. Where a marker shares a plane with the "
+             "counterstain - a magenta marker has blue in it - the two are "
+             "combined with max rather than added, so neither is clipped.",
+        consumers=["04l_roi_curator", "04o_section_rgb"]),
 
     Key("channels.dapi_index", "int",
         "Which CZI channel plane is the nuclear counterstain.",
@@ -714,19 +758,22 @@ def validate(cfg, path="<config>", strict_paths=False):
             for problem in chan_warnings:
                 warnings.append(f"{path}: acquisition - {problem}")
 
-    # `display.composite` names markers, so it can only be judged against the
+    # The `display` block names markers, so it can only be judged against the
     # marker list - and that list is read from the whole config, because which
     # source names the markers is itself decided by `acquisition.layout`.
     # ls_channels.validate() takes the `acquisition` block alone and cannot
     # see `display` from there, so the check is made here rather than by
-    # widening that signature. Reported, not raised: marker_planes() raises
-    # because its callers are module-level constants, and this is the one
-    # place that turns the same fault into a line among the others.
+    # widening that signature. Reported, not raised: the reading functions
+    # raise because their callers are module-level constants, and this is the
+    # one place that turns the same faults into lines among the others - a
+    # marker with no colour among them, as a warning, because it is a
+    # legitimate state and not a reason to refuse a config.
     if ls_channels is not None and isinstance(cfg, dict):
-        try:
-            ls_channels.marker_planes(cfg)
-        except ls_channels.ChannelError as exc:
-            errors.append(f"{path}: {exc}")
+        disp_errors, disp_warnings = ls_channels.validate_display(cfg)
+        for problem in disp_errors:
+            errors.append(f"{path}: {problem}")
+        for problem in disp_warnings:
+            warnings.append(f"{path}: {problem}")
 
     for key, value in missing_paths(cfg):
         line = f"{path}: `{key.path}` does not exist: {value}"

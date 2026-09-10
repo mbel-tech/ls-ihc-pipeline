@@ -45,8 +45,12 @@
     "markers": []
   },
   "display": {
-    "_composite_note": "Empty means positional - the first declared marker to red, the second to green - which is what this pipeline has always produced. Beyond two markers a study must say which two it wants shown; the rest are measured but not composited, because blending a third into one of the first two would change what the curator is judging without saying so.",
-    "composite": []
+    "_composite_note": "Empty means every declared marker, in declared order. This order is what the positional colour default reads - the first marker listed here is red, the second green - so a study can swap two markers' colours either by reordering this or by naming the colours in `display.colours`. A marker left out of a non-empty list is still measured; it is simply not drawn, which is visible rather than silently blended into another marker's colour.",
+    "composite": [],
+    "_colours_note": "Empty means positional: the first marker shown is red, the second green, and any marker beyond the second HAS NO COLOUR. A marker with no colour is measured but NOT DRAWN - absent from the section composites, which say so and stop rather than building them, and grey in the curator's Review pane, which labels it \"no colour set\". Both say so rather than picking one, because a marker silently wearing another marker's colour is exactly the fault this key was added to remove: the Review pane used to draw every marker but one in green while the composites beside it drew the first in red. Names: blue, cyan, green, grey, magenta, orange, red, white, yellow. Anything else must be six hex digits.",
+    "colours": {},
+    "_nuclear_colour_note": "Blue is what every composite and every curator page this pipeline has produced has used, and the geometry channel is the counterstain - so the blue plane of a composite is the byte-for-byte greyscale the landmarks were placed on, and `04o --verify` checks exactly that. Changing this changes what --verify is comparing. Where a marker shares a plane with the counterstain - a magenta marker has blue in it - the two are combined with max rather than added, so neither is clipped.",
+    "nuclear_colour": "blue"
   },
   "channels": {
     "_dapi_index_note": "Read only by 05c_detect_rois today; every earlier stage assumes plane 0 structurally. The channels/markers sub-project replaces this whole block with a per-channel role table, so it is left as-is rather than changed twice.",

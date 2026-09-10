@@ -134,34 +134,200 @@ def marker_names(cfg):
     return [c.name for c in markers(parse(table))]
 
 
-def marker_planes(cfg):
-    """{marker name: RGB plane index} for the composite. Blue is the nuclear
-    channel and is not in here.
+#: The colours a marker may be drawn in. A CLOSED set, on purpose: the
+#: settings dialog needs a choice widget and the generated docs need to list
+#: what is on offer, and an arbitrary string is a typo that renders black.
+#: `#rrggbb` is the escape hatch for a study that wants one of its own.
+NAMED_COLOURS = {"red": (1., 0., 0.), "green": (0., 1., 0.),
+                 "blue": (0., 0., 1.), "cyan": (0., 1., 1.),
+                 "magenta": (1., 0., 1.), "yellow": (1., 1., 0.),
+                 "orange": (1., .5, 0.), "white": (1., 1., 1.),
+                 "grey": (.5, .5, .5)}
 
-    Positional by default - first declared marker to red, second to green -
-    because that is what this pipeline has always produced, and the curator's
-    judgement of what a section looks like is trained on it. `display.composite`
-    names the markers instead, in plane order.
+#: A colour is a name from the table above or six hex digits. Three-digit hex
+#: is deliberately not accepted: `#f0f` and `#ff00ff` would be the same colour
+#: written two ways in the same config, and the docs can only show one form.
+_HEX_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
 
-    Beyond two markers the operator needs a channel picker in the curator;
-    until then the third and later declared markers are simply not composited,
-    which is visible rather than silently blended into one of the first two.
+#: The counterstain's colour when a study does not say. Blue is what every
+#: composite and every curator page this pipeline has produced has used.
+DEFAULT_NUCLEAR = "blue"
+
+#: The positional default, by index into `composite_order`. Index 2 and beyond
+#: are deliberately absent: a third marker is measured but not drawn until the
+#: study says what colour it is, which is visible rather than silently blended
+#: into one of the first two.
+_POSITIONAL = ("red", "green")
+
+
+def parse_colour(value):
+    """A colour name or `#rrggbb` as (r, g, b) in 0-1, else ChannelError.
+
+    Raises rather than returning a fallback: a colour that could not be read
+    has no safe substitute. Black would draw nothing and look like missing
+    data; any real colour would be a marker silently wearing the wrong one,
+    which is the bug this whole model exists to remove.
+    """
+    if not isinstance(value, str):
+        raise ChannelError(
+            f"a colour must be a name or #rrggbb, not a "
+            f"{type(value).__name__} ({value!r}). Names: "
+            f"{', '.join(sorted(NAMED_COLOURS))}.")
+    text = value.strip()
+    if text.lower() in NAMED_COLOURS:
+        return NAMED_COLOURS[text.lower()]
+    if _HEX_RE.match(text):
+        return tuple(int(text[i:i + 2], 16) / 255.0 for i in (1, 3, 5))
+    raise ChannelError(
+        f"{value!r} is not a colour this pipeline knows. Use one of "
+        f"{', '.join(sorted(NAMED_COLOURS))}, or six hex digits like "
+        f"#ff00ff.")
+
+
+def composite_order(cfg):
+    """WHICH markers the composite shows, in order. Not their colours.
+
+    `display.composite`, when a study sets it, otherwise every declared marker
+    in declared order. Its order is what the positional colour default reads,
+    so a study that wants its second marker in red can say so either way
+    round - by reordering here, or by naming the colour in `display.colours`.
     """
     names = marker_names(cfg)
     chosen = ((cfg or {}).get("display") or {}).get("composite")
-    if chosen:
-        if not isinstance(chosen, (list, tuple)):
+    if not chosen:
+        return list(names)
+    if not isinstance(chosen, (list, tuple)):
+        raise ChannelError(
+            f"`display.composite` must be a list of marker names, not a "
+            f"{type(chosen).__name__}.")
+    for m in chosen:
+        if m not in names:
             raise ChannelError(
-                f"`display.composite` must be a list of marker names, not a "
-                f"{type(chosen).__name__}.")
-        for m in chosen:
-            if m not in names:
-                raise ChannelError(
-                    f"`display.composite` names {m!r}, which is not one of "
-                    f"this study's markers ({', '.join(names) or 'none'}). "
-                    f"The composite can only show a marker that is measured.")
-        names = list(chosen)
-    return {m: i for i, m in enumerate(names[:2])}
+                f"`display.composite` names {m!r}, which is not one of "
+                f"this study's markers ({', '.join(names) or 'none'}). "
+                f"The composite can only show a marker that is measured.")
+    return list(chosen)
+
+
+def _default_planes(cfg):
+    """{marker: index into `_POSITIONAL`} - the colourless positional rule.
+
+    Private, and used only by `marker_colours`. It was `marker_planes`, public,
+    and the curator's Review pane did not call it - which is exactly how the
+    pane came to pick its colours from `p.marker === "AF568"` while the
+    composites in the same grid picked theirs from here. One public answer,
+    `marker_colours`, so the two cannot disagree again.
+    """
+    return {m: i for i, m in enumerate(composite_order(cfg)[:len(_POSITIONAL)])}
+
+
+def marker_colours(cfg):
+    """{marker: (r, g, b) in 0-1} - THE source of truth for marker colour.
+
+    Read by the section composites (`04o_section_rgb`) and by the ROI
+    curator's Review pane (`04l_roi_curator`), which is the point: the same
+    section is drawn in both, and until this existed they decided its colour
+    separately and disagreed for every study but one.
+
+    Positional by default - first shown marker red, second green - because
+    that is what this pipeline has always produced and the curator's eye is
+    trained on it. `display.colours` names a colour per marker and wins.
+
+    A marker with no colour is ABSENT from the map rather than mapped to
+    black. Absent is a question the caller has to answer - 04o declines to
+    build it and says so, the curator draws it grey and says "no colour set" -
+    where black would be a picture of nothing that looks like a failed render.
+    """
+    out = {m: NAMED_COLOURS[_POSITIONAL[i]]
+           for m, i in _default_planes(cfg).items()}
+    declared = ((cfg or {}).get("display") or {}).get("colours")
+    if declared is None:
+        return out
+    if not isinstance(declared, dict):
+        raise ChannelError(
+            f"`display.colours` must be a block of marker -> colour, not a "
+            f"{type(declared).__name__}.")
+    names = marker_names(cfg)
+    for marker, value in declared.items():
+        if marker not in names:
+            raise ChannelError(
+                f"`display.colours` gives {marker!r} a colour, but this study "
+                f"does not measure it (its markers are "
+                f"{', '.join(names) or 'none'}).")
+        out[marker] = parse_colour(value)
+    return out
+
+
+def nuclear_colour(cfg):
+    """The counterstain's colour, blue unless `display.nuclear_colour` says."""
+    value = ((cfg or {}).get("display") or {}).get("nuclear_colour")
+    return parse_colour(value or DEFAULT_NUCLEAR)
+
+
+def validate_display(cfg):
+    """(errors, warnings) for the whole `display` block.
+
+    Takes the WHOLE config, not the block: every rule here is about markers,
+    and which source names the markers is itself decided by
+    `acquisition.layout`. A validator handed `display` alone could only check
+    that the colours are spellable.
+
+    Reported rather than raised, because the reading functions above raise -
+    their callers are module-level constants where a traceback takes all 46
+    stages down at import - and this is the one place that turns the same
+    faults into lines among the others. Every fault, not just the first.
+
+    A marker with no colour is a WARNING. It is a legitimate state - a study
+    with three markers and two positional defaults starts there - and the
+    stages say so at the point of use rather than refusing to load.
+    """
+    errors, warnings = [], []
+    try:
+        shown = composite_order(cfg)
+    except ChannelError as exc:
+        # Nothing below can be judged without knowing which markers are shown.
+        return [str(exc)], warnings
+
+    names = marker_names(cfg)
+    declared = ((cfg or {}).get("display") or {}).get("colours")
+    if declared is not None and not isinstance(declared, dict):
+        errors.append(
+            f"`display.colours` must be a block of marker -> colour, not a "
+            f"{type(declared).__name__}.")
+        declared = None
+    # Each entry judged on its own, so a config with three colours misspelled
+    # learns all three in one pass instead of one per attempt. marker_colours()
+    # raises on the first, which is right for a stage at import and wrong here.
+    for marker, value in sorted((declared or {}).items()):
+        if marker not in names:
+            errors.append(
+                f"`display.colours` gives {marker!r} a colour, but this study "
+                f"does not measure it (its markers are "
+                f"{', '.join(names) or 'none'}).")
+            continue
+        try:
+            parse_colour(value)
+        except ChannelError as exc:
+            errors.append(f"`display.colours` for {marker!r}: {exc}")
+    try:
+        nuclear_colour(cfg)
+    except ChannelError as exc:
+        errors.append(f"`display.nuclear_colour`: {exc}")
+    if errors:
+        # A colour that could not be read means marker_colours() below would
+        # raise, and "which markers end up undrawn" is not a question worth
+        # answering about a config that does not parse yet.
+        return errors, warnings
+
+    colours = marker_colours(cfg)
+    for marker in shown:
+        if marker not in colours:
+            warnings.append(
+                f"marker {marker!r} has no colour, so it is measured but not "
+                f"drawn - not in the section composites and grey in the "
+                f"curator's Review pane. Give it one with "
+                f"`display.colours: {{\"{marker}\": \"magenta\"}}`.")
+    return errors, warnings
 
 
 def resolve(channels, czi_channel_names):
