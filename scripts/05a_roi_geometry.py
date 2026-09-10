@@ -477,11 +477,21 @@ def build(regions_csv, limit=None, plates_csv=None, require_background=True):
     # manual_rotation / manual_flip are what 04a passed as extra_angle / flip,
     # and `angle` is what came out. Both are needed: the first to reproduce the
     # geometry, the second to prove it was reproduced.
+    #
+    # EVERY marker's index, from the writer's own expression. This was the
+    # literal pair ("AF568", "AF488") with the filename chosen by a literal
+    # `if marker == "AF488"`, so for any other study only the UNSUFFIXED index
+    # was opened - and under `paired` that file belongs to the SECOND declared
+    # marker. Every uid of the first then fell into `skipped` as "not in
+    # focus.csv / manifest / reformat_index", and an EMPTY roi_boxes_<marker>.csv
+    # reached 05c. A CSV with a header and no rows raises nothing.
+    #
+    # Under `multiplex` marker_paths hands back the same unsuffixed file for
+    # every marker, so this reads it once per marker and overwrites each id
+    # with itself - harmless, and cheaper than a special case that could drift.
     index = {}
-    for marker in ("AF568", "AF488"):
-        name = ("reformat_index.csv" if marker == "AF488"
-                else f"reformat_index_{marker}.csv")
-        p = os.path.join(REFORMAT_DIR, name)
+    for marker in MARKERS:
+        p = RF.marker_paths(marker)["index"]
         if os.path.exists(p):
             for r in load_csv(p):
                 if r["kind"] == "section":
@@ -696,9 +706,14 @@ def verify(n_sections=6):
     number the resampler will not give back.
     """
     focus = {r["scene_uid"]: r for r in load_csv(FOCUS_CSV)}
+    # Every marker's index, named by the writer. The literal pair that was here
+    # undid the filter below one level up: it only ever found the unsuffixed
+    # file, so for any study but LS `want` came out empty, the fallback took
+    # the OTHER marker's sections, and main() had already printed the requested
+    # marker as the heading. The filter was fixed; the list feeding it was not.
     index = {}
-    for name in ("reformat_index.csv", "reformat_index_AF568.csv"):
-        p = os.path.join(REFORMAT_DIR, name)
+    for marker in MARKERS:
+        p = RF.marker_paths(marker)["index"]
         if os.path.exists(p):
             for r in load_csv(p):
                 if r["kind"] == "section":

@@ -461,5 +461,158 @@ chk("paired: disjoint uids pass, as they always did",
     len(_boxes_under("paired", apart)), 2)
 
 
+print()
+print("--- build() and verify() read the study's markers, not two literals ---")
+
+# THE BUG, in two places one level apart.
+#
+# `build()` iterated the literal pair ("AF568", "AF488") and chose the index
+# filename with a literal `if marker == "AF488"`. For any study that is not LS
+# only the UNSUFFIXED index is ever opened - and under `paired` that file
+# belongs to the SECOND declared marker. So every uid of the FIRST marker fell
+# into `skipped` as "not in focus.csv / manifest / reformat_index", `build`
+# returned no rows at all, and an empty roi_boxes_<marker>.csv reached 05c.
+# Nothing raises: a CSV with a header and no rows is a well-formed file.
+#
+# `verify()` carried the same literal list one level above its own fix. The
+# comment at 05a:709-714 says the sample is filtered to THIS MARKER's sections
+# precisely so the heading is true - `--verify --marker AF488` used to print
+# AF488 and then check a mixture. But the file list that FEEDS that filter only
+# ever loaded `reformat_index.csv` and `reformat_index_AF568.csv`, so for any
+# other study `want` came out empty, the code fell back to "whatever is there"
+# - the other marker's sections - and main() had already printed the requested
+# marker as the heading. The filter was fixed; the list above it reintroduced
+# the same bug one level up.
+
+from _fixture import temp_study, load_stage                  # noqa: E402
+
+
+def _wcsv(path, rows, cols):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", newline="\n", encoding="utf-8") as fh:
+        w = csv.DictWriter(fh, fieldnames=cols)
+        w.writeheader()
+        for r in rows:
+            w.writerow(r)
+
+
+# The report `reformat` fills in as it goes, at the identity: no rotation, no
+# flip, no crop, no pad. The composition is exercised to death above; what is
+# under test here is which index file the uid was looked up in.
+REP = {"src_w": 1000, "src_h": 1000, "work_size": 400, "angle": 0.0,
+       "flip": False, "rot_w": 400, "rot_h": 400, "x0": 0, "y0": 0,
+       "crop_w": 400, "crop_h": 400, "side": 400, "ox": 0, "oy": 0,
+       "grid": 256}
+
+
+class _Reformat:
+    """Stands in for RF.reformat. Records the overview it was handed."""
+
+    def __init__(self, out=True):
+        self.srcs = []
+        self.out = out
+
+    def __call__(self, src, report=None, **kw):
+        self.srcs.append(src)
+        if report is not None:
+            report.update(REP)
+        return np.zeros((256, 256), np.uint8) if self.out else None
+
+
+with temp_study(acquisition={"layout": "paired",
+                             "markers": ["Mk1", "Mk2"]}) as MK:
+    P5 = load_stage("05a_roi_geometry.py", name="lsstage_05a_mk")
+
+    chk("the temp study is paired with two invented markers",
+        list(P5.MARKERS), ["Mk1", "Mk2"])
+    # The trap, restated as an assertion: the UNSUFFIXED index is the SECOND
+    # declared marker's, so a literal `("AF568", "AF488")` loop that keeps only
+    # the unsuffixed file keeps the wrong marker.
+    chk("Mk2 owns the unsuffixed index",
+        os.path.basename(P5.RF.marker_paths("Mk2")["index"]),
+        "reformat_index.csv")
+    chk("...and Mk1's is suffixed",
+        os.path.basename(P5.RF.marker_paths("Mk1")["index"]),
+        "reformat_index_Mk1.csv")
+
+    U1, U2 = "AB12_1a-s0", "AB12_1b-s0"
+    _wcsv(P5.FOCUS_CSV,
+          [{"scene_uid": U1, "animal": "AB12", "marker_channel": "Mk1",
+            "um_px": "0.65"},
+           {"scene_uid": U2, "animal": "AB12", "marker_channel": "Mk2",
+            "um_px": "0.65"}],
+          ["scene_uid", "animal", "marker_channel", "um_px"])
+    _wcsv(P5.MANIFEST_CSV,
+          [{"scene_uid": U1, "file": "AB12_1a.czi", "scene_index": "0"},
+           {"scene_uid": U2, "file": "AB12_1b.czi", "scene_index": "0"}],
+          ["scene_uid", "file", "scene_index"])
+    _IXCOLS = ["id", "kind", "angle", "manual_rotation", "manual_flip"]
+    for _marker, _uid in (("Mk1", U1), ("Mk2", U2)):
+        _wcsv(P5.RF.marker_paths(_marker)["index"],
+              [{"id": _uid, "kind": "section", "angle": "0",
+                "manual_rotation": "0", "manual_flip": "0"}], _IXCOLS)
+        d = os.path.join(P5.OVERVIEW_DIR, "AB12", _marker)
+        os.makedirs(d, exist_ok=True)
+        open(os.path.join(d, _uid + "_DAPI.png"), "wb").close()
+
+    regions_csv = os.path.join(MK.root, "roi_regions.csv")
+    _wcsv(regions_csv,
+          [{"scene_uid": U1, "marker": "Mk1", "roi_kind": "roi",
+            "region": "R1", "seed_n": "1", "sec_x": "128", "sec_y": "128",
+            "sec_r": "10", "sec_poly": ""}],
+          ["scene_uid", "marker", "roi_kind", "region", "seed_n",
+           "sec_x", "sec_y", "sec_r", "sec_poly"])
+
+    _saved = (P5.RF.reformat, P5.scene_rects)
+    try:
+        P5.RF.reformat = _Reformat()
+        P5.scene_rects = lambda path: {0: (100, 200, 1000, 1000)}
+        P5.use_marker("Mk1")
+        geom, boxes, skipped = P5.build(regions_csv, require_background=False)
+    finally:
+        P5.RF.reformat, P5.scene_rects = _saved
+
+    chk("Mk1's uid is not skipped for being absent from the index",
+        [w for _u, w in skipped], [])
+    chk("build() places Mk1's section", len(geom), 1)
+    chk("...and returns its ROI box", len(boxes), 1)
+
+    # main() writes exactly these rows to box_csv(marker). Written here so the
+    # claim is about the FILE 05c reads, not only about a return value.
+    _box_path = P5.box_csv("Mk1")
+    if boxes:
+        P5.IO.atomic_write_csv(_box_path, boxes, list(boxes[0].keys()))
+    chk("roi_boxes_Mk1.csv is written with rows in it",
+        len(P5.load_csv(_box_path)) if os.path.exists(_box_path) else 0, 1)
+
+    # ---- verify() ---------------------------------------------------------
+    # Mk1 asked for; Mk2 is the only marker in the unsuffixed index. If the
+    # file list is still the literal pair, `want` is empty, the note below is
+    # printed, and every section pushed through the transform is Mk2's - under
+    # a heading main() already printed as Mk1.
+    import io as _io                                          # noqa: E402
+    import contextlib as _ctx                                 # noqa: E402
+
+    _rec = _Reformat(out=False)
+    _saved_rf = P5.RF.reformat
+    _buf = _io.StringIO()
+    try:
+        P5.RF.reformat = _rec
+        P5.use_marker("Mk1")
+        with _ctx.redirect_stdout(_buf):
+            P5.verify(n_sections=6)
+    finally:
+        P5.RF.reformat = _saved_rf
+    _said = _buf.getvalue()
+
+    chk("verify(--marker Mk1) does not fall back to 'whatever is there'",
+        "sampling whatever is there" in _said, False)
+    chk("...it pushes Mk1's overviews through the transform",
+        sorted(os.path.basename(s) for s in _rec.srcs), [U1 + "_DAPI.png"])
+    chk("...and none of Mk2's",
+        any(("Mk2" in s.replace(os.sep, "/").split("/")) for s in _rec.srcs),
+        False)
+
+
 print("\n" + (f"{fails} FAILED" if fails else "ALL PASS"))
 sys.exit(1 if fails else 0)
