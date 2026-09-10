@@ -17,7 +17,7 @@
 const { env, load, chk, note, done } = require("./harness");
 const { store } = env;
 
-const X = load(`{KEY, PROV, PROWS, P_BY, MARKERS, SECDIRS, st, save, revSrc,
+const X = load(`{KEY, PROV, PROWS, P_BY, MARKERS, SECDIRS, FILTERS, st, save, revSrc,
   revAct, revPick, revImg, revLayer, revStep, revList, REV, exportReview, csvq,
   esc, get revSel(){return revSel}}`);
 
@@ -126,7 +126,11 @@ if (noSection) {
 // _RGB.png is DAPI plus marker, _MARK.png is the marker alone - so a wrong
 // mapping shows the wrong channel with nothing to say so.
 
-const masked = X.PROWS.find(p => p.has_mask && p.marker === "AF568");
+// The first DECLARED marker, from the page's own list, not a fluorophore
+// name. Which marker this is does not matter to anything below; what matters
+// is that it is one the page knows about.
+const firstMarker = X.MARKERS[0];
+const masked = X.PROWS.find(p => p.has_mask && p.marker === firstMarker.id);
 X.revPick(masked.scene_uid);
 
 // FOUR STATES, THREE FILES, and each one has to reach the right file AND the
@@ -143,35 +147,72 @@ const shown = (dapi, mark) => {
   return {file: (env.els.revImg.src || "").split("/").pop(),
           filter: env.els.revImg.style.filter || ""};
 };
-const isPerk = masked.marker === "AF568";
+// NOT `masked.marker === "AF568"`, which is what stood here. That was the
+// page's own rule restated, so it agreed with the page whatever the page did -
+// including when the page picked its filter from that same literal and drew
+// every other marker green while the composites in the grid one panel away put
+// the first marker in red. It passed throughout.
+//
+// The expectation now comes from the DATA the page was built with. FILTERS is
+// computed in Python by 04l.review_filters(), from the same
+// ls_channels.marker_colours() that 04o_section_rgb composites with, so a page
+// and a pipeline that disagree about a marker's colour cannot both pass.
+const F = X.FILTERS.byMarker[masked.marker];
+chk("this marker has a filter pair of its own", !!F, true);
 
 let v = shown(true, true);
 chk("both on: the composite", /_RGB\.png$/.test(v.file), true);
-chk("...tinted for this marker",
-    v.filter.includes(isPerk ? "revPerkDapi" : "revPcnaDapi"), true);
+chk("...through THIS marker's own filter", v.filter, `url(#${F.dapi})`);
 
 v = shown(false, true);
 chk("DAPI off: the marker alone", /_MARK\.png$/.test(v.file), true);
-chk("...and no blue in the matrix",
-    v.filter.includes(isPerk ? "revPerkOnly" : "revPcnaOnly"), true);
+chk("...through its counterstain-free variant", v.filter, `url(#${F.only})`);
 
 v = shown(true, false);
 chk("marker off: the DAPI file, not a zeroed composite",
     /_DAPI\.png$/.test(v.file), true);
-chk("...through the DAPI-only matrix", v.filter.includes("revDapiOnly"), true);
+chk("...through the DAPI-only matrix", v.filter, `url(#${X.FILTERS.dapiOnly})`);
 
 v = shown(false, false);
-chk("both off: blanked, not unloaded", v.filter.includes("revBlank"), true);
+chk("both off: blanked, not unloaded", v.filter, `url(#${X.FILTERS.blank})`);
 chk("...so the base image still has a src", v.file.length > 0, true);
+
+// ---- and that every marker has one of its own -----------------------------
+//
+// Only the markers this study gave a colour to get a pair; one with none falls
+// through to FILTERS.fallback on purpose, and MARKERS carries `colour` so the
+// two lists can be compared without knowing which study this is.
+const coloured = X.MARKERS.filter(m => m.colour);
+chk("every marker with a colour has its own filter pair",
+    Object.keys(X.FILTERS.byMarker).sort().join(","),
+    coloured.map(m => m.id).sort().join(","));
+// INERT UNDER THIS STUDY'S TWO MARKERS. It passes for an implementation that
+// gives every marker its own filter and equally for one that only ever knew
+// two, which is exactly what was here. It is kept for the day a third marker
+// arrives; tests/test_review_colour.py is what actually bites today, in
+// Python, against a study with its colours declared the other way round.
+chk("...and no two markers share one",
+    new Set(coloured.map(m => X.FILTERS.byMarker[m.id].dapi)).size,
+    coloured.length);
+const installed = new Set(X.FILTERS.defs.map(f => f.id));
+chk("every filter the page can ask for was installed",
+    [X.FILTERS.blank, X.FILTERS.dapiOnly, X.FILTERS.lumAlpha,
+     X.FILTERS.fallback.dapi, X.FILTERS.fallback.only]
+      .concat(coloured.flatMap(m => [X.FILTERS.byMarker[m.id].dapi,
+                                     X.FILTERS.byMarker[m.id].only]))
+      .filter(id => !installed.has(id)).join(","), "");
 
 // The button says which marker it is turning off - "Marker" would be one more
 // thing to remember on a page that already names both channels everywhere.
+// The label comes from MARKERS, so a study that renames its markers renames
+// this too and the suite does not have to be told.
+const maskedMk = X.MARKERS.find(m => m.id === masked.marker);
 shown(true, true);
 chk("the button names the channel",
-    env.els.revMarkBtn.textContent, isPerk ? "pERK ✓" : "PCNA ✓");
+    env.els.revMarkBtn.textContent, maskedMk.label + " ✓");
 shown(true, false);
 chk("...and drops the tick when it is off",
-    env.els.revMarkBtn.textContent, isPerk ? "pERK" : "PCNA");
+    env.els.revMarkBtn.textContent, maskedMk.label);
 X.REV.dapi = true; X.REV.mark = true; X.revImg();
 
 X.REV.art = false;

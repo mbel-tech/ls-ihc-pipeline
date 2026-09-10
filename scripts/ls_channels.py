@@ -258,6 +258,31 @@ def marker_colours(cfg):
     return out
 
 
+def colour_name(rgb):
+    """(r, g, b) back as the shortest thing an operator would recognise.
+
+    Derived from the vector rather than echoed back from what was written, so
+    the name on a curator's button and the colour the composite was built with
+    cannot be two different facts. A study that wrote `#ff00ff` is told
+    "magenta", which is the same colour and the word the settings dialog uses.
+    """
+    wanted = tuple(round(float(c), 6) for c in rgb)
+    for name in sorted(NAMED_COLOURS):
+        if tuple(round(c, 6) for c in NAMED_COLOURS[name]) == wanted:
+            return name
+    return "#%02x%02x%02x" % tuple(
+        max(0, min(255, int(round(c * 255)))) for c in wanted)
+
+
+def marker_colour_names(cfg):
+    """{marker: colour as a word or #rrggbb} - what to SHOW the operator.
+
+    Same map as `marker_colours`, said in the operator's language. A marker
+    with no colour is absent from both, so a caller that has one has the other.
+    """
+    return {m: colour_name(c) for m, c in marker_colours(cfg).items()}
+
+
 def nuclear_colour(cfg):
     """The counterstain's colour, blue unless `display.nuclear_colour` says."""
     value = ((cfg or {}).get("display") or {}).get("nuclear_colour")

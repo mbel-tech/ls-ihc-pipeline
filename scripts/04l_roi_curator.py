@@ -249,6 +249,17 @@ def marker_label(marker):
     return LABEL.get(marker) or LEGACY_LABEL.get(marker, marker)
 
 
+# What colour each marker is drawn in, and the counterstain's own. THE SAME
+# FUNCTIONS 04o_section_rgb CALLS: the Review pane and the section composites
+# in the grid beside it show the same section, and until this existed they
+# decided its colour separately - the pane from `p.marker === "AF568"`, the
+# composites from the declared order - and disagreed for every study but one.
+MARKER_COLOURS = CH.marker_colours(CONFIG)
+NUCLEAR_COLOUR = CH.nuclear_colour(CONFIG)
+# The same map in the operator's language, for the button that names it.
+MARKER_COLOUR_NAMES = CH.marker_colour_names(CONFIG)
+
+
 OUT_ROOT = CONFIG["out_root"]
 REFORMAT_DIR = os.path.join(OUT_ROOT, "reformatted")
 
@@ -256,8 +267,13 @@ REFORMAT_DIR = os.path.join(OUT_ROOT, "reformatted")
 # rather than 04a: this stage builds an HTML page and importing 04a would pull
 # numpy, scipy and PIL in to answer a question about a filename.
 NAMES = LP.for_config(CONFIG)
+# The FIRST marker's analysis set, under the name 04j actually writes it as.
+# `perk_analysis_set.csv` is not a rule about what a marker is called: it is a
+# fact about a file that exists on the operator's drive, which is why 04j keeps
+# it in `LEGACY_ANALYSIS_SET` and derives every other marker's name from the
+# marker itself. Read 04j_censor_clipped.LEGACY_ANALYSIS_SET before changing
+# this literal; the two have to name the same file.
 ANALYSIS_CSV = os.path.join(REFORMAT_DIR, "perk_analysis_set.csv")
-PERK_MAP_CSV = os.path.join(REFORMAT_DIR, "perk_overrides.csv")
 WORKLIST_CSV = os.path.join(REFORMAT_DIR, "roi_worklist.csv")
 
 # Regions that cannot be told apart without knowing the rostrocaudal level.
@@ -525,20 +541,153 @@ def section_dirs():
     return {m: marker_paths(m)[1] for m in MARKERS}
 
 
-def analysis_uids(marker):
-    """The pERK sections that survived clipped-pixel censoring - the 454.
+#: How far the Review pane lifts the counterstain. Not a contrast preference:
+#: in tissue the marker runs 4.0-4.6x brighter than DAPI across 24 sampled
+#: sections, so at native scale the counterstain is swamped by the thing
+#: sitting on top of it and the section reads as marker-only. The pipeline
+#: measures the raw data; this is the viewing pane.
+DAPI_LIFT = 4
 
-    pERK only, and deliberately. The analysis set is defined by clipped-pixel
-    censoring measured on the pERK scans, so it says nothing about a PCNA
-    section; deriving a PCNA subset by following the pairing would make one
-    channel's curation depend on the other's, and they are separate physical
-    sections cut at different times. PCNA is curated on its own full set.
+#: The filters that do not depend on which marker is on screen.
+FILTER_LUM_ALPHA = "revLumAlpha"
+FILTER_DAPI_ONLY = "revDapiOnly"
+FILTER_BLANK = "revBlank"
+FILTER_FALLBACK = "revNoColour"
+
+#: What a marker this study declared no colour for is drawn in. Grey says "no
+#: colour set". Any real colour would be a marker silently borrowing another
+#: marker's, which is the fault this whole model removes.
+FALLBACK_COLOUR = CH.NAMED_COLOURS["grey"]
+
+#: LUMINANCE -> ALPHA. Canvas compositing reads alpha, and a greyscale mask PNG
+#: is opaque everywhere, so `source-in` kept the fill across the whole rectangle
+#: rather than only where the mask was set. This matrix copies the red channel
+#: into RGB and into A, which makes the stencil's alpha mean what its brightness
+#: means. Written out rather than built by `_matrix` because its alpha row reads
+#: input R, which no colour filter ever does.
+LUM_ALPHA_MATRIX = "1 0 0 0 0  1 0 0 0 0  1 0 0 0 0  1 0 0 0 0"
+
+
+def _num(value):
+    """A matrix coefficient as short as it can be written without changing."""
+    value = round(float(value), 4)
+    return str(int(value)) if value == int(value) else f"{value:g}"
+
+
+def _matrix(colour, nuclear, lift):
+    """One feColorMatrix `values` string: 4x5, row-major, over (R,G,B,A,1)."""
+    rows = [[colour[p], 0, lift * nuclear[p], 0, 0] for p in range(3)]
+    rows.append([0, 0, 0, 1, 0])
+    return "  ".join(" ".join(_num(v) for v in row) for row in rows)
+
+
+def review_filters(markers, colours, nuclear, lift=DAPI_LIFT):
+    """The Review pane's colour filters, as DATA rather than as HTML.
+
+    The arithmetic is here, in Python, beside the composite's - one rule, so
+    the picture in the grid and the picture in the pane cannot disagree, which
+    is the whole point of this change. The page installs them; it does not
+    compute them. Before this the pane chose between four hand-written filters
+    on `p.marker === "AF568"`, so under any other study every marker rendered
+    green while the composites beside them put the first marker in red.
+
+    Returns {"byMarker":    {marker: {"dapi": id, "only": id}},
+             "defs":        [{"id": id, "values": "<20 numbers>"}],
+             "dapiOnly":    id, "blank": id, "lumAlpha": id,
+             "fallback":    {"dapi": id, "only": id},
+             "nuclearName": the counterstain's colour as a word,
+             "lift":        how far it is lifted}
+
+    The last two are for the pane's own header, which used to read "DAPI blue
+    x4" as a literal and would have gone quietly wrong the moment a study set
+    `display.nuclear_colour`.
+
+    `fallback` is grey, for a marker this study declared no colour for - it is
+    absent from `byMarker`, so the page resolves it with `byMarker[m] ||
+    fallback`. Grey says "no colour set"; green would be the old bug back.
+
+    WHICH INPUT COLUMN IS THE MARKER. Input R, always, in every filter. The
+    overview composite is `np.dstack([m8, m8, d8])` (01_overviews.py), so R and
+    G are literally the same array, and `_MARK.png` is greyscale - so R carries
+    the marker in every source this pane loads and the coefficient on input G
+    is always 0. It cannot be per-marker: a magenta marker needs the marker in
+    output B, and input B is the counterstain in `_RGB.png`. The four
+    hand-written filters took the second marker from input G, which was the
+    same picture only because those two columns happen to be equal.
+
+    WHY A PAIR PER CHANNEL rather than one filter with a toggle. Input B is the
+    counterstain in `_RGB.png` and the MARKER AGAIN in `_MARK.png`. A single
+    filter with the blue row switched off would still read input B for a marker
+    that has blue in it, and on `_MARK.png` that is the marker arriving twice.
+    So the marker-only variant zeroes the counterstain's whole contribution and
+    never reads input B at all.
+
+    Ids are indexed by the marker's position, not built from its name: a marker
+    name may contain spaces and `+`, and these become HTML ids referenced from
+    `url(#...)` in a CSS filter property.
     """
-    if marker != "AF568":
+    dark = (0., 0., 0.)
+    defs = [{"id": FILTER_LUM_ALPHA, "values": LUM_ALPHA_MATRIX}]
+    by_marker = {}
+    for i, marker in enumerate(markers):
+        colour = colours.get(marker)
+        if colour is None:
+            # Measured, but this study never said what colour to draw it in.
+            # No filter of its own, so the page falls through to `fallback`.
+            continue
+        pair = {"dapi": f"revMk{i}Dapi", "only": f"revMk{i}Only"}
+        defs.append({"id": pair["dapi"],
+                     "values": _matrix(colour, nuclear, lift)})
+        defs.append({"id": pair["only"],
+                     "values": _matrix(colour, dark, lift)})
+        by_marker[marker] = pair
+
+    fallback = {"dapi": FILTER_FALLBACK + "Dapi",
+                "only": FILTER_FALLBACK + "Only"}
+    defs.append({"id": fallback["dapi"],
+                 "values": _matrix(FALLBACK_COLOUR, nuclear, lift)})
+    defs.append({"id": fallback["only"],
+                 "values": _matrix(FALLBACK_COLOUR, dark, lift)})
+
+    # DAPI alone. `_DAPI.png` is greyscale, so R=G=B and only the blue row does
+    # anything. Still lifted: the point of a toggle is to compare, and a
+    # channel that changed brightness depending on what was next to it would
+    # make that comparison a guess.
+    defs.append({"id": FILTER_DAPI_ONLY, "values": _matrix(dark, nuclear, lift)})
+    # Both channels off. The image still LOADS - blanked rather than removed -
+    # because the overlay canvas takes its size from the base image, so a
+    # missing one would take the artifact and censor layers down with it. This
+    # way the masks can be read on their own against black.
+    defs.append({"id": FILTER_BLANK, "values": _matrix(dark, dark, lift)})
+
+    return {"byMarker": by_marker, "defs": defs,
+            "dapiOnly": FILTER_DAPI_ONLY, "blank": FILTER_BLANK,
+            "lumAlpha": FILTER_LUM_ALPHA, "fallback": fallback,
+            "nuclearName": CH.colour_name(nuclear), "lift": lift}
+
+
+def analysis_uids(marker):
+    """The first marker's sections that survived clipped-pixel censoring.
+
+    THE FIRST DECLARED MARKER ONLY, and deliberately. The analysis set is
+    defined by clipped-pixel censoring measured on that marker's own scans, so
+    it says nothing about the other marker's sections; deriving a subset for
+    them by following the pairing would make one channel's curation depend on
+    the other's, and under `paired` they are separate physical sections cut at
+    different times. Every other marker is curated on its own full set.
+
+    `MARKERS[0]`, not `"AF568"`. The literal was right for the one study whose
+    first marker happens to be called AF568 and refused for every other study's
+    first marker instead.
+    """
+    if not MARKERS or marker != MARKERS[0]:
+        first = MARKERS[0] if MARKERS else "the first declared marker"
         raise SystemExit(
-            "--analysis-set is a pERK subset (clipped-pixel censoring is measured on "
-            "the pERK scans) and does not define a PCNA one.\n"
-            "Run PCNA without it: python 04l_roi_curator.py --marker AF488")
+            f"--analysis-set is a {marker_label(first)} subset (clipped-pixel "
+            f"censoring is measured on that marker's scans) and does not "
+            f"define one for {marker_label(marker)}.\n"
+            f"Run {marker_label(marker)} without it: "
+            f"python 04l_roi_curator.py --marker {marker}")
     with open(ANALYSIS_CSV, newline="", encoding="utf-8") as fh:
         perk = {r["scene_uid"] for r in csv.DictReader(fh) if r["in_analysis_set"] == "1"}
     return perk, len(perk), 0
@@ -959,62 +1108,34 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
   </span>
   </span>
 </header>
-<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
-  <!-- LUMINANCE -> ALPHA. Canvas compositing reads alpha, and a greyscale mask
-       PNG is opaque everywhere, so `source-in` kept the fill across the whole
-       rectangle rather than only where the mask was set. This matrix copies the
-       red channel into RGB and into A, which makes the stencil's alpha mean what
-       its brightness means. sRGB so the values are not linearised first. -->
-  <filter id="revLumAlpha" color-interpolation-filters="sRGB">
-    <feColorMatrix type="matrix" values="1 0 0 0 0  1 0 0 0 0  1 0 0 0 0  1 0 0 0 0"/>
-  </filter>
+<!-- The Review pane's colour filters are NOT written out here. They are built
+     in Python by 04l.review_filters(), shipped as data in the FILTERS constant
+     and installed into this empty <defs> by the script below.
 
-  <!-- THE OVERVIEW PUTS THE MARKER IN BOTH RED AND GREEN, so every section
-       renders yellow whichever channel it is - and the section composites next
-       to it are red for pERK and green for PCNA. Same section, two colour
-       schemes, and the one that looks like a third marker is the overview.
+     Two reasons, and the second is the decisive one:
 
-       The duplication is what makes this exact rather than a tint: R and G hold
-       the identical marker image (measured: means equal to 2dp), so dropping
-       one loses nothing and leaves the marker in its own colour. Blue is DAPI
-       and is untouched by the choice.
+       1. IO.fill JSON-encodes every value it substitutes, so raw HTML cannot
+          travel through a placeholder, and a separate str.replace would throw
+          away fill()'s one-pass guarantee.
+       2. tests/run.sh lifts only the LARGEST script block out of the built
+          page and runs the JS suites against that. Filters written as HTML in
+          here are invisible to every one of them; as data in the script they
+          are directly assertable - and so is the tie between a marker's colour
+          and the vector 04o composites it with.
 
-       DAPI is then lifted 4x. It is not a contrast preference: in tissue the
-       marker runs 4.0-4.6x brighter than DAPI across 24 sampled sections, so
-       at native scale the counterstain is swamped by the thing sitting on top
-       of it and the section reads as marker-only. The pipeline measures the
-       raw data; this is the viewing pane.
+          The word above is deliberately not spelt with its angle brackets:
+          the lifter's regex is `<script>(.*?)</script>`, so an opening tag
+          written out anywhere in this page - even inside a comment - starts a
+          block of its own, and the run that first put this note here lifted
+          from HERE to the end of the real script instead.
 
-       Marker-only (_MARK.png) is greyscale, so R=G=B there and the same matrix
-       gives the marker its colour with no blue to lift - hence a pair per
-       channel rather than one filter with a toggle. -->
-  <filter id="revPerkDapi" color-interpolation-filters="sRGB">
-    <feColorMatrix type="matrix" values="1 0 0 0 0  0 0 0 0 0  0 0 4 0 0  0 0 0 1 0"/>
-  </filter>
-  <filter id="revPerkOnly" color-interpolation-filters="sRGB">
-    <feColorMatrix type="matrix" values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0"/>
-  </filter>
-  <filter id="revPcnaDapi" color-interpolation-filters="sRGB">
-    <feColorMatrix type="matrix" values="0 0 0 0 0  0 1 0 0 0  0 0 4 0 0  0 0 0 1 0"/>
-  </filter>
-  <filter id="revPcnaOnly" color-interpolation-filters="sRGB">
-    <feColorMatrix type="matrix" values="0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 1 0"/>
-  </filter>
-  <!-- DAPI alone. _DAPI.png is greyscale, so R=G=B and only the blue row does
-       anything. Still lifted 4x: the point of a toggle is to compare, and a
-       channel that changed brightness depending on what was next to it would
-       make that comparison a guess. -->
-  <filter id="revDapiOnly" color-interpolation-filters="sRGB">
-    <feColorMatrix type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 4 0 0  0 0 0 1 0"/>
-  </filter>
-  <!-- Both channels off. The image still LOADS - blanked rather than removed -
-       because the overlay canvas takes its size from the base image, so a
-       missing one would take the artifact and censor layers down with it. This
-       way the masks can be read on their own against black. -->
-  <filter id="revBlank" color-interpolation-filters="sRGB">
-    <feColorMatrix type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0"/>
-  </filter>
-</defs></svg>
+     The reasoning that used to live in this block - why R is the marker column
+     in every source, why there is a pair of filters per channel rather than one
+     with a toggle, why the counterstain is lifted - is in review_filters()'s
+     docstring, beside the arithmetic it explains. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs id="revDefs"></defs>
+</svg>
 <div id="review">
   <div id="revGrid"></div>
   <div id="revSide">
@@ -1171,7 +1292,31 @@ const GROUPS = __GROUPS__;
 // for it, and every export writes the row's own marker rather than a page-wide
 // one. Scene uids never collide (`_s01a_` is pERK, `_s01b_` is PCNA), which is
 // what lets a single store hold both without keying on the channel.
-const MARKERS = __MARKERS__;          // [{id, label, n, sub}]
+const MARKERS = __MARKERS__;          // [{id, label, n, sub, colour}]
+// The Review pane's colour filters, computed in Python by review_filters()
+// from the SAME ls_channels.marker_colours() that 04o_section_rgb builds the
+// composites with. The page installs them; it does not know the arithmetic.
+// This is the fix: the pane used to pick between four hand-written filters on
+// `p.marker === "AF568"`, so every marker but that one rendered green while
+// the composites in the grid beside them put the first marker in red.
+//
+// DATA rather than HTML in <defs>, for two reasons. IO.fill JSON-encodes every
+// value, so raw HTML cannot go through a placeholder at all. And decisively:
+// tests/run.sh lifts only the largest <script> block, so filters written as
+// HTML would be invisible to every JS suite, while as data they are directly
+// assertable.
+const FILTERS = __FILTERS__;
+// Installed once, before anything renders. innerHTML on an SVG element parses
+// in the SVG namespace, which createElement() would not.
+document.getElementById("revDefs").innerHTML = FILTERS.defs.map(f =>
+  `<filter id="${f.id}" color-interpolation-filters="sRGB">`
+  + `<feColorMatrix type="matrix" values="${f.values}"/></filter>`).join("");
+// The marker's own entry, for its label and its colour. A row whose marker is
+// not in MARKERS cannot happen from this pipeline, but the page is also opened
+// on stale exports, so it degrades to the raw id rather than throwing.
+function mkOf(id){
+  return MARKERS.find(m => m.id === id) || {id: id, label: id, colour: null};
+}
 // {marker: "sections" | "sections_<marker>"} - the directory 04a wrote each
 // marker's reformatted sections into, computed in Python by section_dirs().
 // The page INSTALLS this rule; it does not know it. Both sites below used to
@@ -4130,7 +4275,7 @@ function drawRevOverlays(p, hasCen){
     // at 0; the censor mask is already 0/255 and passes through unchanged. Then
     // luminance becomes alpha, so the source-in below clips to the mask instead
     // of to the whole rectangle.
-    g.filter = "brightness(255) url(#revLumAlpha)";
+    g.filter = "brightness(255) url(#" + FILTERS.lumAlpha + ")";
     g.drawImage(img, 0, 0, t.width, t.height);
     g.filter = "none";
     // HIDE THE PEN RING: keep only the part of the stencil that is on tissue.
@@ -4169,7 +4314,7 @@ function drawRevOverlays(p, hasCen){
       const tsrc = el("revTissue");
       if(tsrc && tsrc.naturalWidth){
         g.globalCompositeOperation = "destination-in";
-        g.filter = "url(#revLumAlpha)";       // already 0/255, only alpha needed
+        g.filter = "url(#" + FILTERS.lumAlpha + ")";  // already 0/255, only alpha needed
         g.drawImage(tsrc, 0, 0, t.width, t.height);
         g.filter = "none";
       }
@@ -4285,7 +4430,7 @@ function revRender(){
   const parts = [];
   for(const [k, ps] of groups){
     ps.sort((a, b) => (+a.section_order || 0) - (+b.section_order || 0));
-    const lab = ps[0].marker === "AF568" ? "pERK" : "PCNA";
+    const lab = esc(mkOf(ps[0].marker).label);
     parts.push(`<div class="revGroup"><h4>${esc(ps[0].animal)} &middot; slide `
       + `${esc(ps[0].slide)} &middot; ${lab} &middot; ${ps.length} sections `
       + `&middot; ${esc(ps[0].czi_file)}</h4><div class="revCells">`
@@ -4349,7 +4494,7 @@ function revChainRows(p){
   const out = [];
   const row = (name, txt, on) =>
     out.push(`<div class="st${on ? "" : " no"}"><b>${name}</b><span>${esc(txt)}</span></div>`);
-  row("scan", `${p.czi_file} scene ${p.scene_index} - ${p.marker === "AF568" ? "pERK" : "PCNA"}`, true);
+  row("scan", `${p.czi_file} scene ${p.scene_index} - ${mkOf(p.marker).label}`, true);
   row("01 overview", p.tissue_area_mm2
       ? `tissue ${p.tissue_area_mm2} mm2, focus ${p.focus_score}` : "no QC row", !!p.tissue_area_mm2);
   row("04f propose", p.proposed_excluded === "1"
@@ -4367,7 +4512,8 @@ function revChainRows(p){
       : "not reformatted - original scan only", !!p.has_section);
   row("04j censor", p.in_analysis_set === "1" ? "in the analysis set"
       : p.in_analysis_set === "0" ? `CENSORED OUT - ${p.censor_reason || ""}`
-      : "pERK only", p.in_analysis_set !== "");
+      : `${MARKERS.length ? MARKERS[0].label : "first marker"} only`,
+      p.in_analysis_set !== "");
   row("05a/05c", +p.n_nuclei ? `${p.n_rois} ROIs, ${p.n_nuclei} nuclei`
       : +p.n_rois ? `${p.n_rois} ROIs, not yet measured` : "nothing measured", !!+p.n_nuclei);
   return out.join("");
@@ -4434,18 +4580,29 @@ function revImg(){
   // channel knocked out of a composite - "marker off" shows the counterstain
   // that was actually recorded, not the composite with a plane zeroed.
   //
-  // Marker in ITS OWN colour, matching the composites in the grid beside it -
-  // red pERK, green PCNA - instead of the overview's yellow-for-both. See the
-  // filter definitions for why this is exact and why DAPI is lifted.
-  const perk = p.marker === "AF568";
+  // Marker in ITS OWN colour, matching the composites in the grid beside it,
+  // instead of the overview's yellow-for-both. The colour is the study's, out
+  // of FILTERS, which Python built from the same ls_channels.marker_colours()
+  // that 04o composites with. See review_filters() for why this is exact and
+  // why the counterstain is lifted.
+  //
+  // NOT `p.marker === "AF568"`, which is what was here. That made every marker
+  // but one take the green filter, so any study whose first marker is not
+  // called AF568 was shown its sections green in this pane and red in the grid
+  // one panel away, with nothing on the page saying which was right.
+  //
+  // A marker this study gave no colour to has no pair of its own and falls
+  // through to the grey fallback. Borrowing a real marker's was the bug.
+  const M = mkOf(p.marker);
+  const F = FILTERS.byMarker[p.marker] || FILTERS.fallback;
   el("revImg").src = (REV.mark || !REV.dapi)
       ? revSrc(p, "overview")     // RGB when REV.dapi, MARK when not
       : revSrc(p, "dapi");
   el("revImg").style.filter = "url(#" + (
-        !REV.mark && !REV.dapi ? "revBlank"
-      : !REV.mark              ? "revDapiOnly"
-      : REV.dapi               ? (perk ? "revPerkDapi" : "revPcnaDapi")
-                               : (perk ? "revPerkOnly" : "revPcnaOnly")) + ")";
+        !REV.mark && !REV.dapi ? FILTERS.blank
+      : !REV.mark              ? FILTERS.dapiOnly
+      : REV.dapi               ? F.dapi
+                               : F.only) + ")";
   el("revMask").src = revSrc(p, "mask");
   el("revCensor").src = hasCen ? revSrc(p, "censor") : "";
   el("revTissue").src = p.has_tissue ? revSrc(p, "tissue") : "";
@@ -4471,19 +4628,27 @@ function revImg(){
   on("revCenBtn",   REV.cen,   !hasCen);
   on("revApplyBtn", REV.apply, !p.has_mask);
   el("revDapiBtn").textContent = REV.dapi ? "DAPI ✓" : "DAPI";
-  el("revMarkBtn").textContent = REV.mark
-    ? (perk ? "pERK ✓" : "PCNA ✓") : (perk ? "pERK" : "PCNA");
+  el("revMarkBtn").textContent = M.label + (REV.mark ? " ✓" : "");
   el("revCenBtn").title = hasCen ? "" :
     "no censor mask for this section - run 04j_censor_clipped.py";
 
-  // The 4x is named rather than left to be noticed. A viewer that quietly
-  // rescales one channel invites reading brightness off the screen, and DAPI
-  // here is 4x further from its neighbours than it looks.
-  const mk = perk ? "pERK red" : "PCNA green";
+  // The lift is named rather than left to be noticed. A viewer that quietly
+  // rescales one channel invites reading brightness off the screen, and the
+  // counterstain here is several times further from its neighbours than it
+  // looks. Both the colour word and the factor come from FILTERS: written out
+  // as "DAPI blue x4" they would go quietly wrong the moment a study set
+  // display.nuclear_colour.
+  const nuc = `DAPI ${FILTERS.nuclearName} x${FILTERS.lift}`;
+  // The label, then the colour it is drawn in - the study's word for it, so
+  // the pane says what it is doing rather than restating a convention. A
+  // marker with no colour says so; it is on screen in grey. The old version
+  // stripped the colour word with /( red|green)$/, which left "PCNA magenta"
+  // intact and read "PCNA magenta only".
+  const mk = M.colour ? `${M.label} ${M.colour}` : `${M.label} - no colour set`;
   el("revImgH").textContent = "IMAGE - "
-    + (REV.mark && REV.dapi ? mk + " + DAPI blue x4"
-     : REV.mark            ? mk.replace(/ (red|green)$/, "") + " only"
-     : REV.dapi            ? "DAPI blue x4, no marker"
+    + (REV.mark && REV.dapi ? mk + " + " + nuc
+     : REV.mark            ? M.label + " only"
+     : REV.dapi            ? nuc + ", no marker"
                            : "both channels hidden - masks only")
     + (REV.apply ? ", artifacts removed" : "");
   const bits = [];
@@ -4769,18 +4934,25 @@ def main():
             rows = [r for r in csv.DictReader(fh) if r["kind"] == "section"]
         before, subset = len(rows), "all"
 
-        if args.analysis_set and marker == "AF568":
-            keep, _n_perk, _unpaired = analysis_uids(marker)
+        # MARKERS[0], not "AF568". Both of these read `== "AF568"`, so under
+        # any other study neither flag narrowed anything and BOTH channels came
+        # back on their full set - the operator asked for the worklist order,
+        # got front-to-back, and was told nothing. The subset belongs to
+        # whichever marker is declared first, which for this study IS AF568.
+        first = MARKERS[0] if MARKERS else None
+        if args.analysis_set and marker == first:
+            keep, _n_first, _unpaired = analysis_uids(marker)
             rows = [r for r in rows if r["id"] in keep]
             subset = "perk_analysis_set"
 
-        # The worklist is keyed on pERK uids, because that is the channel being
-        # quantified. Reaching the PCNA side means following the pairing, which
-        # the 30 unpaired sections do not survive and which would make one
-        # channel's job depend on the other's. So it narrows pERK only; PCNA is
-        # curated on its own full set, by the same logic in the same tool.
+        # The worklist is keyed on the first marker's uids, because that is the
+        # channel being quantified. Reaching the other marker's side means
+        # following the pairing, which the 30 unpaired sections do not survive
+        # and which would make one channel's job depend on the other's. So it
+        # narrows the first marker only; the rest are curated on their own full
+        # set, by the same logic in the same tool.
         rank = None
-        if args.worklist and marker == "AF568":
+        if args.worklist and marker == first:
             with open(args.worklist, newline="", encoding="utf-8") as fh:
                 wl = [r for r in csv.DictReader(fh)
                       if not args.tier or r["tier"] == args.tier]
@@ -4811,8 +4983,14 @@ def main():
     for mk in MARKERS:
         got, subset, before = build(mk)
         per_marker[mk] = (got, subset, before)
+        # `colour` is the word for what this marker is drawn in, from the
+        # same map review_filters() builds the matrices from - so the page's
+        # label and the page's pixels cannot say different things. None when
+        # this study declared no colour for it; the pane says "no colour set"
+        # and draws it grey rather than borrowing another marker's.
         markers.append({"id": mk, "label": marker_label(mk),
-                        "n": len(got), "sub": subset})
+                        "n": len(got), "sub": subset,
+                        "colour": MARKER_COLOUR_NAMES.get(mk)})
     data = [row for mk in MARKERS for row in per_marker[mk][0]]
 
     with open(os.path.join(PLATE_DIR, "plates.csv"), newline="", encoding="utf-8") as fh:
@@ -4870,6 +5048,7 @@ def main():
         "__PLATES__": pl, "__PLATESET__": PLATE_SET, "__MARKERS__": markers,
         "__MARKER__": args.marker, "__SECDIRS__": section_dirs(),
         "__SECGRID__": SEC_GRID, "__GROUPS__": GROUPS,
+        "__FILTERS__": review_filters(MARKERS, MARKER_COLOURS, NUCLEAR_COLOUR),
         "__EXPORTDIR__": args.export_dir})
     with open(args.out, "w", encoding="utf-8") as fh:
         fh.write(page)
