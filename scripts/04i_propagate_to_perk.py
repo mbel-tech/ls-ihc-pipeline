@@ -61,6 +61,7 @@ if _HERE not in sys.path:
 # lines copy-pasted into every stage.
 from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
 import ls_naming as NM  # noqa: E402
+import ls_paths as LP  # noqa: E402
 
 OUT_ROOT = CONFIG["out_root"]
 OVERVIEW_DIR = os.path.join(OUT_ROOT, "overviews")
@@ -70,7 +71,6 @@ PAIRS_CSV = os.path.join(OUT_ROOT, "pairs.csv")
 OVERRIDE_KEYS = ["perk_scene_uid", "pcna_scene_uid", "animal", "extra_rotation", "flip",
                  "excluded", "align_iou", "final_iou_256", "flip_margin", "confidence",
                  "reason"]
-REPORT_DIR = os.path.join(OUT_ROOT, "qc", "perk")
 
 PHYS_DS = 4           # downsample both overviews by this -> 20.8 um/px, shared
 CANVAS = 320          # px on the shared physical grid; ~6.7 mm across
@@ -109,6 +109,18 @@ TARGET_MARKER = next((m for m in _RF.MARKERS if m != _RF.DEFAULT_MARKER),
 # sections point at; a study that never had one gets a name with its own
 # marker in it.
 OUT_CSV = _RF.marker_paths(TARGET_MARKER)["overrides"]
+
+# The pass the curation is coming FROM: the geometry source, whose reformat
+# index and exclusion list carry the unsuffixed names this stage reads below.
+SOURCE_MARKER = _RF.DEFAULT_MARKER
+
+# pairs.csv's per-marker columns, from the same rule 02 writes them by. They
+# used to be the literals `af488_scene_uid` and `af568_scene_uid`, which is
+# what `slug()` gives back for the LS study and nothing at all for any other -
+# and a missing column reads as an empty dict here, so every section would come
+# out as "no partner" rather than as an error.
+SOURCE_UID_COL = f"{LP.slug(SOURCE_MARKER)}_scene_uid"
+TARGET_UID_COL = f"{LP.slug(TARGET_MARKER)}_scene_uid"
 
 
 def physical_mask(png_path, canvas):
@@ -237,14 +249,15 @@ def physical_to_squashed(angle, w, h):
     return float(np.degrees(np.arctan2(w * np.sin(r), h * np.cos(r)))) % 360.0
 
 
-def derive_rotation(p488, p568, total488, curated_mask=None):
-    """The correction 04a needs for one pERK scan. None if either scan has no mask.
+def derive_rotation(p_source, p_target, total_source, curated_mask=None):
+    """The correction 04a needs for one target scan. None if either has no mask.
 
-    `total488` is the TOTAL rotation 04a applied to the PCNA scan (automatic plus
-    the operator's correction), from reformat_index.csv, in the PCNA scan's
-    squashed frame. `curated_mask`, if given, is the PCNA section's 256-px mask
-    as curated; the pERK scan is then reformatted with the derived correction
-    and the IoU of the two 256-px masks is reported as `final_iou_256`.
+    `total_source` is the TOTAL rotation 04a applied to the CURATED scan
+    (automatic plus the operator's correction), from reformat_index.csv, in
+    that scan's squashed frame. `curated_mask`, if given, is the curated
+    section's 256-px mask; the target scan is then reformatted with the derived
+    correction and the IoU of the two 256-px masks is reported as
+    `final_iou_256`.
 
     That last number is the one that matters and it is bounded well below 1
     even when the angle is right: the two 256-px masks are the same shape
@@ -254,57 +267,60 @@ def derive_rotation(p488, p568, total488, curated_mask=None):
     against nothing, as a per-section number to compare with its neighbours,
     not gated.
     """
-    m488 = physical_mask(p488, CANVAS)
-    m568 = physical_mask(p568, CANVAS)
-    if m488 is None or m568 is None:
+    m_source = physical_mask(p_source, CANVAS)
+    m_target = physical_mask(p_target, CANVAS)
+    if m_source is None or m_target is None:
         return None
     try:
-        w488, h488 = Image.open(p488).size
-        w568, h568 = Image.open(p568).size
+        w_source, h_source = Image.open(p_source).size
+        w_target, h_target = Image.open(p_target).size
     except OSError:
         return None
 
-    # The direction 04a put along +x in the curated PCNA output, as an angle on
-    # the slide. Rotating the physical PCNA mask by it reproduces the curated
-    # orientation in physical units - rotating by `total488` itself would apply
-    # a squashed-frame angle to an unsquashed mask.
-    total488_phys = squashed_to_physical(total488, w488, h488)
-    target = ndimage.rotate(m488.astype(np.uint8), total488_phys, order=0,
-                            reshape=False) > 0
-    # `deg` is the same direction, on the slide, in the pERK scan's coordinates.
-    deg, score, flip_margin = align(m568, target)
+    # The direction 04a put along +x in the curated output, as an angle on the
+    # slide. Rotating the physical curated mask by it reproduces the curated
+    # orientation in physical units - rotating by `total_source` itself would
+    # apply a squashed-frame angle to an unsquashed mask.
+    total_source_phys = squashed_to_physical(total_source, w_source, h_source)
+    goal = ndimage.rotate(m_source.astype(np.uint8), total_source_phys, order=0,
+                          reshape=False) > 0
+    # `deg` is the same direction, on the slide, in the target scan's frame.
+    deg, score, flip_margin = align(m_target, goal)
 
-    # 04a will apply its own automatic angle to the pERK scan, in that scan's
+    # 04a will apply its own automatic angle to the target scan, in that scan's
     # squashed frame, so the correction it needs is the difference between the
     # total rotation measured here - moved into the same frame - and that
     # automatic angle.
-    auto = _RF.reformat(p568, light_background=False)
+    auto = _RF.reformat(p_target, light_background=False)
     if auto is None:
         return None
-    a568 = float(auto[2])
-    extra = (physical_to_squashed(deg, w568, h568) - a568) % 360
+    auto_target = float(auto[2])
+    extra = (physical_to_squashed(deg, w_target, h_target) - auto_target) % 360
 
     final_iou = None
     if curated_mask is not None:
-        done = _RF.reformat(p568, light_background=False, extra_angle=extra)
+        done = _RF.reformat(p_target, light_background=False, extra_angle=extra)
         if done is not None:
             final_iou = mask_iou(done[1], curated_mask)
-    return {"extra": extra, "deg": deg, "auto568": a568, "align_iou": score,
-            "flip_margin": flip_margin, "final_iou_256": final_iou}
+    return {"extra": extra, "deg": deg, "auto_target": auto_target,
+            "align_iou": score, "flip_margin": flip_margin,
+            "final_iou_256": final_iou}
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, default=0)
     args = ap.parse_args()
-    os.makedirs(REPORT_DIR, exist_ok=True)
 
     with open(PAIRS_CSV, newline="", encoding="utf-8") as fh:
         pairs = [r for r in csv.DictReader(fh)
-                 if r.get("af488_scene_uid") and r.get("af568_scene_uid")]
-    to568 = {r["af488_scene_uid"]: r["af568_scene_uid"] for r in pairs}
+                 if r.get(SOURCE_UID_COL) and r.get(TARGET_UID_COL)]
+    target_of = {r[SOURCE_UID_COL]: r[TARGET_UID_COL] for r in pairs}
 
-    # Curated PCNA state: what survived, and what was excluded.
+    # Curated state of the SOURCE pass: what survived, and what was excluded.
+    # These two are unsuffixed by the naming rule - the source IS the geometry
+    # source - so the basenames below are that rule's answer, not a literal
+    # about which fluorophore was curated first.
     kept = {r["id"]: r for r in csv.DictReader(open(
         os.path.join(REFORMAT_DIR, "reformat_index.csv"), encoding="utf-8"))
         if r["kind"] == "section"}
@@ -323,41 +339,60 @@ def main():
 
     # 1. Exclusions, straight through the pairing.
     for uid in excluded:
-        u568 = to568.get(uid)
-        if u568:
-            rows.append({"perk_scene_uid": u568, "pcna_scene_uid": uid,
+        u_target = target_of.get(uid)
+        if u_target:
+            rows.append({"perk_scene_uid": u_target, "pcna_scene_uid": uid,
                          "animal": NM.subject_of(uid), "extra_rotation": 0, "flip": 0,
                          "excluded": 1, "align_iou": "", "final_iou_256": "",
                          "flip_margin": "", "confidence": "",
+                         # The VALUE is left as it is: 04m:145 and 04p:286
+                         # both describe this exact string, and it is in
+                         # the operator's 82,893-byte overrides file. A
+                         # rename here is a data change, not a rename.
                          "reason": "PCNA partner excluded by the operator"})
             n_excl += 1
 
-    # 2. Rotations, re-derived by aligning to the curated PCNA mask.
+    # 2. Rotations, re-derived by aligning to the curated source mask.
     for i, (uid, meta) in enumerate(todo, 1):
-        u568 = to568.get(uid)
-        if not u568:
+        u_target = target_of.get(uid)
+        if not u_target:
             n_nopair += 1
             continue
-        animal488, _ = chan.get(uid, (NM.subject_of(uid), "AF488"))
-        animal, _ = chan.get(u568, (NM.subject_of(u568), "AF568"))
-        p488 = os.path.join(OVERVIEW_DIR, animal488, "AF488", uid + "_DAPI.png")
-        p568 = os.path.join(OVERVIEW_DIR, animal, "AF568", u568 + "_DAPI.png")
-        if not (os.path.exists(p488) and os.path.exists(p568)):
+        # THE CHANNEL COMES OUT OF focus.csv, and it used to be read and then
+        # thrown away: `animal488, _ = chan.get(...)` and then a literal
+        # "AF488"/"AF568" in the path. Overviews live in
+        # overviews/<animal>/<marker_channel>/, so for any other study both
+        # paths named directories that do not exist, every section failed the
+        # check below, and rotation_overrides_<marker>.csv came out holding
+        # only the exclusion rows. 04a --apply-overrides then applied zero
+        # rotations and every section was reformatted at its raw automatic
+        # angle, unaligned with the partner it was meant to match. Nothing
+        # errored; the summary printed a plausible "failed to reformat" count.
+        animal_source, chan_source = chan.get(
+            uid, (NM.subject_of(uid), SOURCE_MARKER))
+        animal_target, chan_target = chan.get(
+            u_target, (NM.subject_of(u_target), TARGET_MARKER))
+        p_source = os.path.join(OVERVIEW_DIR, animal_source, chan_source,
+                                uid + "_DAPI.png")
+        p_target = os.path.join(OVERVIEW_DIR, animal_target, chan_target,
+                                u_target + "_DAPI.png")
+        if not (os.path.exists(p_source) and os.path.exists(p_target)):
             failed += 1
             continue
-        # The curated PCNA mask as 04a wrote it - the thing the pERK section
-        # has to line up with in the end.
+        # The curated source mask as 04a wrote it - the thing the target
+        # section has to line up with in the end.
         mp = os.path.join(SEC_DIR, uid + "_mask.npy")
         curated = np.load(mp).astype(bool) if os.path.exists(mp) else None
 
-        # `angle` in reformat_index is the TOTAL rotation 04a applied to the PCNA
-        # scan - automatic plus the operator's correction.
-        d = derive_rotation(p488, p568, float(meta["angle"]), curated)
+        # `angle` in reformat_index is the TOTAL rotation 04a applied to the
+        # curated scan - automatic plus the operator's correction.
+        d = derive_rotation(p_source, p_target, float(meta["angle"]), curated)
         if d is None:
             failed += 1
             continue
         score = d["align_iou"]
-        rows.append({"perk_scene_uid": u568, "pcna_scene_uid": uid, "animal": animal,
+        rows.append({"perk_scene_uid": u_target, "pcna_scene_uid": uid,
+                     "animal": animal_target,
                      "extra_rotation": int(round(d["extra"])), "flip": 0,
                      "excluded": 0, "align_iou": round(score, 4),
                      "final_iou_256": ("" if d["final_iou_256"] is None
@@ -380,7 +415,7 @@ def main():
     print(f"{len(rows)} rows -> {OUT_CSV}")
     print(f"  exclusions transferred : {n_excl}")
     print(f"  rotations derived      : {len(live)}")
-    print(f"  curated sections with no pERK partner : {n_nopair}")
+    print(f"  curated sections with no {TARGET_MARKER} partner : {n_nopair}")
     print(f"  failed to reformat     : {failed}")
     if len(s):
         print()
