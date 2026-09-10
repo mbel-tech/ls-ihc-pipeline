@@ -56,6 +56,7 @@ if _HERE not in sys.path:
 # the whole process. Imported, not re-implemented: this block used to be four
 # lines copy-pasted into every stage.
 from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
+import ls_paths as LP  # noqa: E402
 
 OUT_ROOT = CONFIG["out_root"]
 RESULTS_DIR = os.path.join(OUT_ROOT, "results")
@@ -63,15 +64,43 @@ REFORMAT_DIR = os.path.join(OUT_ROOT, "reformatted")
 NUCLEI_CSV = os.path.join(RESULTS_DIR, "roi_nuclei.csv")
 BACKUP_DIR = os.path.join(RESULTS_DIR, "_pre_06g_backup")
 
+# The section-directory rule, borrowed rather than restated. See section_dirs.
+NAMES = LP.for_config(CONFIG)
+
 COLUMN = "off_tissue"
 LF = chr(10)
 CRLF = chr(13) + LF
 
 
+def section_dirs():
+    """Every directory 04a may have written a section into, in marker order.
+
+    The same list `05c.section_dirs` builds, from the same table - what is
+    duplicated here is one import, not a second copy of the rule. The literal
+    this replaces was `("sections_AF568", "sections")`, which for any study
+    whose markers are not AF568/AF488 named one directory that has never
+    existed and one holding only the geometry source's sections. Every other
+    marker's silhouette was then missing, `off_tissue` came back None for all
+    of its nuclei, and nothing was flagged - which reads exactly like a clean
+    dataset.
+
+    The unsuffixed directory is kept on the end for the pre-rename layout; see
+    05c.section_dirs for why that is not redundant.
+    """
+    dirs = [NAMES.path("sections", m) for m in NAMES.markers]
+    dirs.append(os.path.join(REFORMAT_DIR, "sections"))
+    seen, out = set(), []
+    for d in dirs:
+        if d not in seen:
+            seen.add(d)
+            out.append(d)
+    return out
+
+
 def tissue_mask(uid):
     """The DAPI silhouette in the 256 frame - 05c's `mask_at(uid, "mask")`."""
-    for d in ("sections_AF568", "sections"):
-        p = os.path.join(REFORMAT_DIR, d, f"{uid}_mask.npy")
+    for d in section_dirs():
+        p = os.path.join(d, f"{uid}_mask.npy")
         if os.path.exists(p):
             return np.load(p)
     return None

@@ -665,12 +665,40 @@ def balanced_order(uids, done=()):
     return out
 
 
+def section_dirs():
+    """Every directory 04a may have written a section into, in marker order.
+
+    One rule, borrowed from `04a.marker_paths` rather than written out again.
+    The literal this replaces was `sections_AF568` then `sections`, which for
+    any study whose markers are not AF568/AF488 is one directory that has never
+    existed followed by one holding only the geometry source's sections - so
+    every other marker's artifact, censor and tissue mask was invisible and
+    every one of its ROIs was measured unmasked. That is a number, not an
+    error.
+
+    The unsuffixed directory stays on the end. Under `multiplex` every marker
+    already answers `sections`, so it is a duplicate and is dropped; under
+    `paired` it is the geometry source's, also already there. It is kept for
+    the pre-rename layout, where that is the only section directory on the
+    drive.
+    """
+    dirs = [G5.RF.marker_paths(m)["sections"] for m in G5.MARKERS]
+    dirs.append(os.path.join(REFORMAT_DIR, "sections"))
+    seen, out = set(), []
+    for d in dirs:
+        if d not in seen:
+            seen.add(d)
+            out.append(d)
+    return out
+
+
 def mask_at(uid, kind):
     """The 256-frame artifact or censor mask, or None."""
-    p = os.path.join(REFORMAT_DIR, "sections_AF568", f"{uid}_{kind}.npy")
-    if not os.path.exists(p):
-        p = os.path.join(REFORMAT_DIR, "sections", f"{uid}_{kind}.npy")
-    return np.load(p) if os.path.exists(p) else None
+    for d in section_dirs():
+        p = os.path.join(d, f"{uid}_{kind}.npy")
+        if os.path.exists(p):
+            return np.load(p)
+    return None
 
 
 def write_overlay(uid, bi, b, image, labels, kept):

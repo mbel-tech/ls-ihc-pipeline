@@ -185,6 +185,27 @@ with temp_study(acquisition={"layout": "paired",
     chk("...leaving the first marker suffixed",
         os.path.basename(_4g.summary_csv("Mk1")), "artifact_summary_Mk1.csv")
 
+    # 04l builds the page's <img> srcs from its own marker_paths, which used to
+    # be `if marker == "AF568"` under a docstring claiming it mirrored 04a. It
+    # mirrors 04a only for a study whose second marker is called AF488; for any
+    # other pair it sent BOTH markers to `sections`, so one marker's grid
+    # showed the other marker's sections and the rest showed nothing. A broken
+    # <img> is silent.
+    _4l = load_stage("04l_roi_curator.py", name="lsstage_04l_alt")
+    for _m in ("Mk1", "Mk2"):
+        chk(f"04l reads the reformat index 04a WRITES for {_m}",
+            os.path.basename(_4l.marker_paths(_m)[0]),
+            os.path.basename(_rf.marker_paths(_m)["index"]))
+        chk(f"...and shows the section directory 04a writes for {_m}",
+            _4l.marker_paths(_m)[1],
+            os.path.basename(_rf.marker_paths(_m)["sections"]))
+    chk("...so the two markers do not share one directory",
+        _4l.marker_paths("Mk1")[1] != _4l.marker_paths("Mk2")[1], True)
+    # What the page is handed, as data. Both JS sites read this map now; a
+    # literal in a generated page is invisible to every Python suite.
+    chk("the page's SECDIRS covers every marker, with 04a's names",
+        _4l.section_dirs(), {"Mk1": "sections_Mk1", "Mk2": "sections"})
+
 print()
 print("ALL PASS" if not failures else f"{len(failures)} FAILED")
 sys.exit(1 if failures else 0)

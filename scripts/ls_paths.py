@@ -212,6 +212,37 @@ class Names:
                 else stem + self.suffix(marker))
         return os.path.join(self.out_root, subdir, name + ext)
 
+    def basename(self, artifact, marker):
+        """`path()`'s last component, for a caller that needs a RELATIVE name.
+
+        Two of them do, and both write it into something a browser resolves:
+        `04l` puts `sections_AF568_rgb/<uid>.png` into an <img> src relative to
+        the page, and `04p` puts the same shape into `section_provenance.csv`
+        for that page to read back. Handing them an absolute path would produce
+        a file:// URL against out_root, which is not where the page is.
+        """
+        return os.path.basename(self.path(artifact, marker))
+
+    def including(self, marker):
+        """This study's Names, widened to answer for one more marker.
+
+        A marker that is not in the declared list still reaches these
+        functions, and from DATA rather than from config: `04p` reads
+        `marker_channel` out of the manifest, `app/import_exports` reads a
+        `marker` column out of a CSV somebody exported from a browser, and
+        `04a.marker_paths` is asked for invented names by a suite that flips
+        the layout. `path()` refuses those, which is right for a writer and
+        wrong for a reader - one unrecognised row would take down a stage that
+        had 400 good ones.
+
+        Appending leaves the geometry source exactly where it is (it is
+        `markers[1]`, and this only ever appends), so the answer is still this
+        module's rule rather than a restatement of it somewhere else.
+        """
+        if marker in self.markers:
+            return self
+        return Names(self.out_root, self.markers + [marker], self.layout)
+
     def legacy_path(self, artifact, marker):
         """The pre-rename basename for this pair, or None. Existence unchecked."""
         basename = LEGACY.get((artifact, marker))

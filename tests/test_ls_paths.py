@@ -151,6 +151,30 @@ chk("...with the same values path() gives",
     live.all_paths("index")["AF568"], live.path("index", "AF568"))
 
 print()
+print("--- basename() and including() ---")
+chk("basename is path()'s last component",
+    live.basename("sections", "AF568"), "sections_AF568")
+chk("...unsuffixed for the geometry source",
+    live.basename("sections", "AF488"), "sections")
+chk("...and it is a NAME, never a path",
+    os.sep in live.basename("index", "AF568"), False)
+# A marker that arrives from data rather than from config - the manifest's
+# marker_channel column, or a `marker` cell in an exported CSV. path() refuses
+# it, which is right for a writer; a reader has to answer.
+try:
+    live.basename("sections", "Mk9")
+    chk("path() alone refuses an undeclared marker", "returned", "ValueError")
+except ValueError:
+    chk("path() alone refuses an undeclared marker", "ValueError", "ValueError")
+wide = live.including("Mk9")
+chk("including() answers for it", wide.basename("sections", "Mk9"), "sections_Mk9")
+chk("...without moving the geometry source",
+    (wide.geometry_source_marker, wide.basename("sections", "AF488")),
+    ("AF488", "sections"))
+chk("...and a marker already declared gets the same Names back",
+    live.including("AF568") is live, True)
+
+print()
 print("--- CONSISTENCY WITH 04a.marker_paths: the anti-drift assertion ---")
 # 04a.marker_paths returns SIX keys. Four are pure paths under the suffix rule
 # and must be identical. The remaining two are handled below, explicitly,

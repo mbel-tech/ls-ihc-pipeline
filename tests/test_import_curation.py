@@ -311,6 +311,52 @@ def main():
         import shutil
         shutil.rmtree(tmp, ignore_errors=True)
 
+    # ---- k_from_disk under a study that is not LS --------------------------
+    #
+    # Everything above drives build() with a k_of the suite made up. This
+    # drives the REAL one, off real files, under a study whose markers are not
+    # AF568/AF488.
+    #
+    # `marker_dir` was `"sections_AF568" if marker == "AF568" else "sections"`.
+    # For any other study every marker resolved to `sections`, so the probe for
+    # `<dir>_rgb/<uid>.png` missed, `k` fell back to 1.0 - and the page had
+    # drawn at K=3, because the composite it loaded really is 768 px. Every
+    # imported disc, landmark and polygon vertex then landed at one THIRD of
+    # its true coordinate. Nothing raised, nothing logged: the seed file loads
+    # and puts the discs somewhere plausible, which is verbatim the failure
+    # this stage's own docstring says it exists to prevent.
+    from _fixture import temp_study, load_stage
+    from PIL import Image
+    with temp_study(acquisition={"layout": "paired",
+                                 "markers": ["Mk1", "Mk2"]}) as mk:
+        RF = load_stage("04a_reformat.py", name="lsstage_04a_q")
+        Q2 = load_stage("04q_import_curation.py", name="lsstage_04q_mk")
+        reformat = os.path.join(mk.out_root, "reformatted")
+
+        # One 768-px composite per marker, each in the directory 04a would have
+        # written it to. Mk2 is the geometry source, so its is unsuffixed.
+        for marker, uid in (("Mk1", "U_mk1"), ("Mk2", "U_mk2")):
+            d = RF.marker_paths(marker)["sections"] + "_rgb"
+            os.makedirs(d, exist_ok=True)
+            Image.new("RGB", (768, 768)).save(os.path.join(d, uid + ".png"))
+
+        k_disk = Q2.k_from_disk(reformat)
+        chk("the suffixed marker's composite is found: K=3, not 1.0",
+            k_disk("U_mk1", "Mk1"), 3.0)
+        chk("...and the geometry source's, in the unsuffixed directory",
+            k_disk("U_mk2", "Mk2"), 3.0)
+        chk("a section with no image on disk is still 1.0",
+            k_disk("U_none", "Mk1"), 1.0)
+        # And the directory itself, stated directly, so a future reader does
+        # not have to infer the rule from a scale factor.
+        chk("marker_dir is 04a's directory, basename for basename",
+            (Q2.marker_dir("Mk1"), Q2.marker_dir("Mk2")),
+            (os.path.basename(RF.marker_paths("Mk1")["sections"]),
+             os.path.basename(RF.marker_paths("Mk2")["sections"])))
+        chk("...which for a paired study means suffixed and unsuffixed",
+            (Q2.marker_dir("Mk1"), Q2.marker_dir("Mk2")),
+            ("sections_Mk1", "sections"))
+
     print()
     print("ALL PASS" if not fails else "%d FAILED" % fails)
     return 1 if fails else 0

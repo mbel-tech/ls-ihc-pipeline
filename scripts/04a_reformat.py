@@ -437,12 +437,19 @@ def _overrides_path(marker):
     the refusal `Names` would normally raise: `marker_paths` has always
     answered for any string - `tests/test_reformat_layout.py` flips LAYOUT and
     asks for two invented names - and turning that into a ValueError is a
-    behaviour change this does not make. Appending the stranger to the list
-    leaves the geometry source where it is, so the rule is still ls_paths'.
+    behaviour change this does not make. `including()` is that widening, and
+    it lives in ls_paths so the rule is still not restated here.
+
+    LAYOUT is re-read rather than taken from NAMES, because the rest of
+    `marker_paths` reads the module-level one and a suite flips it in place to
+    ask what the other layout does. A Names frozen at import would keep
+    answering `paired` after the flip and hand two markers separate override
+    files from inside a branch that gives them one shared index - the two
+    halves of one answer disagreeing, which is the whole failure mode this
+    change is about.
     """
-    names = (NAMES if marker in MARKERS
-             else LP.Names(OUT_ROOT, MARKERS + [marker], LAYOUT))
-    return names.read("overrides", marker)
+    names = NAMES if LAYOUT == NAMES.layout else LP.Names(OUT_ROOT, MARKERS, LAYOUT)
+    return names.including(marker).read("overrides", marker)
 
 
 def marker_paths(marker):

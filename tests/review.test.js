@@ -17,9 +17,9 @@
 const { env, load, chk, note, done } = require("./harness");
 const { store } = env;
 
-const X = load(`{KEY, PROV, PROWS, P_BY, st, save, revSrc, revAct, revPick,
-  revImg, revLayer, revStep, revList, REV, exportReview, csvq, esc,
-  get revSel(){return revSel}}`);
+const X = load(`{KEY, PROV, PROWS, P_BY, MARKERS, SECDIRS, st, save, revSrc,
+  revAct, revPick, revImg, revLayer, revStep, revList, REV, exportReview, csvq,
+  esc, get revSel(){return revSel}}`);
 
 // ---- the table ------------------------------------------------------------
 
@@ -90,6 +90,26 @@ if (withAll) {
       X.revSrc({scene_uid: "U", marker: "AF568", has_section: 1,
                 has_section_rgb: 1, has_section_thumb: 1}, "section"),
       "sections_AF568_rgb_thumb/U.png");
+}
+
+// ---- and where that directory came from -----------------------------------
+//
+// The two assertions above are the LIVE study's answers, so they pass for a
+// page that derives the directory and for a page that has `p.marker ===
+// "AF568"` written into it - which is what was there. The expectation below
+// comes from the DATA the page was built with instead: SECDIRS is computed in
+// Python by 04l.section_dirs(), from the same table 04a names the directories
+// with, so a page and a pipeline that disagree cannot both pass.
+chk("every marker in the page has a section directory",
+    Object.keys(X.SECDIRS).sort().join(","),
+    X.MARKERS.map(m => m.id).sort().join(","));
+chk("...and no two markers share one",
+    new Set(Object.values(X.SECDIRS)).size, X.MARKERS.length);
+for (const m of X.MARKERS) {
+  chk(`revSrc uses SECDIRS for ${m.id}, not a literal`,
+      X.revSrc({scene_uid: "U", marker: m.id, has_section: 1,
+                has_section_rgb: 0, has_section_thumb: 0}, "section"),
+      X.SECDIRS[m.id] + "/U.png");
 }
 
 const noSection = X.PROWS.find(p => !p.has_section);

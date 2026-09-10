@@ -45,6 +45,13 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+# Appended, not inserted: the app's own modules keep priority, and this is only
+# here so `ls_paths` can be reached. That module is a table and os.path -
+# nothing in it pulls numpy, PIL or a stage in, which is why the naming rule
+# can be shared with the app at all rather than copied into it.
+SCRIPTS = os.path.join(os.path.dirname(HERE), "scripts")
+if SCRIPTS not in sys.path:
+    sys.path.append(SCRIPTS)
 
 import state as ST                                          # noqa: E402
 
@@ -54,17 +61,51 @@ ROI_KEY = "ls_roi_curator_v1"
 SEC_GRID = 256
 
 
-def marker_dir(marker):
-    """Mirrors 04l's marker_paths: the two channels do not share a directory."""
-    return "sections_AF568" if marker == "AF568" else "sections"
+def study_names(cfg=None):
+    """`ls_paths.Names` for the study these exports came from.
+
+    Imported lazily so that merely importing this module does not read a
+    config: the app imports it to have `rebuild` available, and a config error
+    at that moment would be an app that will not start over a file it has not
+    been asked to touch yet.
+    """
+    import ls_paths as LP
+    if cfg is None:
+        import ls_config
+        cfg = ls_config.CONFIG
+    return LP.for_config(cfg)
 
 
-def frame_from_disk(reformat_dir, rgb=True):
+def marker_dir(marker, names=None):
+    """The directory 04a wrote this marker's sections into. Not restated here.
+
+    This function used to BE the rule, as `"sections_AF568" if marker ==
+    "AF568" else "sections"` - the LS study's answer written out as though it
+    were everyone's, and one of eight copies of it. For any other study every
+    marker resolved to `sections`, so the probe below missed the directory 04o
+    had actually written, the frame fell back to 256 while the page had drawn
+    at 768, and every landmark and background disc came back at a THIRD of the
+    coordinate the operator clicked. Nothing raised; the store rebuilds and the
+    discs are somewhere plausible.
+
+    `including()` because `marker` is a cell in a CSV a browser wrote, and one
+    row naming a marker this config does not declare must not lose the other
+    four hundred.
+    """
+    n = names if names is not None else study_names()
+    return n.including(marker).basename("sections", marker)
+
+
+def frame_from_disk(reformat_dir, rgb=True, names=None):
     """uid -> the width of the image 04l would have put on screen for it.
 
     The same rule 04q_import_curation.k_from_disk applies: the 768 px composite
     where 04o built one, the 256 px greyscale otherwise. Returned as a callable
     so `rebuild()` stays pure and a test can pin the scale with no images.
+
+    `names` is the study, resolved once by the caller. Left out, it is looked
+    up per marker from whatever config `ls_config` finds - which is right for
+    a command line and wrong inside a suite, so the suites pass one.
     """
     cache = {}
 
@@ -72,7 +113,7 @@ def frame_from_disk(reformat_dir, rgb=True):
         if uid in cache:
             return cache[uid]
         from PIL import Image
-        base = marker_dir(marker)
+        base = marker_dir(marker, names)
         subs = ((base + "_rgb",) if rgb else ()) + (base,)
         frame = float(SEC_GRID)
         for sub in subs:
@@ -244,14 +285,20 @@ def main():
         print(f"no plates CSV at {plates}")
         return 1
 
-    cfg = os.path.join(os.path.dirname(HERE), "config.json")
-    with open(cfg, encoding="utf-8") as fh:
-        out_root = json.load(fh)["out_root"]
+    cfg_path = os.path.join(os.path.dirname(HERE), "config.json")
+    with open(cfg_path, encoding="utf-8") as fh:
+        cfg = json.load(fh)
+    out_root = cfg["out_root"]
+    # Resolved once, from the config that was just read, rather than per marker
+    # from whatever ls_config would find: this file has already been opened, so
+    # asking a second source the same question could only produce a
+    # disagreement.
+    names = study_names(cfg)
 
     # The frame is read off disk, per section, exactly as 04q does it:
     # a flat k here put every greyscale section's landmarks at 3x.
     frame_of = frame_from_disk(os.path.join(out_root, "reformatted"),
-                               rgb="--no-rgb" not in sys.argv)
+                               rgb="--no-rgb" not in sys.argv, names=names)
     S, n_pairs, n_bg = rebuild(plates, marks, regions_csv=regions,
                                frame_of=frame_of)
     fresh = len(S)

@@ -221,6 +221,7 @@ if _HERE not in sys.path:
 import ls_config as LC  # noqa: E402
 from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
 import ls_channels as CH  # noqa: E402
+import ls_paths as LP  # noqa: E402
 
 # The markers this study measures, in declared order. ls_channels is the
 # single source of that list; naming a fluorophore here would pin the stage
@@ -250,6 +251,11 @@ def marker_label(marker):
 
 OUT_ROOT = CONFIG["out_root"]
 REFORMAT_DIR = os.path.join(OUT_ROOT, "reformatted")
+
+# The section-directory and index rule, borrowed rather than restated. ls_paths
+# rather than 04a: this stage builds an HTML page and importing 04a would pull
+# numpy, scipy and PIL in to answer a question about a filename.
+NAMES = LP.for_config(CONFIG)
 ANALYSIS_CSV = os.path.join(REFORMAT_DIR, "perk_analysis_set.csv")
 PERK_MAP_CSV = os.path.join(REFORMAT_DIR, "perk_overrides.csv")
 WORKLIST_CSV = os.path.join(REFORMAT_DIR, "roi_worklist.csv")
@@ -494,10 +500,29 @@ def tag_rois(sd, hulls):
 
 
 def marker_paths(marker):
-    """Index and image directory for a marker, mirroring `04a_reformat`."""
-    if marker == "AF568":
-        return (os.path.join(REFORMAT_DIR, "reformat_index_AF568.csv"), "sections_AF568")
-    return (os.path.join(REFORMAT_DIR, "reformat_index.csv"), "sections")
+    """(index CSV, section directory NAME) for one marker.
+
+    Delegated to ls_paths, which is where `04a_reformat` gets the same two
+    answers - "mirroring 04a" is what the previous version's docstring
+    claimed, and the version under it was `if marker == "AF568"`, which mirrors
+    04a only for the one study whose second marker happens to be called AF488.
+
+    The directory comes back as a bare NAME because the page resolves it
+    relative to itself: these end up in an <img> src, not on a filesystem.
+    """
+    return (NAMES.path("index", marker), NAMES.basename("sections", marker))
+
+
+def section_dirs():
+    """{marker: directory name} for the page. See `__SECDIRS__` in the script.
+
+    The page had this rule written into it twice, in JavaScript, as
+    `p.marker === "AF568" ? "_AF568" : ""`. A generated page is the worst place
+    for a study-specific literal: it is invisible to every Python test, the JS
+    suites only see it if it lands in the largest <script> block, and a wrong
+    directory shows up as an <img> that silently does not load.
+    """
+    return {m: marker_paths(m)[1] for m in MARKERS}
 
 
 def analysis_uids(marker):
@@ -1147,6 +1172,14 @@ const GROUPS = __GROUPS__;
 // one. Scene uids never collide (`_s01a_` is pERK, `_s01b_` is PCNA), which is
 // what lets a single store hold both without keying on the channel.
 const MARKERS = __MARKERS__;          // [{id, label, n, sub}]
+// {marker: "sections" | "sections_<marker>"} - the directory 04a wrote each
+// marker's reformatted sections into, computed in Python by section_dirs().
+// The page INSTALLS this rule; it does not know it. Both sites below used to
+// carry `p.marker === "AF568" ? "_AF568" : ""`, which for any other study
+// pointed every marker at one directory and left the other one's sections
+// unreachable - a broken <img>, which is to say nothing on screen and
+// nothing in the console.
+const SECDIRS = __SECDIRS__;
 const DEFAULT_MARKER = __MARKER__;
 // The canonical reformatted grid (04a GRID). Display may be a multiple of it.
 const SEC_GRID = __SECGRID__;
@@ -4032,7 +4065,7 @@ function revSrc(p, what){
     // here infers one file from another - 1,066 sections have no composite and
     // a failed <img> is silent.
     if(!p.has_section) return "";
-    const dir = `sections${p.marker === "AF568" ? "_AF568" : ""}`;
+    const dir = SECDIRS[p.marker];
     const sub = p.has_section_thumb ? "_rgb_thumb"
               : p.has_section_rgb   ? "_rgb" : "";
     return `${dir}${sub}/${p.scene_uid}.png`;
@@ -4481,8 +4514,7 @@ function revImg(){
 // subset is written as "reinstated" so the export says where the row came from
 // rather than implying it was in the worklist all along.
 function reinstatedRow(p){
-  const dir = "sections" + (p.marker === "AF568" ? "_AF568" : "")
-            + (p.has_section_rgb ? "_rgb" : "");
+  const dir = SECDIRS[p.marker] + (p.has_section_rgb ? "_rgb" : "");
   return {uid: p.scene_uid, animal: p.animal, m: p.marker, sub: "reinstated",
           order: +p.section_order || 0, rgb: !!p.has_section_rgb,
           img: dir + "/" + p.scene_uid + ".png", reinstated: true};
@@ -4836,7 +4868,8 @@ def main():
     page = IO.fill(PAGE, {
         "__SEED__": seed, "__PROV__": load_provenance(), "__DATA__": data,
         "__PLATES__": pl, "__PLATESET__": PLATE_SET, "__MARKERS__": markers,
-        "__MARKER__": args.marker, "__SECGRID__": SEC_GRID, "__GROUPS__": GROUPS,
+        "__MARKER__": args.marker, "__SECDIRS__": section_dirs(),
+        "__SECGRID__": SEC_GRID, "__GROUPS__": GROUPS,
         "__EXPORTDIR__": args.export_dir})
     with open(args.out, "w", encoding="utf-8") as fh:
         fh.write(page)

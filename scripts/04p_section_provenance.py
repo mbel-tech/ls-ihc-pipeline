@@ -56,11 +56,18 @@ if _HERE not in sys.path:
 # the whole process. Imported, not re-implemented: this block used to be four
 # lines copy-pasted into every stage.
 from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
+import ls_paths as LP  # noqa: E402
 
 OUT_ROOT = CONFIG["out_root"]
 REFORMAT_DIR = os.path.join(OUT_ROOT, "reformatted")
 OVERVIEW_DIR = os.path.join(OUT_ROOT, "overviews")
 MASK_DIR = os.path.join(OUT_ROOT, "artifacts")
+
+# The section-directory rule, borrowed rather than restated. ls_paths, not 04a:
+# this stage builds a CSV and must not pull numpy, PIL and scipy in to answer a
+# question about a filename. (04a IS imported, but lazily and only by
+# --tissue, which really does need the image code.)
+NAMES = LP.for_config(CONFIG)
 CENSOR_DIR = os.path.join(OUT_ROOT, "censor")
 RESULTS = os.path.join(OUT_ROOT, "results")
 MANIFEST_CSV = os.path.join(OUT_ROOT, "manifest", "manifest_scenes.csv")
@@ -177,6 +184,27 @@ def rel(name):
     return load(os.path.join(REFORMAT_DIR, name))
 
 
+def section_dir(marker):
+    """The directory 04a wrote this marker's sections into, as a bare name.
+
+    A NAME, not a path: it goes into `section_provenance.csv` as part of a URL
+    the curator page resolves relative to itself.
+
+    The literal this replaces was `"sections" if mk == "AF488" else
+    f"sections_{mk}"` - which is EXACTLY INVERTED for any other pair. The
+    unsuffixed directory belongs to the geometry source, and the geometry
+    source is the SECOND declared marker; hardcoding AF488 pinned that role to
+    a fluorophore name, so for a study with markers ["Mk1", "Mk2"] the default
+    marker Mk2 was sent to `sections_Mk2` (which 04a never wrote) and Mk1 to
+    `sections` (which holds Mk2's). Every thumbnail in the Review pane's grid
+    then came back blank, or - worse - showed the other marker's section.
+
+    `including()` because `marker` is the manifest's `marker_channel` column,
+    which can name a channel this config does not declare as a marker.
+    """
+    return NAMES.including(marker).basename("sections", marker)
+
+
 def count_nuclei():
     """scene_uid -> nuclei measured. Streamed: the file is ~110 MB.
 
@@ -287,7 +315,7 @@ def main():
 
         # What can be shown. An excluded PCNA section still has its reformatted
         # image; an excluded pERK section does not - see the module docstring.
-        sec_dir = "sections" if mk == "AF488" else f"sections_{mk}"
+        sec_dir = section_dir(mk)
         sec_rel = f"{sec_dir}/{uid}.png"
         ov_rel = f"../overviews/{m['animal']}/{mk}/{uid}_RGB.png"
         mask_rel = f"../artifacts/{uid}_artifact.png"

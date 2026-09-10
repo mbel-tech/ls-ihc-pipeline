@@ -564,5 +564,56 @@ else:
 
 
 print()
+print("=== which section directory a mask is looked for in ===")
+print()
+
+# `05c.mask_at` probed the literal `sections_AF568` and fell back to
+# `sections`; `06g.tissue_mask` probed the same two. For any study whose
+# markers are not AF568/AF488 that is one real directory and one that has
+# never existed, so a marker with its own suffixed directory was invisible:
+# 05c measured every ROI with no artifact mask, no censor mask and no tissue
+# silhouette, and 06g flagged nothing off-tissue. Both outcomes are a number,
+# not an error.
+#
+# Mk2 is the geometry source - the SECOND declared owns the unsuffixed names -
+# so this pins both halves at once: a fix that suffixed every marker fails on
+# Mk2, and the old literal fails on Mk1.
+with temp_study(acquisition={"layout": "paired",
+                             "markers": ["Mk1", "Mk2"]}) as study:
+    D5 = load_stage("05c_detect_rois.py", name="lsstage_05c_secdir")
+    G6 = load_stage("06g_flag_off_tissue.py", name="lsstage_06g_secdir")
+    RF = load_stage("04a_reformat.py", name="lsstage_04a_secdir")
+
+    for marker, uid in (("Mk1", "MK_a"), ("Mk2", "MK_b")):
+        d = RF.marker_paths(marker)["sections"]
+        os.makedirs(d, exist_ok=True)
+        for kind in ("mask", "artifact", "censor"):
+            np.save(os.path.join(d, f"{uid}_{kind}.npy"), np.ones((4, 4), bool))
+
+    chk("the section dirs really are suffixed and not",
+        [os.path.basename(RF.marker_paths(m)["sections"]) for m in ("Mk1", "Mk2")],
+        ["sections_Mk1", "sections"])
+    chk("05c finds the suffixed marker's artifact mask",
+        D5.mask_at("MK_a", "artifact") is not None, True)
+    chk("...its censor mask too", D5.mask_at("MK_a", "censor") is not None, True)
+    chk("...and the geometry source's, in the unsuffixed directory",
+        D5.mask_at("MK_b", "mask") is not None, True)
+    chk("...while a section with nothing on disk is still None",
+        D5.mask_at("MK_zz", "mask") is None, True)
+    chk("06g finds the suffixed marker's tissue silhouette",
+        G6.tissue_mask("MK_a") is not None, True)
+    chk("...and the geometry source's", G6.tissue_mask("MK_b") is not None, True)
+
+    # The literal, from the other side: a directory named after a marker this
+    # study does not declare must not be read. Without this, a fix that merely
+    # ADDED the real directories to the probe list would still pass.
+    stale = os.path.join(RF.REFORMAT_DIR, "sections_AF568")
+    os.makedirs(stale, exist_ok=True)
+    np.save(os.path.join(stale, "MK_stale_mask.npy"), np.ones((4, 4), bool))
+    chk("a sections_AF568 left on the drive is not read by 05c",
+        D5.mask_at("MK_stale", "mask") is None, True)
+    chk("...nor by 06g", G6.tissue_mask("MK_stale") is None, True)
+
+print()
 print("ALL PASS" if not failures else f"{len(failures)} FAILED")
 sys.exit(1 if failures else 0)

@@ -72,9 +72,14 @@ if _HERE not in sys.path:
 # the whole process. Imported, not re-implemented: this block used to be four
 # lines copy-pasted into every stage.
 from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
+import ls_paths as LP  # noqa: E402
 
 OUT_ROOT = CONFIG["out_root"]
 REFORMAT_DIR = os.path.join(OUT_ROOT, "reformatted")
+
+# The one place the "sections/ or sections_<marker>/" rule lives. See
+# marker_dir below for what this stage got wrong while it had its own copy.
+NAMES = LP.for_config(CONFIG)
 SEED_JSON = os.path.join(OUT_ROOT, "curation", "ls_roi_curator_v1.json")
 
 # Mirrors 04l: the pair array is
@@ -107,8 +112,23 @@ def tidy(x):
 
 
 def marker_dir(marker):
-    """Mirrors 04l's marker_paths: the two channels do not share a directory."""
-    return "sections_AF568" if marker == "AF568" else "sections"
+    """The directory 04a wrote this marker's sections into. Not restated here.
+
+    This function used to BE the rule, as `"sections_AF568" if marker ==
+    "AF568" else "sections"` - the LS study's answer written out as though it
+    were everyone's. For any other study every marker resolved to `sections`,
+    so `k_from_disk` probed a directory 04o had not written, missed the 768-px
+    composite, and fell back to k=1.0 while the page had drawn at K=3. Every
+    imported disc, landmark and polygon vertex then landed at one THIRD of its
+    true coordinate, on a page that loads without complaint and puts them
+    somewhere plausible - which is verbatim the failure the docstring at the
+    top of this file says this stage exists to prevent.
+
+    `including()` because `marker` comes out of a CSV a browser wrote, and a
+    row naming a marker this config does not declare must not take down an
+    import that has 400 good rows in it.
+    """
+    return NAMES.including(marker).basename("sections", marker)
 
 
 def k_from_disk(reformat_dir=REFORMAT_DIR, rgb=True):
