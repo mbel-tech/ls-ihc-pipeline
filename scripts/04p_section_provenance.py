@@ -56,6 +56,7 @@ if _HERE not in sys.path:
 # the whole process. Imported, not re-implemented: this block used to be four
 # lines copy-pasted into every stage.
 from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
+import ls_channels as CH  # noqa: E402
 import ls_paths as LP  # noqa: E402
 
 OUT_ROOT = CONFIG["out_root"]
@@ -68,6 +69,31 @@ MASK_DIR = os.path.join(OUT_ROOT, "artifacts")
 # question about a filename. (04a IS imported, but lazily and only by
 # --tissue, which really does need the image code.)
 NAMES = LP.for_config(CONFIG)
+
+# ---- which passes there are, and which one carries the pairing -------------
+#
+# `PARTNER` is the geometry source - the pass whose artifacts have the
+# unsuffixed names, and which `04d` rotated by hand. It is the SECOND declared
+# marker; see ls_paths.geometry_source, and note that `sec_dir`'s literal below
+# had that exact fact inverted. `MEASURED` is the other pass, the one 04i
+# propagated onto and 04j censored, and it is the side that carries the
+# pairing. Under multiplex there is one scan per section, so there is no
+# partner and no pairing: both are None and every follow-through below is
+# skipped rather than aimed at the wrong marker.
+MARKERS = list(CH.marker_names(CONFIG))
+LAYOUT = (CONFIG.get("acquisition") or {}).get("layout", CH.LAYOUT_MULTIPLEX)
+PARTNER = LP.geometry_source(MARKERS, LAYOUT)
+MEASURED = (next((m for m in MARKERS if m != PARTNER), None)
+            if PARTNER is not None else None)
+
+# Whose analysis set describes THESE rows. Under paired that is the measured
+# pass alone, and deliberately so: `pcna_analysis_set.csv` exists on the LS
+# drive and describes the partner's 1,381 scenes, but 04l's Review pane has
+# never seen those columns filled for them and this stage is not the place to
+# start. Under multiplex every scene is its own row, so every declared marker's
+# set applies.
+ANALYSIS_MARKERS = [MEASURED] if MEASURED else list(MARKERS)
+
 CENSOR_DIR = os.path.join(OUT_ROOT, "censor")
 RESULTS = os.path.join(OUT_ROOT, "results")
 MANIFEST_CSV = os.path.join(OUT_ROOT, "manifest", "manifest_scenes.csv")
@@ -173,8 +199,38 @@ COLUMNS = [
 ]
 
 
-def load(path):
+#: Files this run asked for and did not find. Reported at the end of main().
+#:
+#: ABSENT AND EMPTY ARE NOT THE SAME ANSWER, and collapsing them is how all
+#: four of this stage's naming bugs stayed silent for as long as they did. A
+#: header with no rows under it means "04a reformatted nothing yet"; a file
+#: that is not there means "this stage is looking for a name nothing writes" -
+#: which is what `reformat_index_AF568.csv` was for every study that is not LS.
+#: Both produced [], both produced a full 2,572-row table, and the only
+#: difference was that every row of it said `not_reformatted`.
+#:
+#: Recorded rather than raised, because most of these files legitimately do not
+#: exist yet on a part-run study, and this table is exactly what an operator
+#: builds to find out how far a run got. A miss is now printed by name.
+MISSING = []
+
+
+def load(path, required=False):
+    """Rows from a CSV. A file that is not there is RECORDED, not ignored.
+
+    `required=True` for the inputs without which the table is meaningless
+    rather than incomplete - the manifest is the universe this stage is a join
+    over, and an empty universe is not a fact about the study.
+    """
     if not os.path.exists(path):
+        if required:
+            raise SystemExit(
+                f"{path} is not there, and every row of section_provenance.csv "
+                "is a row of it. Run the stage that writes it first; an empty "
+                "table here would read as a study in which nothing was ever "
+                "scanned.")
+        if path not in MISSING:
+            MISSING.append(path)
         return []
     with open(path, newline="", encoding="utf-8") as fh:
         return list(csv.DictReader(fh))
@@ -227,20 +283,30 @@ def count_nuclei():
 def count_rois():
     """scene_uid -> discs placed, over EVERY marker's box file.
 
-    Both suffixed files when they exist, falling back to the unsuffixed one only
-    when neither does - that is the pre-2026-09-01 layout, and it is all AF568.
-    Scene uids are disjoint across markers, so this is a union, not a merge.
+    The names come from ls_paths, which holds 05a's rule rather than restating
+    it: `roi_boxes_<marker>.csv`, with the pre-2026-09-01 `roi_boxes.csv`
+    adopted only when it is on the drive and the suffixed one is not - and only
+    together with `roi_geometry.csv`, which is `05a.resolve_paths`'s own
+    condition (05a:142-155) reproduced in `ls_paths.LEGACY_GROUPS`.
+
+    The two literals this replaces were `roi_boxes_AF568.csv` and
+    `roi_boxes_AF488.csv`, which for any other study match nothing at all. The
+    consequence is not a blank column: `n_rois` is 0 for every section, no
+    section ever reaches `status = "curated"`, and the Review pane shows a
+    fully curated study as untouched.
+
+    ls_paths and not `05a.box_csv`, which the plan asked for: 05a imports
+    numpy, PIL and czi_read at module level, and this stage says in
+    `section_dir` below that it must not pull the image stack in to answer a
+    question about a filename.
+
+    Scene uids are disjoint across the markers of a paired study - they are
+    separate acquisitions - so this is a union, not a merge. A file that is not
+    there is recorded by `load` rather than passed over.
     """
     out = Counter()
-    found = False
-    for name in ("roi_boxes_AF568.csv", "roi_boxes_AF488.csv"):
-        p = os.path.join(REFORMAT_DIR, name)
-        if os.path.exists(p):
-            found = True
-            for r in load(p):
-                out[r["scene_uid"]] += 1
-    if not found:
-        for r in load(os.path.join(REFORMAT_DIR, "roi_boxes.csv")):
+    for m in MARKERS:
+        for r in load(NAMES.read("roi_boxes", m)):
             out[r["scene_uid"]] += 1
     return out
 
@@ -254,25 +320,46 @@ def main():
     ap.add_argument("--force", action="store_true",
                     help="rebuild tissue masks that already exist")
     args = ap.parse_args()
-    man = load(MANIFEST_CSV)
+    man = load(MANIFEST_CSV, required=True)
     focus = {r["scene_uid"]: r for r in load(FOCUS_CSV)}
 
     # Per marker: the index of survivors, the exclusion list, the artifact
-    # summary. AF488 keeps the unsuffixed names, as everywhere else.
+    # summary. The literal tuple this replaces named six files after two
+    # fluorophores, so for any other study none of the three suffixed ones
+    # existed, `load` returned [] for each, and every section of the measured
+    # pass fell to `status = "not_reformatted"` - including the ones 04a had
+    # reformatted. The unsuffixed three still matched by accident, which made
+    # the failure look like a one-marker problem rather than a naming one.
+    #
+    # Scene uids are disjoint across the markers of a paired study, so these
+    # three dicts are unions and the iteration order does not decide anything.
     keep, excl, art = {}, {}, {}
-    for mk, idx_name, exc_name, art_name in (
-            ("AF488", "reformat_index.csv", "excluded_sections.csv",
-             "artifact_summary.csv"),
-            ("AF568", "reformat_index_AF568.csv", "excluded_sections_AF568.csv",
-             "artifact_summary_AF568.csv")):
-        keep.update({r["id"]: r for r in rel(idx_name) if r["kind"] == "section"})
-        excl.update({r["scene_uid"]: r for r in rel(exc_name)})
-        for r in load(os.path.join(MASK_DIR, art_name)):
+    for m in MARKERS:
+        keep.update({r["id"]: r for r in load(NAMES.read("index", m))
+                     if r["kind"] == "section"})
+        excl.update({r["scene_uid"]: r for r in load(NAMES.read("excluded", m))})
+        for r in load(NAMES.read("artifact_summary", m)):
             art[r["scene_uid"]] = r
 
     cand = {r["uid"]: r for r in rel("exclusion_candidates.csv")}
-    aset = {r["scene_uid"]: r for r in rel("perk_analysis_set.csv")}
-    link = {r["perk_scene_uid"]: r for r in rel("perk_overrides.csv")}
+    aset = {}
+    for m in ANALYSIS_MARKERS:
+        aset.update({r["scene_uid"]: r for r in load(NAMES.read("analysis_set", m))})
+
+    # The pairing, and the two columns it is keyed on. 04m owns both - it does
+    # the same join over the same file - so they are imported rather than
+    # spelled out a second time here. Under multiplex there is no partner pass
+    # and no pairing file to read: `link` stays empty and `src_col` is None,
+    # which is what the `mk == MEASURED` guards below test for.
+    link, src_col = {}, None
+    if MEASURED and PARTNER:
+        overrides = G4M.overrides_csv()
+        if os.path.exists(overrides):
+            link_header, link_rows = G4M.load_header(overrides)
+            uid_col, src_col = G4M.override_columns(link_header)
+            link = {r[uid_col]: r for r in link_rows}
+        elif overrides not in MISSING:
+            MISSING.append(overrides)
     n_nuc, n_roi = count_nuclei(), count_rois()
 
     rows, unparsed = [], []
@@ -283,15 +370,20 @@ def main():
         e = excl.get(uid)
         a = aset.get(uid)
 
-        # The pERK exclusion reason is always "PCNA partner excluded by the
-        # operator" - the real one is on the PCNA side, reached through the
-        # pairing. 04m established this; the same follow applies here.
+        # The measured pass's exclusion reason is always "partner excluded by
+        # the operator" - the real one is on the partner's side, reached
+        # through the pairing. 04m established this; the same follow applies
+        # here. `mk == MEASURED` and not `mk == "AF568"`: the literal pinned
+        # this to a fluorophore, so for any other pair the follow never fired
+        # and the reason stayed the placeholder. MEASURED is None under
+        # multiplex, where no manifest row can match it and there is nothing
+        # to follow.
         src = ""
         if e:
             src = e.get("reason", "")
-            if mk == "AF568":
+            if mk == MEASURED:
                 lk = link.get(uid)
-                partner = excl.get(lk["pcna_scene_uid"]) if lk else None
+                partner = excl.get(lk[src_col]) if lk else None
                 src = (partner or {}).get("reason", "") or src
         klass, value = G4M.classify(src) if src else ("", None)
         if klass == "unparsed":
@@ -300,9 +392,9 @@ def main():
         # 04f's numbers exist only for survivors; for an excluded section the
         # reason string is the only surviving record of the measurement.
         c = cand.get(uid)
-        if mk == "AF568" and not c:
+        if mk == MEASURED and not c:
             lk = link.get(uid)
-            c = cand.get(lk["pcna_scene_uid"]) if lk else None
+            c = cand.get(lk[src_col]) if lk else None
         if c:
             qc_source, largest, total, pieces = ("exclusion_candidates",
                                                  c["largest_mm2"], c["total_mm2"],
@@ -431,6 +523,14 @@ def main():
           f"{sum(1 for r in rows if r['tissue_img'])} tissue")
     if unparsed:
         print(f"  UNPARSED reasons: {len(unparsed)} e.g. {unparsed[:2]}")
+    if MISSING:
+        # Named, because every failure in this table is otherwise silent. Some
+        # of these are legitimately absent on a part-run study; a name this
+        # stage derived and nothing ever writes is not, and the two are only
+        # distinguishable if the list is printed.
+        print(f"  not found  : {len(MISSING)} input(s) this run asked for")
+        for p in MISSING:
+            print(f"      {os.path.relpath(p, OUT_ROOT)}")
     print("=" * 72)
     return 0
 
