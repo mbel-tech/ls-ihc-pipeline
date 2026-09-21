@@ -1,4 +1,9 @@
-# Number of nuclei per ROI, by treatment - one point per SLIDE.
+# Marker-POSITIVE nuclei per ROI, by treatment - one point per SLIDE.
+#
+# Switched from all DAPI nuclei to the positive subset at the operator's request
+# on 2026-09-07, matching plot_by_sample.R and plot_roi_figures.R. The same
+# caveat applies and is printed on the figure: the cut is per section, from that
+# section's own background discs, and the rate is not absolute.
 #
 # Reads results/roi_dataset_by_slide.xlsx (sheet by_slide), written by
 # scripts/06d_excel_by_slide.py. One row there is one ROI on one slide, so an
@@ -36,12 +41,18 @@ out <- function(name) file.path(
   results, if (MARKER == "AF568") name else paste0(name, "_", MARKER))
 
 
-plot_by_roi(df, "n_nuclei", "nuclei counted",
-            paste("Nuclei per ROI by treatment - one point per slide.",
-                  "\nRaw counts: not corrected for how much tissue was measured."),
-            out("plot_nuclei_by_slide"), point_size = 2.1)
+plot_by_roi(df, "n_positive",
+            bquote(.(marker_label())*"-positive nuclei counted"),
+            paste(sprintf("%s-positive nuclei per ROI by treatment - one point per slide.",
+                          marker_label()),
+                  "\nRaw counts: not corrected for how much tissue was measured.",
+                  "\nCut per section from its own background discs; not an absolute rate."),
+            out("plot_positive_count_by_slide"), point_size = 2.1)
 
-plot_by_roi(df, "cells_per_mm2", expression(cells~per~mm^2),
-            paste("Density per ROI by treatment - one point per slide.",
-                  "\nAbercrombie-corrected, area-normalised: the comparable one."),
-            out("plot_density_by_slide"), point_size = 2.1)
+plot_by_roi(df, "positive_cells_per_mm2",
+            bquote(.(marker_label())*"-positive"~(cells~per~mm^2)),
+            paste(sprintf("%s-positive density per ROI by treatment - one point per slide.",
+                          marker_label()),
+                  "\nAbercrombie-corrected, area-normalised: the comparable one.",
+                  "\nCut per section from its own background discs; not an absolute rate."),
+            out("plot_positive_density_by_slide"), point_size = 2.1)

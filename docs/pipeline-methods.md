@@ -663,11 +663,16 @@ can be built without. Leaving the key empty in the configuration disables both.
 
 Beyond the scope of this document, the per-ROI table is joined to the experimental sampling
 workbook (the unblinding step), exported as per-sample and per-slide workbooks, and plotted in R
-(R Core Team, 2026) with ggplot2 (Wickham, 2016). The model is chosen on whether an animal
-contributes more than one row: a linear model where it does not, and a mixed model fitted with
-lme4 (Bates et al., 2015) and tested with lmerTest (Kuznetsova et al., 2017) where it does,
-followed by estimated marginal means and multiplicity-adjusted contrasts (Hothorn et al.,
-2008), and a figure deck. A refresh loop rebuilds the workbooks and every figure while
+(R Core Team, 2026) with ggplot2 (Wickham, 2016). The figure deck is drawn at the level of the
+animal: one point per animal per region, that animal's nuclei pooled over its discs and divided
+by the area those discs covered, so the points, the reported group sizes and the degrees of
+freedom all count the experimental unit. The model is chosen on whether an animal contributes
+more than one row, which at that level it does not: a linear model for the figure deck, and a
+mixed model fitted with lme4 (Bates et al., 2015) and tested with lmerTest (Kuznetsova et al.,
+2017) for the finer per-slide and per-section tables, where several rows share an animal. Both
+are followed by estimated marginal means and multiplicity-adjusted contrasts (Hothorn et al.,
+2008); contrasts that the group sizes leave inestimable are reported as such rather than
+drawn. A refresh loop rebuilds the workbooks and every figure while
 detection is still running, once per measured marker.
 
 # 15. Limitations

@@ -1,10 +1,8 @@
 # Per-ROI figures, with statistics, plus a PowerPoint of the lot.
 #
-# Writes FOUR series into results/ROI_plots/, one PNG per ROI in each - two
-# grouping series x two measures:
+# Writes TWO series into results/ROI_plots/, one PNG per ROI in each - two
+# grouping series over ONE measure:
 #
-#   treatment/                   density, control vs exercise
-#   production_phase/            density, brackish/sea x control/exercise
 #   positive_treatment/          pERK-positive, control vs exercise
 #   positive_production_phase/   pERK-positive, the four groups
 #
@@ -12,31 +10,49 @@
 # column would ripple through 06b, 06c, 06d and every model formula - but every
 # label a reader sees says PRODUCTION PHASE.
 #
-# TWO MEASURES, ONE LEVEL. `cells_per_mm2` is every DAPI nucleus;
-# `positive_cells_per_mm2` is the subset over that section's own cut. Both are
-# Abercrombie-corrected, both come from 06a via 06d, and every point is a
-# SECTION. Positivity is drawn ALONGSIDE density, never instead of it: with no
-# no-primary control and no tERK channel an absolute positivity rate is not a
-# claim these data support, so the density series has to stay readable on its
-# own. The false-positive rate the background discs measured is printed in the
-# caption of every positivity figure for the same reason.
+# ONE MEASURE, ONE LEVEL. `positive_cells_per_mm2` is the subset of DAPI nuclei
+# over the per-section cut, Abercrombie-corrected, from 06a via 06c, one point
+# per ANIMAL.
 #
-# The raw counts/area layer and the per-sample panel were both dropped: two
-# scatters of one hue at different opacity, doubled across two panels, was four
-# clouds per group to read before the reader got to the statistics.
+# THE ALL-NUCLEI DENSITY SERIES WAS DROPPED at the operator's request on
+# 2026-09-07. It used to be drawn alongside this one, and the reason it was is
+# still live: there is no no-primary control and no tERK channel in this
+# dataset, so an ABSOLUTE positivity rate is not a claim these data support.
+# What is supported is the comparison BETWEEN ARMS at matched levels, because
+# the non-specific component is shared. With density gone the positivity figure
+# no longer has a companion to be read against, so the false-positive rate the
+# background discs measured - printed in the caption of every figure here -
+# carries that caveat on its own. `cells_per_mm2` is still in the workbook and
+# in plot_by_sample.R / plot_by_slide.R; restoring the series is re-adding the
+# list entry below.
+#
+# The raw counts/area layer was dropped: two scatters of one hue at different
+# opacity, doubled across two panels, was four clouds per group to read before
+# the reader got to the statistics.
 #
 # Sections are consecutive at 14 um, so a nucleus cut by the boundary appears in
 # both and pooling raw counts across sections counts it twice. The correction is
 # not optional here, which is why the raw layer went rather than the corrected
 # one.
 #
-# SHAPE IS THE ANIMAL. Points are slides and an animal contributes several, so
-# without the shape a cluster of five points reads as five fish. The filled pch
-# set is used so they stay solid at size.
+# THE POINT IS THE ANIMAL. One mark per fish per region. The animal is the
+# experimental unit, so a figure whose points were sections drew 130 marks for a
+# comparison that has twelve fish in it, and the reader took the sample size off
+# the size of the cloud. What each mark carries is 06c's pooled value - that
+# animal's nuclei over that animal's measured disc area - so an animal measured
+# on nine discs is not outvoted by one measured on two. The within-animal spread
+# has not been thrown away; plot_by_slide.R draws it, and says there what it is.
 #
-# Statistics live in roi_stats.R: a mixed model on slides with the animal as a
-# random effect, or a plain ANOVA where each animal has only one slide. Series 1
-# gets an F test; series 2 adds Tukey compact-letter display above the scatters.
+# SHAPE IS STILL THE ANIMAL even though each now appears once per scatter. It is
+# what lets a reader follow one fish from Dm to Vv and between the two series,
+# and it names the outlier instead of leaving it anonymous. The filled pch set
+# is used so they stay solid at size.
+#
+# Statistics live in roi_stats.R: one row per animal means ordinary least
+# squares is already operating on the experimental unit, so it is a plain ANOVA
+# - nothing to cluster, no random effect to fit and no singular fits to explain.
+# Series 1 gets an F test; series 2 adds Tukey compact-letter display above the
+# scatters.
 #
 # Every PNG is packed into results/ROI_figures.pptx, one per slide.
 #
@@ -62,7 +78,8 @@ PPTX_FOR <- function(m) file.path(
            else sprintf("ROI_figures_%s.pptx", m))
 
 # TWO MEASURES, each drawn as the same two series. Density is every DAPI
-# nucleus; positivity is the subset over that section's own cut.
+# nucleus; positivity is the subset over the per-section cut, pooled to the
+# animal.
 #
 # Positivity is added ALONGSIDE density, never in place of it. There is no
 # no-primary control and no tERK channel in this dataset, so an absolute
@@ -77,18 +94,13 @@ sfx <- if (MARKER == "AF568") "" else paste0("_", MARKER)
 series_dir <- function(name) file.path(outdir, paste0(name, sfx))
 
 MEASURES <- list(
-  list(key = "density", value = "cells_per_mm2",
-       ylab = expression(density~(cells~per~mm^2)),
-       treatment = series_dir("treatment"),
-       phase = series_dir("production_phase"),
-       note = "Abercrombie-corrected", cap = NULL),
   list(key = "positive", value = "positive_cells_per_mm2",
        # The label names the marker, so a PCNA figure cannot read as a pERK one.
        ylab = bquote(.(marker_label())*"-positive"~(cells~per~mm^2)),
        treatment = series_dir("positive_treatment"),
        phase = series_dir("positive_production_phase"),
        note = "Abercrombie-corrected",
-       cap = "positivity cut per section from its own background discs")
+       cap = "positivity cut per section from its own background discs, then pooled to the animal")
 )
 dirs <- unlist(lapply(MEASURES, function(m) c(m$treatment, m$phase)))
 
@@ -115,81 +127,76 @@ if (file.exists(SPEC)) {
           "positivity figures will carry no false-positive rate")
 }
 
-# All 8 Rm seeds are flagged uncertain in the atlas itself (LOGS.md), so a
-# figure of it would look exactly like the others and mean less. Dropped from
-# the FIGURES AND STATISTICS only - the spreadsheets keep it.
-DROP_ROIS <- c("Rm")
-
-# Twelve animals need twelve marks that can be told apart at a glance, and R
-# only has five filled FORMS - circle, square, diamond, triangle up, triangle
-# down - in two styles each. The first nine are those: 21-25 filled with a
-# border, then 15-18 solid.
+# ONE SHAPE FOR EVERY POINT: 16, the solid circle. Operator's call, 2026-09-07.
 #
-# 19 and 20 used to fill the last two slots and both are plain circles, so
-# LS87, LS136 and LS138 came out as three circles distinguishable only by a
-# border and a couple of pixels of radius. A star and a square-with-triangle
-# are not "full" shapes, but being able to tell two animals apart matters more
-# than the fill.
+# What this gives up is stated plainly because it is not recoverable from the
+# figure: an animal is no longer identifiable by its mark, so a reader cannot
+# follow one fish across ROIs or spot which fish is carrying a group. Twelve
+# per-animal shapes used to do that (21-25 bordered, 15-18 solid, then 8, 14 and
+# 11), and the animal legend went with them.
 #
-# 11 is the two-triangle star, distinct from both 8 and 14 at PT 4.6.
-SHAPES <- c(21, 22, 23, 24, 25, 15, 16, 17, 18, 8, 14, 11)
-
-# An animal keeps ITS OWN shape in every figure. Assigning shapes per ROI from
-# whichever animals happen to be present looked fine on any single plot and made
-# LS37 a circle in one figure and a square in the next - which, in a twenty-slide
-# deck someone reads in order, is worse than no shapes at all. The mapping is
-# built once from the full animal list and reused.
-animal_shapes <- function(levels_all) {
-  # Never recycle: a thirteenth animal drawn with the first animal's mark is a
-  # figure that lies quietly. Add a shape here instead.
-  if (length(levels_all) > length(SHAPES))
-    stop(sprintf("%d animals but only %d shapes in SHAPES - add one", length(levels_all), length(SHAPES)))
-  setNames(SHAPES[seq_along(levels_all)], levels_all)
-}
+# The ARMS are still separated, by colour - shape 16 takes `colour`, not `fill`,
+# which is why colour = treatment is mapped alongside fill and the figures do
+# not come out monochrome.
+PT_SHAPE <- 16
 
 BASE <- 18                        # everything is sized off this
 PT   <- 4.6
 
 message(sprintf("reading %s", results))
-# SECTIONS, not slides. A slide carries 1 to 9 sections, so keying the points by
-# slide threw most of the data away before it was drawn: Dm's sea-control group
-# was a single point, and half the ROIs had groups of one or two. By section the
-# same ROI is 5, 15, 21 and 33.
+# ANIMALS, not sections. 06c's `by_roi` is already keyed one row per
+# (animal, marker, ROI): that animal's nuclei summed over its discs, Abercrombie-
+# corrected, over the area those discs covered. Pooling there rather than
+# averaging section values here is the deliberate half of the choice - it
+# weights by tissue actually measured, so an animal carrying two usable discs
+# does not get the same say as one carrying nine.
 #
-# This does not change the statistical claim. The animal is still the
-# experimental unit and the model still carries (1 | sample); more rows per
-# animal give the random effect more to work with, they do not become more fish.
-slide <- load_sheet(file.path(results, "roi_dataset_by_slide.xlsx"), "by_section")
+# The section-level table is still built and still drawn, by plot_by_slide.R.
+# What moved is which level carries the test: the figures in the deck now show
+# the unit the comparison is made on, so the number of marks in a scatter, the
+# N printed under it and the df in the caption are one number. They were three.
+animal <- load_sheet(file.path(results, "roi_dataset.xlsx"), "by_roi")
 
-n0 <- sum(as.character(slide$ROI) %in% DROP_ROIS)
-if (n0) message(sprintf("  dropped %d row%s: %s", n0, if (n0 == 1) "" else "s",
-                        paste(DROP_ROIS, collapse = ", ")))
-slide <- slide[!as.character(slide$ROI) %in% DROP_ROIS, ]
-slide$ROI <- droplevels(slide$ROI)
+# by_roi is keyed by (animal, marker, ROI) and load_sheet has already cut it to
+# one marker, so a repeated pair here means the sheet is not what this script
+# believes it is. Worth stopping for rather than drawing: a duplicated animal
+# would double its weight in the mean bar and add a degree of freedom the design
+# does not have, and nothing on the figure would look wrong.
+dup <- paste(animal$sample, animal$ROI)
+if (anyDuplicated(dup)) {
+  d <- unique(dup[duplicated(dup)])
+  stop(sprintf("by_roi has %d animal x ROI pair%s appearing twice (%s) - rebuild:\n%s",
+               length(d), if (length(d) == 1) "" else "s",
+               paste(utils::head(d, 4), collapse = ", "),
+               "  python scripts/06a_roi_dataset.py && python scripts/06c_excel_dataset.py"))
+}
 
-if (!"environment" %in% names(slide) ||
-    all(is.na(slide$environment) | slide$environment == "")) {
-  stop("no environment column - rebuild the datasets:\n",
-       "  python scripts/06c_excel_dataset.py && python scripts/06d_excel_by_slide.py")
+# Rm is already gone: load_sheet drops DROP_ROIS for every figure in the
+# analysis folder, and its ROI levels are built from what survives.
+
+if (!"environment" %in% names(animal) ||
+    all(is.na(animal$environment) | animal$environment == "")) {
+  stop("no environment column - rebuild the dataset:\n",
+       "  python scripts/06c_excel_dataset.py")
 }
 
 GROUP_LEVELS <- c("brackish control", "brackish exercise",
                   "sea control", "sea exercise")
-slide$environment <- factor(trimws(slide$environment), levels = c("brackish", "sea"))
-slide$group4 <- factor(paste(slide$environment, slide$treatment), levels = GROUP_LEVELS)
-slide$sample <- factor(slide$sample,
-                       levels = unique(slide$sample[order(
-                         as.numeric(sub("^LS", "", slide$sample)))]))
+animal$environment <- factor(trimws(animal$environment), levels = c("brackish", "sea"))
+animal$group4 <- factor(paste(animal$environment, animal$treatment), levels = GROUP_LEVELS)
+animal$sample <- factor(animal$sample,
+                        levels = unique(animal$sample[order(
+                          as.numeric(sub("^LS", "", animal$sample)))]))
 for (m in MEASURES) {
-  if (!m$value %in% names(slide)) {
-    stop(sprintf("no column '%s' in by_section - rebuild the datasets:\n%s",
+  if (!m$value %in% names(animal)) {
+    stop(sprintf("no column '%s' in by_roi - rebuild the dataset:\n%s",
                  m$value,
-                 "  python scripts/06a_roi_dataset.py && python scripts/06c_excel_dataset.py && python scripts/06d_excel_by_slide.py"))
+                 "  python scripts/06a_roi_dataset.py && python scripts/06c_excel_dataset.py"))
   }
 }
 
-message(sprintf("  %d sections, %d animals, %d ROIs", nrow(slide),
-                nlevels(droplevels(slide$sample)), nlevels(slide$ROI)))
+message(sprintf("  %d animal x ROI rows, %d animals, %d ROIs", nrow(animal),
+                nlevels(droplevels(animal$sample)), nlevels(animal$ROI)))
 
 for (d in dirs) dir.create(d, showWarnings = FALSE, recursive = TRUE)
 # Sweep the PARENT too, not just the series folders. An earlier layout wrote
@@ -197,12 +204,35 @@ for (d in dirs) dir.create(d, showWarnings = FALSE, recursive = TRUE)
 # there untouched through every rebuild after the subfolders arrived, because
 # the clear only ever looked one level down. Anything stale enough to survive a
 # layout change is exactly what "overwrite the past set" is meant to catch.
+#
+# RETIRED FOLDERS ARE SWEPT BY NAME. Dropping the density measure on 2026-09-07
+# took `treatment/` and `production_phase/` out of `dirs`, and a sweep that only
+# looks at `dirs` would have left their last set of density PNGs on disk forever
+# - out of the deck, since the pptx is built from `dirs`, but sitting in
+# results/ROI_plots/ looking current. That is the same failure the paragraph
+# above describes, one layout change later.
+#
+# Named rather than swept recursively ON PURPOSE: a recursive clear of outdir
+# would delete the OTHER marker's figures, which the `sfx` suffix exists to
+# keep apart. These are this marker's own retired folders and nothing else.
+RETIRED <- c(series_dir("treatment"), series_dir("production_phase"))
 old <- c(list.files(outdir, pattern = "\\.png$", full.names = TRUE),
-         unlist(lapply(dirs, list.files, pattern = "\\.png$", full.names = TRUE)))
+         unlist(lapply(c(dirs, RETIRED), list.files,
+                       pattern = "\\.png$", full.names = TRUE)))
 if (length(old)) {
   file.remove(old)
   message(sprintf("\n  cleared %d old figure%s", length(old),
                   if (length(old) == 1) "" else "s"))
+}
+# THE EMPTINESS CHECK IS THE GUARD, not the unlink flag. unlink() refuses a
+# directory outright unless recursive = TRUE - empty or not - so the first
+# version of this left both folders standing. With recursive = TRUE the call
+# would happily take a full one, which is why nothing but an already-empty
+# folder ever reaches it. all.files/no.. so a stray dotfile still counts as
+# content.
+for (r in RETIRED) {
+  if (dir.exists(r) && !length(list.files(r, all.files = TRUE, no.. = TRUE)))
+    unlink(r, recursive = TRUE)
 }
 
 safe_name <- function(x) gsub("^_+|_+$", "", gsub("[^A-Za-z0-9]+", "_", x))
@@ -269,34 +299,27 @@ base_theme <- theme_minimal(base_size = BASE) +
         axis.ticks.length = unit(5, "pt"),
         plot.margin = margin(14, 22, 12, 14))
 
-SHAPE_MAP <- animal_shapes(levels(slide$sample))
-shape_scale <- scale_shape_manual(
-  values = SHAPE_MAP, drop = TRUE, name = NULL,
-  guide = guide_legend(order = 2, nrow = 2,
-                       override.aes = list(size = 3.6, colour = "grey20",
-                                           fill = "grey60")))
-
 message(sprintf("\n  writing %d ROIs x 2 series x %d measures",
-                nlevels(slide$ROI), length(MEASURES)))
+                nlevels(animal$ROI), length(MEASURES)))
 
 # The measure loop is OUTSIDE the ROI loop, so `value` is set once per measure
 # and every figure in a series is drawn from the same column. Rows with no value
-# for that measure drop HERE and not globally: a section that has a density but
-# no positivity - no cut could be formed on it - must still appear in the
-# density figures.
+# for that measure drop HERE and not globally: 06c leaves positivity blank for
+# an animal unless EVERY disc behind it carried a cut, and an animal with a
+# density but no positivity must still appear in the density figures.
 for (M in MEASURES) {
-  slide_m <- slide
-  slide_m$value <- suppressWarnings(as.numeric(slide_m[[M$value]]))
-  slide_m <- slide_m[is.finite(slide_m$value), ]
-  if (!nrow(slide_m)) {
+  animal_m <- animal
+  animal_m$value <- suppressWarnings(as.numeric(animal_m[[M$value]]))
+  animal_m <- animal_m[is.finite(animal_m$value), ]
+  if (!nrow(animal_m)) {
     message(sprintf("  %s: no rows carry a value, series skipped", M$key))
     next
   }
-  message(sprintf("  %s: %d sections", M$key, nrow(slide_m)))
-  report_n(slide_m, sprintf("one point = one section (%s)", M$key))
+  message(sprintf("  %s: %d animal x ROI rows", M$key, nrow(animal_m)))
+  report_n(animal_m, sprintf("one point = one animal (%s)", M$key))
 
-  for (roi in levels(slide_m$ROI)) {
-    d <- slide_m[slide_m$ROI == roi, ]
+  for (roi in levels(animal_m$ROI)) {
+    d <- animal_m[animal_m$ROI == roi, ]
     if (!nrow(d)) next
     d$environment <- droplevels(d$environment)
     # sample keeps ALL its levels so the shape scale stays identical across
@@ -304,28 +327,24 @@ for (M in MEASURES) {
     top <- max(d$value, na.rm = TRUE)
 
     # Mean and SEM, drawn AFTER the points so they read on top of them. The SEM
-    # is over the POINTS SHOWN, which are slides - it describes the scatter, and
-    # is deliberately NOT the standard error the model reports, which accounts for
-    # animal clustering and is what the p values come from. The bar is a
-    # description of the picture; the caption is the test.
+    # is over the POINTS SHOWN, which are animals - so the bar and the caption
+    # now describe the same scatter at the same level. They did not before: the
+    # bar summarised sections while the p value came from a model that clustered
+    # them, and the reader had no way to see that from the figure.
     # ONE crossbar and ONE error bar per scatter.
     #
-    # `aes(group = ...)` is not decoration here. shape is mapped to the animal, so
-    # without an explicit group stat_summary inherits that grouping and computes a
-    # mean per ANIMAL - which drew three or four stacked horizontal bars inside a
-    # single scatter and looked like a rendering fault. The group has to be the x
-    # variable, which is what "per scatter" means.
+    # `aes(group = ...)` is not decoration here, and it stays even though shape
+    # is now constant. Any discrete aesthetic mapped in the parent ggplot() sets
+    # the grouping stat_summary inherits, so without an explicit group the mean
+    # is computed per subgroup - which drew three or four stacked horizontal bars
+    # inside a single scatter and looked like a rendering fault. The group has to
+    # be the x variable, which is what "per scatter" means.
     #
     # The two must also read as different objects: the mean is a SHORT THICK bar,
     # the SEM a NARROWER THINNER one.
-    # `shape = NULL` drops the inherited shape aesthetic. Without it the summary
-    # layers still carry shape = sample, and a summary has no single animal, so
-    # the shape resolves to NA - which put a phantom "NA" entry in the animal
-    # legend of every figure. The bars themselves never used shape.
-    #
     # `middle.linewidth` rather than the deprecated `fatten` (ggplot2 4.0).
     summary_layers <- function(xvar) list(
-      stat_summary(aes(group = .data[[xvar]], shape = NULL), fun.data = mean_se,
+      stat_summary(aes(group = .data[[xvar]]), fun.data = mean_se,
                    geom = "errorbar", width = 0.10, linewidth = 0.6,
                    colour = "black"),
       # The mean is drawn as an errorbar with ymin = ymax = mean, which collapses
@@ -333,7 +352,7 @@ for (M in MEASURES) {
       # the wrong one: with a zero-height box it draws its outline AND its middle
       # line in the same place, so the two thicknesses stack into a heavy black
       # slab that covered the points behind it.
-      stat_summary(aes(group = .data[[xvar]], shape = NULL),
+      stat_summary(aes(group = .data[[xvar]]),
                    fun = mean, fun.min = mean, fun.max = mean,
                    geom = "errorbar", width = 0.28, linewidth = 1.7,
                    colour = "black"))
@@ -343,7 +362,6 @@ for (M in MEASURES) {
                           guide = guide_legend(order = 1,
                                                override.aes = list(size = 4.4, shape = 16))),
       scale_fill_manual(values = TREATMENT_COLOURS, drop = FALSE, guide = "none"),
-      shape_scale,
       expand_limits(y = 0),
       # clip="off" lets the (N=x) annotation sit outside the panel, between the
       # axis line and the group name.
@@ -359,7 +377,7 @@ for (M in MEASURES) {
     # rate disappeared off the right of every positivity figure the first time.
     # Anything longer than a clause goes in the caption, which is markdown and
     # breaks on <br>.
-    sub_note <- paste0(M$note, "; one point per section, shape = animal")
+    sub_note <- paste0(M$note, "; one point per animal, pooled over its sections")
     # Two SEPARATE caption lines, not one joined string. element_markdown wraps
     # on <br> and on nothing else, so a single line carrying both notes came to
     # ~96 characters and ran off the right of the panel - the same clipping that
@@ -369,8 +387,9 @@ for (M in MEASURES) {
     # ---- series 1: treatment ------------------------------------------------
     st1 <- stat_treatment(d)
     p1 <- ggplot(d, aes(x = treatment, y = value, colour = treatment,
-                        fill = treatment, shape = sample)) +
-      geom_jitter(width = 0.16, height = 0, size = PT, stroke = 1.1) +
+                        fill = treatment)) +
+      geom_jitter(width = 0.16, height = 0, size = PT, stroke = 1.1,
+                  shape = PT_SHAPE) +
       summary_layers("treatment") +
       geom_text(data = n_labels(d, "treatment", top),
                 aes(x = x, y = y, label = sprintf("(N=%d)", n)),
@@ -404,8 +423,9 @@ for (M in MEASURES) {
     } else NULL
 
     p2 <- ggplot(d, aes(x = group4, y = value, colour = treatment,
-                        fill = treatment, shape = sample)) +
-      geom_jitter(width = 0.16, height = 0, size = PT, stroke = 1.1) +
+                        fill = treatment)) +
+      geom_jitter(width = 0.16, height = 0, size = PT, stroke = 1.1,
+                  shape = PT_SHAPE) +
       summary_layers("group4") +
       geom_text(data = n_labels(d, "group4", top),
                 aes(x = x, y = y, label = sprintf("(N=%d)", n)),

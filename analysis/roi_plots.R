@@ -80,6 +80,20 @@ filter_marker <- function(df, what, require_rows = FALSE) {
 # Colour-blind safe, and deliberately not red/green.
 TREATMENT_COLOURS <- c(control = "#4C72B0", exercise = "#DD8452")
 
+# REGIONS NO FIGURE DRAWS.
+#
+# All 8 Rm seeds are flagged uncertain in the atlas itself (LOGS.md), so a panel
+# of it would look exactly like the others and mean less. Dropped from the
+# FIGURES only - every spreadsheet keeps the rows, which is where a region under
+# review should still be countable.
+#
+# Applied centrally, in load_sheet, for the same reason the marker filter is.
+# It used to live in plot_roi_figures.R alone, so the per-ROI deck dropped Rm
+# while the two overview panels drew it as one point in one arm with a "nothing
+# to compare yet" warning under it - the same decision made in one place and not
+# the other, which is the shape of drift rather than a choice.
+DROP_ROIS <- c("Rm")
+
 load_sheet <- function(path, sheet) {
   if (!file.exists(path)) {
     stop(sprintf("no dataset at %s\n  build it with: python scripts/%s",
@@ -94,6 +108,14 @@ load_sheet <- function(path, sheet) {
 
   df <- df[!is.na(df$treatment) & df$treatment != "", ]
   df$treatment <- factor(df$treatment, levels = names(TREATMENT_COLOURS))
+  # BEFORE the ROI factor below, whose levels are read off a table of whatever
+  # is left: dropping afterwards would leave an empty Rm level, and ggplot draws
+  # empty levels as empty panels.
+  n_drop <- sum(as.character(df$ROI) %in% DROP_ROIS)
+  if (n_drop) message(sprintf("  dropped %d row%s: %s", n_drop,
+                              if (n_drop == 1) "" else "s",
+                              paste(DROP_ROIS, collapse = ", ")))
+  df <- df[!as.character(df$ROI) %in% DROP_ROIS, ]
   # Longest region names first would reorder the panels arbitrarily; sort by how
   # much data each region has, so the well-covered ones are read first.
   n_by_roi <- sort(table(df$ROI), decreasing = TRUE)

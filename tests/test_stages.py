@@ -7,6 +7,10 @@ in scripts/ is either a stage or is named in NOT_LISTED with a reason, every
 stage's script exists and has a main(), and every box on the workflow figure
 has a stage id.
 
+docs/pipeline-guide.md is held to the same list, and for the same reason: it
+walks the stages one by one, so a stage nobody wrote up is exactly the drift
+above in a third document. Its entries are anchored `{#stage-<sid>}`.
+
 Run:  python tests/test_stages.py
 """
 
@@ -99,6 +103,30 @@ chk("no stage needs a later stage", back, [])
 chk("groups appear in sidebar order",
     [S.GROUPS.index(st.group) for st in S.STAGES]
     == sorted(S.GROUPS.index(st.group) for st in S.STAGES))
+
+# The guide, entry by entry. Same drift the FIGURE set above exists to catch,
+# one document further out: a stage nobody wrote up, or a write-up of a stage
+# that no longer exists. Entries are anchored `{#stage-<sid>}`, which pandoc
+# consumes into the heading id and does not print.
+GUIDE = os.path.join(REPO, "docs", "pipeline-guide.md")
+chk("docs/pipeline-guide.md exists", os.path.exists(GUIDE))
+if os.path.exists(GUIDE):
+    guide = open(GUIDE, encoding="utf-8").read()
+    cited = re.findall(r"\{#stage-([A-Za-z0-9_]+)\}", guide)
+    chk("every stage has an entry in the guide", sorted(set(ids) - set(cited)), [])
+    chk("the guide names no stage that does not exist",
+        sorted(set(cited) - set(ids)), [])
+    chk("no stage is written up twice",
+        sorted(s for s in set(cited) if cited.count(s) > 1), [])
+    # The guide's whole claim is that reading it top to bottom follows what
+    # actually runs, so its order is pinned to the pipeline's own.
+    chk("the guide's entries follow the pipeline's order",
+        cited, sorted(cited, key=pos.get))
+    # Measured counts live in pipeline-methods.md, where check_methods_claims.py
+    # verifies them. Anything shaped like one here is an unchecked second copy
+    # that will go stale - the guide states settings and structure, not results.
+    chk("the guide quotes no moving count of its own",
+        sorted(set(re.findall(r"\d{1,3},\d{3}", guide))), [])
 
 # Detection is CLI-only in the frozen build and wherever StarDist is missing,
 # and runnable otherwise - the venv the app runs from has it.

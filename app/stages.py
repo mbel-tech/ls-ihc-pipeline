@@ -549,6 +549,15 @@ STAGES = [
                 "recorded it: nuclei outside the DAPI silhouette, which drag a "
                 "background disc's cut down."),
 
+    Stage("seg_provenance", "06h  Backfill segmentation provenance", "Quantification",
+          script="06h_backfill_provenance.py",
+          outputs=["results/_pre_06h_backup"],
+          needs=["detect"],
+          blurb="Backfills segmented_on / backend / nucleus_shaped onto a "
+                "roi_nuclei.csv written before 05c recorded them. Every row in "
+                "such a file is nuclear / stardist / nucleus-shaped - there was "
+                "no other route - and 06a's Abercrombie gate reads them."),
+
     Stage("roi_dataset", "06a  Per-ROI dataset", "Quantification",
           script="06a_roi_dataset.py",
           outputs=["results/roi_measurements.csv", "results/detector_specificity.csv"],
@@ -571,14 +580,16 @@ STAGES = [
           outputs=["results/roi_dataset.xlsx"],
           needs=["roi_dataset"],
           blurb="One row per ROI per sample, plus per-disc, per-section and "
-                "coverage sheets. Buildable mid-run."),
+                "coverage sheets. A row here is one animal, which is why the "
+                "per-ROI figures read this one. Buildable mid-run."),
 
     Stage("excel_slide", "06d  Spreadsheet - per slide", "Beyond blinding",
           script="06d_excel_by_slide.py",
           outputs=["results/roi_dataset_by_slide.xlsx"],
           needs=["roi_dataset"],
           blurb="The same table one level finer, so within-animal spread is "
-                "visible. The R figures read this workbook."),
+                "visible. plot_by_slide.R draws that spread; the per-ROI "
+                "figures and their statistics read 06c's per-animal sheet."),
 
     Stage("refresh_loop", "06e  Refresh datasets and figures hourly", "Beyond blinding",
           script="06e_refresh_loop.py",

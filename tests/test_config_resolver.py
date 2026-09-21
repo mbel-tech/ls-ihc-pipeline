@@ -103,7 +103,7 @@ with tempfile.TemporaryDirectory() as tmp:
     stages = [s for s in a if s != "_failed"]
     chk("every numbered stage was probed",
         len(stages), len(P.stage_files()))
-    chk("...and that is 45", len(stages), 45)
+    chk("...and that is 46", len(stages), 46)
 
     # The probe rewrites the config's own path to {config}, so this asserts the
     # stage resolved to the file we named and not to the repo's config.json.

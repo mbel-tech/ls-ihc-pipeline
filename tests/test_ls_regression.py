@@ -84,7 +84,7 @@ try:
         chk("every stage imports under the migrated study", after["_failed"], {})
         chk("the same stages were compared",
             sorted(before) == sorted(after), True)
-        chk("all 45 of them", len(before) - 1, 45)
+        chk("all 46 of them", len(before) - 1, 46)
 
         differences = P.diff(before, after)
         chk("no stage derives anything different from the migrated study",

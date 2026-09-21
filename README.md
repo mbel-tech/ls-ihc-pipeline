@@ -142,13 +142,25 @@ Figures come from `analysis/`: `plot_roi_figures.R` (per-ROI, with statistics, p
 `plot_by_sample.R` / `plot_by_slide.R` (the two overview panels). 6e runs all three, so running it
 is how they stay in step with the workbooks.
 
+**One point is one animal** in the per-ROI figures. They read 6c's `by_roi` sheet, where an
+animal's nuclei are pooled over its discs and divided by the area those discs covered, so the
+marks in a scatter, the `N` under it and the df in its caption are the same number. The animal is
+the experimental unit, so that is also the model: a plain ANOVA on animals rather than a mixed
+model on sections. `plot_by_slide.R` still draws the finer level, as a picture of within-animal
+spread and labelled as one.
+
+**Rm is in the spreadsheets and in no figure.** All 8 of its seeds are flagged uncertain in the
+atlas (LOGS.md), so a panel of it would look like the others and mean less. `DROP_ROIS` in
+`roi_plots.R` holds the list and `load_sheet` applies it, so all three scripts drop the same
+regions and each says how many rows it dropped.
+
 ```bash
 python scripts/05a_roi_geometry.py --verify     # check the map first: 0.04-0.15 px
 python scripts/05a_roi_geometry.py
 work/appenv/Scripts/python.exe scripts/05c_detect_rois.py     # hours; resumable
 python scripts/06a_roi_dataset.py
 python scripts/06c_excel_dataset.py
-python scripts/06d_excel_by_slide.py     # the figures read THIS workbook
+python scripts/06d_excel_by_slide.py     # plot_by_slide.R reads THIS one
 Rscript analysis/plot_roi_figures.R                           # LS_MARKER=AF488 for PCNA
 ```
 
@@ -174,7 +186,7 @@ positivity is 13.3% against that, a 5.9x separation.
 figure draws one — `LS_MARKER` selects it and defaults to `AF568`. Two markers in one panel
 would share a mean bar, an SEM bar and a significance test, and `roi_stats.R` picks `lm` or a
 mixed model on whether an animal has more than one row, so a second antibody would read as a
-second slide. Non-default markers write to suffixed folders and their own pptx.
+second row for that animal. Non-default markers write to suffixed folders and their own pptx.
 
 `05c --qc` writes one overlay PNG per ROI to `qc/roi_detections/`: the DAPI crop with nucleus
 boundaries, green counted and red found-but-outside-the-disc. Nuclear diameter says the
@@ -437,6 +449,18 @@ quantification extends there.
 Code only. Nothing derived from the imaging data is committed, and neither are the atlas plates —
 they are extracted from a PDF that is not ours to redistribute. Run `04a_atlas_extract.py`
 against your own copy.
+
+Three documents, answering three different questions:
+
+| Question | Document |
+|---|---|
+| How do I install, run or change this? | this README |
+| What happens to a brain section, step by step, in plain language? | `docs/pipeline-guide.md` |
+| What is the Methods section, with citations and the measured numbers? | `docs/pipeline-methods.md` |
+
+The guide covers every stage in `app/stages.py`, in the order they run; `tests/test_stages.py`
+holds it to that list, so a stage nobody wrote up fails the tests. `bash docs/build_methods.sh`
+renders both documents to DOCX and copies them beside the data.
 
 See **`LOGS.md`** for the change history: what changed, why, what it cost, and which earlier
 decisions it reversed.
