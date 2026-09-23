@@ -1726,7 +1726,17 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 ---
 
-## Task 10: `Stage.layouts` — **BLOCKED**
+## Task 10: `Stage.layouts` — **DONE 2026-09-23** (commit 79c3a4e)
+
+Unblocked when the owner committed `app/stages.py` and `tests/test_stages.py`
+in 27d8635. Landed with P1.4 Task 11, which touches the same file. The test
+compares against the whole of `ls_layouts.RESTRICTED` rather than the two
+stages named below, and that caught `04m_sections_dataset.py` - restricted in
+P1.4 Task 5 and never wired here. The sidebar dims an off-layout stage with a
+reason rather than hiding it.
+
+The plan as written follows.
+
 
 **Do not start this task until `git status` shows `app/stages.py` and
 `tests/test_stages.py` clean.** Both carry the owner's uncommitted work — two

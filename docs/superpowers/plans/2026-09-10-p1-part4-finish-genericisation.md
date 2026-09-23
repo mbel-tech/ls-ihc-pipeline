@@ -676,7 +676,11 @@ default marker, or skip explicitly.
 `marker_identity` block for a study that measures neither. Derive from the study, or refuse
 when the study has not declared what its markers are called.
 
-- [ ] **Step 7: the R scripts** — `roi_plots.R:35`'s `Sys.getenv("LS_MARKER", "AF568")`
+- [x] **Step 7: the R scripts** - DONE 2026-09-23, commit 55cd599, once the
+owner committed `analysis/` in 27d8635. The rule landed as `marker_suffix()` in
+`roi_plots.R`, fed by `LS_MARKERS` from the launcher.
+
+- [ ] (as written) **the R scripts** — `roi_plots.R:35`'s `Sys.getenv("LS_MARKER", "AF568")`
 default, and the four `MARKER == "AF568"` branches deciding output names in
 `plot_roi_figures.R:77-78,93,370`, `plot_by_sample.R:42`, `plot_by_slide.R:41`. The rule
 should be "the first declared marker", not the literal. `roi_plots.R:36`'s
@@ -706,7 +710,16 @@ work** — paste the actual red output in the report.
 
 ---
 
-## Task 11: `app/stages.py` — **BLOCKED**
+## Task 11: `app/stages.py` — **DONE 2026-09-23** (commit 79c3a4e)
+
+Unblocked by 27d8635. Done as designed, with one change: the twelve output
+literals became `Art(artifact, marker_index)` asking `ls_paths` rather than
+hand-written `(current, legacy)` tuples, so `ls_paths.LEGACY` has no second
+copy here to go stale. Verified by resolving all 57 stages under both code
+versions against the live study: zero done-state changes, zero argv changes.
+
+The plan as written follows.
+
 
 **Do not start until this prints nothing:**
 
