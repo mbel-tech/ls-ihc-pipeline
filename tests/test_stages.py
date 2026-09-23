@@ -60,9 +60,13 @@ for st in S.STAGES:
     chk(f"{st.sid}: has a blurb", bool(st.blurb.strip()))
     chk(f"{st.sid}: reader is known", st.reader in S.READERS)
     chk(f"{st.sid}: needs are stage ids", [n for n in st.needs if n not in S.BY_ID], [])
-    chk(f"{st.sid}: outputs are relative", [o for o in st.outputs if os.path.isabs(o)], [])
+    # An Art is relative by construction - it is resolved against the study's
+    # own out_root - so only the literal entries can get this wrong.
+    chk(f"{st.sid}: outputs are relative",
+        [o for o in st.outputs if isinstance(o, str) and os.path.isabs(o)], [])
     bad = [a for a in st.argv
-           if "{" in a and not re.fullmatch(r"[^{}]*(\{(out_root|repo|scripts)\}[^{}]*)+", a)]
+           if "{" in a and not re.fullmatch(
+               r"[^{}]*(\{(out_root|repo|scripts|marker\d+)\}[^{}]*)+", a)]
     chk(f"{st.sid}: argv placeholders are the ones the runner expands", bad, [])
     if st.curator:
         chk(f"{st.sid}: a curator stage is an operator step", st.operator)
@@ -139,12 +143,90 @@ import tempfile                                                  # noqa: E402
 with tempfile.TemporaryDirectory() as tmp:
     st = S.BY_ID["manifest"]
     chk("a stage with no outputs on disk is not done", st.done(tmp), False)
-    for o in st.outputs:
+    for o in st.output_names(tmp):
         os.makedirs(os.path.dirname(os.path.join(tmp, o)) or tmp, exist_ok=True)
         open(os.path.join(tmp, o), "w").close()
     chk("...and is done once every output exists", st.done(tmp), True)
     chk("blocked_by names undone prerequisites",
         S.blocked_by(S.BY_ID["overviews"], tmp), [])
+
+
+# --- which layouts a stage applies to -------------------------------------
+print()
+print("--- every stage applies to at least one layout ---")
+
+chk("no stage is listed for no layout",
+    [st.sid for st in S.STAGES if st.layouts is not None and not st.layouts], [])
+chk("02_pair_passes is paired-only",
+    next(st for st in S.STAGES if st.script == "02_pair_passes.py").layouts,
+    ("paired",))
+chk("04i_propagate_to_perk is paired-only",
+    next(st for st in S.STAGES if st.script == "04i_propagate_to_perk.py").layouts,
+    ("paired",))
+chk("an ordinary stage applies to both",
+    next(st for st in S.STAGES if st.script == "05c_detect_rois.py").layouts, None)
+# The restriction is ls_layouts', not this file's. If the two ever disagree the
+# sidebar offers a stage run_all.sh skips, or hides one it runs.
+chk("...and the list is ls_layouts', not a copy of it",
+    {st.script: st.layouts for st in S.STAGES if st.layouts is not None},
+    {k: S.LY.layouts_for(k) for k in S.LY.RESTRICTED})
+
+
+# --- markers are positions here, names only once a study is chosen ---------
+print()
+print("--- no stage names a marker ---")
+
+# The table may not contain a fluorophore literal anywhere it decides
+# something: argv is what runs, outputs is what `done` looks for.
+AF = re.compile(r"AF\d+")
+named = []
+for st in S.STAGES:
+    for a in st.argv:
+        if AF.search(a):
+            named.append(f"{st.sid} argv {a}")
+    for o in st.outputs:
+        if isinstance(o, str) and AF.search(o):
+            named.append(f"{st.sid} outputs {o}")
+chk("no argv or output holds a marker literal", named, [])
+
+chk("every Art names an artifact ls_paths knows",
+    sorted({o.artifact for st in S.STAGES for o in st.outputs
+            if isinstance(o, S.Art)} - set(S.LP.ARTIFACTS)), [])
+
+# A study resolves every token. A `{marker1}` left in a path is a stage that can
+# never be done, so it must not survive for a study that HAS two markers.
+two = S.LP.Names(os.path.join(tempfile.gettempdir(), "nostudy"),
+                 ["Mk1", "Mk2"], "paired")
+left = [f"{st.sid} {n}" for st in S.STAGES
+        for n in st.output_names(two.out_root, two) + list(st.argv)
+        if "{marker" in S.fill_markers(n, two.markers)]
+chk("a two-marker study resolves every marker token", left, [])
+chk("...and there were tokens to resolve",
+    sum(1 for st in S.STAGES for a in st.argv if "{marker" in a) > 0, True)
+
+# The token is LEFT IN when the study cannot answer it, rather than dropped.
+chk("a one-marker study keeps the token it cannot fill",
+    S.fill_markers("--marker {marker1}", ["Mk1"]), "--marker {marker1}")
+
+
+# --- a renamed artifact keeps its tick -------------------------------------
+print()
+print("--- the pre-rename name still counts as done ---")
+
+with tempfile.TemporaryDirectory() as tmp:
+    names = S.LP.Names(tmp, ["AF568", "AF488"], "paired")
+    st = S.BY_ID["propagate_perk"]
+    chk("nothing on disk: not done", st.done(tmp, names), False)
+    chk("...and it asks for the name a writer writes today",
+        st.output_names(tmp, names), ["reformatted/rotation_overrides_AF568.csv"])
+    legacy = names.legacy_path("overrides", "AF568")
+    os.makedirs(os.path.dirname(legacy), exist_ok=True)
+    open(legacy, "w").close()
+    chk("the pre-rename file alone satisfies it", st.done(tmp, names), True)
+    chk("...and nothing is reported missing", st.missing(tmp, names), [])
+    # Without a study there is nothing to resolve against, and guessing would be
+    # how a stage reports done for a file belonging to a different one.
+    chk("with no study named, it is not done", st.done(tmp), False)
 
 print()
 print("ALL PASS" if not failures else f"{len(failures)} FAILED")

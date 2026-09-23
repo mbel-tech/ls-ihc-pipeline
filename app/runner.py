@@ -33,6 +33,8 @@ import threading
 import time
 import traceback
 
+import stages as SG
+
 
 class StageResult:
     def __init__(self, sid, ok, seconds, output, error=None):
@@ -96,23 +98,54 @@ class Runner:
 
     # ---- argv -------------------------------------------------------------
 
-    def expand_argv(self, argv):
-        """Fill `{out_root}`, `{repo}` and `{scripts}` in a stage's argv.
-
-        stages.py is static data and cannot know where the outputs live; the
-        stages that take absolute paths (04q's three exports, 06b's workbook)
-        get them here, from the same config the stage itself will read.
-        """
+    def _config_dict(self):
         try:
             with open(self.config_path, encoding="utf-8") as fh:
-                out_root = json.load(fh).get("out_root", "")
+                return json.load(fh)
         except (OSError, ValueError):
-            out_root = ""
+            return {}
+
+    def names(self):
+        """This study's `ls_paths.Names` - markers, layout and artifact names.
+
+        The app asks for this rather than reading `acquisition.markers` itself,
+        because which markers a study HAS is layout-dependent (a multiplex
+        study has no such list; its markers are the channel table's) and
+        `ls_channels.marker_names` is the one place that knows. `ls_paths`
+        wraps it and adds the pre-rename names, which is the other half of what
+        the stage table needs.
+
+        Not cached here: `for_config` memoises on the three facts a Names is
+        built from, so re-asking after a config edit gets the new study and
+        re-asking without one costs a dict lookup.
+        """
+        return SG.LP.for_config(self._config_dict())
+
+    def markers(self):
+        """The study's declared markers, in order. `()` if it cannot be read."""
+        return tuple(self.names().markers)
+
+    def expand_argv(self, argv):
+        """Fill `{out_root}`, `{repo}`, `{scripts}` and `{markerN}` in argv.
+
+        stages.py is static data and cannot know where the outputs live or what
+        this study's markers are called; the stages that take absolute paths
+        (04q's three exports, 06b's workbook) and the ten that take `--marker`
+        get them here, from the same config the stage itself will read.
+
+        The marker substitution is applied separately from the path ones and
+        does NOT mark the argument as a path: `--marker {marker0}` becomes
+        `--marker AF568`, and normpath on a bare word is a no-op today but
+        would mangle a marker name containing a slash or a dot.
+        """
+        out_root = self._config_dict().get("out_root", "")
         subs = {"{out_root}": out_root,
                 "{repo}": os.path.dirname(self.config_path),
                 "{scripts}": self.scripts_dir}
+        markers = self.markers()
         out = []
         for a in argv:
+            a = SG.fill_markers(a, markers)
             hit = any(k in a for k in subs)
             for k, v in subs.items():
                 a = a.replace(k, v)

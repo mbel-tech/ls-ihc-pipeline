@@ -23,7 +23,7 @@ from import_slides import ImportScreen
 from runner import Runner
 
 DOT = {"done": "#3fb950", "todo": "#8b949e", "cli": "#6e4d99",
-       "running": "#4da3ff", "failed": "#f85149"}
+       "running": "#4da3ff", "failed": "#f85149", "skip": "#484f58"}
 
 
 class _Job(QObject):
@@ -262,22 +262,34 @@ class MainWindow(QMainWindow):
                 it.setData(Qt.UserRole, st.sid)
                 self.list.addItem(it)
 
-    def _state_of(self, st):
+    def _state_of(self, st, names=None):
         if self._states.get(st.sid) in ("running", "failed"):
             return self._states[st.sid]
+        if names is None:
+            names = self.runner.names()
+        # A stage this study's acquisition layout does not have. Dimmed and
+        # still listed, for the reason the stage table gives for cli_only
+        # stages: hiding it turns "your study does not do this" into "this
+        # does not exist". run_all.sh skips exactly the same list.
+        if not st.applies(names.layout):
+            return "skip"
         if st.cli_reason():
             return "cli"
-        return "done" if st.done(self.out_root) else "todo"
+        return "done" if st.done(self.out_root, names) else "todo"
 
     def refresh(self):
         self.out_root = self._config()["out_root"]
+        # Asked ONCE for the whole sweep. Resolving it per stage would re-read
+        # config.json 57 times on every refresh, and a refresh happens on every
+        # stage completion.
+        names = self.runner.names()
         for i in range(self.list.count()):
             it = self.list.item(i)
             sid = it.data(Qt.UserRole)
             if not sid or sid == "__import__":
                 continue
             st = S.BY_ID[sid]
-            state = self._state_of(st)
+            state = self._state_of(st, names)
             # The figure's red outline: a person decides here. And the one
             # stage that reads the group key, marked so it cannot be run by
             # accident while the analysis is meant to be blind.
@@ -313,8 +325,14 @@ class MainWindow(QMainWindow):
         else:
             self.stack.setCurrentIndex(0)
 
-        blocked = S.blocked_by(st, self.out_root)
+        # One resolution for the whole panel: which markers this study has and
+        # what its artifacts are called. Asked before anything uses it, because
+        # `names` below is a list of stage TITLES and shadowing is how a panel
+        # ends up calling .markers on a string.
+        study = self.runner.names()
+        blocked = S.blocked_by(st, self.out_root, study)
         reason = st.cli_reason()
+        off_layout = not st.applies(study.layout)
         bits = [f"<b>{st.title}</b>", st.blurb]
         if st.operator:
             bits.append("<span style='color:#f85149'><b>An operator decides here.</b> "
@@ -322,6 +340,11 @@ class MainWindow(QMainWindow):
         if st.unblinds:
             bits.append("<span style='color:#f85149'><b>Reads the treatment group.</b> "
                         "Nothing before this stage may.</span>")
+        if off_layout:
+            bits.append(
+                "<span style='color:#8b949e'><b>Not part of this study.</b> "
+                f"It applies to {' and '.join(st.layouts)} acquisition; this "
+                f"study is {study.layout}.</span>")
         if reason:
             bits.append(f"<span style='color:#bc8cff'><b>Not run here.</b> {reason}</span>")
         elif blocked:
@@ -331,17 +354,25 @@ class MainWindow(QMainWindow):
         # The right-hand column of the figure: the file each stage leaves
         # behind, and which reader touched pixels to make it.
         if st.outputs:
-            missing = set(st.missing(self.out_root))
+            # The NAMES this study writes, not the table's tokens: a stage that
+            # leaves `sections_{marker0}` is a sentence about the code, and the
+            # operator is looking for a folder on their drive.
+            shown = st.output_names(self.out_root, study)
+            missing = set(st.missing(self.out_root, study))
             files = ", ".join(
                 (f"<span style='color:#d29922'>{o}</span>" if o in missing else o)
-                for o in st.outputs)
+                for o in shown)
             bits.append(f"<span style='color:#9aa0a8'>leaves: {files}</span>")
         if st.reader != "none":
             bits.append(f"<span style='color:#9aa0a8'>pixels read by {st.reader}</span>")
         if st.script:
-            bits.append(f"<code>{st.script} {' '.join(st.argv)}</code>")
+            # The command as it would actually run: `--marker {marker0}`
+            # is not something anyone can type.
+            argv = " ".join(S.fill_markers(a, study.markers)
+                            for a in st.argv)
+            bits.append(f"<code>{st.script} {argv}</code>")
         self.blurb.setText("<br>".join(b for b in bits if b))
-        self.run_btn.setEnabled(bool(st.script) and not reason)
+        self.run_btn.setEnabled(bool(st.script) and not reason and not off_layout)
         self.run_btn.setText("Regenerate" if st.curator else "Run stage")
 
     # ---- running ----------------------------------------------------------
