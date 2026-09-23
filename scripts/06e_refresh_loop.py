@@ -192,8 +192,8 @@ def refresh(rscript, quiet=True):
     # ONE R RUN PER MARKER PRESENT.
     #
     # The figures draw one marker at a time - LS_MARKER selects it, defaulting
-    # to AF568 - so a bare Rscript call rebuilds the pERK figures and nothing
-    # else. That is wrong in exactly the situation this loop exists for: the
+    # to the FIRST DECLARED marker - so a bare Rscript call rebuilds the first
+    # marker's figures and nothing else. That is wrong in exactly the situation this loop exists for: the
     # long run it is meant to babysit is the PCNA one, and it would have spent
     # hours redrawing unchanged pERK figures, reporting success, and never
     # producing a PCNA figure at all. Nothing would have errored.
@@ -203,7 +203,15 @@ def refresh(rscript, quiet=True):
     markers = marker_list()
     results_dir = os.path.join(G5.OUT_ROOT, "results")
     for mk in markers:
-        env = dict(os.environ, LS_MARKER=mk)
+        # LS_MARKERS and LS_OUT_ROOT alongside LS_MARKER, because the R scripts
+        # need two things the marker name alone cannot tell them: which marker
+        # is FIRST (that is the one whose figures carry no suffix, so getting it
+        # wrong overwrites the cited set), and where results live. Both are
+        # answered here by the authoritative Python - ls_channels.marker_names
+        # and the config - rather than by a second copy of those rules in R.
+        env = dict(os.environ, LS_MARKER=mk,
+                   LS_MARKERS=",".join(MARKERS),
+                   LS_OUT_ROOT=G5.OUT_ROOT)
         for script in R_SCRIPTS:
             name = os.path.basename(script)
             # R writes UTF-8 (a degree sign in a caption, an em dash in a

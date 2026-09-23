@@ -24,7 +24,7 @@ here <- dirname(sub("^--file=", "",
                     grep("^--file=", commandArgs(FALSE), value = TRUE)[1]))
 source(file.path(here, "roi_plots.R"))
 
-results <- if (length(args) >= 1) args[1] else RESULTS_DEFAULT
+results <- results_dir(args)
 xlsx <- file.path(results, "roi_dataset_by_slide.xlsx")
 
 message(sprintf("reading %s [by_slide]", xlsx))
@@ -34,11 +34,10 @@ message(sprintf("  %d rows, %d ROIs, %d slides from %d samples",
                 length(unique(df$slide)), length(unique(df$sample))))
 report_n(df, "one point = one slide")
 
-# Output names are suffixed for any marker other than the pERK default, so a
-# PCNA run writes beside these rather than over them. load_sheet has already
-# filtered the sheet to MARKER.
-out <- function(name) file.path(
-  results, if (MARKER == "AF568") name else paste0(name, "_", MARKER))
+# Output names are suffixed for any marker but the first declared one, so a
+# second marker's run writes beside these rather than over them. load_sheet
+# has already filtered the sheet to MARKER; marker_suffix is in roi_plots.R.
+out <- function(name) file.path(results, paste0(name, marker_suffix()))
 
 
 plot_by_roi(df, "n_positive",

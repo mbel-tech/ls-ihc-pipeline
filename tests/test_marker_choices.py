@@ -138,6 +138,60 @@ for o in no_choices:
 chk("...and there were --marker arguments to check", seen > 0, True)
 print(f"     {seen} --marker arguments across {len(STAGES)} stages")
 
+
+# --- 4: the R figure scripts ----------------------------------------------
+#
+# argparse is not what decides things in `analysis/`; a comparison against a
+# fluorophore literal is. Four of them chose OUTPUT NAMES - unsuffixed for
+# AF568, suffixed for anything else - so a study whose first marker is not
+# called AF568 wrote every marker's figures to the same suffixed name and each
+# run overwrote the last. No error, and the loser is a figure.
+#
+# `marker_suffix()` in roi_plots.R is now the one place that decides, from the
+# study's declared order. This looks for the shape that replaced.
+R_FILES = sorted(glob.glob(os.path.join(REPO, "analysis", "*.R")))
+
+# The ONE allowed comparison, named rather than pattern-excused: `filter_marker`
+# refuses to serve a second marker from a file written before the marker column
+# existed. Such files really are all AF568 - it is a fact about THIS operator's
+# old outputs, not a rule about markers - so the literal is correct there and
+# `PRIMARY` would make it a false claim about another lab's files.
+LEGACY_OK = ('roi_plots.R', 'if (MARKER != "AF568") {')
+
+r_offenders, legacy_seen = [], False
+QUOTE = "[" + chr(34) + chr(39) + "]"   # either quote character R may use
+MARKER_CMP = re.compile(r"(?:MARKER|m)\s*(?:==|!=)\s*" + QUOTE + r"AF\d+" + QUOTE)
+# `Sys.getenv("LS_MARKER", <anything>)`: a default here is a marker chosen
+# without the study having been asked. The env var is set by the launcher; with
+# no launcher the answer has to be derived, not assumed.
+GETENV_DEF = re.compile(r"Sys\.getenv\(\s*" + QUOTE + r"LS_MARKER" + QUOTE
+                        + r"\s*,\s*" + QUOTE)
+for path in R_FILES:
+    base = os.path.basename(path)
+    with open(path, encoding="utf-8") as fh:
+        for n, line in enumerate(fh, 1):
+            if line.lstrip().startswith("#"):
+                continue          # prose about the rule is not the rule
+            if (base, line.strip()) == LEGACY_OK:
+                legacy_seen = True
+                continue
+            if MARKER_CMP.search(line) or GETENV_DEF.search(line):
+                r_offenders.append(f"{base}:{n}  {line.strip()}")
+
+chk("no R script decides on a marker literal", r_offenders, [])
+for o in r_offenders:
+    print(f"     {o}")
+
+chk("the one allowed literal is still the one that is there", legacy_seen, True)
+
+# Same reason as the --marker count above: if the glob or the helper name
+# moves, everything below goes green over an empty analysis/ directory.
+chk("...and roi_plots.R still owns the suffix rule",
+    any("marker_suffix <- function" in open(f, encoding="utf-8").read()
+        for f in R_FILES), True)
+chk("...over some R files", len(R_FILES) > 0, True)
+print(f"     {len(R_FILES)} R scripts")
+
 print()
 print("ALL PASS" if not failures else f"{len(failures)} FAILED")
 sys.exit(1 if failures else 0)

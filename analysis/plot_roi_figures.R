@@ -71,11 +71,10 @@ if (!requireNamespace("ggtext", quietly = TRUE)) {
 }
 library(ggtext)
 
-results <- if (length(args) >= 1) args[1] else RESULTS_DEFAULT
+results <- results_dir(args)
 outdir <- file.path(results, "ROI_plots")
 PPTX_FOR <- function(m) file.path(
-  results, if (m == "AF568") "ROI_figures.pptx"
-           else sprintf("ROI_figures_%s.pptx", m))
+  results, sprintf("ROI_figures%s.pptx", marker_suffix(m)))
 
 # TWO MEASURES, each drawn as the same two series. Density is every DAPI
 # nucleus; positivity is the subset over the per-section cut, pooled to the
@@ -89,8 +88,9 @@ PPTX_FOR <- function(m) file.path(
 # Output folders are suffixed for any marker other than the pERK default, so a
 # PCNA run writes beside the pERK figures rather than over them - the same
 # reason 05a's box files are per marker. The existing folder names are kept for
-# AF568 so nothing already cited moves.
-sfx <- if (MARKER == "AF568") "" else paste0("_", MARKER)
+# the first declared marker so nothing already cited moves; marker_suffix in
+# roi_plots.R is the one place that decides which marker that is.
+sfx <- marker_suffix()
 series_dir <- function(name) file.path(outdir, paste0(name, sfx))
 
 MEASURES <- list(
@@ -367,7 +367,10 @@ for (M in MEASURES) {
       # axis line and the group name.
       coord_cartesian(clip = "off"),
       labs(x = NULL, y = M$ylab,
-           title = if (MARKER == "AF568") roi
+           # The headline set's panels are titled by ROI alone, as they
+           # were before a second marker existed; every other marker says
+           # which one it is, so two panels cannot be confused.
+           title = if (identical(MARKER, PRIMARY)) roi
                    else sprintf("%s - %s", roi, marker_label())),
       base_theme)
 
