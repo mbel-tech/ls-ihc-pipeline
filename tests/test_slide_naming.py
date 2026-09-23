@@ -14,6 +14,7 @@ this suite.
 Run:  python tests/test_slide_naming.py
 """
 
+import json
 import os
 import re
 import sys
@@ -180,11 +181,35 @@ print("--- the whole corpus, when the drive is here ---")
 # corpus check below stopped running and said "SKIP" - a green suite over 222
 # files it never opened. A path that only one machine can satisfy is a skip
 # waiting to happen; the config is the one place that knows.
-from ls_config import CONFIG                                  # noqa: E402
+def _source_dir():
+    """The study's slide folder, or "" when there is no config to read.
 
-SRC = CONFIG.get("source_dir") or ""
+    Read from the config file by PATH rather than through `ls_config`, and
+    named explicitly - which is the same thing `tests/run.sh` does for the
+    curator page builds, for the same reason. `run.sh` sets LS_CONFIG_STRICT so
+    that a suite which does not name a config fails rather than silently
+    reading the operator's; this block is the one that WANTS the operator's,
+    because it is the real-corpus check and the corpus is theirs. Naming it is
+    how that dependency gets stated instead of inherited.
+
+    One key, read once, only to decide whether an extra check can run. Nothing
+    here validates or derives anything from the config, so going around
+    `ls_config` costs nothing it would have given.
+
+    This was the literal `D:\SLIDES HE DEC 2025 LS`. The drive became E: and
+    the check printed SKIP - a green suite over 222 files it never opened.
+    """
+    named = os.environ.get("LS_CONFIG") or os.path.join(REPO, "config.json")
+    try:
+        with open(named, encoding="utf-8") as fh:
+            return json.load(fh).get("source_dir") or ""
+    except (OSError, ValueError):
+        return ""
+
+
+SRC = _source_dir()
 if not SRC or not os.path.isdir(SRC):
-    print("SKIP the slide drive is not mounted at " + (SRC or "<no source_dir>"))
+    print("SKIP no slide drive to read: " + (SRC or "no study resolved here"))
 else:
     OLD = re.compile(r"^(LS\d+)_(\d+)([a-z])(-?)(_[A-Za-z0-9]+)?\.czi$",
                      re.IGNORECASE)
