@@ -172,9 +172,16 @@ chk("a group the pipeline does not know is carried",
 print()
 print("--- the built pattern against the whole real corpus ---")
 
-SRC = r"D:\SLIDES HE DEC 2025 LS"
-if not os.path.isdir(SRC):
-    print("SKIP the slide drive is not mounted")
+# The slides live wherever the study says they live. This was the literal
+# `D:\SLIDES HE DEC 2025 LS` until the drive became E:, at which point the
+# corpus check below stopped running and said "SKIP" - a green suite over 222
+# files it never opened. A path that only one machine can satisfy is a skip
+# waiting to happen; the config is the one place that knows.
+from ls_config import CONFIG                                  # noqa: E402
+
+SRC = CONFIG.get("source_dir") or ""
+if not SRC or not os.path.isdir(SRC):
+    print("SKIP the slide drive is not mounted at " + (SRC or "<no source_dir>"))
 else:
     names = sorted(f for f in os.listdir(SRC) if f.lower().endswith(".czi"))
 

@@ -87,11 +87,23 @@ finally:
 
 with open(os.path.join(REPO, "analysis", "plot_roi_figures.R"), encoding="utf-8") as fh:
     r_src = fh.read()
-shapes = re.search(r"^SHAPES <- c\(([^)]*)\)", r_src, re.M).group(1)
-chk("twelve distinct shapes", len(set(s.strip() for s in shapes.split(","))), 12)
-fn = re.search(r"animal_shapes <- function\(levels_all\) \{(.*?)\n\}", r_src, re.S).group(1)
-chk("animal_shapes stops on overflow", "stop(" in fn, True)
-chk("...and no longer recycles", "rep_len" in fn, False)
+# SHAPE IS NO LONGER PER ANIMAL, and these three checks had to move with it.
+#
+# They used to read a 12-entry `SHAPES` palette and assert that `animal_shapes`
+# STOPS rather than recycling, because recycling was silent: a thirteenth
+# animal reused the first animal's shape and two animals on one panel became
+# indistinguishable with nothing said. The operator replaced the whole palette
+# with one shape for every point on 2026-09-07 (plot_roi_figures.R:130-141) and
+# separates the arms by colour instead, so `SHAPES` and `animal_shapes` are
+# gone - and this file kept searching for them, which is why it failed with
+# `'NoneType' object has no attribute 'group'` rather than a named assertion.
+#
+# One shape cannot recycle, so what is worth guarding now is that a per-animal
+# shape scale has not come BACK without its overflow check coming back too.
+chk("one shape for every point",
+    bool(re.search(r"^PT_SHAPE <- \d+$", r_src, re.M)), True)
+chk("no per-animal shape palette is left behind", "animal_shapes" in r_src, False)
+chk("...and nothing recycles a scale to fit", "rep_len" in r_src, False)
 
 print("\n" + ("ALL PASS" if not fails else f"{fails} FAILED"))
 raise SystemExit(1 if fails else 0)
