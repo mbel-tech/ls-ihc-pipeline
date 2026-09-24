@@ -1660,10 +1660,17 @@ import sys, os; sys.path.insert(0,'scripts')
 import importlib.util
 spec = importlib.util.spec_from_file_location('q','scripts/04q_import_curation.py')
 q = importlib.util.module_from_spec(spec); spec.loader.exec_module(q)
-R = r'E:\LS-analysis\reformatted'
-plates = q.load(os.path.join(R,'roi_plates.csv'))
-marks  = q.load(os.path.join(R,'roi_landmarks.csv'))
-regions= q.load(os.path.join(R,'roi_regions.csv'))
+# NOT reformatted/ - there is no roi_plates.csv there. The curator exports
+# through a clicked <a download>, so they land wherever the browser puts them;
+# on this machine that is Downloads, in timestamped sets, with the browser's
+# own (1)/(2) disambiguation on the older ones. reformatted/ holds what a
+# STAGE wrote: roi_regions_used_AF568.csv (Sep 7, 1246 rows - 612 ROI and 634
+# background over 138 sections) is 05a's output, not an export.
+#   ls -t ~/Downloads/roi_plates*.csv | head -1
+R = r'C:\Users\marti\Downloads'
+plates = q.load(os.path.join(R, 'roi_plates_07.09.2026_11.27.csv'))
+marks  = q.load(os.path.join(R, 'roi_landmarks_07.09.2026_11.27.csv'))
+regions= q.load(os.path.join(R, 'roi_regions_07.09.2026_11.27.csv'))
 S, *_ = q.build(plates, marks, regions, q.k_from_disk())
 print('sections:', len(S))
 from collections import Counter
