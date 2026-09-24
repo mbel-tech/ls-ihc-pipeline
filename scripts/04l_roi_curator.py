@@ -3550,7 +3550,21 @@ function exportCsv(){
                  : chosen ? "plate_only" : "favourite_only";
     // Blank rather than plate_001 when no plate was ever chosen - otherwise a
     // favourite with no assignment reads as a deliberate call on plate_001.
-    pl.push([d.uid,d.animal,d.m,d.sub,d.order,PLATE_SET, chosen?P.id:"", chosen?s.plate:"",
+    //
+    // THE STORED ID WHEN THERE IS ONE, the plate at that index otherwise. A
+    // column carries the most specific true statement available, and
+    // plate_verified beside it says how much to trust it. A record resolved
+    // GONE still knows which plate the operator chose - the id is simply not in
+    // THIS atlas - so naming it puts the row's own fingerprint beside the id
+    // that fingerprint belongs to. Taking P.id there would name whatever plate
+    // now occupies that index instead, next to another plate's fingerprint.
+    //
+    // The fallback is NOT blank, and that is the difference from plate_fp: the
+    // id at the stored index is a real statement about where the section points
+    // today, qualified by by_index, whereas a synthesised fingerprint would be
+    // a false claim about what the section was checked against. Every record
+    // from before ids were kept exports what it exports today.
+    pl.push([d.uid,d.animal,d.m,d.sub,d.order,PLATE_SET, chosen?(s.plate_id||P.id):"", chosen?s.plate:"",
              // THE IDENTITY THE ASSIGNMENT WAS MADE AGAINST - s.plate_fp and
              // s.plate_px, never the plate as it is NOW.
              //

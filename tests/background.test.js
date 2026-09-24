@@ -221,6 +221,56 @@ delete X.st(chg).plate_id; delete X.st(chg).plate_fp;
 delete X.st(chg).plate_px; delete X.st(chg).verified;
 X.st(chg).assigned = false;
 
+// A PLATE THIS ATLAS NO LONGER HAS IS STILL THE PLATE THAT WAS CHOSEN.
+//
+// A gone record keeps its stored index, because that index is the only clue
+// left to re-confirm from - so plateAt() resolves it to whatever plate now
+// occupies that slot. Exporting THAT id would name one plate beside another
+// plate's fingerprint: a row that is internally incoherent, and the only
+// surviving record of what the operator actually chose destroyed on the way
+// out. The stored id is exported instead, with plate_verified saying why it
+// cannot be found.
+const away = X.rows()[3].uid;
+X.select(away, true); X.active = away;
+const lost = X.resolvePlate({plate: pi, assigned: true, pairs: [],
+  plate_id: "plate_999", plate_fp: "0123456789ab", plate_px: "111x222"}, X.PLATES);
+chk("an id this atlas does not have reads as gone", lost.verified, "gone");
+chk("...and it keeps the index, the only clue left", lost.plate, pi);
+Object.assign(X.st(away), lost);
+blobs.length = 0;
+X.exportCsv();
+const awayRow = rows(blobs[0]).slice(1).find(r => r[0] === away);
+chk("the row names the plate the operator chose",
+    awayRow[col(pl[0], "plate_id")], "plate_999");
+chk("...which is NOT the plate now sitting at that index",
+    awayRow[col(pl[0], "plate_id")] === P.id, false);
+chk("...and the index is still there to re-confirm from",
+    awayRow[col(pl[0], "plate_index")], String(pi));
+chk("...beside the fingerprint that id belongs to",
+    awayRow[col(pl[0], "plate_fp")], "0123456789ab");
+chk("...and the verdict that says it cannot be found",
+    awayRow[col(pl[0], "plate_verified")], "gone");
+delete X.st(away).plate_id; delete X.st(away).plate_fp;
+delete X.st(away).plate_px; delete X.st(away).verified;
+
+// AND THE SHAPE EVERY RECORD ON THIS DRIVE IS IN TODAY: an assignment made
+// before ids were kept - an index and nothing else. It must keep exporting the
+// id at that index, because that is a true statement about where the section
+// points and by_index is the qualifier for it. Blanking it here is what would
+// break every downstream join for the operator's whole dataset, and nothing
+// requires that: only plate_fp and plate_px blank, because a synthesised
+// fingerprint would be a false claim rather than a qualified one.
+const old = X.st(away);
+old.plate = pi; old.assigned = true;
+blobs.length = 0;
+X.exportCsv();
+const oldRow = rows(blobs[0]).slice(1).find(r => r[0] === away);
+chk("a record from before ids were kept still names its plate",
+    oldRow[col(pl[0], "plate_id")], P.id);
+chk("...but claims no fingerprint for it", oldRow[col(pl[0], "plate_fp")], "");
+chk("...and no size either", oldRow[col(pl[0], "plate_px")], "");
+X.st(away).assigned = false;
+
 X.select(uid, true); X.active = uid;
 blobs.length = 0;
 X.toggleGuided();
