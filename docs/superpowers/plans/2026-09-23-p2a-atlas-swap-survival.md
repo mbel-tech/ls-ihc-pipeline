@@ -33,8 +33,26 @@ After every task:
 cd /c/Users/marti/repos/ls-ihc-pipeline && bash tests/run.sh
 ```
 
-Expected: `ALL SUITES PASS`, 68 suites (69 once Task 1 lands, 70 after Task 2's own
-suite). **Any failure belongs to this plan** — the suite was fully green at `0eb38da`.
+Expected: the line **`ALL SUITES PASS`** with nothing after it. **Any failure belongs to
+this plan** — the suite was fully green at `0eb38da`.
+
+**Do not gate on a suite count.** The count was wrong three different ways during Task 2
+(the plan said 70, implementers reported 69, a reviewer counted 75), and a gate whose
+expected value is wrong gets "fixed" by adjusting the expectation — which is this repo's
+signature failure. Gate on the property instead.
+
+**The half that actually matters:** `run.sh` skips all **15 curator page suites** wholesale
+when it cannot read `out_root`, and used to print a bare `ALL SUITES PASS` over them. One
+`E:` hiccup during Task 4, 5 or 7 — which are *entirely* page-suite work — and a green run
+would have proved nothing. Demonstrated, not theorised:
+
+```bash
+cd /c/Users/marti/repos/ls-ihc-pipeline && LS_BUILD_CONFIG=/nonexistent/x.json bash tests/run.sh 2>&1 | tail -2
+```
+
+Zero page suites run. The summary line now says so:
+`ALL SUITES PASS - BUT THE 15 CURATOR PAGE SUITES WERE SKIPPED`. **If you see that line,
+your run did not test the curators — fix the reason and run it again.**
 
 ```bash
 cd /c/Users/marti/repos/ls-ihc-pipeline && work/appenv/Scripts/python.exe tests/test_ls_regression.py
@@ -1222,7 +1240,20 @@ Expected: `page.resolvePlate is not a function`.
 
 - [ ] **Step 3: Add `resolvePlate`, `plateAt` and the gate to the page**
 
-After the `st()` definition at `:1488`, add:
+First add the token, so the page is handed the tolerance rather than repeating it.
+In `build()`'s `IO.fill` call, alongside `__PLATES__` and `__PLATESET__`:
+
+```python
+        "__ASPECTTOL__": AT.ASPECT_TOLERANCE,
+```
+
+and near the other page constants (beside `const PLATE_SET = __PLATESET__;`):
+
+```javascript
+const ASPECT_TOL = __ASPECTTOL__;
+```
+
+Then, after the `st()` definition at `:1488`, add:
 
 ```javascript
 // ---- plate identity --------------------------------------------------------
@@ -1261,7 +1292,12 @@ function verifyPlate(rec, plates) {
   const was = shapeOf(rec.plate_px);
   if (!was || !p.w || !p.h) return "changed";
   const a = was[0] / was[1], b = p.w / p.h;
-  return Math.abs(a - b) <= 0.01 * Math.max(a, b) ? "resized" : "changed";
+  // ASPECT_TOL comes from ls_atlas.ASPECT_TOLERANCE through IO.fill, NOT a
+  // literal 0.01. Python and JS agreeing today is not the same as agreeing
+  // after someone tunes the tolerance, and a section that verifies in the
+  // importer but not in the page is the exact split this module exists to
+  // close. Same for the digest length, if the page ever compares prefixes.
+  return Math.abs(a - b) <= ASPECT_TOL * Math.max(a, b) ? "resized" : "changed";
 }
 
 // Rebuild one stored record against the atlas that is actually loaded.

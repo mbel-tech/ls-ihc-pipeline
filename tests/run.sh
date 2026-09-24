@@ -123,5 +123,18 @@ for t in "$TESTS"/test_*.py; do
 done
 
 echo
-if [ "$fail" -eq 0 ]; then echo "ALL SUITES PASS"; else echo "SUITE FAILURES"; fi
+# A run that skipped the curator pages has not tested the curators AT ALL -
+# 15 of the suites here are page suites. Printing a bare "ALL SUITES PASS"
+# over them is how this file already went green once over 222 files it never
+# opened, and how the page suites themselves went unrun from 3e6c250 onward.
+# The summary line says what it actually covered.
+if [ "$fail" -eq 0 ]; then
+  if [ "$SKIP_PAGES" = "1" ]; then
+    echo "ALL SUITES PASS - BUT THE 15 CURATOR PAGE SUITES WERE SKIPPED (reason above)"
+  else
+    echo "ALL SUITES PASS"
+  fi
+else
+  echo "SUITE FAILURES"
+fi
 exit "$fail"
