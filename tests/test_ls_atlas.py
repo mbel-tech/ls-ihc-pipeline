@@ -428,22 +428,26 @@ try:
         write_file(os.path.join(tmp9, "q1.png"), b"Q")
         write_plates_csv(tmp9, [["plate_001", "q1.png", "1", "1"]])
 
-        real_retry = A.IO._retry
+        # Patched on the PUBLIC name. This read used to reach into
+        # ls_io._retry; a private name with an outside caller is not
+        # private, so it was made public and given a `what` so the message
+        # says 'read of' rather than claiming a failing write.
+        real_retry = A.IO.retry
         attempts_seen = {"n": 0}
 
-        def flaky(fn, path, attempts):
+        def flaky(fn, path, attempts, what="write to"):
             def wrapped():
                 attempts_seen["n"] += 1
                 if attempts_seen["n"] < 3:
                     raise FileNotFoundError(2, "No such file or directory", path)
                 return fn()
-            return real_retry(wrapped, path, attempts)
+            return real_retry(wrapped, path, attempts, what=what)
 
-        A.IO._retry = flaky
+        A.IO.retry = flaky
         try:
             fps9 = A.fingerprints(tmp9)
         finally:
-            A.IO._retry = real_retry
+            A.IO.retry = real_retry
         chk("a transient dropout that clears within the retry window still "
             "returns the real data, not an empty set",
             sorted(fps9), ["plate_001"])

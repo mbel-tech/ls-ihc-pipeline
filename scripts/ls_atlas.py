@@ -201,7 +201,7 @@ def _read_plates_csv(directory):
             return list(csv.DictReader(fh))
 
     try:
-        return IO._retry(go, path, attempts=5)
+        return IO.retry(go, path, attempts=5, what="read of")
     except FileNotFoundError:
         return None
 

@@ -30,7 +30,20 @@ import re
 import time
 
 
-def _retry(fn, path, attempts):
+def retry(fn, path, attempts, what="write to"):
+    """Run `fn`, retrying an OSError on a drive that goes away mid-operation.
+
+    `what` names the operation in the message. It was hardcoded to "write
+    to", which was true of the two writers in this file and a lie the moment
+    `ls_atlas` used this to READ plates.csv: an operator watching a retry
+    storm during a read would have been told their data was being written to
+    a failing drive, which is the one sentence guaranteed to make them pull
+    it out.
+
+    Public because a sibling module needs it. It was `_retry`, and `ls_atlas`
+    reached past the underscore to get at it - a private name with an outside
+    caller is not private, it is only undocumented.
+    """
     for attempt in range(attempts):
         try:
             return fn()
@@ -38,8 +51,13 @@ def _retry(fn, path, attempts):
             if attempt == attempts - 1:
                 raise
             wait = 2 ** attempt
-            print("\n  !! write to %s failed (%s); retrying in %ds" % (path, exc, wait))
+            print("\n  !! %s %s failed (%s); retrying in %ds"
+                  % (what, path, exc, wait))
             time.sleep(wait)
+
+
+# The old private name, kept so an unseen caller does not break.
+_retry = retry
 
 
 def atomic_write_csv(path, rows, keys, attempts=5):
@@ -58,7 +76,7 @@ def atomic_write_csv(path, rows, keys, attempts=5):
             w.writerows(rows)
         os.replace(tmp, path)
 
-    _retry(go, path, attempts)
+    retry(go, path, attempts)
 
 
 def pick_column(fieldnames, *candidates, what=None):
@@ -106,7 +124,7 @@ def atomic_save(path, attempts=5):
     tmp = path + ".tmp"
     try:
         yield tmp
-        _retry(lambda: os.replace(tmp, path), path, attempts)
+        retry(lambda: os.replace(tmp, path), path, attempts)
     finally:
         if os.path.exists(tmp):
             try:
