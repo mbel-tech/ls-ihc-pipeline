@@ -63,6 +63,7 @@ if _HERE not in sys.path:
 # the whole process. Imported, not re-implemented: this block used to be four
 # lines copy-pasted into every stage.
 from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
+import ls_atlas as AT  # noqa: E402
 
 OUT_ROOT = CONFIG["out_root"]
 REFORMAT_DIR = os.path.join(OUT_ROOT, "reformatted")
@@ -132,6 +133,7 @@ kbd{display:inline-block;padding:1px 6px;border:1px solid var(--line);border-rad
   <span class="row" style="color:#a48bff"><b id="nanch"></b> anchors</span>
   <span class="row"><b id="ninterp"></b> interpolated</span>
   <span class="row" style="color:#d29922"><b id="nextrap"></b> extrapolated</span>
+  <span class="row" id="dropRow" style="color:#d29922;display:none"><b id="ndropped"></b> anchor(s) dropped - plate no longer in this atlas</span>
   <span class="row" id="live"></span>
   <span class="grow"></span>
   <button onclick="clearAnimal()">Clear this animal</button>
@@ -176,17 +178,77 @@ kbd{display:inline-block;padding:1px 6px;border:1px solid var(--line);border-rad
 </footer>
 <script>
 const DATA = __DATA__;      // [{uid, animal, order, img}]
-const PLATES = __PLATES__;  // [{id, img, regions}]
+const PLATES = __PLATES__;  // [{id, img, regions, missing}]
 const KEY = "ls_level_curator_v1";
-let anchors = JSON.parse(localStorage.getItem(KEY) || "{}");   // uid -> plate index
+
+// Never PLATES[i] bare. A migrated bare-integer anchor (see migrateAnchors
+// below) keeps whatever index it was stored with even when that index is
+// past the end of a shorter atlas - there is nothing to check it against at
+// migration time, only an atlas to check it against at READ time - so every
+// place this page turns an index into a plate has to fail closed rather than
+// throw. Same shape, same reason as 04l_roi_curator.py's plateAt/BLANK_PLATE.
+const BLANK_PLATE = {id: "", img: "", regions: "", missing: 1};
+const plateAt = i => PLATES[i] || BLANK_PLATE;
+
+// uid -> {id, at}. It was uid -> plate index, which is a claim about an ARRAY:
+// swap the plate set and every anchor silently moves a whole animal's series
+// to a different level, with the interpolation between anchors carrying the
+// error to every section in between. The index is kept as `at` for the
+// slider; `id` is what survives a swap.
+const PLATE_BY_ID = Object.fromEntries(PLATES.map((p, i) => [p.id, i]));
+// The id -> slot map for whatever array is being migrated against, same
+// shape as 04l_roi_curator.py's plateIndex: PLATES is mapped once, a caller
+// passing its own array (the test suite's FAKE atlas) gets a map of that
+// array instead.
+const plateIndex = plates => (!plates || plates === PLATES) ? PLATE_BY_ID
+  : Object.fromEntries(plates.map((p, i) => [p.id, i]));
+
+function migrateAnchors(raw, plates){
+  const by = plateIndex(plates);
+  const out = {};
+  Object.entries(raw || {}).forEach(([uid, v]) => {
+    if (typeof v === "number") { out[uid] = {id: ((plates||PLATES)[v]||{}).id || "", at: v}; return; }
+    if (!v || !v.id) return;
+    const i = by[v.id];
+    // An anchor to a plate this atlas does not have is DROPPED from the
+    // constraint rather than left pointing at whatever now sits at its index.
+    // A wrong anchor is worse than a missing one: everything between two
+    // anchors is interpolated from them. Unlike 04l's per-section landmarks,
+    // an anchor carries no curated content of its own to protect by keeping
+    // it around unverified - it IS the claim "this section is at this plate",
+    // nothing else - and this page has no fingerprint table to tell a
+    // re-render from a genuine loss, so there is no honest state to mark it
+    // WITH beyond "gone". See the commit message for the fuller argument.
+    if (i === undefined) return;
+    out[uid] = {id: v.id, at: i};
+  });
+  return out;
+}
+
+const ANCHORS_RAW = JSON.parse(localStorage.getItem(KEY) || "{}");
+let anchors = migrateAnchors(ANCHORS_RAW, PLATES);
+// Which uids migrateAnchors dropped, so the notice below can tell the
+// operator rather than let a needed re-confirmation look identical to a
+// section that was simply never anchored.
+const droppedAnchors = Object.keys(ANCHORS_RAW).filter(u => !(u in anchors));
 let active = null;
 
+// `el` has to exist before the notice below reaches for it - `const` does not
+// hoist, and a plan that put an identity block after its first use already
+// took a whole page's suite down once this way (see 04l_roi_curator.py's
+// PLATE_BY_ID / plateIndex, declared above initState for the same reason).
 const el = id => document.getElementById(id);
 const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g,
   c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
 el("strip").addEventListener("click", e => {
   const c = e.target.closest && e.target.closest(".cell"); if(c) select(c.dataset.uid);
 });
+
+if(droppedAnchors.length){
+  const box = el("dropRow"), n = el("ndropped");
+  if(box) box.style.display = "";
+  if(n) n.textContent = droppedAnchors.length;
+}
 const animals = [...new Set(DATA.map(d => d.animal))].sort((a,b)=>+a.slice(2)-+b.slice(2));
 el("animal").innerHTML = animals.map(a => `<option>${a}</option>`).join("");
 el("slider").max = PLATES.length - 1;
@@ -199,7 +261,8 @@ const rows = () => DATA.filter(d => d.animal === el("animal").value)
 // anchors it continues at the same rate, which is a weaker claim, so those are
 // marked separately rather than silently blended in.
 function assign(list){
-  const anc = list.map((d,i) => [i, anchors[d.uid]]).filter(x => x[1] !== undefined);
+  const anc = list.map((d,i) => [i, anchors[d.uid] && anchors[d.uid].at])
+                  .filter(x => x[1] !== undefined);
   const out = list.map(() => ({plate: null, kind: "none"}));
   if(!anc.length) return out;
   if(anc.length === 1){
@@ -234,7 +297,7 @@ function render(){
   el("nextrap").textContent = asg.filter(a=>a.kind==="extrap").length;
   el("strip").innerHTML = list.map((d,i) => {
     const a = asg[i];
-    const lbl = a.plate===null ? "-" : PLATES[a.plate].id.replace("plate_","");
+    const lbl = a.plate===null ? "-" : plateAt(a.plate).id.replace("plate_","");
     return `<div class="cell ${a.kind==="anchor"?"anchor":""} ${a.kind==="extrap"?"extrap":""}
                  ${active===d.uid?"active":""}" data-uid="${esc(d.uid)}">
       <img src="${d.img}" loading="lazy" alt="">
@@ -254,7 +317,7 @@ function select(uid, keep){
     + `<br>${asg.kind==="anchor"?"<span style='color:#a48bff'>anchor</span>"
         : asg.kind==="interp"?"interpolated"
         : asg.kind==="extrap"?"<span style='color:#d29922'>extrapolated</span>":"no anchors yet"}`;
-  const p = anchors[uid] !== undefined ? anchors[uid] : (asg.plate === null ? 0 : asg.plate);
+  const p = anchors[uid] !== undefined ? anchors[uid].at : (asg.plate === null ? 0 : asg.plate);
   el("slider").value = p;
   showPlate(p);
   document.querySelectorAll(".cell").forEach(c =>
@@ -264,16 +327,21 @@ function select(uid, keep){
 }
 
 function showPlate(i){
-  const p = PLATES[i];
-  el("bigPlate").src = p.img;
-  el("plateName").textContent = p.id;
-  el("plateIdx").textContent = `(${i+1} of ${PLATES.length})`;
-  el("plateRegions").innerHTML = p.regions
-    ? esc(p.regions).replace(/\\|/g, " &middot; ")
-    : "<span class='unlab'>no region labels on this plate</span>";
+  // plateAt, not PLATES[i] bare - i can be a migrated bare-integer anchor
+  // past the end of a shorter atlas, and this runs from the keyboard and the
+  // slider on every move, not only at load.
+  const p = plateAt(i);
+  el("bigPlate").src = p.missing ? "" : p.img;
+  el("plateName").textContent = p.id || "-";
+  el("plateIdx").textContent = (i>=0 && i<PLATES.length) ? `(${i+1} of ${PLATES.length})` : "";
+  el("plateRegions").innerHTML = p.missing
+    ? "<span class='unlab'>no readable image on this plate</span>"
+    : p.regions
+      ? esc(p.regions).replace(/\\|/g, " &middot; ")
+      : "<span class='unlab'>no region labels on this plate</span>";
 }
 
-function onSlide(v){ showPlate(+v); el("live").textContent = PLATES[+v].id; }
+function onSlide(v){ showPlate(+v); el("live").textContent = plateAt(+v).id; }
 
 function setAnchor(){
   if(!active) return;
@@ -281,14 +349,14 @@ function setAnchor(){
   const p = +el("slider").value;
   // Monotonic: serial sections cannot run backwards through the atlas.
   for(const [j,d] of list.entries()){
-    const q = anchors[d.uid];
+    const q = anchors[d.uid] && anchors[d.uid].at;
     if(q === undefined || d.uid === active) continue;
-    if(j < i && q > p){ alert(`Section ${list[j].order} is anchored at ${PLATES[q].id}, which is `
-      + `after ${PLATES[p].id}. Serial sections cannot run backwards.`); return; }
-    if(j > i && q < p){ alert(`Section ${list[j].order} is anchored at ${PLATES[q].id}, which is `
-      + `before ${PLATES[p].id}. Serial sections cannot run backwards.`); return; }
+    if(j < i && q > p){ alert(`Section ${list[j].order} is anchored at ${plateAt(q).id}, which is `
+      + `after ${plateAt(p).id}. Serial sections cannot run backwards.`); return; }
+    if(j > i && q < p){ alert(`Section ${list[j].order} is anchored at ${plateAt(q).id}, which is `
+      + `before ${plateAt(p).id}. Serial sections cannot run backwards.`); return; }
   }
-  anchors[active] = p; save(); render();
+  anchors[active] = {id: plateAt(p).id, at: p}; save(); render();
 }
 function dropAnchor(){ if(active){ delete anchors[active]; save(); render(); } }
 function clearAnimal(){
@@ -320,7 +388,7 @@ function exportCsv(){
     const asg = assign(list);
     list.forEach((d,i) => {
       if(asg[i].plate === null) return;      // animal not curated yet
-      const p = PLATES[asg[i].plate];
+      const p = plateAt(asg[i].plate);
       out.push([d.uid, a, d.order, PLATE_SET, p.id, asg[i].plate, asg[i].kind, '"'+(p.regions||"")+'"']);
     });
   }
@@ -353,16 +421,23 @@ def main():
     if not os.path.exists(PLATES_CSV):
         raise SystemExit(f"{PLATES_CSV} not found - check atlas_plate_set.dir in config.json")
     with open(PLATES_CSV, newline="", encoding="utf-8") as fh:
-        plates = [p for p in csv.DictReader(fh)
-                  if os.path.exists(os.path.join(PLATE_DIR, p["image_file"]))]
-    plates.sort(key=lambda p: p["plate_id"])
+        plates = list(csv.DictReader(fh))
 
     data = [{"uid": r["id"], "animal": r["animal"], "order": int(r["section_order"] or 0),
              "img": f"sections/{r['id']}.png"} for r in rows]
     # Original plate from the configured set, as 04l does - relative to the
-    # page, which lives in reformatted/.
+    # page, which lives in reformatted/. Ordered through ls_atlas.plate_order,
+    # the same numeric-aware rule 04l's plate_rows() uses, so the two curators
+    # cannot disagree about which plate is index 4. A plate whose image cannot
+    # currently be read KEEPS its slot and carries missing=1 - dropping it (the
+    # old `if os.path.exists(...)` filter) is exactly the bug plate_rows() was
+    # written to close: one absent PNG renumbered every later plate. Note
+    # p.get("regions", "") - plates_final/plates.csv, the set this study uses,
+    # has no regions column, so p["regions"] would raise KeyError.
     pl = [{"id": p["plate_id"], "img": f"../atlas/{PLATE_SET}/{p['image_file']}",
-           "regions": p.get("regions", "")} for p in plates]
+           "regions": p.get("regions", ""),
+           "missing": 0 if os.path.exists(os.path.join(PLATE_DIR, p["image_file"])) else 1}
+          for p in AT.plate_order(plates)]
 
     page = IO.fill(PAGE, {"__DATA__": data, "__PLATES__": pl,
                           "__PLATESET__": PLATE_SET})

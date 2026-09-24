@@ -51,8 +51,44 @@ key("a", {target: {tagName: "SELECT"}});
 chk("type-ahead in the animal select sets no anchor", Object.keys(X.anchors).length, nBefore);
 els["slider"].value = 0;
 key("a");
-chk("plain a anchors", X.anchors[list[1].uid], 0);
+chk("plain a anchors", X.anchors[list[1].uid].at, 0);
+chk("...and the anchor carries the plate id, not just its slot",
+    X.anchors[list[1].uid].id, X.PLATES[0].id);
 key("d");
 chk("plain d drops it", list[1].uid in X.anchors, false);
+
+// ---- a level anchor is a plate id, not an array position -------------------
+// 04k stores uid -> plate index too. An anchor that no longer resolves must
+// leave the monotonic constraint rather than anchor a whole animal's series to
+// the wrong level: everything between two anchors is interpolated from them.
+note("");
+const L = load(`{migrateAnchors}`, "level_curator");
+
+const FAKE = [{id: "plate_001"}, {id: "plate_002"}, {id: "plate_003"}];
+
+chk("an anchor follows its plate id",
+    L.migrateAnchors({ "LS1_s01a": { id: "plate_003", at: 0 } }, FAKE)["LS1_s01a"].at,
+    2);
+chk("an anchor whose plate is gone is dropped, not moved",
+    L.migrateAnchors({ "LS1_s01a": { id: "plate_099", at: 0 } }, FAKE)["LS1_s01a"],
+    undefined);
+chk("a bare integer anchor from before this change still loads",
+    L.migrateAnchors({ "LS1_s01a": 1 }, FAKE)["LS1_s01a"].at, 1);
+chk("...and picks up the id that was at that position",
+    L.migrateAnchors({ "LS1_s01a": 1 }, FAKE)["LS1_s01a"].id, "plate_002");
+
+// ---- a stale anchor never takes the page down ------------------------------
+// migrateAnchors keeps a legacy bare-integer anchor's raw index even when it
+// lands past the end of a shorter atlas - there is nothing to check it
+// against at migration time, only at READ time - so every place that turns an
+// index into a plate has to fail closed (plateAt/BLANK_PLATE) rather than
+// throw. Exercised against the live page, not just the pure function.
+note("");
+X.anchors[list[0].uid] = { id: "", at: 99999 };
+let threw = null;
+try { X.showPlate(99999); X.select(list[0].uid); X.render(); }
+catch (e) { threw = e && e.message; }
+chk("a stale out-of-range anchor does not crash render/select/showPlate", threw, null);
+delete X.anchors[list[0].uid];
 
 done();
