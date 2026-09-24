@@ -92,8 +92,12 @@ pair(120, 120, 30, 30);
 pair(200, 140, 90, 45);
 pair(260, 120, 140, 80);
 chk("three landmarks placed", X.roiPairs(s).length, 3);
-const withBg = X.transform(s.pairs);
-const withoutBg = X.transform(X.roiPairs(s));
+// transform() takes the SECTION, not a list of pairs: it has to read
+// `verified` to refuse a section whose plate no longer checks out, and a bare
+// array cannot carry that. The second call wraps a filtered list in the same
+// shape to ask the same question of it.
+const withBg = X.transform(s);
+const withoutBg = X.transform({verified: s.verified, pairs: X.roiPairs(s)});
 chk("a fit exists", !!withBg, true);
 chk("it is identical to one built without the background disc",
     JSON.stringify(withBg), JSON.stringify(withoutBg));
@@ -149,8 +153,11 @@ chk("...carrying the chosen plate's own fingerprint",
     plRow[col(pl[0], "plate_fp")], P.fp || "");
 chk("...and plate_px, the size that fingerprint was taken at",
     plRow[col(pl[0], "plate_px")], P.w + "x" + P.h);
-chk("...and plate_verified, blank until a later task gives it meaning",
-    plRow[col(pl[0], "plate_verified")], "");
+// Assigning the plate through the slider IS the confirmation - it re-stamps
+// the identity from the atlas loaded now - so a section curated in this
+// session reports ok rather than blank.
+chk("...and plate_verified, which assigning the plate has now stamped",
+    plRow[col(pl[0], "plate_verified")], "ok");
 X.toggleGuided();
 
 // ---- a section with too few landmarks for a fit --------------------------
@@ -207,7 +214,7 @@ for (const Q of X.PLATES) {
   nPlates++;
   const pr = Q.seeds.slice(0, 3).map((sd, i) =>
     [100 + i * 10, 100 + i * 90, sd.xf * Q.w, sd.yf * Q.h, i + 1, 8]);
-  const T2 = X.transform(pr);
+  const T2 = X.transform({pairs: pr});
   if (T2 === null) nNoFit++;
   else if (![...T2.a, ...T2.d].every(Number.isFinite)) nNaN++;
 }

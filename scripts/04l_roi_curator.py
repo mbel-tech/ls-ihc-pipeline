@@ -1107,6 +1107,7 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
   <span class="row" style="color:#f85149"><b id="nexcl"></b> excluded</span>
   <span class="row" id="savedAt" style="color:#3fb950"></span>
   <span class="row" id="seedOffer" style="display:none"></span>
+  <span class="row" id="plateWarn" style="display:none;color:#e8a33d"></span>
   <span class="row" id="shotStat" style="color:#e8a33d"></span>
   <span class="row"><b id="npair"></b> pairs on this section</span>
   <span class="row" id="fit"></span>
@@ -1311,6 +1312,8 @@ const PLATES = __PLATES__;  // [{id, img, w, h, labelled, seeds:[{region,xf,yf,h
 // DIFFERENT image in each, so every export carries this and a landmark file can
 // never be silently matched against the wrong plates.
 const PLATE_SET = __PLATESET__;
+// ls_atlas.ASPECT_TOLERANCE, substituted rather than repeated. See verifyPlate.
+const ASPECT_TOL = __ASPECTTOL__;
 // The unblinding key, and the ONLY thing in this page that reads one. Empty
 // unless config.json declares `groups`, which is what keeps the Shotgun button
 // off by default. See the Shotgun section at the foot of this script.
@@ -1370,6 +1373,126 @@ const KEY = "ls_roi_curator_v1";
 // Whatever this browser already holds wins. The seed only fills an empty store,
 // so opening a stale copy of the page can never overwrite work in progress.
 const SEED_STATE = __SEED__;
+// ---- plate identity --------------------------------------------------------
+//
+// A section records which plate it sits on. Stored as the INTEGER INDEX into
+// PLATES, that is a claim about an array, not about an atlas: swap the plate
+// set and every assignment means a different plate, silently. Stored as the ID
+// alone it is a claim that succeeds against a plate that has been re-rendered -
+// which is what happened here on 2026-09-06, all 64 ids reused, 34 of them a
+// different picture.
+//
+// So: resolve by id, then CHECK the image's fingerprint.
+//
+// DECLARED HERE, above initState, and not down beside st(). These are `const`,
+// which does not hoist, and `let S = initState(...)` a few lines below calls
+// resolvePlate while the page is still loading. Any lower and the page dies on
+// `Cannot access 'PLATE_BY_ID' before initialization` before anything is drawn.
+const BLANK_PLATE = {id: "", fp: "", w: 0, h: 0, missing: 1, seeds: [], hulls: []};
+const PLATE_BY_ID = Object.fromEntries(PLATES.map((p, i) => [p.id, i]));
+// The id -> slot map for whatever array is being resolved AGAINST. PLATES is
+// the atlas on screen and is mapped once; a caller passing its own array gets a
+// map of THAT array. Taking a slot number out of PLATES and then reading it out
+// of a different array is the index-means-a-different-plate bug one level up
+// from the one this whole section exists to close.
+const plateIndex = plates => (!plates || plates === PLATES) ? PLATE_BY_ID
+  : Object.fromEntries(plates.map((p, i) => [p.id, i]));
+
+// Never PLATES[s.plate] bare. A store written against a LONGER atlas indexes
+// past the end, and `.seeds` on undefined is a TypeError that takes the page
+// down on load - the one moment the operator has no way to recover. The blank
+// carries missing:1, so drawPl's fail-closed placeholder fires and says so,
+// rather than another plate's pixels appearing under this plate's header.
+const plateAt = (s, plates) => (plates || PLATES)[s && s.plate] || BLANK_PLATE;
+
+// `"1089x643"` -> [1089, 643]. The grammar is pinned to `ls_atlas._shape`:
+// integers only, lowercase x, nothing either side, and zero is not a size -
+// "0x0" is what a blank plate stamps, and dividing by it below would hand the
+// fit an Infinity. The same stored string must read the same on both sides.
+const shapeOf = px => {
+  const m = /^(\d+)x(\d+)$/.exec(typeof px === "string" ? px : "");
+  if(!m) return null;
+  const w = +m[1], h = +m[2];
+  return (w > 0 && h > 0) ? [w, h] : null;
+};
+
+// The same six outcomes `ls_atlas.plate_status` answers with, tested in the
+// SAME ORDER and computed the same way, because the page and the importers
+// must agree about what "still the same plate" means or a section verifies in
+// one and not the other. The order is load-bearing: GONE is decided BEFORE
+// UNCHECKED there too, so a record carrying an id but no fingerprint, whose
+// plate this atlas does not have, reads "gone" on both sides rather than
+// "unchecked" here and "gone" there.
+//
+// "unchecked" is NOT "by_index". by_index means no id was ever recorded;
+// unchecked means an id was, and there is nothing to check it against yet.
+// Neither is ok - fingerprinting whatever is on disk on first sight and calling
+// it verified would launder the 2026-09-06 failure into a green tick.
+function verifyPlate(rec, plates){
+  if(!rec || !rec.plate_id) return "by_index";
+  const i = plateIndex(plates)[rec.plate_id];
+  const p = i === undefined ? null : (plates || PLATES)[i];
+  // No readable image is GONE, not a state of its own: `ls_atlas` does not tell
+  // "the id left the set" from "its image cannot be read right now" either, and
+  // both need a person.
+  if(!p || p.missing || !p.fp) return "gone";
+  if(!rec.plate_fp) return "unchecked";
+  if(rec.plate_fp === p.fp) return "ok";
+  const was = shapeOf(rec.plate_px);
+  if(!was || !p.w || !p.h) return "changed";
+  const a = was[0] / was[1], b = p.w / p.h;
+  // ASPECT_TOL comes from ls_atlas.ASPECT_TOLERANCE through IO.fill, NOT a
+  // literal 0.01. Python and JS agreeing today is not the same as agreeing
+  // after someone tunes the tolerance, and a section that verifies in the
+  // importer but not in the page is exactly the split ls_atlas exists to close.
+  return Math.abs(a - b) <= ASPECT_TOL * Math.max(a, b) ? "resized" : "changed";
+}
+
+// Rebuild one stored record against the atlas that is actually loaded.
+//
+// THE ASSIGNMENT IS ALWAYS KEPT. A section whose plate no longer verifies is
+// shown with the plate the operator chose, marked, and its landmarks withheld
+// from the fit until a person confirms - never dropped, and never used as if
+// nothing had happened.
+function resolvePlate(rec, plates){
+  const out = Object.assign({}, rec);
+  const state = verifyPlate(rec, plates);
+  out.verified = state;
+  const i = plateIndex(plates)[rec && rec.plate_id];
+  // Follow the id to its new slot. A record with no id, or with one this atlas
+  // does not have, keeps the index it was stored with: that index is the only
+  // thing left saying which plate the operator was looking at, and moving it to
+  // a guess would destroy the one clue a person has to re-confirm from.
+  if(i !== undefined) out.plate = i;
+  if(state === "resized"){
+    // plate_x/plate_y are pixels of the plate image AS IT WAS. A re-render at a
+    // new size leaves them wrong by exactly the size ratio. Scaled and STILL
+    // MARKED, not accepted: a re-render can crop as well as scale, and the
+    // ratio cannot tell the two apart.
+    //
+    // PER AXIS, like `ls_atlas.scale_between`, which returns (sx, sy) for this
+    // reason: "resized" tolerates ASPECT_TOL of aspect drift, which on a
+    // 1634 px plate is on the order of ten pixels of height that one
+    // width-only factor would get wrong - handed to a registration fit as a
+    // coordinate nothing was ever measured against.
+    //
+    // Only `pairs`. A polygon's vertices are coordinates on the SECTION image,
+    // not on the plate (see polysOf and img2can), so scaling them by a plate's
+    // re-render would move drawn regions off the tissue they were drawn on.
+    const was = shapeOf(rec.plate_px), p = (plates || PLATES)[i];
+    if(was && p && p.w && p.h){
+      const kx = p.w / was[0], ky = p.h / was[1];
+      out.pairs = (rec.pairs || []).map(q => {
+        const c = q.slice();
+        c[2] = c[2] * kx;
+        c[3] = c[3] * ky;
+        return c;
+      });
+    }
+  }
+  return out;
+}
+
 // WHAT COUNTS AS WORK. `st()` creates a record the moment a section is looked
 // at, and the slider writes into it - so "the store has records" never meant
 // "the operator decided something". These two predicates are the only rule:
@@ -1388,10 +1511,52 @@ const decided = obj => Object.fromEntries(
 // Whatever this browser already holds wins - but only what it holds that is a
 // decision. A store of looked-at sections is an empty store.
 function initState(raw, seed){
+  let v = null;
   try {
-    if (raw) { const v = decided(JSON.parse(raw)); if (Object.keys(v).length) return v; }
+    if (raw) { const parsed = decided(JSON.parse(raw)); if (Object.keys(parsed).length) v = parsed; }
   } catch (e) {}
-  return decided(seed);
+  if (!v) v = decided(seed);
+  // EVERY stored record passes through here - the browser's store and the
+  // embedded seed both - so this is the ONE place an assignment made against a
+  // different plate set can be checked. Migrating anywhere else would leave
+  // whichever of the two did not pass through it silently trusted.
+  return Object.fromEntries(
+    Object.entries(v).map(([uid, rec]) => [uid, resolvePlate(rec, PLATES)]));
+}
+// WHAT THE OPERATOR IS TOLD, and the reason a marked record is allowed to stay
+// on screen at all: a count, not a silent degradation. A section whose plate no
+// longer verifies still shows the plate the operator chose, and the only way to
+// know its landmarks are being withheld is to be told.
+//
+// Into the header's own status row, beside "saved HH:MM:SS" and the Shotgun
+// status - the page already has a notice area - rather than an element built
+// and prepended at load. A bar inserted before document.body.firstChild lands
+// outside the flex column the header, the panes and the strip live in.
+//
+// Returns the count so this is assertable rather than only visible.
+function plateNotice(){
+  const by = {};
+  Object.values(S).forEach(r => {
+    if(r && r.verified && r.verified !== "ok") by[r.verified] = (by[r.verified]||0)+1;
+  });
+  const n = Object.values(by).reduce((a, b) => a + b, 0);
+  const box = el("plateWarn");
+  if(box){
+    box.style.display = n ? "" : "none";
+    if(!n) box.textContent = "";
+    else {
+      const parts = [];
+      if(by.changed)   parts.push(by.changed + " changed");
+      if(by.resized)   parts.push(by.resized + " re-rendered at a new size");
+      if(by.gone)      parts.push(by.gone + " no longer in this atlas");
+      if(by.unchecked) parts.push(by.unchecked + " never fingerprinted");
+      if(by.by_index)  parts.push(by.by_index + " recorded before plate ids were kept");
+      box.textContent = n + " section(s) need their plate re-confirming: "
+        + parts.join(", ") + " - their landmarks are not used in any fit until"
+        + " you re-choose each one's plate.";
+    }
+  }
+  return n;
 }
 let S = initState(localStorage.getItem(KEY), SEED_STATE);
 let active = null, pending = null;   // pending section point awaiting its plate partner
@@ -1454,6 +1619,9 @@ el("marker").innerHTML =
   MARKERS.map(m=>`<option value="${m.id}">${m.label} - ${m.n}</option>`).join("")
   + (MARKERS.length>1 ? `<option value="both">both channels - ${DATA.length}</option>` : "");
 el("marker").value = DEFAULT_MARKER;
+// Said once, as soon as there is a header to say it in. initState has
+// already resolved every stored record against the atlas on disk.
+plateNotice();
 // One listener per container instead of an onclick string per cell: the uid
 // never has to survive being pasted into a JS string literal.
 el("strip").addEventListener("click", e => {
@@ -1588,7 +1756,17 @@ function tpsApply(T,px,py){
 }
 
 // The transform actually used: TPS once there are enough points, affine below.
-function transform(pairs){
+function transform(s){
+  // NOTHING IS COMPUTED FROM AN UNVERIFIED SECTION. Its landmarks were placed
+  // against a plate image that is no longer the one on screen, so a fit from
+  // them is a number with no meaning - and it would look exactly like a good
+  // one. Confirming the plate is what releases them; see confirmPlate.
+  //
+  // `s.verified` is absent on a record made in this session, and an absent
+  // verdict is not a failed one: a section curated now was matched against the
+  // atlas now loaded, and there is nothing to re-confirm.
+  if (s && s.verified && s.verified !== "ok") return null;
+  const pairs = (s && s.pairs) || [];
   // A background disc is a position on the SECTION with no counterpart on the
   // plate, so it must never enter the fit - its (0,0) plate coordinate would
   // drag the whole spline to the corner. Filtered here rather than at each call
@@ -1695,9 +1873,9 @@ function drawSec(){
   // Hiding DAPI means drawing the blue-stripped copy instead - see markerOnly().
   x.drawImage((hasRgb(active) && !dapiOn) ? markerOnly() : secImg, -g.w/2, -g.h/2);
   x.restore();
-  const s=st(active), T=transform(s.pairs), u=uiScale(c);
+  const s=st(active), T=transform(s), u=uiScale(c);
   // NP went with the region labels; mark() sizes its own badge from ns.
-  const ns=numScale(PLATES[s.plate], c, u);
+  const ns=numScale(plateAt(s), c, u);
   // ROIs are the ones that were placed. Nothing is positioned by the transform.
   //
   // This used to warp every seed on the plate through the fit and draw them all,
@@ -1728,7 +1906,7 @@ function drawSec(){
   //
   // Cased, like the shapes on the plate: Dl is pure yellow and the tissue under
   // it is pale.
-  const Ppl = PLATES[s.plate];
+  const Ppl = plateAt(s);
   polysOf(s).forEach(pg => {
     const col = polyCol(Ppl, pg);
     x.beginPath();
@@ -1814,7 +1992,7 @@ function drawSec(){
 function drawPl(){
   const c=el("cPl"), x=c.getContext("2d");
   if(!active) return;
-  const s=st(active), P=PLATES[s.plate];
+  const s=st(active), P=plateAt(s);
   if(P && P.missing){
     // No readable image for this plate. Fails CLOSED, before `plateImg()` is
     // even touched: a 404'd <img> never fires `load`, so the wait below used
@@ -2179,7 +2357,7 @@ addEventListener("mouseup", ()=>{
 // useful matching feature is not a region centre, but it is no longer what you
 // get by accident on first load.
 let guided=true, gTarget=0;
-const seedsOf   = s => PLATES[s.plate].seeds;
+const seedsOf   = s => plateAt(s).seeds;
 // ---- the guided walk is over ROIs, not seeds ------------------------------
 //
 // An ROI is an AREA - one region, one lobe - and the several atlas dots under it
@@ -2189,7 +2367,7 @@ const seedsOf   = s => PLATES[s.plate].seeds;
 //
 // The seeds keep their own numbering underneath; see `region_hulls`. Only what
 // is DRAWN and what a polygon RECORDS is the ROI number.
-const roisOf = s => (PLATES[s.plate].hulls || []);
+const roisOf = s => (plateAt(s).hulls || []);
 // Which ROIs this section already answers. Derived from the polygons rather than
 // kept as a separate fact that could disagree with them - the same reason the
 // seed cursor was derived from the pairs.
@@ -2572,7 +2750,7 @@ function clickPl(e){
   // how you go back to one you skipped or jump ahead to one you can plainly see.
   // Same gesture the seed walk offered, now over areas.
   if(guided){
-    const c=el("cPl"), P=PLATES[st(active).plate], fx=px/c.width, fy=py/c.height;
+    const c=el("cPl"), P=plateAt(st(active)), fx=px/c.width, fy=py/c.height;
     let hit=null;
     for(const h of (P.hulls||[])){
       if(h.v.length>=3 && inPoly(fx, fy, h.v.flat())){ hit=h; break; }
@@ -2702,7 +2880,7 @@ function clearPts(){
 
 function status(){
   if(!active) return;
-  const s=st(active), T=transform(s.pairs);
+  const s=st(active), T=transform(s);
   const nRoi = roiPairs(s).length, nBg = bgPairs(s).length;
   el("npair").textContent = nRoi;
   el("bgBtn").textContent = bgMode ? "Background \u2713" : "Background";
@@ -2798,7 +2976,7 @@ function status(){
       ? `<b style="color:#7c5cff">thin-plate spline</b> on ${nRoi} points `
         + `&middot; residual is 0 by construction`
       : `<b>affine</b> &middot; mean residual <b>${(tot/nRoi).toFixed(1)} px</b>`;
-    const P=PLATES[s.plate];
+    const P=plateAt(s);
     // Ambiguous regions are listed as their group and flagged, so the summary
     // never reads as a firmer claim than the section supports.
     // The names were printed in one flat colour under a legend reading
@@ -2838,7 +3016,7 @@ function status(){
   // Outside the transform branch on purpose: the colour key is a fact about
   // the plate on screen, and it is most wanted before three landmarks exist,
   // not after.
-  regionKey(PLATES[st(active).plate], st(active));
+  regionKey(plateAt(st(active)), st(active));
   navState();
   dapiBtnState();
   el("rotBtn").textContent = rotMode ? "Rotate ✓" : "Rotate";
@@ -2856,11 +3034,33 @@ function status(){
 // setting .value from script does not dispatch it. That is what makes the
 // distinction between "the operator chose this plate" and "this section has
 // never been looked at" reliable.
+// CHOOSING A PLATE IS THE CONFIRMATION. It is the one gesture that means a
+// person looked at THIS image and picked it, so it re-stamps identity from the
+// atlas loaded now: a section confirmed after a swap carries the new
+// fingerprint and stops being flagged.
+//
+// Called from the three places a person moves the plate - the slider, the
+// prev/next buttons and their arrow keys, and the Assign plate button - and
+// deliberately NOT from onSlide, which select() calls for every section merely
+// clicked in the strip. Stamping there would re-fingerprint a stored record
+// against the new atlas just for being looked at, which is the 2026-09-06
+// laundering with a nicer interface.
+function confirmPlate(s, v){
+  if(!s) return;
+  const P = PLATES[+v] || BLANK_PLATE;
+  s.plate_id = P.id; s.plate_fp = P.fp || ""; s.plate_px = P.w + "x" + P.h;
+  // verifyPlate, not a hardcoded "ok". A slider position past the end stamps a
+  // blank identity, and writing "ok" over that would have the page say verified
+  // where ls_atlas.plate_status - reading the same columns back out of
+  // roi_plates.csv - says by_index. Self-consistent by construction instead.
+  s.verified = verifyPlate(s, PLATES);
+  plateNotice();
+}
 function onSlideUser(v){
   undoMark(active, "plate");
-  const s=st(active); s.assigned=true; save(); onSlide(v); paintCell(active);
+  const s=st(active); s.assigned=true; confirmPlate(s, v); save(); onSlide(v); paintCell(active);
 }
-function markAssigned(){ if(active){ undoMark(active, "assign plate"); st(active).assigned=true; save(); paintCell(active); status(); } }
+function markAssigned(){ if(active){ undoMark(active, "assign plate"); const s=st(active); s.assigned=true; confirmPlate(s, s.plate); save(); paintCell(active); status(); } }
 // Favourite marks the subset chosen for actual quantification. It is ORTHOGONAL
 // to the plate assignment - a section can be worth quantifying before anyone has
 // landmarked it - so it sets no other flag and the export carries it on its own.
@@ -2895,6 +3095,9 @@ function stepPlate(d){
   if(!active) return;
   const v = Math.min(PLATES.length - 1, Math.max(0, +el("slider").value + d));
   el("slider").value = v;
+  // Same gesture as dragging the slider, so the same confirmation - and it
+  // must not set `assigned`, which stepping the plate has never done.
+  confirmPlate(st(active), v);
   onSlide(v);
   navState();
 }
@@ -2919,7 +3122,7 @@ function navState(){
 function onSlide(v){
   const s=st(active); s.plate=+v; save();
   gSync();                     // a different plate is a different seed list
-  const P=PLATES[+v];
+  const P = PLATES[+v] || BLANK_PLATE;
   el("plName").textContent = P.id;
   el("plLab").innerHTML = P.labelled
     ? `<span class="lab">${P.seeds.length} region seeds: ${[...new Set(P.seeds.map(x=>x.region))].join(", ")}</span>`
@@ -3009,7 +3212,7 @@ function cellTag(uid){
   // the index yet, and nothing else on the strip distinguishes it.
   if(isReinstated(uid) && !n) return "reinstated";
   return isNoRoi(uid) ? "no ROI" : n ? n+" pts"
-       : isPlateOnly(uid) ? PLATES[s.plate].id.replace("plate_","pl ") : "";
+       : isPlateOnly(uid) ? plateAt(s).id.replace("plate_","pl ") : "";
 }
 function counts(){
   const list=rows();
@@ -3328,8 +3531,8 @@ function exportCsv(){
     // Background discs are work too, so a section carrying only those is
     // reported rather than dropped for having made no other decision.
     if(!hasRoiWork(s)) continue;
-    const P=PLATES[s.plate], n=roiPairs(s).length, nBg=bgPairs(s).length;
-    const T=transform(s.pairs);
+    const P=plateAt(s), n=roiPairs(s).length, nBg=bgPairs(s).length;
+    const T=transform(s);
     const chosen = s.assigned || n>0;   // is the plate a decision, or still the default?
     // isExcl(), not s.excl: a Review-mode reinstatement beats the flag, and the
     // strip already honours that. The two must not disagree.
@@ -4069,7 +4272,7 @@ async function shotBuild(by){
     const sl = slides[si];
     // Undefined rather than a plate in region mode - a region has no single one,
     // and picking any would assert a level the slide does not have.
-    const P = sl.plate === undefined ? null : PLATES[sl.plate];
+    const P = sl.plate === undefined ? null : plateAt(sl);
     const head = mode === "region" ? sl.region : P.id;
     const mk = MARKERS.find(m => m.id === sl.marker);
     const rel = [{id: "rId1", type: REL + "/slideLayout",
@@ -5191,6 +5394,11 @@ def main():
     page = IO.fill(PAGE, {
         "__SEED__": seed, "__PROV__": load_provenance(), "__DATA__": data,
         "__PLATES__": pl, "__PLATESET__": PLATE_SET, "__MARKERS__": markers,
+        # The page compares aspect ratios exactly as `ls_atlas.plate_status`
+        # does, so it is handed THAT number rather than repeating it. A literal
+        # 0.01 in the script is a section that verifies in the importer and not
+        # in the page the moment anyone tunes the tolerance.
+        "__ASPECTTOL__": AT.ASPECT_TOLERANCE,
         "__MARKER__": args.marker, "__SECDIRS__": section_dirs(),
         "__SECGRID__": SEC_GRID, "__GROUPS__": GROUPS,
         "__FILTERS__": review_filters(MARKERS, MARKER_COLOURS, NUCLEAR_COLOUR),
