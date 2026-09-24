@@ -58,8 +58,26 @@ your run did not test the curators — fix the reason and run it again.**
 cd /c/Users/marti/repos/ls-ihc-pipeline && work/appenv/Scripts/python.exe tests/test_ls_regression.py
 ```
 
-Expected: `ALL PASS`, zero **changed** constants across all 46 stages. New constants are
-expected in Tasks 1 and 8.
+Expected: `ALL PASS`.
+
+**But be precise about what this proves, because it is easy to overclaim.** Read its
+docstring: it imports all 46 stages **under the old config and again under the migrated
+study**, both times under the *current* code, and compares what each derived. It catches a
+mistyped key or a wrong default in the config-resolution layer. It **cannot** tell you
+whether a code change moved a constant, because there is only one version of the code in
+the comparison.
+
+To answer *"did my change move anything?"* use `tests/_stage_probe.py` across two versions
+of the code — stash the edit, probe, restore, probe, diff:
+
+```bash
+cd /c/Users/marti/repos/ls-ihc-pipeline && git stash push scripts/<file>.py && work/appenv/Scripts/python.exe tests/_stage_probe.py > /tmp/before.json && git stash pop && work/appenv/Scripts/python.exe tests/_stage_probe.py > /tmp/after.json && diff /tmp/before.json /tmp/after.json
+```
+
+Task 8b did exactly this and got the one expected line: `04a_reformat.py PLATE_DIR`,
+`atlas/plates` → `atlas/plates_final`. Task 8a did the equivalent by importing both
+versions. **A task that cites only `test_ls_regression.py` as evidence its change is inert
+has not shown that.**
 
 ---
 
