@@ -1,8 +1,8 @@
 """Plate identity: which set, which plate, and whether it is still that plate.
 
-`verify()` is the whole point. A stored plate assignment that no longer matches
-must come back as a NAMED outcome - resized, changed, gone - and never as a
-silent success, because an id-keyed restore against a re-rendered atlas
+`plate_status()` is the whole point. A stored plate assignment that no longer
+matches must come back as a NAMED outcome - resized, changed, gone - and never
+as a silent success, because an id-keyed restore against a re-rendered atlas
 succeeds and is wrong. That happened on this drive on 2026-09-06.
 
 Run:  work/appenv/Scripts/python.exe tests/test_ls_atlas.py
@@ -31,13 +31,29 @@ def chk(label, got, want):
         failures.append(label)
 
 
+def write_file(path, data):
+    """The one place a temp plate image gets written, in this whole suite."""
+    with open(path, "wb") as fh:
+        fh.write(data)
+    return path
+
+
+def write_plates_csv(directory, rows, columns=("plate_id", "image_file",
+                                               "px_w", "px_h")):
+    with open(os.path.join(directory, "plates.csv"), "w", newline="",
+              encoding="utf-8") as fh:
+        w = csv.writer(fh)
+        w.writerow(columns)
+        w.writerows(rows)
+
+
 # --- which set ------------------------------------------------------------
 chk("the configured set is used",
-    A.set_dir({"atlas_plate_set": {"dir": "plates_final"}}), "plates_final")
+    A.set_name({"atlas_plate_set": {"dir": "plates_final"}}), "plates_final")
 chk("a config that says nothing gets the extraction set",
-    A.set_dir({}), A.EXTRACTED)
+    A.set_name({}), A.EXTRACTED)
 chk("a malformed block is judged, not crashed on",
-    A.set_dir({"atlas_plate_set": "plates_final"}), A.EXTRACTED)
+    A.set_name({"atlas_plate_set": "plates_final"}), A.EXTRACTED)
 chk("plate_dir joins out_root/atlas/<set>",
     A.plate_dir({"out_root": os.path.join("X:", "s"),
                  "atlas_plate_set": {"dir": "plates_final"}}),
@@ -45,6 +61,10 @@ chk("plate_dir joins out_root/atlas/<set>",
 chk("...and can be asked for a different set by name",
     A.plate_dir({"out_root": os.path.join("X:", "s")}, set_name="plates_merged"),
     os.path.join("X:", "s", "atlas", "plates_merged"))
+chk("...and still falls back to the study's own set with no override",
+    A.plate_dir({"out_root": os.path.join("X:", "s"),
+                 "atlas_plate_set": {"dir": "plates_final"}}),
+    os.path.join("X:", "s", "atlas", "plates_final"))
 
 
 # --- ordering -------------------------------------------------------------
@@ -66,23 +86,25 @@ chk("ids with no number order as text, deterministically",
     ["atlas_a", "atlas_b", "caudal"])
 
 # Input order is the REVERSE of the expected text-sorted order, so a broken
-# plate_order that just returned `rows` unchanged would fail this - unlike the
-# previous version of this test, where the two happened to coincide.
+# plate_order that just returned `rows` unchanged would fail this.
 mixed = [{"plate_id": "rostral"}, {"plate_id": "plate_1"}]
 chk("a mixed set falls back to text rather than guessing",
     [r["plate_id"] for r in A.plate_order(mixed)], ["plate_1", "rostral"])
 
+# Two ids that share a trailing number are exactly as ambiguous as having no
+# number at all - "plate_01" and "plate_1" both trail with "1" - so this must
+# fall back to text too rather than picking one arbitrarily. Input order is
+# again the reverse of the expected text order.
+shared_trailing = [{"plate_id": "plate_1"}, {"plate_id": "plate_01"}]
+chk("two ids sharing a trailing number fall back to text",
+    [r["plate_id"] for r in A.plate_order(shared_trailing)],
+    ["plate_01", "plate_1"])
 
-# --- fingerprints and verify ----------------------------------------------
+
+# --- fingerprints() and plate_status() -------------------------------------
 with tempfile.TemporaryDirectory() as tmp:
-    def plate(name, data):
-        path = os.path.join(tmp, name)
-        with open(path, "wb") as fh:
-            fh.write(data)
-        return path
-
-    a = plate("a.png", b"PLATE-A-BYTES")
-    b = plate("b.png", b"PLATE-B-BYTES")
+    a = write_file(os.path.join(tmp, "a.png"), b"PLATE-A-BYTES")
+    b = write_file(os.path.join(tmp, "b.png"), b"PLATE-B-BYTES")
     # Pinned against an independently computed SHA-256, not against itself -
     # `def fingerprint(p): return ""` would pass "is stable" but fails this.
     chk("a fingerprint is the truncated SHA-256 of the bytes",
@@ -98,21 +120,32 @@ with tempfile.TemporaryDirectory() as tmp:
                "plate_002": {"fp": fp_b, "px_w": 100, "px_h": 200}}
 
     chk("same id, same bytes -> ok",
-        A.verify({"plate_id": "plate_001", "fp": fp_a}, current), A.OK)
+        A.plate_status({"plate_id": "plate_001", "plate_fp": fp_a}, current),
+        A.OK)
+    chk("...and verified() agrees",
+        A.verified(A.plate_status(
+            {"plate_id": "plate_001", "plate_fp": fp_a}, current)), True)
     chk("same id, new bytes, same shape -> resized",
-        A.verify({"plate_id": "plate_001", "fp": fp_b, "px": "50x100"}, current),
+        A.plate_status({"plate_id": "plate_001", "plate_fp": fp_b,
+                        "plate_px": "50x100"}, current),
         A.RESIZED)
+    chk("...and verified() says no - a rescale still needs the transform gate",
+        A.verified(A.RESIZED), False)
     chk("same id, new bytes, new shape -> changed",
-        A.verify({"plate_id": "plate_001", "fp": fp_b, "px": "50x400"}, current),
+        A.plate_status({"plate_id": "plate_001", "plate_fp": fp_b,
+                        "plate_px": "50x400"}, current),
         A.CHANGED)
     chk("an id the set does not have -> gone",
-        A.verify({"plate_id": "plate_099", "fp": fp_a}, current), A.GONE)
+        A.plate_status({"plate_id": "plate_099", "plate_fp": fp_a}, current),
+        A.GONE)
     chk("an id with no stored fingerprint is UNCHECKED, not ok",
-        A.verify({"plate_id": "plate_001"}, current), A.UNCHECKED)
+        A.plate_status({"plate_id": "plate_001"}, current), A.UNCHECKED)
     chk("...and an id this set does not have is still gone",
-        A.verify({"plate_id": "plate_099"}, current), A.GONE)
+        A.plate_status({"plate_id": "plate_099"}, current), A.GONE)
     chk("no id at all restores by index",
-        A.verify({}, current), A.BY_INDEX)
+        A.plate_status({}, current), A.BY_INDEX)
+    chk("verified() is false for every non-OK outcome",
+        [A.verified(o) for o in A.OUTCOMES if o != A.OK], [False] * 5)
 
     # The id is IN plates.csv - fingerprints() still returns a row for it -
     # but the image is missing on disk, so fp is None. Distinct from "gone
@@ -121,58 +154,77 @@ with tempfile.TemporaryDirectory() as tmp:
     gapped = {"plate_003": {"fp": None, "px_w": 5, "px_h": 6,
                             "image_file": "missing.png"}}
     chk("an id present in the set but with no image on disk -> gone",
-        A.verify({"plate_id": "plate_003", "fp": "deadbeef0000"}, gapped), A.GONE)
+        A.plate_status({"plate_id": "plate_003", "plate_fp": "deadbeef0000"},
+                       gapped), A.GONE)
 
-    # An export written before `px` was recorded: the fingerprint differs and
-    # there is nothing to check the aspect against, so the safe default is
-    # CHANGED rather than assuming a resize.
+    # An export written before `plate_px` was recorded: the fingerprint
+    # differs and there is nothing to check the aspect against, so the safe
+    # default is CHANGED rather than assuming a resize.
     chk("fp differs and no stored px at all -> changed, not assumed resized",
-        A.verify({"plate_id": "plate_001", "fp": fp_b}, current), A.CHANGED)
+        A.plate_status({"plate_id": "plate_001", "plate_fp": fp_b}, current),
+        A.CHANGED)
 
     # The aspect test is what separates a re-render from a re-crop, and 1% is
     # wide enough for a rounding difference and narrow enough to catch a crop.
     # 1000x2005 against the current 100x200 (ratio 0.5) is a 0.25% drift.
     chk("a 0.25% aspect drift still reads as a resize",
-        A.verify({"plate_id": "plate_001", "fp": fp_b, "px": "1000x2005"}, current),
+        A.plate_status({"plate_id": "plate_001", "plate_fp": fp_b,
+                        "plate_px": "1000x2005"}, current),
         A.RESIZED)
     # ASPECT_TOLERANCE itself, pinned: these two straddle it. Without these,
     # any tolerance from 0.25% to 74% passes the rest of this file unnoticed.
     chk("just inside ASPECT_TOLERANCE (0.79%) -> resized",
-        A.verify({"plate_id": "plate_001", "fp": fp_b, "px": "1000x2016"}, current),
+        A.plate_status({"plate_id": "plate_001", "plate_fp": fp_b,
+                        "plate_px": "1000x2016"}, current),
         A.RESIZED)
     chk("just outside ASPECT_TOLERANCE (2.44%) -> changed",
-        A.verify({"plate_id": "plate_001", "fp": fp_b, "px": "1000x2050"}, current),
+        A.plate_status({"plate_id": "plate_001", "plate_fp": fp_b,
+                        "plate_px": "1000x2050"}, current),
+        A.CHANGED)
+
+    # _shape's grammar, pinned against what the JS side accepts: integers,
+    # lowercase x, nothing else. A float or an uppercase X must NOT parse -
+    # the page's regex would reject them and fall through to CHANGED, so a
+    # Python side that accepted them would read RESIZED for the same string.
+    chk("a float-formatted px string does not parse as a shape",
+        A.plate_status({"plate_id": "plate_001", "plate_fp": fp_b,
+                        "plate_px": "1000.0x2005.0"}, current),
+        A.CHANGED)
+    chk("an uppercase X does not parse as a shape either",
+        A.plate_status({"plate_id": "plate_001", "plate_fp": fp_b,
+                        "plate_px": "1000X2005"}, current),
         A.CHANGED)
 
 print()
-print("--- scale_between(): the landmark rescale factor ---")
-chk("rendered wider -> landmarks scale up",
-    A.scale_between("100x200", {"px_w": 200, "px_h": 400}), 2.0)
-chk("rendered narrower -> landmarks scale down",
-    A.scale_between("200x400", {"px_w": 100, "px_h": 200}), 0.5)
+print("--- scale_between(): the landmark rescale factor, per axis ---")
+chk("rendered wider -> both axes scale up",
+    A.scale_between("100x200", {"px_w": 200, "px_h": 400}), (2.0, 2.0))
+chk("rendered narrower -> both axes scale down",
+    A.scale_between("200x400", {"px_w": 100, "px_h": 200}), (0.5, 0.5))
+# An aspect-drifted RESIZED plate - width and height must NOT share one factor,
+# since RESIZED tolerates exactly this kind of per-axis drift.
+sx, sy = A.scale_between("1000x2000", {"px_w": 1010, "px_h": 2030})
+chk("an aspect-drifted resize scales each axis by its OWN factor, not one",
+    (round(sx, 6), round(sy, 6)), (1.01, 1.015))
 chk("no stored px -> no factor",
     A.scale_between(None, {"px_w": 100, "px_h": 200}), None)
 chk("no current row -> no factor",
     A.scale_between("100x200", None), None)
 chk("current row with no px_w -> no factor",
     A.scale_between("100x200", {"px_w": 0, "px_h": 200}), None)
+chk("current row with no px_h -> no factor",
+    A.scale_between("100x200", {"px_w": 100, "px_h": 0}), None)
 
 print()
 print("--- fingerprints(): plates.csv, the cache, and the missing-image gap ---")
 with tempfile.TemporaryDirectory() as tmp2:
-    def write_plate(name, data):
-        with open(os.path.join(tmp2, name), "wb") as fh:
-            fh.write(data)
-
-    write_plate("p1.png", b"PLATE-ONE")
-    write_plate("p2.png", b"PLATE-TWO")
-    with open(os.path.join(tmp2, "plates.csv"), "w", newline="",
-              encoding="utf-8") as fh:
-        w = csv.writer(fh)
-        w.writerow(["plate_id", "image_file", "px_w", "px_h"])
-        w.writerow(["plate_001", "p1.png", "10", "20"])
-        w.writerow(["plate_002", "p2.png", "30", "40"])
-        w.writerow(["plate_003", "gone.png", "5", "6"])
+    write_file(os.path.join(tmp2, "p1.png"), b"PLATE-ONE")
+    write_file(os.path.join(tmp2, "p2.png"), b"PLATE-TWO")
+    write_plates_csv(tmp2, [
+        ["plate_001", "p1.png", "10", "20"],
+        ["plate_002", "p2.png", "30", "40"],
+        ["plate_003", "gone.png", "5", "6"],
+    ])
 
     fps1 = A.fingerprints(tmp2)
     chk("plates.csv is read when rows is not given",
@@ -189,6 +241,10 @@ with tempfile.TemporaryDirectory() as tmp2:
         {"fp": None, "image_file": "gone.png", "px_w": 5, "px_h": 6})
     chk("the cache file is written",
         os.path.exists(os.path.join(tmp2, A.CACHE_NAME)), True)
+    chk("...with the documented header",
+        open(os.path.join(tmp2, A.CACHE_NAME), encoding="utf-8")
+        .readline().strip(),
+        ",".join(A.CACHE_COLUMNS))
 
     # Reused when nothing moved: fingerprint() must not be called again.
     real_fingerprint = A.fingerprint
@@ -207,10 +263,10 @@ with tempfile.TemporaryDirectory() as tmp2:
     chk("...and the answer is unchanged", fps2, fps1)
 
     # Replace one image's bytes with a DIFFERENT-LENGTH payload (same name,
-    # same declared shape). This is driven by st_size alone - it would pass
+    # same declared shape). This alone is driven by st_size - it would pass
     # under a cache keyed on size only, with no mtime component at all - so
     # it is not evidence the ns key works. That evidence is the block below.
-    write_plate("p1.png", b"PLATE-ONE-REPLACED-CONTENT")
+    write_file(os.path.join(tmp2, "p1.png"), b"PLATE-ONE-REPLACED-CONTENT")
     calls = []
     A.fingerprint = counting
     try:
@@ -236,16 +292,15 @@ print("--- the ns cache key itself: same size, same wall-clock second ---")
 with tempfile.TemporaryDirectory() as tmp3:
     same_size_before = b"A" * 32
     same_size_after = b"B" * 32
-    assert len(same_size_before) == len(same_size_after)  # the point of this test
+    chk("the fixture really is same length, different bytes "
+        "(or this test proves nothing)",
+        (len(same_size_before) == len(same_size_after),
+         same_size_before != same_size_after),
+        (True, True))
 
     path3 = os.path.join(tmp3, "p1.png")
-    with open(path3, "wb") as fh:
-        fh.write(same_size_before)
-    with open(os.path.join(tmp3, "plates.csv"), "w", newline="",
-              encoding="utf-8") as fh:
-        w = csv.writer(fh)
-        w.writerow(["plate_id", "image_file", "px_w", "px_h"])
-        w.writerow(["plate_001", "p1.png", "1", "1"])
+    write_file(path3, same_size_before)
+    write_plates_csv(tmp3, [["plate_001", "p1.png", "1", "1"]])
 
     before_digest = A.fingerprints(tmp3)["plate_001"]["fp"]
     st = os.stat(path3)
@@ -254,13 +309,183 @@ with tempfile.TemporaryDirectory() as tmp3:
     # still the same whole second as before. mtime, not size, is the only
     # signal a whole-second-keyed cache and a nanosecond-keyed one disagree
     # on here.
-    with open(path3, "wb") as fh:
-        fh.write(same_size_after)
+    write_file(path3, same_size_after)
     os.utime(path3, ns=(st.st_atime_ns, st.st_mtime_ns + 1000))
 
     after_digest = A.fingerprints(tmp3)["plate_001"]["fp"]
     chk("same size, same second, 1us later -> the digest still moves",
         before_digest == after_digest, False)
+
+print()
+print("--- a failed hash is never cached as an empty fingerprint ---")
+with tempfile.TemporaryDirectory() as tmp4:
+    write_file(os.path.join(tmp4, "s1.png"), b"SOME-BYTES")
+    write_plates_csv(tmp4, [["plate_001", "s1.png", "1", "1"]])
+
+    real_fingerprint = A.fingerprint
+    A.fingerprint = lambda path: None  # a locked or half-written file
+    try:
+        fps_fail = A.fingerprints(tmp4)
+    finally:
+        A.fingerprint = real_fingerprint
+    chk("a hash that fails reports fp: None for THIS call",
+        fps_fail["plate_001"]["fp"], None)
+
+    cache_path = os.path.join(tmp4, A.CACHE_NAME)
+    if os.path.exists(cache_path):
+        with open(cache_path, newline="", encoding="utf-8") as fh:
+            cache_rows = list(csv.DictReader(fh))
+        chk("...and nothing with a blank digest was written to the cache",
+            any(r.get("digest") == "" for r in cache_rows), False)
+
+    # The file was never actually broken - only fingerprint() was stubbed.
+    # Now that it is real again, the row must resolve to a REAL digest, not a
+    # blank one served back from a cache entry it should never have written.
+    fps_ok = A.fingerprints(tmp4)
+    chk("...and a later, healthy call gets a real digest, not a cached blank",
+        fps_ok["plate_001"]["fp"] is not None
+        and len(fps_ok["plate_001"]["fp"]) == A.DIGEST_CHARS, True)
+
+print()
+print("--- a truncated cache row is not trusted ---")
+with tempfile.TemporaryDirectory() as tmp5:
+    write_file(os.path.join(tmp5, "r1.png"), b"REAL-BYTES-HERE")
+    write_plates_csv(tmp5, [["plate_001", "r1.png", "1", "1"]])
+    st5 = os.stat(os.path.join(tmp5, "r1.png"))
+    # A hand-written cache with a TRUNCATED digest - what a write cut off
+    # mid-line would leave behind. A corrupt read used to guard only the two
+    # int() conversions and never checked the digest's own length.
+    with open(os.path.join(tmp5, A.CACHE_NAME), "w", newline="",
+              encoding="utf-8") as fh:
+        w = csv.writer(fh)
+        w.writerow(A.CACHE_COLUMNS)
+        w.writerow(["r1", "r1.png", st5.st_size, st5.st_mtime_ns, "b926"])
+
+    real_fingerprint = A.fingerprint
+    calls = []
+
+    def counting2(path):
+        calls.append(path)
+        return real_fingerprint(path)
+
+    A.fingerprint = counting2
+    try:
+        fps5 = A.fingerprints(tmp5)
+    finally:
+        A.fingerprint = real_fingerprint
+    chk("a truncated digest in the cache is not trusted - it is re-hashed",
+        os.path.join(tmp5, "r1.png") in calls, True)
+    chk("...and the real, full-length digest is what comes back",
+        len(fps5["plate_001"]["fp"]), A.DIGEST_CHARS)
+
+print()
+print("--- a duplicate plate_id: the first row wins, not the last ---")
+with tempfile.TemporaryDirectory() as tmp6:
+    write_file(os.path.join(tmp6, "first.png"), b"FIRST")
+    write_file(os.path.join(tmp6, "second.png"), b"SECOND-DIFFERENT-BYTES")
+    write_plates_csv(tmp6, [
+        ["plate_001", "first.png", "1", "1"],
+        ["plate_001", "second.png", "2", "2"],
+    ])
+    fps6 = A.fingerprints(tmp6)
+    chk("a duplicate plate_id does not crash and keeps ONE entry",
+        len(fps6), 1)
+    chk("...and it is the FIRST row, not the last silently overwriting it",
+        fps6["plate_001"]["image_file"], "first.png")
+
+print()
+print("--- fingerprints(): plates.csv cannot be opened ---")
+real_sleep = A.IO.time.sleep
+A.IO.time.sleep = lambda seconds: None   # keep the retry backoff instant
+try:
+    # Genuinely absent: retried, still not there, empty map - a legitimate
+    # "this set has no plates" answer for a fresh out_root.
+    with tempfile.TemporaryDirectory() as tmp7:
+        chk("no plates.csv at all -> empty, not an exception",
+            A.fingerprints(tmp7), {})
+
+    # A non-ENOENT OSError must propagate rather than being reported as an
+    # empty, atlas-less set - that reads as every plate GONE, indistinguishable
+    # from a real swap. A directory named plates.csv raises PermissionError on
+    # open() here, which is a real, reproducible non-ENOENT OSError.
+    with tempfile.TemporaryDirectory() as tmp8:
+        os.makedirs(os.path.join(tmp8, "plates.csv"))
+        raised = None
+        try:
+            A.fingerprints(tmp8)
+        except OSError as exc:
+            raised = exc
+        chk("a plates.csv that cannot be read for a reason OTHER than "
+            "'it is not there' raises rather than reporting an empty set",
+            raised is not None, True)
+        chk("...and it is not silently folded into the 'not there' case",
+            isinstance(raised, FileNotFoundError), False)
+
+    # Transient: the read fails twice, then the same file is readable. This
+    # must not give up after the first failure and report an empty set - that
+    # is the exact conflation #6 exists to prevent.
+    with tempfile.TemporaryDirectory() as tmp9:
+        write_file(os.path.join(tmp9, "q1.png"), b"Q")
+        write_plates_csv(tmp9, [["plate_001", "q1.png", "1", "1"]])
+
+        real_retry = A.IO._retry
+        attempts_seen = {"n": 0}
+
+        def flaky(fn, path, attempts):
+            def wrapped():
+                attempts_seen["n"] += 1
+                if attempts_seen["n"] < 3:
+                    raise FileNotFoundError(2, "No such file or directory", path)
+                return fn()
+            return real_retry(wrapped, path, attempts)
+
+        A.IO._retry = flaky
+        try:
+            fps9 = A.fingerprints(tmp9)
+        finally:
+            A.IO._retry = real_retry
+        chk("a transient dropout that clears within the retry window still "
+            "returns the real data, not an empty set",
+            sorted(fps9), ["plate_001"])
+        chk("...having actually retried rather than succeeding on the first try",
+            attempts_seen["n"] >= 3, True)
+finally:
+    A.IO.time.sleep = real_sleep
+
+print()
+print("--- for_config(): the directory is memoised, the fingerprint map is not ---")
+with tempfile.TemporaryDirectory() as tmp10:
+    cfg = {"out_root": tmp10, "atlas_plate_set": {"dir": "plates_final"}}
+    set_dir_path = os.path.join(tmp10, "atlas", "plates_final")
+    os.makedirs(set_dir_path)
+    write_file(os.path.join(set_dir_path, "t1.png"), b"BEFORE-SWAP")
+    write_plates_csv(set_dir_path, [["plate_001", "t1.png", "1", "1"]])
+
+    d1, fps10a = A.for_config(cfg)
+    before_fp = fps10a["plate_001"]["fp"]
+
+    # Simulate an atlas swap while a long-lived process (the curator's HTTP
+    # server) is open: same id, different bytes - the 2026-09-06 failure.
+    write_file(os.path.join(set_dir_path, "t1.png"), b"AFTER-SWAP-DIFFERENT")
+
+    d2, fps10b = A.for_config(cfg)
+    chk("the directory answer is stable across calls", d2, d1)
+    chk("...but the fingerprint map is NOT memoised past one call - a swap "
+        "made after the first call is visible on the very next one",
+        fps10b["plate_001"]["fp"] == before_fp, False)
+
+    # A DIFFERENT study must not be handed the first study's cached directory.
+    # Given a real plates.csv (even an empty one) so this does not also
+    # exercise the missing-file retry path - that is covered above already,
+    # and retrying for real here would cost this suite real seconds.
+    other_dir = os.path.join(tmp10, "other", "atlas", "plates_final")
+    os.makedirs(other_dir)
+    write_plates_csv(other_dir, [])
+    cfg2 = {"out_root": os.path.join(tmp10, "other"),
+            "atlas_plate_set": {"dir": "plates_final"}}
+    d3, _ = A.for_config(cfg2)
+    chk("a second study's directory is its own, not the first study's",
+        d3 == d1, False)
 
 print()
 print("ALL PASS" if not failures else f"{len(failures)} FAILED")
