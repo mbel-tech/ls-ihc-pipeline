@@ -602,6 +602,16 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 ---
 
+> **Task 1 landed as `f07a4c7` + `262db3e`. The committed `tests/test_ls_atlas.py` is the
+> authority, not the Step 1 block above** — review grew it from 20 assertions to 42 and the
+> block was not back-ported. Re-deriving Task 1 from the block alone rebuilds the weaker
+> suite. What it lacks: an `ASPECT_TOLERANCE` straddling pair (without it any tolerance
+> from 0.0025 to 0.74 passes — a factor of 300); any test of `fingerprints()` at all,
+> including the missing-image-keeps-its-row invariant that Task 3 depends on; the two
+> `verify()` branches for an absent image and a missing `px`; `scale_between()`; and a test
+> that the cache key is nanoseconds rather than whole seconds. Each of those was added
+> because a mutation of the committed module passed the suite without it.
+
 ## Task 2: `tests/_atlas_fixture.py` — a synthetic atlas, twice
 
 **Files:**
