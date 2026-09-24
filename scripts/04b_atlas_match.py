@@ -54,6 +54,7 @@ if _HERE not in sys.path:
 # the whole process. Imported, not re-implemented: this block used to be four
 # lines copy-pasted into every stage.
 from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
+import ls_atlas as AT  # noqa: E402
 import ls_channels as CH  # noqa: E402
 import ls_naming as NM  # noqa: E402
 
@@ -61,7 +62,16 @@ MARKERS = list(CH.marker_names(CONFIG))
 
 OUT_ROOT = CONFIG["out_root"]
 OVERVIEW_DIR = os.path.join(OUT_ROOT, "overviews")
-PLATE_DIR = os.path.join(OUT_ROOT, "atlas", "plates")
+# THE EXTRACTION SET, deliberately - not the study's configured set.
+#
+# 04b is in app/stages.py NOT_LISTED as "measured to fail on this data
+# (LOGS 2026-08-12); kept as evidence". Re-pointing it at plates_final would
+# change the candidate universe from 47 figures to 64 plates and invalidate the
+# measurement it exists to record. The literal is gone; the choice is not.
+#
+# KNOWN GAP: its atlas_proposals_v2.csv still feeds 04d's plate preview, which
+# renders from the configured set. Not closed here - see the plan's scope note.
+PLATE_DIR = AT.plate_dir(CONFIG, set_name=AT.EXTRACTED)
 QC_CSV = os.path.join(OUT_ROOT, "qc", "focus.csv")
 REPORT_DIR = os.path.join(OUT_ROOT, "qc", "atlasmatch")
 

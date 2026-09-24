@@ -723,10 +723,12 @@ def analysis_uids(marker):
     with open(analysis_set_csv(marker), newline="", encoding="utf-8") as fh:
         perk = {r["scene_uid"] for r in csv.DictReader(fh) if r["in_analysis_set"] == "1"}
     return perk, len(perk), 0
-# Which plate set to use, from config. The two sets reuse the same plate_NNN
+# Which plate set to use, resolved through ls_atlas - the same call
+# 04k_level_curator.py and 04e_register_elastix.py make, rather than each
+# carrying its own copy of this lookup. The two sets reuse the same plate_NNN
 # names for different images, so this must not be hard-coded in two places.
-PLATE_SET = CONFIG.get("atlas_plate_set", {}).get("dir", "plates")
-PLATE_DIR = os.path.join(OUT_ROOT, "atlas", PLATE_SET)
+PLATE_SET = AT.set_name(CONFIG)
+PLATE_DIR = AT.plate_dir(CONFIG)
 CURATOR_HTML = os.path.join(REFORMAT_DIR, "roi_curator.html")
 # Where exports are filed. Config so the app and this stage cannot disagree
 # about it; one dated folder per export is created inside it.

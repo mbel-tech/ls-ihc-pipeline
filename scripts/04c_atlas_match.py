@@ -92,11 +92,16 @@ if _HERE not in sys.path:
 # the whole process. Imported, not re-implemented: this block used to be four
 # lines copy-pasted into every stage.
 from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
+import ls_atlas as AT  # noqa: E402
 import ls_naming as NM  # noqa: E402
 
 OUT_ROOT = CONFIG["out_root"]
 REFORMAT_DIR = os.path.join(OUT_ROOT, "reformatted")
-PLATE_DIR = os.path.join(OUT_ROOT, "atlas", "plates")
+# THE EXTRACTION SET, deliberately - not the study's configured set. See
+# 04b_atlas_match.py's comment: 04c is measured to fail on this data and kept
+# as evidence, and re-pointing it at a different plate set would invalidate
+# that measurement.
+PLATE_DIR = AT.plate_dir(CONFIG, set_name=AT.EXTRACTED)
 REPORT_DIR = os.path.join(OUT_ROOT, "qc", "atlasmatch")
 
 TOP_K = 4

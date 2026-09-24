@@ -1,4 +1,4 @@
-"""Four small fixes, each pinned by the unit that used to be wrong.
+"""Five small fixes, each pinned by the unit that used to be wrong.
 
   * 06e passed no results directory to the R scripts, so they drew from the
     hard-coded default whatever config.json said.
@@ -7,6 +7,10 @@
   * 04g copied only the corrected saturation into artifact_summary*.csv.
   * 04k hard-coded atlas/plates while config names plates_final, and the two
     sets reuse plate ids for different images.
+  * 04b carried its own hard-coded copy of the extraction-set path. It still
+    reads that set on purpose (it is measured evidence, not moved to the
+    configured set - see 04a's scope note), but now says so through
+    ls_atlas.EXTRACTED instead of repeating the literal.
 
 Every stage reads config.json at import, so a temporary config is written and
 named through LS_CONFIG before any script is loaded, as in
@@ -107,6 +111,19 @@ with tempfile.TemporaryDirectory() as tmp:
         os.path.join(out_root, "atlas", "plates_final", "plates.csv"))
     chk("page export has a plate_set column", '"plate_set"' in G4K.PAGE, True)
     chk("page carries the set for the export", "__PLATESET__" in G4K.PAGE, True)
+
+    # ------------------------------------------------ 5. plate set resolved in one place
+    print("\n04b: the extraction set is kept, and named rather than hard-coded\n")
+    B = load("04b_atlas_match.py", "t_b")
+    chk("04b keeps the set it was measured against",
+        os.path.basename(B.PLATE_DIR), "plates")
+    with open(os.path.join(REPO, "scripts", "04b_atlas_match.py"),
+              encoding="utf-8") as fh:
+        b_src = fh.read()
+    chk("...and says so through AT.EXTRACTED rather than a literal",
+        "AT.EXTRACTED" in b_src, True)
+    chk("...not by repeating the literal \"plates\" in the PLATE_DIR line",
+        'os.path.join(OUT_ROOT, "atlas", "plates")' in b_src, False)
 
 print()
 if fails:

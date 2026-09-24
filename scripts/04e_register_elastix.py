@@ -39,13 +39,16 @@ if _HERE not in sys.path:
 # the whole process. Imported, not re-implemented: this block used to be four
 # lines copy-pasted into every stage.
 from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
+import ls_atlas as AT  # noqa: E402
 
 OUT_ROOT = CONFIG["out_root"]
 REFORMAT_DIR = os.path.join(OUT_ROOT, "reformatted")
-# Which plate set to use, from config. The two sets reuse the same plate_NNN
-# names for different images, so this must not be hard-coded in two places.
-PLATE_SET = CONFIG.get("atlas_plate_set", {}).get("dir", "plates")
-PLATE_DIR = os.path.join(OUT_ROOT, "atlas", PLATE_SET)
+# Which plate set to use, from config - resolved through ls_atlas, the one
+# place this is answered, rather than a copy of the same lookup carried
+# separately in 04k and 04l. The two sets reuse the same plate_NNN names for
+# different images, so the three copies could disagree with no error anywhere.
+PLATE_SET = AT.set_name(CONFIG)
+PLATE_DIR = AT.plate_dir(CONFIG)
 MATCH_CSV = os.path.join(OUT_ROOT, "qc", "atlasmatch", "atlas_proposals_v2.csv")
 REG_DIR = os.path.join(OUT_ROOT, "registered")
 
@@ -399,11 +402,22 @@ def main():
 
     po = parameter_maps(itk, args.spacing)
     results = []
+    skipped = 0
     for i, r in enumerate(rows, 1):
         plate_id = r["confirmed_plate"] or r["proposed_plate"] if args.use == "confirmed" else r["proposed_plate"]
         sec_path = os.path.join(REFORMAT_DIR, "sections", r["scene_uid"] + ".png")
         plate_path = os.path.join(REFORMAT_DIR, "plates", plate_id + ".png")
+        # A plate id with no reformatted image is SKIPPED silently below. That
+        # was masking a real mismatch until 2026-09-23: 04a_reformat builds
+        # these images from its own hardcoded extraction set (untouched here -
+        # that move is Task 8b) while PLATE_DIR above now comes from the
+        # study's configured set. On this drive plates_final has 64 ids and
+        # the extraction set's reformatted/plates/ only ever held images for
+        # 47 of them, so 17 hit this branch every run. Counted here rather
+        # than only vanishing from the loop, so the gap is measured, not
+        # rediscovered.
         if not (os.path.exists(sec_path) and os.path.exists(plate_path)):
+            skipped += 1
             continue
 
         section = np.asarray(Image.open(sec_path).convert("L")).astype(np.float32)
@@ -440,6 +454,8 @@ def main():
         print(f"\r  [{i}/{len(rows)}] {r['scene_uid']} -> {plate_id}  IoU {overlap:.3f}   ", end="")
 
     print()
+    if skipped:
+        print(f"  skipped {skipped} row(s) with no reformatted section or plate image")
     if not results:
         raise SystemExit("nothing registered")
 

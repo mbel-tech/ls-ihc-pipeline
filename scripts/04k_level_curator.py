@@ -68,13 +68,14 @@ import ls_atlas as AT  # noqa: E402
 OUT_ROOT = CONFIG["out_root"]
 REFORMAT_DIR = os.path.join(OUT_ROOT, "reformatted")
 INDEX_CSV = os.path.join(REFORMAT_DIR, "reformat_index.csv")
-# Which plate set, from config - the same key 04l_roi_curator.py and
-# 04e_register_elastix.py read. The sets reuse plate_NNN names for different
-# images, so a level anchored here against a hard-coded `plates/` while the ROI
-# curator worked on `plates_final/` would carry an id that names the wrong
-# picture, and nothing would show it.
-PLATE_SET = CONFIG.get("atlas_plate_set", {}).get("dir", "plates")
-PLATE_DIR = os.path.join(OUT_ROOT, "atlas", PLATE_SET)
+# Which plate set, resolved through ls_atlas - the same call 04l_roi_curator.py
+# and 04e_register_elastix.py make, rather than each carrying its own copy of
+# this lookup. The sets reuse plate_NNN names for different images, so a level
+# anchored here against a hard-coded `plates/` while the ROI curator worked on
+# `plates_final/` would carry an id that names the wrong picture, and nothing
+# would show it.
+PLATE_SET = AT.set_name(CONFIG)
+PLATE_DIR = AT.plate_dir(CONFIG)
 PLATES_CSV = os.path.join(PLATE_DIR, "plates.csv")
 CURATOR_HTML = os.path.join(REFORMAT_DIR, "level_curator.html")
 
