@@ -13,7 +13,6 @@ import hashlib
 import os
 import sys
 import tempfile
-import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
@@ -207,10 +206,10 @@ with tempfile.TemporaryDirectory() as tmp2:
     chk("nothing moved -> the cache is reused, nothing is re-hashed", calls, [])
     chk("...and the answer is unchanged", fps2, fps1)
 
-    # Replace one image's bytes (same name, same declared shape). The cache
-    # key is (size, mtime_ns); sleeping first guarantees a moved mtime even at
-    # this filesystem's finest resolution.
-    time.sleep(0.01)
+    # Replace one image's bytes with a DIFFERENT-LENGTH payload (same name,
+    # same declared shape). This is driven by st_size alone - it would pass
+    # under a cache keyed on size only, with no mtime component at all - so
+    # it is not evidence the ns key works. That evidence is the block below.
     write_plate("p1.png", b"PLATE-ONE-REPLACED-CONTENT")
     calls = []
     A.fingerprint = counting
@@ -224,6 +223,44 @@ with tempfile.TemporaryDirectory() as tmp2:
         fps3["plate_001"]["fp"] != fps1["plate_001"]["fp"], True)
     chk("...while the untouched plate was not re-hashed",
         os.path.join(tmp2, "p2.png") in calls, False)
+
+print()
+print("--- the ns cache key itself: same size, same wall-clock second ---")
+# THE guard against the 2026-09-06 failure mode, exercised directly rather
+# than left to the docstring's word: a plate re-rendered to the SAME byte
+# count, inside the SAME whole second, must still be caught. A cache keyed on
+# (size, whole-second mtime) - what this module shipped with before spec
+# review reproduced the false OK - cannot tell these two states apart; only
+# nanosecond resolution can. Built with os.utime rather than a sleep, so the
+# suite stays fast and the timing is exact rather than merely probable.
+with tempfile.TemporaryDirectory() as tmp3:
+    same_size_before = b"A" * 32
+    same_size_after = b"B" * 32
+    assert len(same_size_before) == len(same_size_after)  # the point of this test
+
+    path3 = os.path.join(tmp3, "p1.png")
+    with open(path3, "wb") as fh:
+        fh.write(same_size_before)
+    with open(os.path.join(tmp3, "plates.csv"), "w", newline="",
+              encoding="utf-8") as fh:
+        w = csv.writer(fh)
+        w.writerow(["plate_id", "image_file", "px_w", "px_h"])
+        w.writerow(["plate_001", "p1.png", "1", "1"])
+
+    before_digest = A.fingerprints(tmp3)["plate_001"]["fp"]
+    st = os.stat(path3)
+
+    # Same length, different bytes, mtime pushed forward by 1 microsecond -
+    # still the same whole second as before. mtime, not size, is the only
+    # signal a whole-second-keyed cache and a nanosecond-keyed one disagree
+    # on here.
+    with open(path3, "wb") as fh:
+        fh.write(same_size_after)
+    os.utime(path3, ns=(st.st_atime_ns, st.st_mtime_ns + 1000))
+
+    after_digest = A.fingerprints(tmp3)["plate_001"]["fp"]
+    chk("same size, same second, 1us later -> the digest still moves",
+        before_digest == after_digest, False)
 
 print()
 print("ALL PASS" if not failures else f"{len(failures)} FAILED")
