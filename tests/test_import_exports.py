@@ -32,8 +32,9 @@ from _fixture import temp_study                                # noqa: E402
 
 PLATES = """\
 scene_uid,animal,marker,subset,section_order,plate_set,plate_id,plate_index,\
+plate_fp,plate_px,plate_verified,\
 plate_has_seeds,n_landmarks,n_background,transform,status,favorite,view_rotation_deg,excluded
-LS22_s01a_sc00,LS22,AF568,roi_worklist,1,plates_final,plate_009,8,1,3,2,affine,registered,1,0.0,0
+LS22_s01a_sc00,LS22,AF568,roi_worklist,1,plates_final,plate_009,8,edd3b3e74d7f,1409x1134,,1,3,2,affine,registered,1,0.0,0
 """
 
 LANDMARKS = """\

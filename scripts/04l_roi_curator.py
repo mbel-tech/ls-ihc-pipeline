@@ -3276,6 +3276,7 @@ function exportCsv(){
   // three landmarks, which is exactly the case where the operator has decided the
   // section is not worth landmarking.
   const pl=[["scene_uid","animal","marker","subset","section_order","plate_set","plate_id","plate_index",
+             "plate_fp","plate_px","plate_verified",
              "plate_has_seeds","n_landmarks","n_background","transform","status",
              "favorite","view_rotation_deg",
              "excluded"]];
@@ -3339,6 +3340,11 @@ function exportCsv(){
     // Blank rather than plate_001 when no plate was ever chosen - otherwise a
     // favourite with no assignment reads as a deliberate call on plate_001.
     pl.push([d.uid,d.animal,d.m,d.sub,d.order,PLATE_SET, chosen?P.id:"", chosen?s.plate:"",
+             // Identity, so a restore can CHECK rather than trust the index.
+             // plate_px is here only so a re-render's landmarks can be scaled:
+             // once the image has changed, the current set can no longer say
+             // what size it used to be.
+             chosen?(P.fp||""):"", chosen?(P.w+"x"+P.h):"", s.verified||"",
              chosen?(P.labelled?1:0):"", n, nBg, T?T.kind:"", status,
              s.fav?1:0, (s.rot||0).toFixed(1),
              excl?1:0]);

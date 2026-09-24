@@ -139,6 +139,18 @@ const plRow = pl.slice(1).find(r => r[0] === uid);
 chk("roi_plates.csv gained n_background", col(pl[0], "n_background") > 0, true);
 chk("...and reports it", plRow[col(pl[0], "n_background")], "1");
 chk("n_landmarks excludes the background disc", plRow[col(pl[0], "n_landmarks")], "3");
+// The header and the row are built in two different places in the source -
+// a header of N names and a row of N+1 values silently shifts every column
+// after the mismatch, with nothing on screen or in the diff saying so. Check
+// it mechanically rather than by eye.
+chk("roi_plates.csv header and row line up", plRow.length, pl[0].length);
+chk("...gained plate_fp", col(pl[0], "plate_fp") > 0, true);
+chk("...carrying the chosen plate's own fingerprint",
+    plRow[col(pl[0], "plate_fp")], P.fp || "");
+chk("...and plate_px, the size that fingerprint was taken at",
+    plRow[col(pl[0], "plate_px")], P.w + "x" + P.h);
+chk("...and plate_verified, blank until a later task gives it meaning",
+    plRow[col(pl[0], "plate_verified")], "");
 X.toggleGuided();
 
 // ---- a section with too few landmarks for a fit --------------------------
