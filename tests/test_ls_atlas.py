@@ -521,6 +521,19 @@ with tempfile.TemporaryDirectory() as tmp:
     chk("a dropped plate is gone",
         A.plate_status(stored("plate_004"), now), A.GONE)
 
+    # A design limit, not a fixture gap: plate_status cannot tell a genuine
+    # re-render from an unrelated image dropped in at the same size - nothing
+    # but the id ties two images together, so both read RESIZED. plate_004 is
+    # a real, different image at exactly plate_001's original pixel size, so
+    # this is a true same-size replacement, not a fabricated digest.
+    chk("the fixture really is a different image, or this proves nothing",
+        was["plate_001"]["fp"] != was["plate_004"]["fp"], True)
+    replaced = {"plate_001": {"fp": was["plate_004"]["fp"],
+                              "px_w": FIX.PLATE_W, "px_h": FIX.PLATE_H}}
+    chk("a replacement at the same size reads RESIZED too - "
+        "indistinguishable from a real re-render",
+        A.plate_status(stored("plate_001"), replaced), A.RESIZED)
+
     sx, sy = A.scale_between(stored("plate_002")["plate_px"], now["plate_002"])
     chk("the rescale factor is the size ratio, on both axes",
         (round(sx, 3), round(sy, 3)), (1.5, 1.5))
@@ -533,8 +546,14 @@ with tempfile.TemporaryDirectory() as tmp:
     swapped = os.path.join(tmp, "swapped")
     shutil.copytree(before, swapped)
     A.fingerprints(swapped)                     # writes the cache
-    shutil.copy(os.path.join(after, "plate_003.png"),
-                os.path.join(swapped, "plate_003.png"))
+    # plate_003's image_file is identical in `before` and `after` (page ==
+    # plate number in both), so this really does replace the same path.
+    image_file = now["plate_003"]["image_file"]
+    chk("plate_003's filename really is identical before and after "
+        "the swap, or this replace-in-place would land on a new path",
+        was["plate_003"]["image_file"], image_file)
+    shutil.copy(os.path.join(after, image_file),
+                os.path.join(swapped, image_file))
     again = A.fingerprints(swapped)
     chk("a replaced image is re-hashed, not served from the cache",
         again["plate_003"]["fp"], now["plate_003"]["fp"])

@@ -2,15 +2,26 @@
 
 Shaped on the swap that actually happened here on 2026-09-06: same ids, some
 plates re-rendered, some genuinely different, some gone. Four plates instead of
-sixty-four, one per outcome of `ls_atlas.verify`:
+sixty-four, one per outcome of `ls_atlas.plate_status` that a plate set ON DISK
+can actually produce:
 
     plate_001   byte-identical            -> OK
     plate_002   the same image at 1.5x    -> RESIZED
     plate_003   re-cropped, new aspect    -> CHANGED
     plate_004   absent from `after`       -> GONE
 
-`plate_005` exists only in `after`, so a test can check that a new plate is not
-mistaken for a moved one.
+That is four of `plate_status`'s six outcomes. UNCHECKED and BY_INDEX describe
+a STORED record that predates fingerprints, not a state a plate set on disk
+can be in - no fixture plate produces them; they are pinned directly in
+`tests/test_ls_atlas.py:141-146` instead.
+
+`plate_005` is present in `after` and absent from `before`, so a test can
+check that a new id is not mistaken for one of the other four.
+
+A real limitation of `plate_status`, not of this fixture: it cannot tell a
+genuine re-render from an unrelated image dropped in at the same size - both
+come back RESIZED, because nothing but the id ties two images together. See
+the "a replacement at the same size" assertion in `tests/test_ls_atlas.py`.
 
 The images are deterministic - a seeded pattern, not random - so a fingerprint
 is stable across runs and a failure is reproducible.
@@ -23,7 +34,20 @@ import numpy as np
 from PIL import Image
 
 PLATE_W, PLATE_H = 120, 80
-COLUMNS = ("plate_id", "page", "image_file", "px_w", "px_h", "regions")
+COLUMNS = ("plate_id", "page", "image_file", "px_w", "px_h")
+
+# Fixture plumbing only - NOT a real-schema column. `plates_final/plates.csv`
+# has no `regions` column at all; a real set's regions live in `seeds.csv`,
+# one row per seed. This dict exists solely to give `_seeds_csv` something to
+# write, keyed by plate id since a real plate's regions do not change with
+# the plate set it happens to be rendered into.
+_REGIONS = {
+    "plate_001": "Dl;Dm",
+    "plate_002": "Dl;Dm",
+    "plate_003": "Dl",
+    "plate_004": "Dl;Dm",
+    "plate_005": "Vd",
+}
 
 
 def _pattern(w, h, seed):
@@ -46,39 +70,48 @@ def build(root):
 
     base = {n: _pattern(PLATE_W, PLATE_H, n) for n in (1, 2, 3, 4)}
 
+    # image_file deliberately does NOT collapse onto plate_id - the real set
+    # pairs plate_id=plate_001 with image_file=plate_001_p01.png, and that
+    # divergence is the whole reason `ls_atlas._image_stem` exists. The name
+    # for a given plate must also stay IDENTICAL between `before` and
+    # `after` (page == plate number here in both), because the cache test
+    # below replaces `swapped/<name>` in place and needs the same path to
+    # land on the same plate in both sets.
+    def image_name(n):
+        return "plate_%03d_p%02d.png" % (n, n)
+
     rows_before = []
     for n in (1, 2, 3, 4):
-        name = "plate_%03d.png" % n
+        name = image_name(n)
         _write(os.path.join(before, name), base[n])
         rows_before.append({"plate_id": "plate_%03d" % n, "page": n,
                             "image_file": name, "px_w": PLATE_W,
-                            "px_h": PLATE_H, "regions": "Dl;Dm"})
+                            "px_h": PLATE_H})
 
     rows_after = []
     # plate_001: the same bytes.
-    _write(os.path.join(after, "plate_001.png"), base[1])
+    _write(os.path.join(after, image_name(1)), base[1])
     rows_after.append({"plate_id": "plate_001", "page": 1,
-                       "image_file": "plate_001.png", "px_w": PLATE_W,
-                       "px_h": PLATE_H, "regions": "Dl;Dm"})
+                       "image_file": image_name(1), "px_w": PLATE_W,
+                       "px_h": PLATE_H})
     # plate_002: the same picture, re-rendered 1.5x. Same aspect, new bytes.
     big = np.asarray(Image.fromarray(base[2], mode="L").resize(
         (int(PLATE_W * 1.5), int(PLATE_H * 1.5)), Image.NEAREST))
-    _write(os.path.join(after, "plate_002.png"), big)
+    _write(os.path.join(after, image_name(2)), big)
     rows_after.append({"plate_id": "plate_002", "page": 2,
-                       "image_file": "plate_002.png",
-                       "px_w": int(PLATE_W * 1.5), "px_h": int(PLATE_H * 1.5),
-                       "regions": "Dl;Dm"})
+                       "image_file": image_name(2),
+                       "px_w": int(PLATE_W * 1.5), "px_h": int(PLATE_H * 1.5)})
     # plate_003: re-cropped. The aspect moves, so this is not a resize.
     crop = base[3][:, : PLATE_W // 2]
-    _write(os.path.join(after, "plate_003.png"), crop)
+    _write(os.path.join(after, image_name(3)), crop)
     rows_after.append({"plate_id": "plate_003", "page": 3,
-                       "image_file": "plate_003.png", "px_w": PLATE_W // 2,
-                       "px_h": PLATE_H, "regions": "Dl"})
+                       "image_file": image_name(3), "px_w": PLATE_W // 2,
+                       "px_h": PLATE_H})
     # plate_004 is absent. plate_005 is new.
-    _write(os.path.join(after, "plate_005.png"), _pattern(PLATE_W, PLATE_H, 5))
+    _write(os.path.join(after, image_name(5)), _pattern(PLATE_W, PLATE_H, 5))
     rows_after.append({"plate_id": "plate_005", "page": 5,
-                       "image_file": "plate_005.png", "px_w": PLATE_W,
-                       "px_h": PLATE_H, "regions": "Vd"})
+                       "image_file": image_name(5), "px_w": PLATE_W,
+                       "px_h": PLATE_H})
 
     _plates_csv(before, rows_before)
     _plates_csv(after, rows_after)
@@ -96,13 +129,19 @@ def _plates_csv(directory, rows):
 
 
 def _seeds_csv(directory, rows):
-    """Two seeds per plate, in the schema every real set shares."""
+    """Two seeds per plate, in the schema every real set shares.
+
+    Coordinates are schema filler, not a rescale to assert against - a test
+    that needs seeds at rescaled coordinates should compute its own expected
+    values rather than trust a fixture's precomputed ones.
+    """
     keys = ("plate_id", "page", "plate_seq", "region", "region_raw",
             "is_unknown", "colour_hex", "from_raster", "x_px", "y_px",
             "x_frac", "y_frac")
     out = []
     for r in rows:
-        for i, region in enumerate((r["regions"].split(";") or ["Dl"])[:2], 1):
+        regions = _REGIONS.get(r["plate_id"], "Dl").split(";")[:2]
+        for i, region in enumerate(regions, 1):
             out.append({"plate_id": r["plate_id"], "page": r["page"],
                         "plate_seq": i, "region": region, "region_raw": region,
                         "is_unknown": 0, "colour_hex": "#ff0000",
