@@ -222,6 +222,7 @@ import ls_config as LC  # noqa: E402
 from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
 import ls_channels as CH  # noqa: E402
 import ls_paths as LP  # noqa: E402
+import ls_atlas as AT  # noqa: E402
 
 # The markers this study measures, in declared order. ls_channels is the
 # single source of that list; naming a fluorophore here would pin the stage
@@ -4976,6 +4977,63 @@ def build_parser():
     return ap
 
 
+def plate_rows(plate_dir=None):
+    """The plate array the page indexes into, in atlas order.
+
+    TWO THINGS THAT USED TO BE WRONG HERE, both silently.
+
+    The sort was `key=lambda p: p["plate_id"]` - a STRING sort, correct only
+    because this atlas zero-pads to three digits. An atlas numbering
+    `plate_1 .. plate_100` orders 1, 10, 100, 2, and every index stored against
+    it means a different plate with no error anywhere. `ls_atlas.plate_order`
+    is numeric-aware and falls back to text when the ids carry no number.
+
+    And a plate whose image was absent was `continue`d - dropped from the array,
+    shifting every later index by one. One missing PNG renumbered the back half
+    of the atlas. It now keeps its slot and carries `missing: 1`, so the page
+    can refuse to draw it and say why.
+    """
+    plate_dir = plate_dir or PLATE_DIR
+    with open(os.path.join(plate_dir, "plates.csv"), newline="",
+              encoding="utf-8") as fh:
+        plates = list(csv.DictReader(fh))
+    seeds = load_seeds(plate_dir)
+    prints = AT.fingerprints(plate_dir, plates)
+
+    out = []
+    for p in AT.plate_order(plates):
+        pid = p["plate_id"]
+        sd = seeds.get(pid, [])
+        # The ROI grouping, and the number every seed under it carries.
+        hulls = region_hulls(sd)
+        tag_rois(sd, hulls)
+        pw, ph = int(p["px_w"]), int(p["px_h"])
+        # How much room a label actually has on THIS plate: the median distance
+        # from a seed to its nearest neighbour, as a fraction of the plate
+        # diagonal. A fraction rather than pixels because the page has to turn it
+        # into screen pixels against whatever size the pane currently is - bake
+        # in pixels and the scaling goes stale the moment the window changes.
+        nn = 0.0
+        if len(sd) > 1:
+            pts = [(x["xf"] * pw, x["yf"] * ph) for x in sd]
+            diag = math.hypot(pw, ph)
+            near = sorted(min(math.dist(a, b) for j, b in enumerate(pts) if j != i)
+                          for i, a in enumerate(pts))
+            nn = near[len(near) // 2] / diag
+        fp = (prints.get(pid) or {}).get("fp")
+        out.append({"id": pid, "nn": round(nn, 5),
+                    # Original plate, NOT reformatted: the seeds are fractions
+                    # of this image, so no transform chain is needed.
+                    "img": f"../atlas/{PLATE_SET}/{p['image_file']}",
+                    "w": pw, "h": ph,
+                    "fp": fp, "missing": 0 if fp else 1,
+                    "labelled": int(bool(sd)), "seeds": sd,
+                    # What a REGION is on this plate, as opposed to where its
+                    # individual seeds are. One entry per region per lobe.
+                    "hulls": hulls})
+    return out
+
+
 def main():
     args = build_parser().parse_args()
     if args.worklist and not os.path.exists(args.worklist):
@@ -5054,43 +5112,12 @@ def main():
                         "colour": MARKER_COLOUR_NAMES.get(mk)})
     data = [row for mk in MARKERS for row in per_marker[mk][0]]
 
-    with open(os.path.join(PLATE_DIR, "plates.csv"), newline="", encoding="utf-8") as fh:
-        plates = list(csv.DictReader(fh))
-    # Loaded and numbered by the shared helpers above, so this tool and the
-    # atlas region tracer agree about which seed is seed 4.
-    seeds = load_seeds()
-
-    pl = []
-    for p in sorted(plates, key=lambda p: p["plate_id"]):
-        img = os.path.join(PLATE_DIR, p["image_file"])
-        if not os.path.exists(img):
-            continue
-        sd = seeds.get(p["plate_id"], [])
-        # The ROI grouping, and the number every seed under it carries.
-        hulls = region_hulls(sd)
-        tag_rois(sd, hulls)
-        # How much room a label actually has on THIS plate: the median distance
-        # from a seed to its nearest neighbour, as a fraction of the plate
-        # diagonal. A fraction rather than pixels because the page has to turn it
-        # into screen pixels against whatever size the pane currently is - bake
-        # in pixels and the scaling goes stale the moment the window changes.
-        nn = 0.0
-        if len(sd) > 1:
-            pw, ph = int(p["px_w"]), int(p["px_h"])
-            pts = [(x["xf"] * pw, x["yf"] * ph) for x in sd]
-            diag = math.hypot(pw, ph)
-            near = sorted(min(math.dist(a, b) for j, b in enumerate(pts) if j != i)
-                          for i, a in enumerate(pts))
-            nn = near[len(near) // 2] / diag
-        pl.append({"id": p["plate_id"], "nn": round(nn, 5),
-                   # Original plate, NOT reformatted: the seeds are fractions of
-                   # this image, so no transform chain is needed.
-                   "img": f"../atlas/{PLATE_SET}/{p['image_file']}",
-                   "w": int(p["px_w"]), "h": int(p["px_h"]),
-                   "labelled": int(bool(sd)), "seeds": sd,
-                   # What a REGION is on this plate, as opposed to where its
-                   # individual seeds are. One entry per region per lobe.
-                   "hulls": hulls})
+    pl = plate_rows()
+    gaps = [p["id"] for p in pl if p["missing"]]
+    if gaps:
+        print(f"  !! {len(gaps)} plate image(s) missing from {PLATE_SET}: "
+              + ", ".join(gaps[:8]) + (" ..." if len(gaps) > 8 else ""))
+        print("     They keep their place in the array so no assignment moves.")
 
     # The curation the app has on file, carried into the page so a browser copy
     # opens with the same work rather than empty. --no-seed leaves it out, which
