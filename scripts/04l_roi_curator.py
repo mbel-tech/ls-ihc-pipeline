@@ -1814,10 +1814,29 @@ function drawSec(){
 function drawPl(){
   const c=el("cPl"), x=c.getContext("2d");
   if(!active) return;
+  const s=st(active), P=PLATES[s.plate];
+  if(P && P.missing){
+    // No readable image for this plate. Fails CLOSED, before `plateImg()` is
+    // even touched: a 404'd <img> never fires `load`, so the wait below used
+    // to hang forever and leave the PREVIOUS plate's pixels on screen under
+    // the NEW plate's header - the operator would place landmarks against
+    // the wrong anatomy with nothing on screen to say so. A gap plate was
+    // never reachable here before the plate array stopped dropping them.
+    // This is only the minimal guard; the full banner/confirm flow is
+    // Task 5's.
+    x.clearRect(0, 0, c.width, c.height);
+    x.fillStyle="#1a1a1a"; x.fillRect(0, 0, c.width, c.height);
+    x.fillStyle="#e5534b"; x.textAlign="center";
+    x.font="16px sans-serif";
+    x.fillText(P.id + ": no readable image", c.width/2, c.height/2 - 10);
+    x.font="12px sans-serif";
+    x.fillText("landmarks are not drawn against the wrong plate", c.width/2, c.height/2 + 14);
+    return;
+  }
   const img=plateImg();
   if(!img.naturalWidth){ img.addEventListener("load", drawPl, {once:true}); return; }
   fit(c,img); x.drawImage(img,0,0);
-  const s=st(active), P=PLATES[s.plate], u=uiScale(c), done=usedRois(s);
+  const u=uiScale(c), done=usedRois(s);
   const ns=numScale(P, c, u);
   // ---- the ROIs, as areas --------------------------------------------------
   //
@@ -4069,14 +4088,22 @@ async function shotBuild(by){
 
     // The plate the sections were matched to, at its own aspect and its own
     // resolution: fetched as bytes rather than redrawn, so nothing is resampled.
-    if(P){
-      const pw = Math.round(inch(L.plateH) * (P.w / P.h));
+    const pw = P ? Math.round(inch(L.plateH) * (P.w / P.h)) : 0;
+    if(P && !P.missing){
       const prid = await addPic(P.img, () => fetch(P.img).then(r => {
         if(!r.ok) throw new Error("plate " + P.id + ": HTTP " + r.status);
         return r.arrayBuffer();
       }).then(b => new Uint8Array(b)));
       body += pic(Math.round(SLIDE_W / 2 - pw / 2), inch(L.plateY),
                   pw, inch(L.plateH), prid, P.id);
+    } else if(P && P.missing){
+      // No readable image for this plate. A thrown fetch/addPic here used to
+      // take the WHOLE deck down over one gap plate rather than one slide;
+      // this skips the picture and says why, in the slide itself, instead.
+      // The full presentation is Task 5's - this is only the minimal guard.
+      body += tbox(Math.round(SLIDE_W / 2 - pw / 2), inch(L.plateY),
+                   pw, inch(L.plateH),
+                   P.id + ": no readable image", L.capSz, false, DIM, "ctr");
     }
     // Drawn in both modes: the split down the middle is the point of the slide,
     // not decoration around the plate.
@@ -4992,8 +5019,25 @@ def plate_rows(plate_dir=None):
     shifting every later index by one. One missing PNG renumbered the back half
     of the atlas. It now keeps its slot and carries `missing: 1`, so the page
     can refuse to draw it and say why.
+
+    `missing` means "no readable image", not "no file": `ls_atlas.fingerprints`
+    returns `fp: None` both when `image_file` is absent AND when it is there
+    but cannot currently be read - locked, mid-write, a permissions error. This
+    function does not tell those apart (neither does `ls_atlas`, deliberately -
+    see its GONE outcome), so nothing here or in the page may say "missing" to
+    the operator; "no readable image" is accurate in both cases.
+
+    Calls `ls_atlas.fingerprints`, which maintains `<plate_dir>/fingerprints.csv`
+    - the one sanctioned on-disk write under a plate set's directory. Building
+    the page used to be read-only there; it no longer is, on a cold cache.
     """
     plate_dir = plate_dir or PLATE_DIR
+    # The set name for the `img` URL below has to come from THIS directory,
+    # not from the module-level PLATE_SET constant: a caller that passed an
+    # override (a test, or a future caller pointed at a different set) would
+    # otherwise get rows whose `img` points into the WRONG set's directory
+    # while every other field was read from the right one.
+    set_name = os.path.basename(os.path.normpath(plate_dir))
     with open(os.path.join(plate_dir, "plates.csv"), newline="",
               encoding="utf-8") as fh:
         plates = list(csv.DictReader(fh))
@@ -5024,7 +5068,8 @@ def plate_rows(plate_dir=None):
         out.append({"id": pid, "nn": round(nn, 5),
                     # Original plate, NOT reformatted: the seeds are fractions
                     # of this image, so no transform chain is needed.
-                    "img": f"../atlas/{PLATE_SET}/{p['image_file']}",
+                    "img": f"../atlas/{set_name}/{p['image_file']}",
+                    "image_file": p["image_file"],
                     "w": pw, "h": ph,
                     "fp": fp, "missing": 0 if fp else 1,
                     "labelled": int(bool(sd)), "seeds": sd,
@@ -5113,10 +5158,16 @@ def main():
     data = [row for mk in MARKERS for row in per_marker[mk][0]]
 
     pl = plate_rows()
-    gaps = [p["id"] for p in pl if p["missing"]]
+    gaps = [p for p in pl if p["missing"]]
     if gaps:
-        print(f"  !! {len(gaps)} plate image(s) missing from {PLATE_SET}: "
-              + ", ".join(gaps[:8]) + (" ..." if len(gaps) > 8 else ""))
+        # The id alone matches no file on this atlas - `plate_001`'s image is
+        # `plate_001_p01.png`, the whole reason `ls_atlas._image_stem` exists -
+        # so the filename and the directory are printed too, or an operator
+        # checking the report against the folder would be looking for a path
+        # that was never going to be there.
+        named = ", ".join(f"{p['id']} ({p['image_file']})" for p in gaps[:8])
+        print(f"  !! {len(gaps)} plate image(s) not readable in {PLATE_DIR}: "
+              + named + (" ..." if len(gaps) > 8 else ""))
         print("     They keep their place in the array so no assignment moves.")
 
     # The curation the app has on file, carried into the page so a browser copy
