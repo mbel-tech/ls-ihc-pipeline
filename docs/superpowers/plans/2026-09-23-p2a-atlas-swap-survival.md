@@ -602,8 +602,18 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 ---
 
-> **Task 1 landed as `f07a4c7` + `262db3e`. The committed `tests/test_ls_atlas.py` is the
-> authority, not the Step 1 block above** — review grew it from 20 assertions to 42 and the
+> **Task 1 landed as `f07a4c7`, `262db3e`, `9d9be53` and its quality-review round. The
+> committed `scripts/ls_atlas.py` and `tests/test_ls_atlas.py` are the authority, not the
+> Step 1 and Step 3 blocks above.** Review changed the module's shape: `verify` became
+> `plate_status` with a `verified()` companion (a function named like a predicate that
+> returned six truthy strings was a footgun for the five tasks about to branch on it);
+> `set_dir` became `set_name`; `for_config` no longer memoises the fingerprint map (a
+> long-lived curator server would have gone on verifying against the pre-swap atlas and
+> answered `OK` to everything); and the stored side of `plate_status` takes the persisted
+> `plate_id`/`plate_fp`/`plate_px` names so a `roi_plates.csv` row passes straight in.
+> **Tasks 3–8 must call the committed signatures, not the ones written below.**
+>
+> On the suite specifically, the Step 1 block — review grew it from 20 assertions to 42 and the
 > block was not back-ported. Re-deriving Task 1 from the block alone rebuilds the weaker
 > suite. What it lacks: an `ASPECT_TOLERANCE` straddling pair (without it any tolerance
 > from 0.0025 to 0.74 passes — a factor of 300); any test of `fingerprints()` at all,
@@ -1871,7 +1881,7 @@ column.
 `CONFIG.get("atlas_plate_set", {}).get("dir", "plates")`. Replace all three with:
 
 ```python
-PLATE_SET = AT.set_dir(CONFIG)
+PLATE_SET = AT.set_name(CONFIG)
 PLATE_DIR = AT.plate_dir(CONFIG)
 ```
 
