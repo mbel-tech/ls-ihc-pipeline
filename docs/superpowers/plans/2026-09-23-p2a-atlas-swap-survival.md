@@ -21,8 +21,11 @@ which holds 130 curated sections and a 961,233-row `roi_nuclei.csv`. Call `build
 **Never `git add -A`, `git add .`, or `git commit -a`.** Stage the exact paths each task
 names.
 
-**Never write anything under `E:\LS-analysis`.** The drive moved from `D:` on
-2026-09-23; `config.json` points at `E:` now.
+**Never write anything under `E:\LS-analysis`** — with ONE sanctioned exception, the
+derived `atlas/<set>/fingerprints.csv` that Task 1 creates and Task 3 refreshes. It is a
+cache: delete it and it comes back. Nothing else on that drive may be created, modified
+or deleted by any task in this plan. The drive moved from `D:` on 2026-09-23;
+`config.json` points at `E:` now.
 
 After every task:
 
@@ -67,7 +70,7 @@ exist in `plates` at all.
 
 | File | Responsibility |
 |---|---|
-| `scripts/ls_atlas.py` | **New.** The only thing that answers "which plate set" and "is this the same plate". `set_dir`, `plate_dir`, `fingerprint`, `fingerprints`, `verify`, `plate_order`, `for_config`. |
+| `scripts/ls_atlas.py` | **New.** The only thing that answers "which plate set" and "is this the same plate". `set_dir`, `plate_dir`, `fingerprint`, `fingerprints`, `verify`, `scale_between`, `plate_order`, `for_config`, and `restore_plate` from Task 6. |
 | `tests/_atlas_fixture.py` | **New.** Two synthetic plate sets, `before` and `after`, exercising all four `verify()` outcomes. Not a test — shared setup, like `tests/_fixture.py`. |
 | `tests/test_ls_atlas.py` | **New.** The module's own suite. |
 | `scripts/04l_roi_curator.py` | Plate array ordering and the missing-image gap; the fingerprint table into the page; state migration, the transform gate, the banner, the three new export columns. |
@@ -222,7 +225,7 @@ with tempfile.TemporaryDirectory() as tmp:
 
     # The aspect test is what separates a re-render from a re-crop, and 1% is
     # wide enough for a rounding difference and narrow enough to catch a crop.
-    chk("a 0.5% aspect drift still reads as a resize",
+    chk("a 0.25% aspect drift still reads as a resize",
         A.verify({"plate_id": "plate_001", "fp": fp_b, "px": "1000x2005"}, current),
         A.CHANGED if False else A.RESIZED)
 
@@ -298,7 +301,17 @@ ASPECT_TOLERANCE = 0.01
 # should have been flagged - not a wrong number.
 DIGEST_CHARS = 12
 CACHE_NAME = "fingerprints.csv"
-CACHE_COLUMNS = ("plate_id", "image_file", "bytes", "mtime", "digest")
+# NANOSECONDS, not whole seconds. A plate replaced in place with one of the same
+# byte count inside the same wall-clock second kept its stale digest under
+# `int(st_mtime)`, so a changed plate verified as OK - the one failure this
+# module exists to prevent, reproduced during review. `04a4_plate_rebuild`
+# overwrites this directory in place and writes several plates per second.
+#
+# The trap in reading it back: a ns timestamp is ~1.79e18, past float64's
+# exact-integer ceiling of 2^53, so `int(float(row["mtime_ns"]))` corrupts the
+# low digits and the comparison silently never matches again. Parse with
+# `int()`, never through `float`.
+CACHE_COLUMNS = ("image_stem", "image_file", "bytes", "mtime_ns", "digest")
 
 _TRAILING_INT = re.compile(r"(\d+)\s*$")
 
@@ -373,7 +386,7 @@ def _cache(path):
             for row in csv.DictReader(fh):
                 try:
                     out[row["image_file"]] = (int(row["bytes"]),
-                                              int(float(row["mtime"])),
+                                              int(row["mtime_ns"]),
                                               row["digest"])
                 except (KeyError, TypeError, ValueError):
                     continue
@@ -409,7 +422,7 @@ def fingerprints(directory, rows=None):
         path = os.path.join(directory, name)
         try:
             stat = os.stat(path)
-            size, mtime = stat.st_size, int(stat.st_mtime)
+            size, mtime = stat.st_size, stat.st_mtime_ns
         except OSError:
             out[row.get("plate_id")] = {"fp": None, "image_file": name,
                                         "px_w": _int(row.get("px_w")),
@@ -439,13 +452,20 @@ def _write_cache(path, fresh):
             writer.writerow(CACHE_COLUMNS)
             for name in sorted(fresh):
                 size, mtime, digest = fresh[name]
-                writer.writerow([_id_for(name), name, size, mtime, digest])
+                writer.writerow([_stem(name), name, size, mtime, digest])
     except OSError:
         pass
 
 
-def _id_for(image_file):
-    """The plate id a cache row is about, for a human reading the file."""
+def _stem(image_file):
+    """The image filename without its extension, for a human reading the cache.
+
+    NOT the plate id: this atlas's `plates.csv` has `plate_id=plate_001` against
+    `image_file=plate_001_p01.png`, so calling this column `plate_id` put a
+    value in it that appears in no `plates.csv`. The cache keys on `image_file`
+    either way; the column is legibility, and a legibility column that lies is
+    worse than none.
+    """
     return os.path.splitext(os.path.basename(image_file))[0]
 
 
