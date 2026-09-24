@@ -492,5 +492,53 @@ with tempfile.TemporaryDirectory() as tmp10:
         d3 == d1, False)
 
 print()
+print("--- a whole plate set swapped underneath the curation ---")
+sys.path.insert(0, HERE)
+import _atlas_fixture as FIX                                  # noqa: E402
+
+with tempfile.TemporaryDirectory() as tmp:
+    before, after = FIX.build(tmp)
+    was = A.fingerprints(before)
+    now = A.fingerprints(after)
+    chk("four plates before", sorted(was), ["plate_00%d" % n for n in (1, 2, 3, 4)])
+    chk("four after, one of them new",
+        sorted(now), ["plate_001", "plate_002", "plate_003", "plate_005"])
+
+    def stored(pid):
+        # PERSISTED names - what a roi_plates.csv row carries - not the
+        # `fp`/`px_w`/`px_h` that `fingerprints()` itself returns for `current`.
+        return {"plate_id": pid, "plate_fp": was[pid]["fp"],
+                "plate_px": "%dx%d" % (was[pid]["px_w"], was[pid]["px_h"])}
+
+    chk("an untouched plate verifies",
+        A.plate_status(stored("plate_001"), now), A.OK)
+    chk("...and verified() agrees",
+        A.verified(A.plate_status(stored("plate_001"), now)), True)
+    chk("a re-rendered plate is a resize",
+        A.plate_status(stored("plate_002"), now), A.RESIZED)
+    chk("a re-cropped plate has changed",
+        A.plate_status(stored("plate_003"), now), A.CHANGED)
+    chk("a dropped plate is gone",
+        A.plate_status(stored("plate_004"), now), A.GONE)
+
+    sx, sy = A.scale_between(stored("plate_002")["plate_px"], now["plate_002"])
+    chk("the rescale factor is the size ratio, on both axes",
+        (round(sx, 3), round(sy, 3)), (1.5, 1.5))
+    chk("...and there is none to apply for an unchanged plate",
+        A.scale_between(stored("plate_001")["plate_px"], now["plate_001"]),
+        (1.0, 1.0))
+
+    # The cache must not answer for a file that has been replaced in place.
+    import shutil
+    swapped = os.path.join(tmp, "swapped")
+    shutil.copytree(before, swapped)
+    A.fingerprints(swapped)                     # writes the cache
+    shutil.copy(os.path.join(after, "plate_003.png"),
+                os.path.join(swapped, "plate_003.png"))
+    again = A.fingerprints(swapped)
+    chk("a replaced image is re-hashed, not served from the cache",
+        again["plate_003"]["fp"], now["plate_003"]["fp"])
+
+print()
 print("ALL PASS" if not failures else f"{len(failures)} FAILED")
 sys.exit(1 if failures else 0)
