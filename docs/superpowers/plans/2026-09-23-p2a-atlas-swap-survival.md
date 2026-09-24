@@ -1813,6 +1813,33 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 ---
 
+> **SPLIT DURING EXECUTION. Task 8a is DONE (`171d7a2`); Task 8b is NOT, and is
+> waiting on the operator.**
+>
+> The two halves have very different risk and were separated so the safe one could ship:
+>
+> - **8a — DONE.** `04b`/`04c` name the extraction set through `AT.EXTRACTED`; `04e`,
+>   `04k` and `04l` delegate their three duplicate `CONFIG.get("atlas_plate_set"…)`
+>   copies to `AT.set_name`/`AT.plate_dir`; `04e` counts the plates it skips instead of
+>   silently `continue`-ing. **Zero changed constants** — all five resolve byte-identical
+>   values, proved by import rather than by reading.
+> - **8b — NOT DONE.** `04a_reformat` moving to the configured set, and taking `regions`
+>   from `seeds.csv` because `plates_final` has no such column. This rebuilds
+>   `reformatted/plates/` from a different atlas — real data on the operator's drive — so
+>   it needs their explicit go-ahead.
+>
+> **Measured, so the rationale is not an argument:** `reformatted/plates/` holds **47**
+> images built from the 47-row raw set, while `plates_final` has **64** ids — **17 with no
+> built image at all**. `04d:527` and `04e:405` read those images against `plates_final`'s
+> ids, so today 04e silently skips 17 sections and registers the other 47 against a
+> picture of a different plate.
+>
+> **Expect a non-zero skip count on the next `04e` run.** That is 8a's new counter
+> measuring the gap 8b closes — not a regression.
+>
+> Step 7 below says to expect three changed constants. That was for the unsplit task; for
+> 8a the correct answer is zero, and it was zero.
+
 ## Task 8: the plate set is resolved in one place
 
 **Files:**
@@ -2061,6 +2088,13 @@ Expected: `1236 rows; 0 with a plate_id`.
   atlas chain (`04a` → `plates`, `04a2` → `plates_merged`, `04a4` → `plates_final`), so a
   second lab running that chain gets the same three. It only bites a lab supplying a
   pre-built plate set under a name of their own, which is P2b/P2c's problem, not P2a's.
+
+- **04k's dropped-anchor notice does not survive the first autosave.** `save()` persists
+  the migrated anchors without the dropped uids, so the count is right at load and gone
+  after the next change. Accepted rather than fixed: `ls_level_curator_v1.json` does not
+  exist on this drive, so it affects no existing data. Recorded here because an accepted
+  limitation that lives only in a subagent's report is the same shape as a fallback nobody
+  has observed falling back.
 
 - **Not fixed here:** 04b's proposals still feed 04d's preview across a plate-set
   boundary (Task 8 Step 4 records it); `_reframe_proposals.json`; anything about
