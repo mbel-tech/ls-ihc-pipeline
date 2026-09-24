@@ -20,7 +20,7 @@ const { els, blobs, fire } = env;
 
 const X = load(`{KEY, PLATES, DATA, st, rows, select, onSlideUser, exportCsv,
   markAssigned, toggleFav, secDown, toggleBgMode, transform, toggleGuided,
-  clickPl,
+  clickPl, stepPlate,
   usedRois, roisOf, polysOf, roiPairs, bgPairs, isBg, pairR, defaultR,
   drawSec,
   get guided(){return guided}, get gTarget(){return gTarget},
@@ -158,6 +158,31 @@ chk("...and plate_px, the size that fingerprint was taken at",
 // session reports ok rather than blank.
 chk("...and plate_verified, which assigning the plate has now stamped",
     plRow[col(pl[0], "plate_verified")], "ok");
+
+// A VERDICT ABOUT A PLATE THE ROW DECLINES TO NAME.
+//
+// plate_id, plate_fp and plate_px are all blanked when the plate was never
+// chosen - a favourite with no assignment must not read as a deliberate call
+// on plate_001. plate_verified is a judgement about those three, so it is
+// blanked with them. Stepping the plate confirms it (it is the keyboard twin
+// of the slider) WITHOUT setting `assigned`, which is the one combination that
+// can produce a stamped verdict on an unchosen plate.
+const fav = X.rows()[1].uid;
+X.select(fav, true); X.active = fav;
+X.toggleFav();
+X.stepPlate(1);
+chk("stepping the plate confirms it", X.st(fav).verified, "ok");
+chk("...without making it an assignment", !!X.st(fav).assigned, false);
+blobs.length = 0;
+X.exportCsv();
+const favRow = rows(blobs[0]).slice(1).find(r => r[0] === fav);
+chk("a favourite with no assignment names no plate",
+    favRow[col(pl[0], "plate_id")], "");
+chk("...and carries no verdict about one either",
+    favRow[col(pl[0], "plate_verified")], "");
+chk("...and is still reported as work", favRow[col(pl[0], "status")], "favourite_only");
+X.select(uid, true); X.active = uid;
+blobs.length = 0;
 X.toggleGuided();
 
 // ---- a section with too few landmarks for a fit --------------------------

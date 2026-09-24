@@ -3095,8 +3095,16 @@ function stepPlate(d){
   if(!active) return;
   const v = Math.min(PLATES.length - 1, Math.max(0, +el("slider").value + d));
   el("slider").value = v;
-  // Same gesture as dragging the slider, so the same confirmation - and it
-  // must not set `assigned`, which stepping the plate has never done.
+  // Same gesture as dragging the slider, so the same confirmation - and the
+  // same undo entry, because a confirmation releases withheld landmarks and
+  // that must have a way back. It still must not set `assigned`, which
+  // stepping the plate has never done.
+  //
+  // It cannot simply leave the identity alone: onSlide below moves s.plate,
+  // and a record whose index says one plate while its stored plate_id says
+  // another would be pulled back to the id's slot on the next load - the
+  // operator's step silently undone.
+  undoMark(active, "plate");
   confirmPlate(st(active), v);
   onSlide(v);
   navState();
@@ -3547,7 +3555,11 @@ function exportCsv(){
              // plate_px is here only so a re-render's landmarks can be scaled:
              // once the image has changed, the current set can no longer say
              // what size it used to be.
-             chosen?(P.fp||""):"", chosen?(P.w+"x"+P.h):"", s.verified||"",
+             chosen?(P.fp||""):"", chosen?(P.w+"x"+P.h):"",
+             // A verdict about the three columns before it, so it is gated with
+             // them: a row that declines to name a plate must not carry a
+             // judgement about one.
+             chosen?(s.verified||""):"",
              chosen?(P.labelled?1:0):"", n, nBg, T?T.kind:"", status,
              s.fav?1:0, (s.rot||0).toFixed(1),
              excl?1:0]);
