@@ -207,7 +207,18 @@ function migrateAnchors(raw, plates){
   const by = plateIndex(plates);
   const out = {};
   Object.entries(raw || {}).forEach(([uid, v]) => {
-    if (typeof v === "number") { out[uid] = {id: ((plates||PLATES)[v]||{}).id || "", at: v}; return; }
+    if (typeof v === "number") {
+      // A legacy bare index past the end of a SHORTER atlas is dropped, not
+      // kept with a blank id: kept, it would still carry a real (wrong)
+      // number into assign()'s unclamped interpolation between anchors,
+      // handing OTHER sections a plate that does not exist for exactly the
+      // reason this whole change exists to prevent - a wrong anchor is worse
+      // than a missing one.
+      const p = (plates||PLATES)[v];
+      if (!p) return;
+      out[uid] = {id: p.id, at: v};
+      return;
+    }
     if (!v || !v.id) return;
     const i = by[v.id];
     // An anchor to a plate this atlas does not have is DROPPED from the

@@ -76,6 +76,13 @@ chk("a bare integer anchor from before this change still loads",
     L.migrateAnchors({ "LS1_s01a": 1 }, FAKE)["LS1_s01a"].at, 1);
 chk("...and picks up the id that was at that position",
     L.migrateAnchors({ "LS1_s01a": 1 }, FAKE)["LS1_s01a"].id, "plate_002");
+// A bare integer past the end of a SHORTER atlas is dropped too, not kept
+// with a blank id - kept, it would still hand assign()'s unclamped
+// interpolation a real (wrong) number, carrying it into OTHER sections'
+// plates. That is exactly "a wrong anchor is worse than a missing one" for a
+// legacy record instead of an id-keyed one.
+chk("a bare integer past the end of a shorter atlas is dropped, not kept blank",
+    L.migrateAnchors({ "LS1_s01a": 99 }, FAKE)["LS1_s01a"], undefined);
 
 // ---- a stale anchor never takes the page down ------------------------------
 // migrateAnchors keeps a legacy bare-integer anchor's raw index even when it
@@ -90,5 +97,27 @@ try { X.showPlate(99999); X.select(list[0].uid); X.render(); }
 catch (e) { threw = e && e.message; }
 chk("a stale out-of-range anchor does not crash render/select/showPlate", threw, null);
 delete X.anchors[list[0].uid];
+
+// ---- migration runs at LOAD time, against seeded localStorage -------------
+// The two blocks above test migrateAnchors as a pure function and plateAt as
+// a read-time guard; neither exercises `let anchors = migrateAnchors(...)`
+// itself, the one call every operator's browser actually makes. Seed
+// localStorage the way a real upgrade would find it and load the page again.
+note("");
+store[X.KEY] = JSON.stringify({
+  a: { id: X.PLATES[1].id, at: 0 },   // id-keyed, resolves - follows the id
+  b: { id: "plate_does_not_exist_in_this_atlas", at: 0 },   // gone -> dropped
+  c: 1,                                // legacy bare index, resolves
+});
+const M = load(`{anchors, droppedAnchors}`, "level_curator");
+chk("an id-keyed anchor survives load-time migration and follows its id",
+    M.anchors["a"].at, 1);
+chk("a gone id-keyed anchor is absent after load-time migration", "b" in M.anchors, false);
+chk("...and counted in droppedAnchors", M.droppedAnchors.includes("b"), true);
+chk("a legacy bare-integer anchor survives load-time migration",
+    M.anchors["c"].at, 1);
+chk("...and picks up the id at that position", M.anchors["c"].id, X.PLATES[1].id);
+chk("the header notice reports the drop count", els["ndropped"].textContent, "1");
+chk("...and the notice row is shown", els["dropRow"].style.display, "");
 
 done();
