@@ -54,6 +54,13 @@ if SCRIPTS not in sys.path:
     sys.path.append(SCRIPTS)
 
 import state as ST                                          # noqa: E402
+# Not lazy, unlike `ls_paths` in study_names() below: that one is deferred
+# because importing it reads a config, and an app that will not start over
+# a file nobody asked it to touch is worse than a late error. `ls_atlas`
+# reads no config at import - `ls_config` is imported inside its main() -
+# and pulls in nothing heavier than csv, hashlib and ls_io, so that reason
+# does not apply here.
+import ls_atlas as AT                                       # noqa: E402
 
 ROI_KEY = "ls_roi_curator_v1"
 
@@ -131,7 +138,12 @@ def frame_from_disk(reformat_dir, rgb=True, names=None):
 
 
 def _blank():
-    return {"plate": 0, "pairs": [], "assigned": False,
+    # AT.BY_INDEX rather than the literal: one vocabulary, in one place. A
+    # section that reaches this function came from a landmarks or regions row
+    # with no plates row behind it, so it has named no plate at all - which is
+    # exactly what by_index says.
+    return {"plate": 0, "plate_id": "", "plate_fp": "", "plate_px": "",
+            "verified": AT.BY_INDEX, "pairs": [], "assigned": False,
             "noroi": False, "fav": False, "rot": 0.0, "excl": False}
 
 
@@ -175,10 +187,14 @@ def rebuild(plates_csv, landmarks_csv=None, k=None, regions_csv=None, frame_of=N
                 continue
             e = _blank()
             idx = (r.get("plate_index") or "").strip()
-            if idx:
-                # A recorded plate index means the plate was a decision: the
-                # export only writes it when the operator chose one.
-                e["plate"] = int(float(idx))
+            # THE ID DECIDES WHICH PLATE, through the same ls_atlas rule
+            # 04q_import_curation calls. This file and that one are mirrors,
+            # and fixing one alone is how a 3x coordinate displacement lived in
+            # the other for weeks; the rule is shared so that cannot recur.
+            e.update(AT.restore_plate(r, int(float(idx)) if idx else 0))
+            if idx or e["plate_id"]:
+                # A recorded plate means the plate was a decision: the export
+                # only writes one when the operator chose it.
                 e["assigned"] = True
             e["fav"] = r.get("favorite") == "1"
             e["excl"] = r.get("excluded") == "1"

@@ -69,17 +69,25 @@ def close(label, got, want, tol=1e-9):
 # pERK one is displayed as a 768px composite (K=3), the PCNA one as the 256px
 # greyscale (K=1). A global K cannot satisfy both, which is the point.
 PLATES = [
+    # plate_id and plate_index deliberately DISAGREE. They used to, because the
+    # page wrote the index it had and the id it had and nothing checked them
+    # against each other; the importer took the index, so an export made against
+    # one atlas restored against another silently. The id is the key now.
     {"scene_uid": "A_s01a_sc00", "marker": "AF568", "plate_id": "plate_010",
-     "plate_index": "9", "status": "registered", "favorite": "0",
+     "plate_index": "9", "plate_fp": "aaaaaaaaaaaa", "plate_px": "100x200",
+     "status": "registered", "favorite": "0",
      "view_rotation_deg": "12.5", "excluded": "0"},
     {"scene_uid": "B_s01b_sc00", "marker": "AF488", "plate_id": "",
-     "plate_index": "", "status": "favourite_only", "favorite": "1",
+     "plate_index": "", "plate_fp": "", "plate_px": "",
+     "status": "favourite_only", "favorite": "1",
      "view_rotation_deg": "0.0", "excluded": "0"},
     {"scene_uid": "C_s02a_sc00", "marker": "AF568", "plate_id": "",
-     "plate_index": "", "status": "excluded", "favorite": "0",
+     "plate_index": "", "plate_fp": "", "plate_px": "",
+     "status": "excluded", "favorite": "0",
      "view_rotation_deg": "270.0", "excluded": "1"},
     {"scene_uid": "D_s02b_sc00", "marker": "AF488", "plate_id": "plate_003",
-     "plate_index": "2", "status": "no_roi", "favorite": "0",
+     "plate_index": "2", "plate_fp": "", "plate_px": "",
+     "status": "no_roi", "favorite": "0",
      "view_rotation_deg": "0.0", "excluded": "0"},
 ]
 
@@ -219,7 +227,12 @@ def main():
 
     # ---- the decision flags ------------------------------------------------
     chk("a named plate reads as assigned", state["A_s01a_sc00"]["assigned"], True)
-    chk("...and carries its index", state["A_s01a_sc00"]["plate"], 9)
+    # THE ID WINS. The index is kept as a record of what the array looked like
+    # and used only when there is no id at all.
+    chk("...and the plate comes from the id", state["A_s01a_sc00"]["plate_id"], "plate_010")
+    chk("...not from the index it disagrees with", state["A_s01a_sc00"]["plate"], 9)
+    chk("...and it is marked unverified until the atlas is there to check",
+        state["A_s01a_sc00"]["verified"], "unchecked")
     chk("no plate named, not assigned", state["B_s01b_sc00"]["assigned"], False)
     chk("...and the index falls back to 0", state["B_s01b_sc00"]["plate"], 0)
     chk("favourite is read", state["B_s01b_sc00"]["fav"], True)

@@ -216,6 +216,72 @@ chk("current row with no px_h -> no factor",
     A.scale_between("100x200", {"px_w": 100, "px_h": 0}), None)
 
 print()
+print("--- restore_plate(): the one rule both importers restore through ---")
+# 04q_import_curation and app/import_exports are mirrors. The last time one was
+# fixed and the other was not, every ROI of one marker landed at a third of its
+# true position for weeks. This is the rule they now share, so this is where it
+# is pinned - a reintroduction in one importer alone shows up as that importer
+# no longer calling this.
+DISAGREE = {"plate_id": "plate_010", "plate_index": "9",
+            "plate_fp": "aaaaaaaaaaaa", "plate_px": "100x200",
+            "plate_verified": "ok"}
+r = A.restore_plate(DISAGREE, 9)
+chk("the id is carried, whatever the index said", r["plate_id"], "plate_010")
+chk("...and the index is kept as the record it is", r["plate"], 9)
+chk("...with the identity it was assigned against",
+    (r["plate_fp"], r["plate_px"]), ("aaaaaaaaaaaa", "100x200"))
+
+# THE COLUMN IS PREFERRED, NOT RECOMPUTED. A by_index row has a blank plate_fp
+# BY DESIGN - the id names the plate at the stored index and nothing was ever
+# fingerprinted - so recomputing from the row answers "unchecked" over a column
+# that says "by_index", which is a vaguer statement standing in for a true one.
+chk("a by_index row stays by_index rather than being recomputed",
+    A.restore_plate({"plate_id": "plate_010", "plate_verified": "by_index"},
+                    9)["verified"], A.BY_INDEX)
+# The same the other way: a verdict that something MOVED is the only evidence
+# of it that the CSV carries, and these importers have no atlas to re-reach it
+# with.
+for verdict in (A.CHANGED, A.RESIZED, A.GONE):
+    chk(f"a {verdict} row keeps its verdict, not a fresh guess",
+        A.restore_plate({"plate_id": "plate_010", "plate_fp": "aaaaaaaaaaaa",
+                         "plate_px": "100x200", "plate_verified": verdict},
+                        9)["verified"], verdict)
+
+# An export written before the column existed - no plate_verified key at all -
+# still imports exactly as it did, and cannot come back OK either way.
+chk("a pre-fingerprint export with an id restores unchecked",
+    A.restore_plate({"plate_id": "plate_010", "plate_index": "9"},
+                    9)["verified"], A.UNCHECKED)
+chk("...and one with no id at all restores by_index",
+    A.restore_plate({"plate_index": "9"}, 9)["verified"], A.BY_INDEX)
+chk("a blank cell is read the same as no column",
+    A.restore_plate({"plate_id": "plate_010", "plate_verified": ""},
+                    9)["verified"], A.UNCHECKED)
+# A verdict is a statement ABOUT an id. With no id it names nothing, and
+# carrying it would be a false OK reached by hand-editing a CSV - while
+# plate_status and the page's verifyPlate both answer by_index there without
+# reading anything else.
+chk("a row that named no plate is by_index whatever the cell claims",
+    A.restore_plate({"plate_id": "", "plate_verified": "ok"}, 0)["verified"],
+    A.BY_INDEX)
+chk("...and a blank cell with no id reads the same",
+    A.restore_plate({"plate_id": "", "plate_verified": ""}, 0)["verified"],
+    A.BY_INDEX)
+
+# A newer export, or a hand-edited file. Passed through rather than translated:
+# every reader downstream withholds a record whose verified is not exactly
+# "ok", so an unknown word is already handled - and rewriting it would be this
+# module inventing a verdict about a row it did not understand.
+chk("an outcome this version does not know is carried, not translated",
+    A.restore_plate({"plate_id": "plate_010", "plate_verified": "recropped"},
+                    9)["verified"], "recropped")
+chk("...and nothing derived can ever be OK",
+    [A.restore_plate({"plate_id": p}, 0)["verified"] == A.OK
+     for p in ("plate_010", "")], [False, False])
+chk("the fields are exactly the ones STATE_FIELDS names",
+    tuple(A.restore_plate(DISAGREE, 9)), A.STATE_FIELDS)
+
+print()
 print("--- fingerprints(): plates.csv, the cache, and the missing-image gap ---")
 with tempfile.TemporaryDirectory() as tmp2:
     write_file(os.path.join(tmp2, "p1.png"), b"PLATE-ONE")

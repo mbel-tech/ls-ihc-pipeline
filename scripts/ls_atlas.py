@@ -425,6 +425,75 @@ def verified(outcome):
     return outcome == OK
 
 
+# What a restored record carries about its plate. `04q_import_curation` states
+# the whole record's shape in its own STATE_FIELDS; these five are the part
+# that comes from here, named once so the two importers cannot drift on which
+# keys a restore is supposed to produce.
+STATE_FIELDS = ("plate", "plate_id", "plate_fp", "plate_px", "verified")
+
+
+def restore_plate(row, index_value):
+    """The plate fields for one restored section, from one exported row.
+
+    ONE implementation for both importers. `04q_import_curation` and
+    `app/import_exports` are deliberate mirrors and were fixed apart once
+    before, which is how a 3x coordinate displacement survived in one of them
+    for weeks.
+
+    THE ID IS THE KEY. The index is kept and returned, but it is no longer what
+    resolves the plate - it is what the array looked like when the export was
+    written, and the only thing left to fall back to for a file exported before
+    ids were kept. The id is not followed to a new slot here: that needs the
+    atlas, and these importers run without one. `04l`'s `resolvePlate` does it
+    at load, against the plate set actually on disk.
+
+    `verified` IS CARRIED, NOT COMPUTED. `plate_verified` is a verdict the page
+    reached against the atlas that was loaded at the time, and it is the most
+    specific true statement about the row that exists. Recomputing it from the
+    row would replace it with something vaguer and sometimes wrong: a `by_index`
+    row has a blank `plate_fp` BY DESIGN - the id names the plate at the stored
+    index, nothing was ever fingerprinted - so a recompute answers `unchecked`
+    over a column that says `by_index`. A `changed` or `gone` row would come
+    back `unchecked` the same way, and the evidence that something moved would
+    be gone from the only file carrying it.
+
+    A value this module does not recognise is passed through as it stands,
+    rather than being translated into one that is recognised. It comes from a
+    newer export or a hand-edited file, and every reader downstream is safe for
+    it: `04l` withholds a record's landmarks from the fit on any `verified`
+    that is not exactly `ok`, and the banner counts it. Rewriting it to
+    `unchecked` would be this module inventing a verdict about a row it did not
+    understand - the one thing it exists not to do.
+
+    Derived only when the column says nothing - absent, as in an export written
+    before it existed, or blank, as on a row that never named a plate. An id
+    with nothing to check it against is UNCHECKED. Neither is OK, and neither
+    can be: nothing here has looked at a plate.
+
+    NO ID IS BY_INDEX WHATEVER THE COLUMN SAYS - the one claim not carried,
+    because `plate_status` and the page's `verifyPlate` both answer BY_INDEX
+    before reading anything else when there is no id, and this has to agree
+    with them or a section verifies in one place and not the other. A verdict
+    is a statement ABOUT a plate_id; with no id it names nothing, and a real
+    export cannot produce one - `04l` gates both columns on the same `chosen`.
+    A hand-edited row claiming `ok` beside a blank id is the only way to reach
+    this, and that is exactly a false OK.
+    """
+    plate_id = (row.get("plate_id") or "").strip()
+    verdict = (row.get("plate_verified") or "").strip()
+    if not plate_id:
+        verdict = BY_INDEX
+    elif not verdict:
+        verdict = UNCHECKED
+    return {
+        "plate": index_value,
+        "plate_id": plate_id,
+        "plate_fp": (row.get("plate_fp") or "").strip(),
+        "plate_px": (row.get("plate_px") or "").strip(),
+        "verified": verdict,
+    }
+
+
 def scale_between(stored_px, current):
     """The `(sx, sy)` factors a RESIZED plate's landmark coordinates need, or
     None.

@@ -73,6 +73,11 @@ if _HERE not in sys.path:
 # lines copy-pasted into every stage.
 from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
 import ls_paths as LP  # noqa: E402
+# The plate a row names is resolved by ONE rule, shared with
+# app/import_exports.py. The two are mirrors, and the last time one of
+# them was fixed alone the other put every ROI at a third of its true
+# position for weeks.
+import ls_atlas as AT  # noqa: E402
 
 OUT_ROOT = CONFIG["out_root"]
 REFORMAT_DIR = os.path.join(OUT_ROOT, "reformatted")
@@ -92,8 +97,11 @@ SEED_JSON = os.path.join(OUT_ROOT, "curation", "ls_roi_curator_v1.json")
 BG_MARK = "bg"
 SEC_GRID = 256
 
-# The decision fields 04l keeps per section.
-STATE_FIELDS = ("plate", "pairs", "polys", "assigned", "noroi", "fav", "rot", "excl")
+# The decision fields 04l keeps per section. The first five are
+# `ls_atlas.STATE_FIELDS` - the plate is an identity now, not just an index
+# into whatever array was loaded.
+STATE_FIELDS = ("plate", "plate_id", "plate_fp", "plate_px", "verified",
+                "pairs", "polys", "assigned", "noroi", "fav", "rot", "excl")
 
 
 def num(v, default=0.0):
@@ -188,18 +196,22 @@ def build(plates, landmarks, regions, k_of):
             continue
         marker_of[uid] = cell(r, "marker")
         idx = cell(r, "plate_index")
-        state[uid] = {
-            "plate": int(num(idx)) if idx else 0,
-            "pairs": [],
-            "polys": [],
+        # THE ID DECIDES WHICH PLATE, not the index - through ls_atlas, which
+        # app/import_exports calls too. The index is kept as a record of what
+        # the array looked like, and is the only thing an export from before
+        # ids were kept has to offer. See ls_atlas.restore_plate.
+        state[uid] = dict(
+            AT.restore_plate(r, int(num(idx)) if idx else 0),
+            pairs=[],
+            polys=[],
             # Export collapses `assigned || n > 0` into plate_id - see the
             # module docstring; a named plate is read as a chosen one.
-            "assigned": bool(cell(r, "plate_id")),
-            "noroi": cell(r, "status") == "no_roi",
-            "fav": cell(r, "favorite") == "1",
-            "rot": tidy(num(cell(r, "view_rotation_deg"))),
-            "excl": cell(r, "excluded") == "1",
-        }
+            assigned=bool(cell(r, "plate_id")),
+            noroi=cell(r, "status") == "no_roi",
+            fav=cell(r, "favorite") == "1",
+            rot=tidy(num(cell(r, "view_rotation_deg"))),
+            excl=cell(r, "excluded") == "1",
+        )
 
     def scaled(uid, r, key):
         # Round to the export's own 2dp: K is a small integer and the value it
