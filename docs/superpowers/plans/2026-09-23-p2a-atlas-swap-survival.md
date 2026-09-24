@@ -2043,6 +2043,18 @@ Expected: `1236 rows; 0 with a plate_id`.
   04d shows them and 04e registers against them — but a `reformatted/plates/` rebuild is
   a real change and the operator should be told before it is run.
 
+- **A temp study cannot be pointed at the fixture's set by config.** `ls_config.py:460`
+  restricts `atlas_plate_set.dir` to `choices=["plates", "plates_merged", "plates_final"]`,
+  so `temp_study(atlas_plate_set={"dir": "before"})` is refused at import of any stage.
+  Task 3 worked around it correctly — name a valid set to satisfy validation, then pass the
+  fixture directory straight to `plate_rows(before)` through the explicit override the
+  function already has. **Tasks 5 and 7 will hit the same wall; use the same escape hatch.**
+
+  Not a genericity bug, on inspection: those three names are produced by the pipeline's own
+  atlas chain (`04a` → `plates`, `04a2` → `plates_merged`, `04a4` → `plates_final`), so a
+  second lab running that chain gets the same three. It only bites a lab supplying a
+  pre-built plate set under a name of their own, which is P2b/P2c's problem, not P2a's.
+
 - **Not fixed here:** 04b's proposals still feed 04d's preview across a plate-set
   boundary (Task 8 Step 4 records it); `_reframe_proposals.json`; anything about
   ingesting a new atlas, which is P2b and P2c.
