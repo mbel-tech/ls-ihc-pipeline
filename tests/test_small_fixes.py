@@ -19,6 +19,7 @@ tests/test_config_resolver.py. No main() is called.
 Run:  python tests/test_small_fixes.py
 """
 
+import csv
 import importlib.util
 import json
 import os
@@ -124,6 +125,66 @@ with tempfile.TemporaryDirectory() as tmp:
         "AT.EXTRACTED" in b_src, True)
     chk("...not by repeating the literal \"plates\" in the PLATE_DIR line",
         'os.path.join(OUT_ROOT, "atlas", "plates")' in b_src, False)
+
+    # ------------------------------------------------ 6. 04a: the plate set is resolved, not hardcoded
+    print("\n04a: reformats the set the study uses\n")
+    RF = load("04a_reformat.py", "t_rf")
+    chk("04a reformats the set the study uses",
+        os.path.basename(RF.PLATE_DIR), "plates_final")
+
+    # ------------------------------------------------ 7. 04a: regions comes from plates.csv when
+    #    present (the raw extraction set), and is derived from seeds.csv otherwise
+    #    (plates_final, which has no regions column at all).
+    print("\n04a: regions falls back to seeds.csv when plates.csv has none\n")
+
+    # Shape A: no "regions" column in plates.csv at all - plates_final's real
+    # shape. csv.DictReader never puts that key in the row dict, so
+    # plate_row.get("regions") must return None, not raise KeyError.
+    final_dir = os.path.join(tmp, "regions_final")
+    os.makedirs(final_dir)
+    with open(os.path.join(final_dir, "plates.csv"), "w", newline="",
+              encoding="utf-8") as fh:
+        fh.write("plate_id,page,source_figure,box,image_file,px_w,px_h,x0,y0,x1,y1\n"
+                  "plate_001,1,mplate_001,1,plate_001_p01.png,100,100,0,0,1,1\n")
+    with open(os.path.join(final_dir, "seeds.csv"), "w", newline="",
+              encoding="utf-8") as fh:
+        fh.write("plate_id,page,plate_seq,region,region_raw,is_unknown,colour_hex,"
+                  "from_raster,x_px,y_px,x_frac,y_frac\n"
+                  "plate_001,1,1,Dm,Dm,0,#000000,0,1,1,0.1,0.1\n"
+                  "plate_001,1,1,Dl,Dl,0,#000000,0,2,2,0.2,0.2\n"
+                  "plate_001,1,1,Dm,Dm,0,#000000,0,3,3,0.3,0.3\n")
+    with open(os.path.join(final_dir, "plates.csv"), newline="",
+              encoding="utf-8") as fh:
+        final_row = next(csv.DictReader(fh))
+    final_regions_of = RF.regions_from_seeds(final_dir)
+    chk("no regions column -> .get returns None, no KeyError",
+        final_row.get("regions"), None)
+    chk("value is seeds-derived, sorted and deduplicated (not seed row order)",
+        RF.plate_regions(final_row, final_regions_of), "Dl;Dm")
+
+    # Shape B: plates.csv DOES carry its own "regions" column - the raw
+    # extraction set's real shape. Its own value must win even though
+    # seeds.csv (deliberately) disagrees, and a study still pointed at
+    # `plates` sees the exact same value as before this change.
+    raw_dir = os.path.join(tmp, "regions_raw")
+    os.makedirs(raw_dir)
+    with open(os.path.join(raw_dir, "plates.csv"), "w", newline="",
+              encoding="utf-8") as fh:
+        fh.write("plate_id,page,index_on_page,image_file,px_w,px_h,n_seeds,"
+                  "n_seeds_raster,n_text_labels,regions,overlay_written\n"
+                  "plate_009,4,0,plate_009_p04_0.jpeg,100,100,1,0,0,Dl|Dm,1\n"
+                  "plate_001,1,0,plate_001_p01.jpeg,100,100,0,0,0,,1\n")
+    with open(os.path.join(raw_dir, "seeds.csv"), "w", newline="",
+              encoding="utf-8") as fh:
+        fh.write("plate_id,region\nplate_009,SomethingElse\n")
+    with open(os.path.join(raw_dir, "plates.csv"), newline="",
+              encoding="utf-8") as fh:
+        raw_rows = {r["plate_id"]: r for r in csv.DictReader(fh)}
+    raw_regions_of = RF.regions_from_seeds(raw_dir)
+    chk("plates.csv's own column wins over a disagreeing seeds.csv",
+        RF.plate_regions(raw_rows["plate_009"], raw_regions_of), "Dl|Dm")
+    chk("blank column + no seeds rows for that id -> still blank (real 'plates' data)",
+        RF.plate_regions(raw_rows["plate_001"], raw_regions_of), "")
 
 print()
 if fails:

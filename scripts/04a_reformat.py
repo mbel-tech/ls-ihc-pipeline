@@ -59,6 +59,7 @@ if _HERE not in sys.path:
 from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
 import ls_channels as CH  # noqa: E402
 import ls_paths as LP  # noqa: E402
+import ls_atlas as AT  # noqa: E402
 
 # The markers this study measures, in declared order. ls_channels is the
 # single source of that list; naming a fluorophore here would pin the stage
@@ -81,7 +82,13 @@ DEFAULT_MARKER = MARKERS[1] if len(MARKERS) > 1 else (MARKERS[0] if MARKERS else
 
 OUT_ROOT = CONFIG["out_root"]
 OVERVIEW_DIR = os.path.join(OUT_ROOT, "overviews")
-PLATE_DIR = os.path.join(OUT_ROOT, "atlas", "plates")
+# The set the study CHOSE, not the raw extraction. 04a writes
+# reformatted/plates/<plate_id>.png, and 04d:527 and 04e:405 read those images
+# while taking plates.csv from the configured set. On this drive that join was
+# wrong for every id: plates holds 47 merged figures and plates_final holds 64
+# reframed plates, so 17 ids had no image at all (04e silently continue'd past
+# them) and the other 47 resolved to a picture of a different plate.
+PLATE_DIR = AT.plate_dir(CONFIG)
 QC_CSV = os.path.join(OUT_ROOT, "qc", "focus.csv")
 REFORMAT_DIR = os.path.join(OUT_ROOT, "reformatted")
 
@@ -668,6 +675,39 @@ def select_only(spec, excluded):
     return want
 
 
+def regions_from_seeds(plate_dir):
+    """{plate_id: [region, ...]} from `<plate_dir>/seeds.csv`, or `{}` when
+    there is no seeds.csv to read.
+
+    regions came from a plates.csv column that only the raw extraction set
+    has. seeds.csv carries the same information in every set, under an
+    identical header, so it is derived rather than required.
+    """
+    regions_of = {}
+    try:
+        with open(os.path.join(plate_dir, "seeds.csv"), newline="",
+                  encoding="utf-8") as fh:
+            for s in csv.DictReader(fh):
+                regions_of.setdefault(s["plate_id"], []).append(s.get("region", ""))
+    except OSError:
+        pass
+    return regions_of
+
+
+def plate_regions(plate_row, regions_of):
+    """The `regions` value for one plates.csv row.
+
+    `plate_row["regions"]` when the plate set's own plates.csv carries that
+    column (the raw extraction set) - a no-op for anyone still pointed at
+    `plates`. Otherwise the seeds-derived list for that plate_id: sorted and
+    deduplicated, so the value is stable rather than dependent on set
+    iteration order or seeds.csv row order.
+    """
+    return (plate_row.get("regions")
+            or ";".join(sorted(set(
+                r for r in regions_of.get(plate_row["plate_id"], []) if r))))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--preview", type=int, default=8)
@@ -712,6 +752,8 @@ def main():
     with open(os.path.join(PLATE_DIR, "plates.csv"), newline="", encoding="utf-8") as fh:
         plates = list(csv.DictReader(fh))
     ok = 0
+    regions_of = regions_from_seeds(PLATE_DIR)
+
     # A --only run repairs section pictures; the plates are not sections and
     # rewriting them would be a side effect nobody asked for, even though the
     # bytes would come out the same.
@@ -729,7 +771,8 @@ def main():
         Image.fromarray(img).save(os.path.join(plate_dir, p["plate_id"] + ".png"))
         np.save(os.path.join(plate_dir, p["plate_id"] + "_mask.npy"), mask)
         rows.append({"kind": "plate", "id": p["plate_id"], "angle": round(angle, 1),
-                     "fill": round(float(mask.mean()), 4), "regions": p["regions"]})
+                     "fill": round(float(mask.mean()), 4),
+                     "regions": plate_regions(p, regions_of)})
         ok += 1
     print(f"plates reformatted: {ok}/{len(plates)}")
 
