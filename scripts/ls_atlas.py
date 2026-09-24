@@ -54,7 +54,7 @@ ASPECT_TOLERANCE = 0.01
 # should have been flagged - not a wrong number.
 DIGEST_CHARS = 12
 CACHE_NAME = "fingerprints.csv"
-CACHE_COLUMNS = ("plate_id", "image_file", "bytes", "mtime", "digest")
+CACHE_COLUMNS = ("image_stem", "image_file", "bytes", "mtime_ns", "digest")
 
 _TRAILING_INT = re.compile(r"(\d+)\s*$")
 
@@ -122,14 +122,21 @@ def fingerprint(path):
 
 
 def _cache(path):
-    """{image_file: (bytes, mtime, digest)} from a previous run."""
+    """{image_file: (bytes, mtime_ns, digest)} from a previous run.
+
+    `mtime_ns` is read as `int`, never `float`. A raw `st_mtime_ns` is around
+    1.79e18 - past float64's exact-integer ceiling of 2**53 (~9.0e15) - so
+    routing it through `float()` rounds off the low digits, the comparison in
+    `fingerprints()` silently stops matching, and the cache becomes a
+    permanent no-op that re-hashes every plate on every run.
+    """
     out = {}
     try:
         with open(path, newline="", encoding="utf-8") as fh:
             for row in csv.DictReader(fh):
                 try:
                     out[row["image_file"]] = (int(row["bytes"]),
-                                              int(float(row["mtime"])),
+                                              int(row["mtime_ns"]),
                                               row["digest"])
                 except (KeyError, TypeError, ValueError):
                     continue
@@ -144,7 +151,11 @@ def fingerprints(directory, rows=None):
     Cached to `<set>/fingerprints.csv` and re-hashed only where size or mtime
     moved, because the curator page rebuilds this on every generation and 64
     images is real work to hash for a question whose answer rarely changes. The
-    cache is derived: delete it and it comes back.
+    cache key is `(st_size, st_mtime_ns)` - nanoseconds, not seconds: this
+    volume's measured mtime resolution is 100ns, and a whole-second key let a
+    same-second, same-byte-count replacement of a plate image keep the old
+    digest and verify as unchanged. The cache is derived: delete it and it
+    comes back.
 
     A plate whose image is missing gets `fp: None` and keeps its row. Dropping
     it is what shifted every later index in `04l`; a plate that is present in
@@ -165,19 +176,19 @@ def fingerprints(directory, rows=None):
         path = os.path.join(directory, name)
         try:
             stat = os.stat(path)
-            size, mtime = stat.st_size, int(stat.st_mtime)
+            size, mtime_ns = stat.st_size, stat.st_mtime_ns
         except OSError:
             out[row.get("plate_id")] = {"fp": None, "image_file": name,
                                         "px_w": _int(row.get("px_w")),
                                         "px_h": _int(row.get("px_h"))}
             continue
         hit = cached.get(name)
-        if hit and hit[0] == size and hit[1] == mtime:
+        if hit and hit[0] == size and hit[1] == mtime_ns:
             digest = hit[2]
         else:
             digest = fingerprint(path)
             changed = True
-        fresh[name] = (size, mtime, digest)
+        fresh[name] = (size, mtime_ns, digest)
         out[row.get("plate_id")] = {"fp": digest, "image_file": name,
                                     "px_w": _int(row.get("px_w")),
                                     "px_h": _int(row.get("px_h"))}
@@ -194,14 +205,23 @@ def _write_cache(path, fresh):
             writer = csv.writer(fh)
             writer.writerow(CACHE_COLUMNS)
             for name in sorted(fresh):
-                size, mtime, digest = fresh[name]
-                writer.writerow([_id_for(name), name, size, mtime, digest])
+                size, mtime_ns, digest = fresh[name]
+                writer.writerow([_image_stem(name), name, size, mtime_ns, digest])
     except OSError:
         pass
 
 
-def _id_for(image_file):
-    """The plate id a cache row is about, for a human reading the file."""
+def _image_stem(image_file):
+    """`image_file` without its directory or extension, for a human reading the
+    cache.
+
+    NOT the plate id: `plates.csv` on the live atlas pairs
+    `plate_id=plate_001` with `image_file=plate_001_p01.png`, so the id and the
+    filename stem already disagree by one component. Recording this column as
+    `plate_id` would put `plate_001_p01` in a table where no row's actual id is
+    ever that string. The cache itself keys on `image_file`, not on this column
+    - it is legibility only.
+    """
     return os.path.splitext(os.path.basename(image_file))[0]
 
 
