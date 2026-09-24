@@ -20,7 +20,7 @@ const { els, blobs, fire } = env;
 
 const X = load(`{KEY, PLATES, DATA, st, rows, select, onSlideUser, exportCsv,
   markAssigned, toggleFav, secDown, toggleBgMode, transform, toggleGuided,
-  clickPl, stepPlate,
+  clickPl, stepPlate, resolvePlate,
   usedRois, roisOf, polysOf, roiPairs, bgPairs, isBg, pairR, defaultR,
   drawSec,
   get guided(){return guided}, get gTarget(){return gTarget},
@@ -181,6 +181,46 @@ chk("a favourite with no assignment names no plate",
 chk("...and carries no verdict about one either",
     favRow[col(pl[0], "plate_verified")], "");
 chk("...and is still reported as work", favRow[col(pl[0], "status")], "favourite_only");
+
+// THE ROW CARRIES THE PLATE AS IT WAS, NOT AS IT IS.
+//
+// A section whose plate was re-cropped since it was curated must export the
+// fingerprint and the size it was MATCHED against. Exporting the current
+// atlas's values instead destroys the only evidence anything changed: the next
+// importer compares that fingerprint to the set it came from, finds it
+// matches, and calls the section verified. That is the swap this whole plan
+// exists to stop, laundered through the CSV rather than the page.
+//
+// plate_px doubly so - a re-render's landmarks are scaled by new/old, and with
+// the new size in both places the factor is 1.0 and the rescale silently does
+// nothing.
+const chg = X.rows()[2].uid;
+X.select(chg, true); X.active = chg;
+// What initState hands back for a record stored against the plate as it was:
+// same id, a different picture, re-cropped to a different shape.
+const stale = X.resolvePlate({plate: pi, assigned: true, pairs: [],
+  plate_id: P.id, plate_fp: "0123456789ab", plate_px: "111x222"}, X.PLATES);
+chk("a re-cropped plate reads as changed", stale.verified, "changed");
+Object.assign(X.st(chg), stale);
+blobs.length = 0;
+X.exportCsv();
+const chgRow = rows(blobs[0]).slice(1).find(r => r[0] === chg);
+chk("the plate on disk does have a fingerprint to be confused with",
+    (P.fp || "").length > 0, true);
+chk("the row keeps the fingerprint it was curated against",
+    chgRow[col(pl[0], "plate_fp")], "0123456789ab");
+chk("...which is NOT the one the current atlas would verify",
+    chgRow[col(pl[0], "plate_fp")] === P.fp, false);
+chk("...and the size that fingerprint was taken at, not today's",
+    chgRow[col(pl[0], "plate_px")], "111x222");
+chk("...with the verdict that says not to trust it",
+    chgRow[col(pl[0], "plate_verified")], "changed");
+chk("...and no fit, because its landmarks are withheld",
+    chgRow[col(pl[0], "transform")], "");
+delete X.st(chg).plate_id; delete X.st(chg).plate_fp;
+delete X.st(chg).plate_px; delete X.st(chg).verified;
+X.st(chg).assigned = false;
+
 X.select(uid, true); X.active = uid;
 blobs.length = 0;
 X.toggleGuided();

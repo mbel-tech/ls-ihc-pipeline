@@ -3551,11 +3551,29 @@ function exportCsv(){
     // Blank rather than plate_001 when no plate was ever chosen - otherwise a
     // favourite with no assignment reads as a deliberate call on plate_001.
     pl.push([d.uid,d.animal,d.m,d.sub,d.order,PLATE_SET, chosen?P.id:"", chosen?s.plate:"",
-             // Identity, so a restore can CHECK rather than trust the index.
-             // plate_px is here only so a re-render's landmarks can be scaled:
-             // once the image has changed, the current set can no longer say
-             // what size it used to be.
-             chosen?(P.fp||""):"", chosen?(P.w+"x"+P.h):"",
+             // THE IDENTITY THE ASSIGNMENT WAS MADE AGAINST - s.plate_fp and
+             // s.plate_px, never the plate as it is NOW.
+             //
+             // The columns exist so a later restore can CHECK. Writing the
+             // current atlas's fingerprint into a row whose stored plate no
+             // longer verifies destroys the only evidence that anything
+             // changed, and hands the next importer a row that recomputes to
+             // "ok" - the 2026-09-06 failure laundered through the CSV.
+             //
+             // plate_px is worse than useless taken from the current set: its
+             // whole purpose is to give a re-render's landmarks an OLD width to
+             // scale by, and the current set can no longer supply one. The new
+             // size makes the factor 1.0 and the rescale a no-op that looks
+             // like it worked. This comment argued for the old size while the
+             // code wrote the new one, which is how that hid.
+             //
+             // Blank when there is no stored identity - a record from before
+             // ids were kept. plate_verified already says why; synthesising one
+             // from whatever sits at that index today is the same laundering.
+             // A section confirmed in this session has s.plate_fp stamped from
+             // the atlas now loaded, so it exports the current fingerprint
+             // correctly, because that IS what it was assigned against.
+             chosen?(s.plate_fp||""):"", chosen?(s.plate_px||""):"",
              // A verdict about the three columns before it, so it is gated with
              // them: a row that declines to name a plate must not carry a
              // judgement about one.
