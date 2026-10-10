@@ -83,6 +83,10 @@
   },
   "_export_dir_note": "Where the ROI curator files its exports: one folder per export, named DD.MM.YYYY_HH.MM, with the same stamp on every file in it. Read by 04l (shown in the page, and the default for --export-dir) and by the app's download handler, so the two cannot disagree. A browser writes here only after the operator picks the folder with the page's Folder... button - a web page cannot be handed a path.",
   "export_dir": "<ABSOLUTE PATH FOR CURATOR EXPORTS>",
+  "atlas_source": "salmon",
+  "_atlas_source_note": "Which atlas the run uses: salmon (the default; plates come from atlas_pdf and atlas_plate_set below) or wullimann1996 (the zebrafish cross sections, built by 04w into plates_wullimann; atlas_plate_set is then ignored). Plate ids are not comparable between atlases, so exports record the plate set and 04e/04q refuse rows made against another one.",
+  "atlas_polygon_mirror": false,
+  "_atlas_polygon_mirror_note": "wullimann1996 only. The drawing shows one hemisphere beside the micrograph of the other, so the outlines are mirrored about the plate's midline to give the guide on both sides.",
   "atlas_plate_set": {
     "_note": "Which plate set the ROI curator and the registration use. Both read this, so they cannot drift apart. IDs COLLIDE between sets - the same plate_NNN name exists in more than one set and points at a different image - so a landmark file records the set it was made against. Set this once, before any landmark is placed; changing it later invalidates landmarks made against the old set.",
     "dir": "plates",

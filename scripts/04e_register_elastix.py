@@ -28,8 +28,15 @@ import csv
 import json
 import os
 
+import importlib.util
+
 import numpy as np
 from PIL import Image
+
+_lsio = importlib.util.spec_from_file_location(
+    "_lsio", os.path.join(os.path.dirname(os.path.abspath(__file__)), "ls_io.py"))
+IO = importlib.util.module_from_spec(_lsio)
+_lsio.loader.exec_module(IO)
 
 # LS_CONFIG names the file explicitly; the file-relative path is the fallback.
 # Frozen, the scripts sit inside _internal/ while config.json is beside the
@@ -42,7 +49,7 @@ OUT_ROOT = CONFIG["out_root"]
 REFORMAT_DIR = os.path.join(OUT_ROOT, "reformatted")
 # Which plate set to use, from config. The two sets reuse the same plate_NNN
 # names for different images, so this must not be hard-coded in two places.
-PLATE_SET = CONFIG.get("atlas_plate_set", {}).get("dir", "plates")
+PLATE_SET = IO.plate_set(CONFIG)
 PLATE_DIR = os.path.join(OUT_ROOT, "atlas", PLATE_SET)
 MATCH_CSV = os.path.join(OUT_ROOT, "qc", "atlasmatch", "atlas_proposals_v2.csv")
 REG_DIR = os.path.join(OUT_ROOT, "registered")
@@ -230,6 +237,8 @@ def run_from_landmarks(itk, args):
         by_sec = {}
         for r in csv.DictReader(fh):
             by_sec.setdefault(r["scene_uid"], []).append(r)
+    IO.check_plate_set([r for rows in by_sec.values() for r in rows], PLATE_SET,
+                       "roi_landmarks.csv")
 
     with open(os.path.join(PLATE_DIR, "plates.csv"), newline="", encoding="utf-8") as fh:
         plates = {p["plate_id"]: p for p in csv.DictReader(fh)}
@@ -400,7 +409,7 @@ def main():
     for i, r in enumerate(rows, 1):
         plate_id = r["confirmed_plate"] or r["proposed_plate"] if args.use == "confirmed" else r["proposed_plate"]
         sec_path = os.path.join(REFORMAT_DIR, "sections", r["scene_uid"] + ".png")
-        plate_path = os.path.join(REFORMAT_DIR, "plates", plate_id + ".png")
+        plate_path = os.path.join(REFORMAT_DIR, IO.reformatted_plates_dir(CONFIG), plate_id + ".png")
         if not (os.path.exists(sec_path) and os.path.exists(plate_path)):
             continue
 

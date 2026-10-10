@@ -58,12 +58,18 @@ Run:  python 04q_import_curation.py --plates roi_plates.csv
 """
 
 import argparse
+import importlib.util
 import csv
 import json
 import os
 import shutil
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
+_lsio = importlib.util.spec_from_file_location(
+    "_lsio", os.path.join(os.path.dirname(os.path.abspath(__file__)), "ls_io.py"))
+IO = importlib.util.module_from_spec(_lsio)
+_lsio.loader.exec_module(IO)
+
 # LS_CONFIG names the file explicitly; the file-relative path is the fallback.
 # Frozen, the scripts sit inside _internal/ while config.json is beside the
 # executable, so the fallback would point at a file that does not exist.
@@ -301,12 +307,20 @@ def main(argv=None):
     ap.add_argument("--reformat-dir", default=REFORMAT_DIR)
     ap.add_argument("--no-rgb", action="store_true",
                     help="the page was built without --rgb, so K is 1 everywhere")
+    ap.add_argument("--allow-plate-set-mismatch", action="store_true",
+                    help="import rows made against a different plate set than config names")
     ap.add_argument("--write", action="store_true",
                     help="write --out; without this the run only reports")
     args = ap.parse_args(argv)
 
     k_of = k_from_disk(args.reformat_dir, not args.no_rgb)
-    state, skipped = build(load(args.plates), load(args.landmarks),
+    plates_rows = load(args.plates)
+    if not args.allow_plate_set_mismatch:
+        active = IO.plate_set(CONFIG)
+        for rows, what in ((plates_rows, "roi_plates"), (load(args.landmarks), "roi_landmarks"),
+                           (load(args.regions), "roi_regions")):
+            IO.check_plate_set(rows, active, what)
+    state, skipped = build(plates_rows, load(args.landmarks),
                            load(args.regions), k_of)
     c = counts(state)
     print("rebuilt {sections} sections: {excluded} excluded, {favourites} "

@@ -93,7 +93,8 @@ with open(CONFIG_PATH, encoding="utf-8") as _fh:
 
 OUT_ROOT = CONFIG["out_root"]
 REFORMAT_DIR = os.path.join(OUT_ROOT, "reformatted")
-PLATE_DIR = os.path.join(OUT_ROOT, "atlas", "plates")
+PLATE_SET = IO.plate_set(CONFIG)
+PLATE_DIR = os.path.join(OUT_ROOT, "atlas", PLATE_SET)
 REPORT_DIR = os.path.join(OUT_ROOT, "qc", "atlasmatch")
 
 TOP_K = 4
@@ -223,7 +224,7 @@ def main():
     os.makedirs(REPORT_DIR, exist_ok=True)
     rng = np.random.default_rng(SEED)
 
-    plate_files = sorted(glob.glob(os.path.join(REFORMAT_DIR, "plates", "*_mask.npy")))
+    plate_files = sorted(glob.glob(os.path.join(REFORMAT_DIR, IO.reformatted_plates_dir(CONFIG), "*_mask.npy")))
     if not plate_files:
         raise SystemExit("no reformatted plates - run 04a_reformat.py first")
     plate_ids = [os.path.basename(f).replace("_mask.npy", "") for f in plate_files]

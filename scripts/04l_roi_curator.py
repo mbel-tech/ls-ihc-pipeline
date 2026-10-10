@@ -210,6 +210,10 @@ _lsio = importlib.util.spec_from_file_location(
     "_lsio", os.path.join(os.path.dirname(os.path.abspath(__file__)), "ls_io.py"))
 IO = importlib.util.module_from_spec(_lsio)
 _lsio.loader.exec_module(IO)
+_ap = importlib.util.spec_from_file_location(
+    "_atlas_polygons", os.path.join(os.path.dirname(os.path.abspath(__file__)), "atlas_polygons.py"))
+AP = importlib.util.module_from_spec(_ap)
+_ap.loader.exec_module(AP)
 
 # LS_CONFIG names the file explicitly; the file-relative path is the fallback.
 # Frozen, the scripts sit inside _internal/ while config.json is beside the
@@ -489,7 +493,7 @@ def analysis_uids(marker):
     return perk, len(perk), 0
 # Which plate set to use, from config. The two sets reuse the same plate_NNN
 # names for different images, so this must not be hard-coded in two places.
-PLATE_SET = CONFIG.get("atlas_plate_set", {}).get("dir", "plates")
+PLATE_SET = IO.plate_set(CONFIG)
 PLATE_DIR = os.path.join(OUT_ROOT, "atlas", PLATE_SET)
 CURATOR_HTML = os.path.join(REFORMAT_DIR, "roi_curator.html")
 # Where exports are filed. Config so the app and this stage cannot disagree
@@ -4688,6 +4692,10 @@ def main():
                          "app. A browser writes here only once the operator has "
                          "picked the folder with the page's own Folder... button, "
                          "because a web page cannot be handed a path")
+    ap.add_argument("--use-auto-polygons", action="store_true",
+                    help="Wullimann plate set only: also show polygons the program named "
+                         "but nobody has reviewed. Off by default - the name is a guess "
+                         "and it becomes a measurement key.")
     ap.add_argument("--out", default=CURATOR_HTML, metavar="HTML",
                     help="where to write the page (default: the live curator under "
                          "out_root). tests/run.sh points this at tests/build/ so a "
@@ -4757,6 +4765,11 @@ def main():
     # Loaded and numbered by the shared helpers above, so this tool and the
     # atlas region tracer agree about which seed is seed 4.
     seeds = load_seeds()
+    # Region polygons, where the plate set carries them (Wullimann): the outline
+    # is the area, so it replaces the hull built from seeds.
+    polys = AP.read_polygons(os.path.join(PLATE_DIR, "polygons.csv"))
+    poly_status = ("reviewed", "auto") if args.use_auto_polygons else ("reviewed",)
+    mirror_on = bool(CONFIG.get("atlas_polygon_mirror")) and IO.atlas_source(CONFIG) == "wullimann1996"
 
     pl = []
     for p in sorted(plates, key=lambda p: p["plate_id"]):
@@ -4764,9 +4777,13 @@ def main():
         if not os.path.exists(img):
             continue
         sd = seeds.get(p["plate_id"], [])
-        # The ROI grouping, and the number every seed under it carries.
-        hulls = region_hulls(sd)
-        tag_rois(sd, hulls)
+        if polys.get(p["plate_id"]):
+            mid = float(p["midline_frac"]) if mirror_on and p.get("midline_frac") else None
+            sd, hulls = AP.plate_view(polys[p["plate_id"]], mid, poly_status)
+        else:
+            # The ROI grouping, and the number every seed under it carries.
+            hulls = region_hulls(sd)
+            tag_rois(sd, hulls)
         # How much room a label actually has on THIS plate: the median distance
         # from a seed to its nearest neighbour, as a fraction of the plate
         # diagonal. A fraction rather than pixels because the page has to turn it

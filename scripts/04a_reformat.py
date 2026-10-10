@@ -58,7 +58,8 @@ with open(CONFIG_PATH, encoding="utf-8") as _fh:
 
 OUT_ROOT = CONFIG["out_root"]
 OVERVIEW_DIR = os.path.join(OUT_ROOT, "overviews")
-PLATE_DIR = os.path.join(OUT_ROOT, "atlas", "plates")
+PLATE_SET = IO.plate_set(CONFIG)
+PLATE_DIR = os.path.join(OUT_ROOT, "atlas", PLATE_SET)
 QC_CSV = os.path.join(OUT_ROOT, "qc", "focus.csv")
 REFORMAT_DIR = os.path.join(OUT_ROOT, "reformatted")
 
@@ -591,7 +592,7 @@ def main():
         write_excluded(paths["excluded"], excluded)
 
     sec_dir = paths["sections"]
-    plate_dir = os.path.join(REFORMAT_DIR, "plates")
+    plate_dir = os.path.join(REFORMAT_DIR, IO.reformatted_plates_dir(CONFIG))
     os.makedirs(sec_dir, exist_ok=True)
     os.makedirs(plate_dir, exist_ok=True)
 

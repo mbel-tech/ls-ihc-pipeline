@@ -521,8 +521,9 @@ def main():
     data = []
     for r in rows:
         plate = proposed.get(r["id"])
-        ref = f"plates/{plate}.png" if plate and os.path.exists(
-            os.path.join(REFORMAT_DIR, "plates", plate + ".png")) else None
+        rp = IO.reformatted_plates_dir(CONFIG)
+        ref = f"{rp}/{plate}.png" if plate and os.path.exists(
+            os.path.join(REFORMAT_DIR, rp, plate + ".png")) else None
         data.append({
             "uid": r["id"], "animal": r["animal"], "order": r["section_order"],
             "img": f"sections/{r['id']}.png", "ref": ref, "plate": plate or "",

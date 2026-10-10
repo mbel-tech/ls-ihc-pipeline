@@ -55,7 +55,8 @@ with open(CONFIG_PATH, encoding="utf-8") as _fh:
 
 OUT_ROOT = CONFIG["out_root"]
 OVERVIEW_DIR = os.path.join(OUT_ROOT, "overviews")
-PLATE_DIR = os.path.join(OUT_ROOT, "atlas", "plates")
+PLATE_SET = IO.plate_set(CONFIG)
+PLATE_DIR = os.path.join(OUT_ROOT, "atlas", PLATE_SET)
 QC_CSV = os.path.join(OUT_ROOT, "qc", "focus.csv")
 REPORT_DIR = os.path.join(OUT_ROOT, "qc", "atlasmatch")
 
@@ -266,7 +267,7 @@ def main():
             cands = [{
                 "plate_id": plate_meta[j]["plate_id"],
                 "page": plate_meta[j]["page"],
-                "img": os.path.join("..", "..", "atlas", "plates",
+                "img": os.path.join("..", "..", "atlas", PLATE_SET,
                                     plate_meta[j]["image_file"]).replace("\\", "/"),
                 "score": round(float(sim[i, j]), 3),
                 "regions": plate_meta[j]["regions"],

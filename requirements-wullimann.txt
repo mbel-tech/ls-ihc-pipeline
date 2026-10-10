@@ -1,0 +1,9 @@
+# Only needed for the Wullimann 1996 atlas (config atlas_source = "wullimann1996").
+# 04x reads each region's printed label by OCR to propose its name; without
+# tesseract it still runs and leaves every polygon unnamed for hand review.
+#
+# pytesseract is a wrapper: the tesseract program itself must be installed too
+#   Debian/Ubuntu:  apt-get install tesseract-ocr
+#   Windows:        the UB Mannheim installer, then add it to PATH
+pytesseract>=0.3.10
+opencv-python-headless
