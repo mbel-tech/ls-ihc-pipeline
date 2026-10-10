@@ -222,3 +222,21 @@ def plate_view(polys, midline=None, statuses=("reviewed",)):
                       "seeds": [n], "v": [[round(x, 6), round(y, 6)] for x, y in p["v"]],
                       "roi": n})
     return seeds, hulls
+
+
+def registration_seeds(polys, midline, statuses=("reviewed",)):
+    """[{region, xf, yf}] for registering a Wullimann plate: one point per
+    reviewed polygon, MIRRORED onto the micrograph half.
+
+    The drawing shows one hemisphere and the micrograph the other, so the
+    outlines sit on the half of the plate that registration does not read. The
+    reflection puts each region's point where that region is in the micrograph,
+    which is the half the section is registered against. The point is the
+    polygon's interior point, not its centroid, so it stays inside a crescent.
+    """
+    use = [p for p in polys if p["status"] in statuses and p["region"]]
+    out = []
+    for p in mirror(use, midline):
+        x, y = interior_point(p["v"])
+        out.append({"region": p["region"], "xf": x, "yf": y})
+    return out

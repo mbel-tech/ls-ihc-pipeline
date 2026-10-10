@@ -16,8 +16,8 @@ so this stage only arranges them into the layout every later stage reads:
         seeds.csv         header only - 04l loads it, and the regions come from
                           polygons.csv (04x) instead
         wplate_023.png ...  the plate as printed
-        wplate_023_micrograph.png ...  the right half (saved for registration;
-                          04e does not use it yet - it registers the whole plate)
+        wplate_023_micrograph.png ...  the right half, for inspection (04e crops the
+                          plate itself, from midline_frac)
 
 Plate ids are zero-padded section numbers (wplate_023 ... wplate_363). The
 curators order plates by sorting `plate_id` and store that position, so ids must

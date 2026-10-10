@@ -116,10 +116,14 @@ Things that differ from salmon, so they are not a surprise later:
   section's level on that number, not on its position in the list.
 - Each plate draws one hemisphere beside the micrograph of the other. `atlas_polygon_mirror: true`
   reflects the outlines about the plate midline to give the guide on both sides.
-- `04w` also saves the right (micrograph) half as `*_micrograph.png`, but **`04e` does not use it yet**: it
-  registers against the whole plate, drawing included, and landmarks are placed in that frame. Registering on the
-  micrograph half alone needs an offset through landmarks and the transform; that is not done, and whether the
-  whole-plate registration is good enough on stippled zebrafish micrographs is untested.
+- `04e --from-landmarks` registers the **micrograph half** only (the drawing has no tissue texture to match). Landmarks
+  and seeds stay in the full-plate frame; only the image is cropped, and a coverage mask keeps the metric off the part
+  of the section the micrograph does not cover. Each reviewed polygon contributes one point, **mirrored onto the
+  micrograph half**, and that is the region position written to `roi_regions_refined.csv`. `--whole-plate` restores the
+  old behaviour for comparison. On a synthetic exact-affine case the elastic stage moved the point 4.7 px from a truth
+  that the landmark fit alone had to 0.35 px, and the whole plate did the same, so it is the elastic stage, not the
+  crop. On real stippled zebrafish micrographs against salmon sections it is untested: compare
+  `roi_regions_refined.csv` with the curator's `roi_regions.csv` before trusting it.
 - Needs tesseract for the name proposals: `requirements-wullimann.txt`.
 - The plates come from a book that is not ours to redistribute; `atlas/` is ignored by git.
 
