@@ -21,6 +21,17 @@ CZIPY="${CZIPY:-$ROOT/work/czienv/Scripts/python.exe}"
 # 8 used $ROOT/qc/... and so handed Fiji a list that did not exist and 01c a
 # glob that matched nothing - hidden by the `|| true` on step 8.
 OUT="$(python -c "import json,sys;print(json.load(open(sys.argv[1],encoding='utf-8'))['out_root'])" "$LS_CONFIG")" || exit 1
+
+# Which layout this study is, and therefore which stages apply. Asked of
+# ls_layouts rather than listed here: two lists of stage names is how they
+# drift, and the one that drifts silently is the one that skips a stage.
+LAYOUT="$(python -c "import json,sys;print((json.load(open(sys.argv[1],encoding='utf-8')).get('acquisition') or {}).get('layout','multiplex'))" "$LS_CONFIG")" || exit 1
+printf 'acquisition layout: %s\n' "$LAYOUT"
+
+layout_applies() {
+  python -c "import sys;sys.path.insert(0,sys.argv[1]);import ls_layouts;sys.exit(0 if ls_layouts.applies(sys.argv[2],sys.argv[3]) else 1)" "$SCRIPTS" "$1" "$LAYOUT"
+}
+
 mkdir -p "$LOGS"
 
 START_AT=1
@@ -107,8 +118,16 @@ step 10 "measure clipping on the raw plane" \
 step 11 "build contact sheets and gallery" \
   python 01d_contactsheets.py || exit 1
 
-step 12 "pair the AF568 and AF488 passes" \
-  python 02_pair_passes.py || exit 1
+# Only a `paired` study has two passes to pair. Under `multiplex` this stage
+# would not fail - it would find no second marker and write an empty pairing,
+# which downstream reads as "these sections have no partner" rather than "this
+# did not apply". So it is skipped out loud instead.
+if layout_applies 02_pair_passes.py; then
+  step 12 "pair the AF568 and AF488 passes" \
+    python 02_pair_passes.py || exit 1
+else
+  printf '\n[12] SKIP  pair the AF568 and AF488 passes (not used under %s)\n' "$LAYOUT"
+fi
 
 step 13 "extract the atlas plates and seeds" \
   python 04a_atlas_extract.py || exit 1

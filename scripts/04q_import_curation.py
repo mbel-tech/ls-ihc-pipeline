@@ -57,6 +57,7 @@ Run:  python 04q_import_curation.py --plates roi_plates.csv
           --landmarks roi_landmarks.csv --regions roi_regions.csv --write
 """
 
+import sys
 import argparse
 import csv
 import json
@@ -64,15 +65,26 @@ import os
 import shutil
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-# LS_CONFIG names the file explicitly; the file-relative path is the fallback.
-# Frozen, the scripts sit inside _internal/ while config.json is beside the
-# executable, so the fallback would point at a file that does not exist.
-CONFIG_PATH = os.environ.get("LS_CONFIG") or os.path.join(os.path.dirname(_HERE), "config.json")
-with open(CONFIG_PATH, encoding="utf-8") as _fh:
-    CONFIG = json.load(_fh)
+_HERE = os.path.dirname(os.path.abspath(__file__))
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+# ls_config resolves LS_CONFIG, applies the defaults and validates once for
+# the whole process. Imported, not re-implemented: this block used to be four
+# lines copy-pasted into every stage.
+from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
+import ls_paths as LP  # noqa: E402
+# The plate a row names is resolved by ONE rule, shared with
+# app/import_exports.py. The two are mirrors, and the last time one of
+# them was fixed alone the other put every ROI at a third of its true
+# position for weeks.
+import ls_atlas as AT  # noqa: E402
 
 OUT_ROOT = CONFIG["out_root"]
 REFORMAT_DIR = os.path.join(OUT_ROOT, "reformatted")
+
+# The one place the "sections/ or sections_<marker>/" rule lives. See
+# marker_dir below for what this stage got wrong while it had its own copy.
+NAMES = LP.for_config(CONFIG)
 SEED_JSON = os.path.join(OUT_ROOT, "curation", "ls_roi_curator_v1.json")
 
 # Mirrors 04l: the pair array is
@@ -85,8 +97,11 @@ SEED_JSON = os.path.join(OUT_ROOT, "curation", "ls_roi_curator_v1.json")
 BG_MARK = "bg"
 SEC_GRID = 256
 
-# The decision fields 04l keeps per section.
-STATE_FIELDS = ("plate", "pairs", "polys", "assigned", "noroi", "fav", "rot", "excl")
+# The decision fields 04l keeps per section. The first five are
+# `ls_atlas.STATE_FIELDS` - the plate is an identity now, not just an index
+# into whatever array was loaded.
+STATE_FIELDS = ("plate", "plate_id", "plate_fp", "plate_px", "verified",
+                "pairs", "polys", "assigned", "noroi", "fav", "rot", "excl")
 
 
 def num(v, default=0.0):
@@ -105,8 +120,23 @@ def tidy(x):
 
 
 def marker_dir(marker):
-    """Mirrors 04l's marker_paths: the two channels do not share a directory."""
-    return "sections_AF568" if marker == "AF568" else "sections"
+    """The directory 04a wrote this marker's sections into. Not restated here.
+
+    This function used to BE the rule, as `"sections_AF568" if marker ==
+    "AF568" else "sections"` - the LS study's answer written out as though it
+    were everyone's. For any other study every marker resolved to `sections`,
+    so `k_from_disk` probed a directory 04o had not written, missed the 768-px
+    composite, and fell back to k=1.0 while the page had drawn at K=3. Every
+    imported disc, landmark and polygon vertex then landed at one THIRD of its
+    true coordinate, on a page that loads without complaint and puts them
+    somewhere plausible - which is verbatim the failure the docstring at the
+    top of this file says this stage exists to prevent.
+
+    `including()` because `marker` comes out of a CSV a browser wrote, and a
+    row naming a marker this config does not declare must not take down an
+    import that has 400 good rows in it.
+    """
+    return NAMES.including(marker).basename("sections", marker)
 
 
 def k_from_disk(reformat_dir=REFORMAT_DIR, rgb=True):
@@ -166,18 +196,22 @@ def build(plates, landmarks, regions, k_of):
             continue
         marker_of[uid] = cell(r, "marker")
         idx = cell(r, "plate_index")
-        state[uid] = {
-            "plate": int(num(idx)) if idx else 0,
-            "pairs": [],
-            "polys": [],
+        # THE ID DECIDES WHICH PLATE, not the index - through ls_atlas, which
+        # app/import_exports calls too. The index is kept as a record of what
+        # the array looked like, and is the only thing an export from before
+        # ids were kept has to offer. See ls_atlas.restore_plate.
+        state[uid] = dict(
+            AT.restore_plate(r, int(num(idx)) if idx else 0),
+            pairs=[],
+            polys=[],
             # Export collapses `assigned || n > 0` into plate_id - see the
             # module docstring; a named plate is read as a chosen one.
-            "assigned": bool(cell(r, "plate_id")),
-            "noroi": cell(r, "status") == "no_roi",
-            "fav": cell(r, "favorite") == "1",
-            "rot": tidy(num(cell(r, "view_rotation_deg"))),
-            "excl": cell(r, "excluded") == "1",
-        }
+            assigned=bool(cell(r, "plate_id")),
+            noroi=cell(r, "status") == "no_roi",
+            fav=cell(r, "favorite") == "1",
+            rot=tidy(num(cell(r, "view_rotation_deg"))),
+            excl=cell(r, "excluded") == "1",
+        )
 
     def scaled(uid, r, key):
         # Round to the export's own 2dp: K is a small integer and the value it

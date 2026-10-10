@@ -37,6 +37,15 @@ from scipy import ndimage
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCRIPTS = os.path.join(os.path.dirname(HERE), "scripts")
 
+# This suite imports stage modules, which read config at import. Without a
+# config of its own it would fall through to the operator's live study and
+# then pass or fail on their data. See tests/_fixture.py.
+if HERE not in sys.path:
+    sys.path.insert(0, HERE)
+from _fixture import use_temp_study  # noqa: E402
+
+STUDY = use_temp_study()
+
 _spec = importlib.util.spec_from_file_location(
     "p4i", os.path.join(SCRIPTS, "04i_propagate_to_perk.py"))
 P = importlib.util.module_from_spec(_spec)
@@ -206,6 +215,110 @@ for i, (theta, box488, box568, tilt488) in enumerate(CASES, 1):
         abs(d["final_iou_256"]
             - iou(RF.reformat(p568, False, extra_angle=d["extra"])[1], pcna_mask)) < 1e-9,
         True)
+
+
+print()
+print("--- the overview is where focus.csv says it is, not under two literals ---")
+
+# 04i read the real channel out of focus.csv at :325-326 and then discarded it:
+#
+#     animal488, _ = chan.get(uid, (NM.subject_of(uid), "AF488"))
+#     p488 = os.path.join(OVERVIEW_DIR, animal488, "AF488", uid + "_DAPI.png")
+#     p568 = os.path.join(OVERVIEW_DIR, animal,    "AF568", u568 + "_DAPI.png")
+#
+# Overviews live in overviews/<animal>/<marker_channel>/, so for any study but
+# LS both of those name directories that do not exist. Every section then fails
+# the existence check, rotation_overrides_<marker>.csv comes out holding only
+# the exclusion rows, `04a --apply-overrides` applies zero rotations, and every
+# section is reformatted at its raw automatic angle - unaligned with the
+# partner it was supposed to be aligned to. Nothing errors, and the summary
+# prints a plausible "failed to reformat" count.
+#
+# 04i also read pairs.csv's `af488_scene_uid` / `af568_scene_uid` by literal.
+# Those column names are now derived in 02 from the marker names, so reading
+# them by literal here would be the same bug moved one file along.
+
+from _fixture import temp_study, load_stage                  # noqa: E402
+import csv                                                   # noqa: E402
+
+
+def _wcsv(path, rows, cols):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", newline="\n", encoding="utf-8") as fh:
+        w = csv.DictWriter(fh, fieldnames=cols)
+        w.writeheader()
+        w.writerows(rows)
+
+
+with temp_study(acquisition={"layout": "paired",
+                             "markers": ["Mk1", "Mk2"]}) as MK:
+    P4 = load_stage("04i_propagate_to_perk.py", name="lsstage_04i_mk")
+
+    # Mk2 is the geometry source - the SECOND declared - so it is the curated
+    # pass, and Mk1 is the one being propagated onto.
+    chk("the target is the pass that does not own the unsuffixed names",
+        P4.TARGET_MARKER, "Mk1")
+
+    SRC, TGT = "Mk2", "Mk1"
+    u_src, u_tgt = "AB12_1b-s0", "AB12_1a-s0"
+    reformat_dir = P4.REFORMAT_DIR
+
+    _wcsv(P4.PAIRS_CSV,
+          [{"section_uid": "AB12_sec001", "status": "matched",
+            "mk1_scene_uid": u_tgt, "mk2_scene_uid": u_src}],
+          ["section_uid", "status", "mk1_scene_uid", "mk2_scene_uid"])
+    _wcsv(os.path.join(reformat_dir, "reformat_index.csv"),
+          [{"id": u_src, "kind": "section", "angle": "12.0"}],
+          ["id", "kind", "angle"])
+    _wcsv(os.path.join(reformat_dir, "excluded_sections.csv"), [], ["scene_uid"])
+    _wcsv(os.path.join(P4.OUT_ROOT, "qc", "focus.csv"),
+          [{"scene_uid": u_src, "animal": "AB12", "marker_channel": SRC},
+           {"scene_uid": u_tgt, "animal": "AB12", "marker_channel": TGT}],
+          ["scene_uid", "animal", "marker_channel"])
+    for _animal, _marker, _uid in (("AB12", SRC, u_src), ("AB12", TGT, u_tgt)):
+        d = os.path.join(P4.OVERVIEW_DIR, _animal, _marker)
+        os.makedirs(d, exist_ok=True)
+        open(os.path.join(d, _uid + "_DAPI.png"), "wb").close()
+
+    seen = []
+
+    def _derive(p_source, p_target, total_source, curated_mask=None):
+        seen.append((p_source, p_target))
+        return {"extra": 3.0, "deg": 0.0, "auto_target": 0.0, "align_iou": 0.9,
+                "flip_margin": 0.0, "final_iou_256": 0.88}
+
+    _saved = P4.derive_rotation
+    try:
+        P4.derive_rotation = _derive
+        P4.main()
+    finally:
+        P4.derive_rotation = _saved
+
+    def _parts(p):
+        return p.replace(os.sep, "/").split("/")
+
+    chk("the curated pass's overview is reached at all", len(seen), 1)
+    if seen:
+        src_p, tgt_p = seen[0]
+        chk("the source overview sits under focus.csv's channel for that uid",
+            _parts(src_p)[-3:], ["AB12", SRC, u_src + "_DAPI.png"])
+        chk("...and so does the target's",
+            _parts(tgt_p)[-3:], ["AB12", TGT, u_tgt + "_DAPI.png"])
+
+    with open(P4.OUT_CSV, newline="", encoding="utf-8") as fh:
+        written = list(csv.DictReader(fh))
+    chk("a rotation was derived and written", len(written), 1)
+    chk("...for the target pass's scene", written[0]["perk_scene_uid"] if written
+        else "", u_tgt)
+
+    # 04i:74 defined REPORT_DIR = qc/perk and :284 created it. Nothing in the
+    # repo ever wrote a file into it - grep for REPORT_DIR - so every run left
+    # an empty directory in out_root that looked like a report that had failed
+    # to be produced.
+    chk("04i no longer defines a report directory nothing writes to",
+        hasattr(P4, "REPORT_DIR"), False)
+    chk("...and does not create qc/perk",
+        os.path.exists(os.path.join(P4.OUT_ROOT, "qc", "perk")), False)
 
 print("\n" + (f"{fails} FAILED" if fails else "ALL PASS"))
 sys.exit(1 if fails else 0)

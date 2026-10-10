@@ -56,6 +56,7 @@ Run:  python 05a_roi_geometry.py
       python 05a_roi_geometry.py --verify
 """
 
+import sys
 import argparse
 import csv
 import datetime
@@ -78,15 +79,35 @@ _lsio = importlib.util.spec_from_file_location(
 IO = importlib.util.module_from_spec(_lsio)
 _lsio.loader.exec_module(IO)
 
-CONFIG = RF.CONFIG
+_HERE = os.path.dirname(os.path.abspath(__file__))
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+# ls_config resolves LS_CONFIG, applies the defaults and validates once for
+# the whole process. Imported, not re-implemented: this block used to be four
+# lines copy-pasted into every stage.
+import ls_config as LC  # noqa: E402
+from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
+import ls_channels as CH  # noqa: E402
+import czi_read as CR  # noqa: E402
 OUT_ROOT = RF.OUT_ROOT
 REFORMAT_DIR = RF.REFORMAT_DIR
 # Where the curator files its exports, one DD.MM.YYYY_HH.MM folder per export.
 # Same key 04l and the app read, so all three look in one place.
-EXPORT_DIR = CONFIG.get("export_dir") or os.path.join(OUT_ROOT, "exports")
+EXPORT_DIR = LC.export_dir(CONFIG)
 OVERVIEW_DIR = RF.OVERVIEW_DIR
 FOCUS_CSV = os.path.join(OUT_ROOT, "qc", "focus.csv")
 MANIFEST_CSV = os.path.join(OUT_ROOT, "manifest", "manifest_scenes.csv")
+
+# Plane 0 under the paired layout. The multiplex layout resolves this from the
+# channel table instead - see plan 2.
+DAPI_PLANE = 0
+
+
+class _Rect:
+    """czi_read takes a rectangle object; this file has loose coordinates."""
+
+    def __init__(self, x, y, w, h):
+        self.x, self.y, self.w, self.h = x, y, w, h
 
 # ---- output paths are PER MARKER, and that is not cosmetic ------------------
 #
@@ -97,10 +118,12 @@ MANIFEST_CSV = os.path.join(OUT_ROOT, "manifest", "manifest_scenes.csv")
 # have quietly lost the geometry they were measured against. Nothing would have
 # errored.
 #
-# AF568 and AF488 sections have DISJOINT scene_uids - they are separate
+# The markers of a `paired` study have DISJOINT scene_uids - they are separate
 # acquisitions - so the two files never overlap and downstream stages that want
-# everything can simply read both.
-MARKERS = ("AF568", "AF488")
+# everything can simply read both. Under `multiplex` they are the SAME scan, so
+# the uids collide by construction; all_boxes() knows the difference.
+MARKERS = tuple(CH.marker_names(CONFIG))
+LAYOUT = (CONFIG.get("acquisition") or {}).get("layout", CH.LAYOUT_MULTIPLEX)
 
 # Everything written before 2026-09-01 is AF568 and has no suffix. Read as a
 # fallback so an existing out_root keeps working; never written to again.
@@ -122,13 +145,19 @@ def resolve_paths(marker):
     # Both legacy files or neither. Deciding on the box file alone would hand
     # back LEGACY_GEOM for a repo that already has roi_geometry_AF568.csv, and
     # that path may not exist.
+    #
+    # The literal is deliberate: these are files that exist on disk from before
+    # 2026-09-01, under that exact name. It is a fact about this out_root, not
+    # a fact about the study's markers.
     if (marker == "AF568" and not os.path.exists(b) and not os.path.exists(g)
             and os.path.exists(LEGACY_BOX) and os.path.exists(LEGACY_GEOM)):
         return LEGACY_GEOM, LEGACY_BOX
     return g, b
 
 
-MARKER = "AF568"
+# The first declared marker is the default, so a study that declares one marker
+# needs no --marker anywhere. For LS that is AF568, which is what this was.
+MARKER = MARKERS[0] if MARKERS else None
 GEOM_CSV, BOX_CSV = resolve_paths(MARKER)
 
 
@@ -145,9 +174,11 @@ def use_marker(marker):
 def all_boxes():
     """Every marker's boxes, concatenated, for stages that span both.
 
-    06a, 06c and 06d work off `roi_nuclei.csv`, which holds both markers once
-    the PCNA pass has run, so they need every box rather than one marker's.
-    Scene uids are disjoint across markers, so this is a union and not a merge.
+    06a, 06c and 06d work off `roi_nuclei.csv`, which holds every marker once
+    the second pass has run, so they need every box rather than one marker's.
+    This is a concatenation, never a merge: under `paired` the scene uids are
+    disjoint and the check below proves it; under `multiplex` they collide by
+    construction, because the markers are one scan of one section.
     """
     out, uids = [], {}
     for m in MARKERS:
@@ -155,19 +186,34 @@ def all_boxes():
         if not os.path.exists(p):
             continue
         rows = load_csv(p)
-        # THE DISJOINTNESS IS CHECKED, NOT ASSUMED. 06a joins a nucleus to its
-        # disc by (scene_uid, roi_index), where the index is the position of the
-        # box in this list for that uid. If two markers ever shared a uid their
-        # boxes would interleave and every nucleus on that section would be
-        # measured against the wrong disc - silently, with plausible numbers.
         for r in rows:
             u = r["scene_uid"]
-            if uids.get(u, m) != m:
+            # THE DISJOINTNESS IS CHECKED, NOT ASSUMED - under `paired`. 06a
+            # joins a nucleus to its disc by (scene_uid, roi_index), where the
+            # index is the position of the box in this list for that uid. If
+            # two PAIRED markers ever shared a uid their boxes would interleave
+            # and every nucleus on that section would be measured against the
+            # wrong disc - silently, with plausible numbers.
+            #
+            # Under `multiplex` the markers are one scan of one section, so a
+            # shared uid is what the data IS. The union below is then a
+            # concatenation of the same sections' boxes, and roi_index stays
+            # meaningful ONLY BECAUSE the consumers split this list back out
+            # per marker before enumerating it: 06a.split_by_marker, and the
+            # same counter in 06c. Their join key is (scene_uid, marker,
+            # roi_index). Relaxing the guard here without that split pooled
+            # both markers' nuclei onto the first marker's discs and reported
+            # the second as empty - see 06a.split_by_marker for the shape of
+            # it. Anything new that consumes all_boxes() positionally must do
+            # the same split.
+            if LAYOUT == CH.LAYOUT_PAIRED and uids.get(u, m) != m:
                 raise SystemExit(
                     f"scene_uid {u} appears under both {uids[u]} and {m}. "
-                    f"The per-marker box files must not overlap - every "
-                    f"downstream join is by (scene_uid, roi_index) and would "
-                    f"silently pair nuclei with the wrong discs.")
+                    f"Under the `paired` layout the per-marker box files must "
+                    f"not overlap - every downstream join is by (scene_uid, "
+                    f"roi_index) and would silently pair nuclei with the wrong "
+                    f"discs. If these markers are one multi-channel scan, the "
+                    f"study's acquisition.layout should be `multiplex`.")
             uids[u] = m
         out.extend(rows)
     return out
@@ -431,11 +477,21 @@ def build(regions_csv, limit=None, plates_csv=None, require_background=True):
     # manual_rotation / manual_flip are what 04a passed as extra_angle / flip,
     # and `angle` is what came out. Both are needed: the first to reproduce the
     # geometry, the second to prove it was reproduced.
+    #
+    # EVERY marker's index, from the writer's own expression. This was the
+    # literal pair ("AF568", "AF488") with the filename chosen by a literal
+    # `if marker == "AF488"`, so for any other study only the UNSUFFIXED index
+    # was opened - and under `paired` that file belongs to the SECOND declared
+    # marker. Every uid of the first then fell into `skipped` as "not in
+    # focus.csv / manifest / reformat_index", and an EMPTY roi_boxes_<marker>.csv
+    # reached 05c. A CSV with a header and no rows raises nothing.
+    #
+    # Under `multiplex` marker_paths hands back the same unsuffixed file for
+    # every marker, so this reads it once per marker and overwrites each id
+    # with itself - harmless, and cheaper than a special case that could drift.
     index = {}
-    for marker in ("AF568", "AF488"):
-        name = ("reformat_index.csv" if marker == "AF488"
-                else f"reformat_index_{marker}.csv")
-        p = os.path.join(REFORMAT_DIR, name)
+    for marker in MARKERS:
+        p = RF.marker_paths(marker)["index"]
         if os.path.exists(p):
             for r in load_csv(p):
                 if r["kind"] == "section":
@@ -650,9 +706,14 @@ def verify(n_sections=6):
     number the resampler will not give back.
     """
     focus = {r["scene_uid"]: r for r in load_csv(FOCUS_CSV)}
+    # Every marker's index, named by the writer. The literal pair that was here
+    # undid the filter below one level up: it only ever found the unsuffixed
+    # file, so for any study but LS `want` came out empty, the fallback took
+    # the OTHER marker's sections, and main() had already printed the requested
+    # marker as the heading. The filter was fixed; the list feeding it was not.
     index = {}
-    for name in ("reformat_index.csv", "reformat_index_AF568.csv"):
-        p = os.path.join(REFORMAT_DIR, name)
+    for marker in MARKERS:
+        p = RF.marker_paths(marker)["index"]
         if os.path.exists(p):
             for r in load_csv(p):
                 if r["kind"] == "section":
@@ -776,8 +837,8 @@ def verify_czi(limit=4):
         zoom = float(g["native_um_px"]) / float(g["overview_um_px"])
         from pylibCZIrw import czi as pyczi
         with pyczi.open_czi(path) as doc:
-            a = np.squeeze(doc.read(roi=(rx, ry, rw, rh), plane={"C": 0},
-                                    zoom=zoom)).astype(np.float64)
+            a = CR.read_plane(doc, _Rect(rx, ry, rw, rh), DAPI_PLANE,
+                              scene=int(g["scene_index"]), zoom=zoom).astype(np.float64)
         same_shape = a.shape == stored.shape
         h, w = min(stored.shape[0], a.shape[0]), min(stored.shape[1], a.shape[1])
         r = np.corrcoef(stored[:h, :w].ravel(), a[:h, :w].ravel())[0, 1]
@@ -813,8 +874,8 @@ def main():
     if args.verify:
         # --verify reads GEOM_CSV, and the marker is normally inferred from the
         # export - which --verify does not read. Without this it would check the
-        # AF568 geometry and print PASS whatever --marker said.
-        use_marker(args.marker or "AF568")
+        # first marker's geometry and print PASS whatever --marker said.
+        use_marker(args.marker or MARKER)
         print(f"marker: {MARKER}  ({os.path.basename(GEOM_CSV)})")
         print("grid -> overview  (coordinate planes through the same transform)")
         worst, checked = verify()
@@ -857,7 +918,7 @@ def main():
               f"one, since the two are separate acquisitions with their own "
               f"sections. Re-export from 04l with a single --marker.")
         return 1
-    marker = seen_markers[0] if seen_markers else (args.marker or "AF568")
+    marker = seen_markers[0] if seen_markers else (args.marker or MARKER)
     if args.marker and args.marker != marker:
         print(f"--marker {args.marker} but the export says {marker}. Refusing "
               f"rather than writing one marker's boxes to the other's file.")

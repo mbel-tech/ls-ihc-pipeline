@@ -45,6 +45,15 @@ import tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCRIPTS = os.path.join(os.path.dirname(HERE), "scripts")
 
+# This suite imports stage modules, which read config at import. Without a
+# config of its own it would fall through to the operator's live study and
+# then pass or fail on their data. See tests/_fixture.py.
+if HERE not in sys.path:
+    sys.path.insert(0, HERE)
+from _fixture import use_temp_study  # noqa: E402
+
+STUDY = use_temp_study()
+
 
 def load(name, filename):
     spec = importlib.util.spec_from_file_location(name, os.path.join(SCRIPTS, filename))
@@ -472,6 +481,98 @@ def join_check(tmp):
         G6A.NUCLEI_CSV, G6A.MEAS_CSV, G6A.SPEC_CSV, G5.all_boxes = keep
 
 
+def multiplex_fixture(tmp, stem, markers=("M1", "M2"), drop_boxes_for=None):
+    """ONE section carrying BOTH markers - what a `multiplex` study images.
+
+    05a's uid-collision guard is a hard stop under `paired` and deliberately
+    relaxed under `multiplex`, so all_boxes() then returns both markers' boxes
+    under the SAME scene_uid. The two markers get a different number of ROI
+    nuclei here so that pooling them is visible in a count, not only in a key.
+    """
+    nuc, boxes, nid = [], [], 0
+    for mk, n_roi in zip(markers, (3, 2)):
+        if mk != drop_boxes_for:
+            boxes.append(dict(box("X1", "roi", "Dm"), marker=mk))
+            boxes.append(dict(box("X1", "background", "__background__"), marker=mk))
+        for j in range(n_roi):
+            nid += 1
+            nuc.append(dict(nucleus("X1", "roi", "Dm", 1, nid, 200.0), marker=mk))
+        for v in BG_S1:
+            nid += 1
+            nuc.append(dict(nucleus("X1", "background", "__background__", 2, nid, v),
+                            marker=mk))
+    npath = os.path.join(tmp, stem + "_nuclei.csv")
+    bpath = os.path.join(tmp, stem + "_boxes.csv")
+    for path, cols, rows in ((npath, NUC_COLS, nuc), (bpath, BOX_COLS, boxes)):
+        with open(path, "w", newline="", encoding="utf-8") as fh:
+            w = csv.DictWriter(fh, fieldnames=cols)
+            w.writeheader()
+            w.writerows(rows)
+    return npath, bpath
+
+
+def _run_06a_on(tmp, stem, npath, bpath):
+    """06a.main() over one of these fixtures. Returns (rc-or-SystemExit, rows)."""
+    keep = (G6A.NUCLEI_CSV, G6A.MEAS_CSV, G6A.SPEC_CSV, G5.all_boxes)
+    G6A.NUCLEI_CSV = npath
+    G6A.MEAS_CSV = os.path.join(tmp, stem + "_measurements.csv")
+    G6A.SPEC_CSV = os.path.join(tmp, stem + "_specificity.csv")
+    G5.all_boxes = lambda: G5.load_csv(bpath)
+    try:
+        try:
+            rc = G6A.main()
+        except SystemExit as exc:
+            return exc, []
+        return rc, G5.load_csv(G6A.MEAS_CSV)
+    finally:
+        G6A.NUCLEI_CSV, G6A.MEAS_CSV, G6A.SPEC_CSV, G5.all_boxes = keep
+
+
+def multiplex_join_check(tmp):
+    """Under `multiplex` the join must be per MARKER, not per section position.
+
+    THE FAILURE THIS PINS IS SILENT. 05c numbers `roi_index` within one
+    marker's own roi_boxes file, from 1. 05a.all_boxes() concatenates the
+    files, so a multiplex section with two discs per marker arrives as
+    positions 1..4 while every `roi_index` in roi_nuclei.csv is still 1 or 2.
+    Joining on (scene_uid, roi_index) alone therefore pooled BOTH markers'
+    nuclei onto the first marker's discs and reported the second marker as
+    having zero - a complete, plausible, wrong dataset, with check_join()
+    raising no complaint because roi_kind and region happened to agree.
+
+    This drives 06a.main() over such a section. It does not read the source.
+    """
+    npath, bpath = multiplex_fixture(tmp, "mx")
+    rc, meas = _run_06a_on(tmp, "mx", npath, bpath)
+    chk("multiplex: 06a exits 0", rc, 0)
+    chk("multiplex: one row per disc, not per position", len(meas), 4)
+
+    roi = {r["marker"]: r for r in meas if r["roi_kind"] == "roi"}
+    chk("multiplex: the first marker's ROI keeps its own 3 nuclei",
+        roi["M1"]["n_nuclei"], "3")
+    chk("multiplex: the second marker's ROI keeps its own 2 nuclei",
+        roi["M2"]["n_nuclei"], "2")
+    chk("...so nothing was pooled onto the first marker",
+        roi["M1"]["n_nuclei"] != "5", True)
+    chk("...and no disc reports the zero the old join gave the second marker",
+        [r["marker"] for r in meas if r["n_nuclei"] == "0"], [])
+    chk("multiplex: roi_index restarts at 1 for each marker, as 05c numbers it",
+        sorted((r["marker"], r["roi_index"]) for r in meas),
+        [("M1", "1"), ("M1", "2"), ("M2", "1"), ("M2", "2")])
+
+    # ...and check_join() now COMPLAINS where it used to pass: nuclei naming a
+    # marker that has no boxes on that section is the same shifted join, and
+    # was previously answered from whichever marker's boxes sat at that
+    # position. Reported as a hard stop, not as a section of zeroes.
+    npath, bpath = multiplex_fixture(tmp, "mxbad", drop_boxes_for="M2")
+    rc, meas = _run_06a_on(tmp, "mxbad", npath, bpath)
+    chk("multiplex: a marker with no boxes on its section is a hard stop",
+        isinstance(rc, SystemExit), True)
+    chk("...naming the marker", "M2" in str(rc), True)
+    chk("...and writing nothing",
+        os.path.exists(os.path.join(tmp, "mxbad_measurements.csv")), False)
+
+
 def main():
     tmp = tempfile.mkdtemp(prefix="lsroi_")
     try:
@@ -575,6 +676,9 @@ def main():
 
         # ---- and the positional nucleus-to-disc join must be checked
         join_check(tmp)
+
+        # ---- which under `multiplex` means per marker, not per position
+        multiplex_join_check(tmp)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

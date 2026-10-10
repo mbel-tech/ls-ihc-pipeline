@@ -31,6 +31,7 @@ Run:  python 06b_join_sampling.py
       python 06b_join_sampling.py --xlsx "D:/path/to/sampling.xlsx"
 """
 
+import sys
 import argparse
 import csv
 import html
@@ -49,7 +50,13 @@ _lsio = importlib.util.spec_from_file_location(
 IO = importlib.util.module_from_spec(_lsio)
 _lsio.loader.exec_module(IO)
 
-CONFIG = G5.CONFIG
+_HERE = os.path.dirname(os.path.abspath(__file__))
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+# ls_config resolves LS_CONFIG, applies the defaults and validates once for
+# the whole process. Imported, not re-implemented: this block used to be four
+# lines copy-pasted into every stage.
+from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
 OUT_ROOT = G5.OUT_ROOT
 RESULTS = os.path.join(OUT_ROOT, "results")
 MEAS_CSV = os.path.join(RESULTS, "roi_measurements.csv")

@@ -23,13 +23,27 @@ Imported by path, like every other cross-script import here:
 
 import contextlib
 import csv
+import html
 import json
 import os
 import re
 import time
 
 
-def _retry(fn, path, attempts):
+def retry(fn, path, attempts, what="write to"):
+    """Run `fn`, retrying an OSError on a drive that goes away mid-operation.
+
+    `what` names the operation in the message. It was hardcoded to "write
+    to", which was true of the two writers in this file and a lie the moment
+    `ls_atlas` used this to READ plates.csv: an operator watching a retry
+    storm during a read would have been told their data was being written to
+    a failing drive, which is the one sentence guaranteed to make them pull
+    it out.
+
+    Public because a sibling module needs it. It was `_retry`, and `ls_atlas`
+    reached past the underscore to get at it - a private name with an outside
+    caller is not private, it is only undocumented.
+    """
     for attempt in range(attempts):
         try:
             return fn()
@@ -37,8 +51,13 @@ def _retry(fn, path, attempts):
             if attempt == attempts - 1:
                 raise
             wait = 2 ** attempt
-            print("\n  !! write to %s failed (%s); retrying in %ds" % (path, exc, wait))
+            print("\n  !! %s %s failed (%s); retrying in %ds"
+                  % (what, path, exc, wait))
             time.sleep(wait)
+
+
+# The old private name, kept so an unseen caller does not break.
+_retry = retry
 
 
 def atomic_write_csv(path, rows, keys, attempts=5):
@@ -57,7 +76,40 @@ def atomic_write_csv(path, rows, keys, attempts=5):
             w.writerows(rows)
         os.replace(tmp, path)
 
-    _retry(go, path, attempts)
+    retry(go, path, attempts)
+
+
+def pick_column(fieldnames, *candidates, what=None):
+    """The first candidate present in a CSV header, or a refusal naming all of
+    them.
+
+    Never defaults. `r[uid_col]` raising KeyError 400 rows into a loop is worse
+    than refusing at the header, and `.get()` returning "" for a moved column is
+    worse than both: a blank cell and a renamed column look identical.
+
+    That last shape is not hypothetical here. `04n_roi_worklist.py` read its
+    partner columns through a `num(r, k)` helper built on `.get()`, so the day
+    04m renamed `pcna_focus_score` the worklist would have kept its column,
+    kept its 454 rows and written an empty string into every one of them - a
+    file that is the right size, the right shape and silently carries no
+    numbers. Asked once against `fieldnames`, before the loop, a rename is a
+    stop with both names in the message instead.
+
+    `what` names the file for the message, since a header on its own does not
+    say which of five CSVs a stage was reading.
+
+    Raises SystemExit, the refusal every stage in this pipeline uses, so an
+    operator gets the message rather than a traceback.
+    """
+    have = list(fieldnames or [])
+    for candidate in candidates:
+        if candidate in have:
+            return candidate
+    where = f" in {what}" if what else ""
+    raise SystemExit(
+        f"none of the columns {list(candidates)} is{where} - the header is "
+        f"{have}. One of them was renamed, or this is not the file it should "
+        f"be; either way the value cannot be read and a blank is not an answer.")
 
 
 @contextlib.contextmanager
@@ -72,7 +124,7 @@ def atomic_save(path, attempts=5):
     tmp = path + ".tmp"
     try:
         yield tmp
-        _retry(lambda: os.replace(tmp, path), path, attempts)
+        retry(lambda: os.replace(tmp, path), path, attempts)
     finally:
         if os.path.exists(tmp):
             try:
@@ -91,15 +143,49 @@ def embed(obj):
     return json.dumps(obj).replace("</", "<\\/").replace("<!--", "<\\!--")
 
 
-def fill(template, values):
+def fill(template, values, text=None):
     """Substitute every `__NAME__` placeholder in ONE pass.
 
     Chained `str.replace` calls re-scan the JSON just inserted, so a placeholder
     name inside a data value would be substituted as well. A placeholder the
     template does not carry is a programming error and raises.
+
+    TWO KINDS OF DESTINATION, because a page is not all script.
+
+    `values` land in a script block and are JSON-encoded by `embed`, which is
+    what every caller wanted until a page needed to NAME something. `text`
+    lands in HTML TEXT - a button's label, a heading - where `embed` would put
+    the JSON string's own quote marks on screen: `>"DAPI"<`. Those are
+    HTML-escaped instead, so a counterstain called `A&B` reaches the page as
+    itself rather than as markup.
+
+    Both go through the SAME pass, and that is the point of the parameter
+    rather than a second call: a str.replace before or after this one would
+    re-scan whatever the other had already inserted, which is the exact bug the
+    one-pass rule exists to prevent. A name given in both is refused - two
+    encodings for one placeholder is a caller that has not decided.
+
+    Nothing to substitute returns the template unchanged. An empty pattern
+    matches at every position, so the `re` route would rewrite the whole page.
     """
-    for name in values:
+    text = dict(text or {})
+    both = dict(values or {})
+    overlap = sorted(set(both) & set(text))
+    if overlap:
+        raise KeyError(f"placeholder(s) {overlap} are given as both script data "
+                       f"and page text; one placeholder, one encoding")
+    both.update(text)
+    if not both:
+        return template
+    for name in both:
         if name not in template:
             raise KeyError(f"placeholder {name} is not in the template")
-    pattern = re.compile("|".join(re.escape(k) for k in values))
-    return pattern.sub(lambda m: embed(values[m.group(0)]), template)
+    pattern = re.compile("|".join(re.escape(k) for k in both))
+
+    def one(match):
+        name = match.group(0)
+        if name in text:
+            return html.escape(str(text[name]))
+        return embed(both[name])
+
+    return pattern.sub(one, template)

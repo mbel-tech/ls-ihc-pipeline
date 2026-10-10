@@ -16,6 +16,15 @@ import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCRIPTS = os.path.join(os.path.dirname(HERE), "scripts")
 
+# This suite imports stage modules, which read config at import. Without a
+# config of its own it would fall through to the operator's live study and
+# then pass or fail on their data. See tests/_fixture.py.
+if HERE not in sys.path:
+    sys.path.insert(0, HERE)
+from _fixture import use_temp_study  # noqa: E402
+
+STUDY = use_temp_study()
+
 _spec = importlib.util.spec_from_file_location(
     "st", os.path.join(SCRIPTS, "00d_czi_selftest.py"))
 ST = importlib.util.module_from_spec(_spec)

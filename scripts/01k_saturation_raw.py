@@ -48,9 +48,16 @@ import csv
 import importlib.util
 import os
 import time
+import sys
 
 import numpy as np
 from PIL import Image
+
+# ls_config resolves LS_CONFIG, applies the defaults and validates once for
+# the whole process. Imported, not re-implemented: this block used to be four
+# lines copy-pasted into every stage.
+from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
+import ls_channels as CH  # noqa: E402
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _spec = importlib.util.spec_from_file_location("_ov", os.path.join(_HERE, "01_overviews.py"))
@@ -83,7 +90,7 @@ CEILING = 65535
 # had was the 8-bit proxy, and AF488's display high is 37,263: a PNG value of
 # 255 there means "at or above the display high", not "at the sensor ceiling",
 # so the question could not even be asked. Raw 16-bit measurement can ask it.
-MASK_MARKERS = ("AF568", "AF488")
+MASK_MARKERS = tuple(CH.marker_names(CONFIG))
 
 KEYS = ["scene_uid", "file", "animal", "slide", "variant", "marker_channel",
         "scene_index", "section_order", "width", "height", "um_px", "zoom",
@@ -95,10 +102,15 @@ KEYS = ["scene_uid", "file", "animal", "slide", "variant", "marker_channel",
         "mask_path", "tilefield_applied", "reader"]
 
 
-def measure(czidoc, rect, fields, zoom, want_mask, ceiling=CEILING):
-    """Raw clipping for both channels, and the corrected figure for comparison."""
-    dapi_raw = OV.read_scene(czidoc, rect, 0, zoom)
-    mark_raw = OV.read_scene(czidoc, rect, 1, zoom)
+def measure(czidoc, rect, fields, zoom, want_mask, ceiling=CEILING, *, scene):
+    """Raw clipping for both channels, and the corrected figure for comparison.
+
+    `scene` is required: measuring clipping on a rectangle that composites a
+    neighbour's tissue is how the clipped fraction came to be overstated by up
+    to 2.6x in the first place.
+    """
+    dapi_raw = OV.read_scene(czidoc, rect, 0, zoom, scene=scene)
+    mark_raw = OV.read_scene(czidoc, rect, 1, zoom, scene=scene)
     clipped = mark_raw >= ceiling
     corrected = OV.apply_tile_field(mark_raw, fields.get(1), 1 / zoom)
     return {
@@ -108,6 +120,23 @@ def measure(czidoc, rect, fields, zoom, want_mask, ceiling=CEILING):
         "shape": mark_raw.shape,
         "mask": clipped if want_mask else None,
     }
+
+
+def clip_pool(scenes):
+    """The scenes the dilution ratio may be measured on: the FIRST declared
+    marker's.
+
+    One marker only, and on purpose: the ratio needs sections that clip at all,
+    and the pass that clips at a measurable scale is the one this census exists
+    for. `MASK_MARKERS[0]`, not `"AF568"` - the literal matched nothing for any
+    other study, so `native_sample` sampled an EMPTY pool, wrote no rows, and
+    the resolution-dilution factor came back as "no data" with no message. A
+    measured constant silently replaced by an assumption is exactly the failure
+    this stage was written to remove.
+    """
+    if not MASK_MARKERS:
+        return []
+    return [r for r in scenes if r.get("marker_channel") == MASK_MARKERS[0]]
 
 
 def native_sample(scenes, n, ceilings, seed=20260901):
@@ -121,9 +150,8 @@ def native_sample(scenes, n, ceilings, seed=20260901):
     from pylibCZIrw import czi as pyczi
 
     rng = np.random.default_rng(seed)
-    # AF568 only: it is the marker that clips at a measurable scale, so it is
-    # the only one where a dilution ratio has a denominator worth dividing by.
-    pool = [r for r in scenes if r["marker_channel"] == "AF568"]
+    # One marker only - see clip_pool for which and why.
+    pool = clip_pool(scenes)
     rng.shuffle(pool)
     by_file = {}
     for r in pool:
@@ -145,12 +173,15 @@ def native_sample(scenes, n, ceilings, seed=20260901):
                 s = int(r["scene_index"])
                 if s not in rects:
                     continue
-                roi = (rects[s].x, rects[s].y, rects[s].w, rects[s].h)
-                low = np.squeeze(czidoc.read(roi=roi, plane={"C": 1}, zoom=0.125))
+                # This function's whole purpose is measuring how much the
+                # dilution ratio understates clipping at low zoom, so a
+                # rectangle that composites a neighbouring section's tissue
+                # corrupts the measurement itself, not merely a pixel count.
+                low = OV.read_scene(czidoc, rects[s], 1, 0.125, scene=s)
                 f_low = float((low >= ceiling).mean())
                 if f_low <= 0:
                     continue
-                hi = np.squeeze(czidoc.read(roi=roi, plane={"C": 1}, zoom=1.0))
+                hi = OV.read_scene(czidoc, rects[s], 1, 1.0, scene=s)
                 f_hi = float((hi >= ceiling).mean())
                 rows.append({
                     "scene_uid": r["scene_uid"], "file": fname,
@@ -289,7 +320,7 @@ def main():
                     uid = r["scene_uid"]
                     want = r["marker_channel"] in MASK_MARKERS
                     ceiling = OV.ceiling_for(ceilings, fname)
-                    m = measure(czidoc, rects[s], fields, zoom, want, ceiling)
+                    m = measure(czidoc, rects[s], fields, zoom, want, ceiling, scene=s)
 
                     mask_path = ""
                     if want:

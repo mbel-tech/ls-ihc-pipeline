@@ -26,11 +26,14 @@ import contextlib
 import importlib.util
 import io
 import json
+import hashlib
 import os
 import sys
 import threading
 import time
 import traceback
+
+import stages as SG
 
 
 class StageResult:
@@ -95,23 +98,54 @@ class Runner:
 
     # ---- argv -------------------------------------------------------------
 
-    def expand_argv(self, argv):
-        """Fill `{out_root}`, `{repo}` and `{scripts}` in a stage's argv.
-
-        stages.py is static data and cannot know where the outputs live; the
-        stages that take absolute paths (04q's three exports, 06b's workbook)
-        get them here, from the same config the stage itself will read.
-        """
+    def _config_dict(self):
         try:
             with open(self.config_path, encoding="utf-8") as fh:
-                out_root = json.load(fh).get("out_root", "")
+                return json.load(fh)
         except (OSError, ValueError):
-            out_root = ""
+            return {}
+
+    def names(self):
+        """This study's `ls_paths.Names` - markers, layout and artifact names.
+
+        The app asks for this rather than reading `acquisition.markers` itself,
+        because which markers a study HAS is layout-dependent (a multiplex
+        study has no such list; its markers are the channel table's) and
+        `ls_channels.marker_names` is the one place that knows. `ls_paths`
+        wraps it and adds the pre-rename names, which is the other half of what
+        the stage table needs.
+
+        Not cached here: `for_config` memoises on the three facts a Names is
+        built from, so re-asking after a config edit gets the new study and
+        re-asking without one costs a dict lookup.
+        """
+        return SG.LP.for_config(self._config_dict())
+
+    def markers(self):
+        """The study's declared markers, in order. `()` if it cannot be read."""
+        return tuple(self.names().markers)
+
+    def expand_argv(self, argv):
+        """Fill `{out_root}`, `{repo}`, `{scripts}` and `{markerN}` in argv.
+
+        stages.py is static data and cannot know where the outputs live or what
+        this study's markers are called; the stages that take absolute paths
+        (04q's three exports, 06b's workbook) and the ten that take `--marker`
+        get them here, from the same config the stage itself will read.
+
+        The marker substitution is applied separately from the path ones and
+        does NOT mark the argument as a path: `--marker {marker0}` becomes
+        `--marker AF568`, and normpath on a bare word is a no-op today but
+        would mangle a marker name containing a slash or a dot.
+        """
+        out_root = self._config_dict().get("out_root", "")
         subs = {"{out_root}": out_root,
                 "{repo}": os.path.dirname(self.config_path),
                 "{scripts}": self.scripts_dir}
+        markers = self.markers()
         out = []
         for a in argv:
+            a = SG.fill_markers(a, markers)
             hit = any(k in a for k in subs)
             for k, v in subs.items():
                 a = a.replace(k, v)
@@ -122,9 +156,35 @@ class Runner:
 
     # ---- module loading ---------------------------------------------------
 
+    def rebind(self, config_path):
+        """Point every future stage at a different study."""
+        self.config_path = os.path.abspath(config_path)
+        os.environ["LS_CONFIG"] = self.config_path
+        self._config_stamp = None
+        self._forget()
+
+    def _forget(self):
+        """Drop the cached stage modules AND the config module they read.
+
+        `ls_config` caches the parsed config and lives in `sys.modules`, which
+        this class does not own. Clearing only `self._modules` would reload
+        every stage and hand each one the config that was just replaced.
+        """
+        self._modules.clear()
+        sys.modules.pop("ls_config", None)
+
     def _config_changed(self):
+        """Whether the config file's CONTENT has changed since the last check.
+
+        This was the modification time. Two edits inside one filesystem
+        timestamp tick - which on a fast save is entirely possible - looked
+        identical, so the cached stage modules were served with the previous
+        config still baked into their constants. The file is a few kilobytes;
+        hashing it costs nothing next to importing a stage.
+        """
         try:
-            stamp = os.path.getmtime(self.config_path)
+            with open(self.config_path, "rb") as fh:
+                stamp = hashlib.sha256(fh.read()).hexdigest()
         except OSError:
             stamp = None
         if stamp != self._config_stamp:
@@ -140,7 +200,7 @@ class Runner:
         prefix makes tracebacks say which stage they came from.
         """
         if self._config_changed():
-            self._modules.clear()
+            self._forget()
         if script in self._modules:
             return self._modules[script]
 

@@ -127,25 +127,63 @@ import importlib.util
 import json
 import os
 
+import sys
 import numpy as np
 from PIL import Image
 
-# LS_CONFIG names the file explicitly; the file-relative path is the fallback.
-# Frozen, the scripts sit inside _internal/ while config.json is beside the
-# executable, so the fallback would point at a file that does not exist.
-CONFIG_PATH = os.environ.get("LS_CONFIG") or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config.json")
-with open(CONFIG_PATH, encoding="utf-8") as _fh:
-    CONFIG = json.load(_fh)
+_HERE = os.path.dirname(os.path.abspath(__file__))
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+# ls_config resolves LS_CONFIG, applies the defaults and validates once for
+# the whole process. Imported, not re-implemented: this block used to be four
+# lines copy-pasted into every stage.
+from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
+import ls_channels as CH  # noqa: E402
+import ls_naming as NM  # noqa: E402
+import ls_paths as LP  # noqa: E402
+
+# The markers this study measures, in declared order. ls_channels is the
+# single source of that list; naming a fluorophore here would pin the stage
+# to one study.
+MARKERS = list(CH.marker_names(CONFIG))
 
 OUT_ROOT = CONFIG["out_root"]
 OVERVIEW_DIR = os.path.join(OUT_ROOT, "overviews")
 REFORMAT_DIR = os.path.join(OUT_ROOT, "reformatted")
 QC_CSV = os.path.join(OUT_ROOT, "qc", "focus.csv")
 CENSOR_DIR = os.path.join(OUT_ROOT, "censor")
-# Per-marker output. AF568 keeps the name every downstream stage already reads.
-ANALYSIS_SET = {"AF568": os.path.join(REFORMAT_DIR, "perk_analysis_set.csv"),
-                "AF488": os.path.join(REFORMAT_DIR, "pcna_analysis_set.csv")}
-LABEL = {"AF568": "pERK", "AF488": "PCNA"}
+# Per-marker output.
+#
+# The name is ls_paths' to state, not this stage's. It was a LEGACY_ANALYSIS_SET
+# dict here and, separately, the bare literal `perk_analysis_set.csv` in 04l -
+# two copies of one fact, kept in step by a comment in each pointing at the
+# other, and 04l's copy was wrong for every study whose first marker is not
+# AF568. ls_paths already carried both names in its LEGACY table; the rule that
+# reads them now lives beside it.
+#
+# What the rule says has not changed: `perk_analysis_set.csv` and
+# `pcna_analysis_set.csv` are FILES THAT EXIST on the operator's drive, read by
+# 04l, 04m and 04p and by the app's stage table, so those two names cannot
+# move; every other marker - and every other study - gets a name derived from
+# the marker itself.
+NAMES = LP.for_config(CONFIG)
+
+
+def analysis_set_path(marker):
+    """Where this marker's analysis set is written."""
+    return NAMES.analysis_set_path(marker)
+
+
+#: The same table the old dict literal was, now built for whatever markers the
+#: study declares. Kept for readers and for anything that wants to see all of
+#: them at once; the single use site calls analysis_set_path() so that a marker
+#: outside this table is a derived name rather than a KeyError.
+ANALYSIS_SET = {m: analysis_set_path(m) for m in MARKERS}
+# Display names for the markers, when the study gives them one. A paired study
+# names its markers by fluorophore, so this is usually empty and the marker's
+# own name is what gets shown.
+LABEL = {c.name: c.name for c in
+         CH.markers(CH.parse((CONFIG.get("acquisition") or {}).get("channels")))}
 
 _spec = importlib.util.spec_from_file_location(
     "_rf", os.path.join(os.path.dirname(os.path.abspath(__file__)), "04a_reformat.py"))
@@ -291,12 +329,13 @@ def main():
     ap.add_argument("--allow-partial", action="store_true",
                     help="write the analysis set even if it has unmeasured sections "
                          "and the file on disk is complete")
-    ap.add_argument("--marker", default="AF568", choices=["AF568", "AF488"],
-                    help="AF568 = pERK (default), AF488 = PCNA")
+    _default = MARKERS[0] if MARKERS else None
+    ap.add_argument("--marker", default=_default, choices=MARKERS,
+                    help=f"which marker to process (default {_default})")
     args = ap.parse_args()
     marker = args.marker
-    label = LABEL[marker]
-    out_csv = ANALYSIS_SET[marker]
+    label = LABEL.get(marker, marker)
+    out_csv = analysis_set_path(marker)
     os.makedirs(CENSOR_DIR, exist_ok=True)
     # Scene uids carry the pass letter (..._s03a_ vs ..._s03b_), so both markers
     # can share one censor directory without colliding.
@@ -389,7 +428,7 @@ def main():
         d[1] += 1 if r["in_analysis_set"] == 1 else 0
     print()
     print(f"  {'animal':<8}{label:>7}{'in set':>8}{'%':>6}")
-    for a in sorted(per, key=lambda x: int(x[2:])):
+    for a in sorted(per, key=NM.natural_key):
         t, k = per[a]
         print(f"  {a:<8}{t:>7}{k:>8}{100 * k / t:>5.0f}%")
     lost = [a for a, (t, k) in per.items() if k == 0]

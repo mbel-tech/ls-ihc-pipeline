@@ -1,12 +1,19 @@
-"""Stage 0c - decide which fluorophore carries pERK and which carries PCNA.
+"""Stage 0c - which fluorophore carries the clustered marker and which the
+dispersed one.
 
 The CZI records fluorophores, not antibodies, so nothing in the metadata says
-which is which. The two markers have very different spatial signatures though:
+which is which. Two markers of the kind this pipeline was built for have very
+different spatial signatures though - the LS study's pair as the worked example:
 
   PCNA  proliferating cells sit in the periventricular germinal zones, so
         positive nuclei hug the ventricular surface and cluster tightly.
   pERK  activity is distributed through the parenchyma, so positive cells are
         dispersed and much closer to spatially random.
+
+Those two names are an EXAMPLE and appear nowhere in the code. What this stage
+measures is the pattern; what the channels are called comes from the study's
+own `marker_identity` block, and where the study has not said, no name is
+offered. See `make_call`.
 
 Two scale-free statistics separate them without needing either marker named in
 advance:
@@ -31,6 +38,7 @@ Run:  python 00c_channel_identity.py
       python 00c_channel_identity.py --accept    # write the call into config.json
 """
 
+import sys
 import argparse
 import csv
 import json
@@ -45,12 +53,16 @@ import numpy as np
 from PIL import Image
 from scipy import ndimage
 
-# LS_CONFIG names the file explicitly; the file-relative path is the fallback.
-# Frozen, the scripts sit inside _internal/ while config.json is beside the
-# executable, so the fallback would point at a file that does not exist.
-CONFIG_PATH = os.environ.get("LS_CONFIG") or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config.json")
-with open(CONFIG_PATH, encoding="utf-8") as _fh:
-    CONFIG = json.load(_fh)
+_HERE = os.path.dirname(os.path.abspath(__file__))
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+# ls_config resolves LS_CONFIG, applies the defaults and validates once for
+# the whole process. Imported, not re-implemented: this block used to be four
+# lines copy-pasted into every stage.
+from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
+import ls_channels as CH  # noqa: E402
+
+MARKERS = list(CH.marker_names(CONFIG))
 
 OUT_ROOT = CONFIG["out_root"]
 OVERVIEW_DIR = os.path.join(OUT_ROOT, "overviews")
@@ -181,10 +193,114 @@ def figure(results, path):
         ax.set_ylabel("edge affinity (low = periventricular)")
         ax.set_title(f"{marker}: median CI {np.median(ci):.2f}, EA {np.median(ea):.2f}", fontsize=10)
 
-    fig.suptitle("Channel identity evidence - PCNA should be clustered and edge-hugging", fontsize=12)
+    # No antibody name in the caption: the figure is the evidence for a
+    # PATTERN, and which antibody is expected to show it is the study's
+    # statement, not this file's. See make_call.
+    fig.suptitle("Channel identity evidence - the proliferation marker should be "
+                 "clustered and edge-hugging", fontsize=12)
     fig.tight_layout()
     fig.savefig(path, dpi=105)
     plt.close(fig)
+
+
+def declared_names(cfg=None):
+    """{fluorophore: antibody name} for the markers this study declares.
+
+    The study's own record, from `marker_identity`. Only entries whose key is a
+    declared marker and whose value is a plain non-empty string: that block also
+    carries `_note`-style commentary and a `DAPI` sub-object of excitation and
+    emission wavelengths, and neither is an antibody name.
+    """
+    cfg = CONFIG if cfg is None else cfg
+    block = (cfg or {}).get("marker_identity")
+    if not isinstance(block, dict):
+        return {}
+    out = {}
+    for marker in MARKERS:
+        value = block.get(marker)
+        if isinstance(value, str) and value.strip():
+            out[marker] = value.strip()
+    return out
+
+
+def pattern(summary):
+    """(clustered, dispersed), or None when the evidence does not decide.
+
+    This is everything the measurement can say on its own, and it is all this
+    stage knows without being told something: two scale-free statistics, and
+    which of exactly two channels sits low on both. They must agree - one
+    channel clustered and the OTHER edge-hugging is not a signature, it is a
+    reason to look at the figure.
+    """
+    if len(summary) != 2:
+        return None
+    a, b = sorted(summary)
+    clustered = a if summary[a]["clustering_index"] < summary[b]["clustering_index"] else b
+    edgy = a if summary[a]["edge_affinity"] < summary[b]["edge_affinity"] else b
+    if clustered != edgy:
+        return None
+    return clustered, (b if clustered == a else a)
+
+
+def make_call(summary, declared):
+    """(identity record to write, what to print). `None` when it cannot be made.
+
+    THIS USED TO INVENT THE NAMES. It was `call = {clustered: "PCNA", other:
+    "pERK"}`, and with `--accept` those two literals went into the operator's
+    `config.json`. For a study measuring neither antibody that is a false
+    record - and one the operator is then asked to CONFIRM, which is worse than
+    a wrong default, because the stage presents it as evidence-backed.
+
+    What the measurement establishes is a PATTERN, not a name: this channel is
+    the clustered, edge-hugging one. Turning a pattern into an antibody name
+    needs someone to say which of this study's antibodies is expected to look
+    like that, and nothing in the config says so - `marker_identity` records the
+    conclusion, not the expectation. So the names come from the study where it
+    has declared them, and where it has not, no name is offered at all: the
+    pattern is printed and the operator writes the block by hand. Refusing is
+    the honest half of "derive from the study"; there is no third source.
+
+    The consequence, stated plainly: for a study that HAS declared its
+    identities this is a re-confirmation, and the evidence is put beside the
+    declaration for the operator to judge rather than checked automatically.
+    Automatic checking would need the expectation, which is the thing that is
+    missing. `ls_config` records that `marker_identity` is read by no stage
+    today, so what was at stake was a wrong written record rather than a wrong
+    number - but it is the only written record of the assignment, and every
+    biological name downstream is meant to come from it.
+    """
+    found = pattern(summary)
+    if found is None:
+        if len(summary) != 2:
+            return None, ["NO CALL: this study does not have exactly two "
+                          f"measured channels ({len(summary)} here)."]
+        a, b = sorted(summary)
+        clustered = a if summary[a]["clustering_index"] < summary[b]["clustering_index"] else b
+        edgy = a if summary[a]["edge_affinity"] < summary[b]["edge_affinity"] else b
+        return None, [f"NO CALL: the two statistics disagree "
+                      f"(clustered={clustered}, edge-hugging={edgy}).",
+                      "Look at the figure and set marker_identity in "
+                      "config.json by hand."]
+
+    clustered, dispersed = found
+    lines = [f"PATTERN: {clustered} is the clustered, edge-hugging channel; "
+             f"{dispersed} is the dispersed one."]
+    missing = [m for m in (clustered, dispersed) if m not in declared]
+    if missing:
+        lines.append("NO CALL: this study has not declared what "
+                     + " and ".join(missing) + " measure, and this stage will "
+                     "not invent a name for them.")
+        lines.append("Put the antibody names into marker_identity in "
+                     "config.json - the pattern above is the evidence for "
+                     "which is which - and re-run to confirm them.")
+        return None, lines
+
+    lines.append(f"CALL: {clustered} = {declared[clustered]} (clustered, "
+                 f"periventricular), {dispersed} = {declared[dispersed]}")
+    lines.append("These are the names the STUDY declares. Check them against "
+                 "the figure: the clustered, edge-hugging channel is the one "
+                 "whose positive cells sit at the ventricular surface.")
+    return dict(declared), lines
 
 
 def main():
@@ -247,27 +363,19 @@ def main():
         print(f"  {marker}: clustering {s['clustering_index']:.3f}  "
               f"edge affinity {s['edge_affinity']:.3f}  (n={s['n_sections']})")
 
-    call = None
-    if len(summary) == 2:
-        a, b = sorted(summary)
-        # PCNA is the more clustered and more edge-hugging of the two; both
-        # statistics must agree or the call is not made.
-        clustered = a if summary[a]["clustering_index"] < summary[b]["clustering_index"] else b
-        edgy = a if summary[a]["edge_affinity"] < summary[b]["edge_affinity"] else b
-        if clustered == edgy:
-            other = b if clustered == a else a
-            call = {clustered: "PCNA", other: "pERK"}
-            print(f"\n  CALL: {clustered} = PCNA (clustered, periventricular), {other} = pERK")
-        else:
-            print(f"\n  NO CALL: the two statistics disagree "
-                  f"(clustered={clustered}, edge-hugging={edgy}).")
-            print("  Look at the figure and set marker_identity in config.json by hand.")
+    # The proliferation marker is the more clustered and more edge-hugging of
+    # the two; both statistics must agree or no call is made. What the channels
+    # are CALLED comes from the study, never from this file - see make_call.
+    call, lines = make_call(summary, declared_names())
+    print()
+    for line in lines:
+        print("  " + line)
 
     print(f"\n  evidence: {fig_path}")
     print("=" * 72)
 
     if call and args.accept:
-        CONFIG["marker_identity"].update(call)
+        CONFIG.setdefault("marker_identity", {}).update(call)
         CONFIG["marker_identity"]["_confirmed"] = "00c_channel_identity.py --accept"
         with open(CONFIG_PATH, "w", encoding="utf-8") as fh:
             json.dump(CONFIG, fh, indent=2)

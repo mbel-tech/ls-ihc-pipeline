@@ -17,7 +17,93 @@ if (!ok) {
 library(readxl)
 library(ggplot2)
 
-RESULTS_DEFAULT <- "D:/LS-analysis/results"
+# THE STUDY, for the two things these figures need from it: where the results
+# live, and which markers it declared - IN ORDER, because the order is what
+# decides whose figures carry no suffix.
+#
+# Both arrive from whatever launches Rscript: 06e_refresh_loop.py sets
+# LS_MARKERS and LS_OUT_ROOT on every call, and app/runner.py exports them for
+# a run started from the app. A human running Rscript bare in the repo has no
+# launcher, so as a last resort the config is read directly - LS_CONFIG if it
+# names one, else the repo's own config.json beside this folder.
+#
+# That last resort is deliberately NOT the app's four-step resolution
+# (LS_CONFIG, LS_STUDY, the active study, the repo config). It exists only for
+# a bare run beside the repo, and a second copy of that rule is exactly how a
+# reader and a writer end up on different files. Everything else comes in
+# through the launcher, which asked the authoritative Python.
+HERE <- dirname(sub("^--file=", "",
+                    grep("^--file=", commandArgs(FALSE), value = TRUE)[1]))
+
+study_config <- local({
+  cached <- NULL
+  function() {
+    if (is.null(cached)) {
+      path <- Sys.getenv("LS_CONFIG", "")
+      if (!nzchar(path)) path <- file.path(dirname(HERE), "config.json")
+      cached <<- if (file.exists(path) &&
+                     requireNamespace("jsonlite", quietly = TRUE)) {
+        jsonlite::fromJSON(path, simplifyVector = TRUE)
+      } else {
+        list()
+      }
+    }
+    cached
+  }
+})
+
+# The markers this study declared, in declared order.
+#
+# LS_MARKERS first, because the launcher got it from ls_channels.marker_names,
+# which is the one place that knows how each LAYOUT declares its markers. The
+# config fallback reads `acquisition.markers` and nothing else: that is the
+# whole answer for a paired study, while a multiplex study's markers come out
+# of the channel table through rules with real logic in them. Reimplementing
+# those here would be an eighth copy of a rule that already has one home, so a
+# multiplex study run bare gets the message below rather than a guess.
+study_markers <- function() {
+  env <- Sys.getenv("LS_MARKERS", "")
+  if (nzchar(env)) {
+    return(trimws(strsplit(env, ",", fixed = TRUE)[[1]]))
+  }
+  mk <- study_config()$acquisition$markers
+  if (is.null(mk)) character(0) else as.character(mk)
+}
+
+MARKERS <- study_markers()
+if (!length(MARKERS)) {
+  stop(paste0("cannot tell which markers this study declared, so which figure ",
+              "set is the
+  unsuffixed one is unknown - and guessing would ",
+              "write one marker's figures over
+  another's.
+",
+              "  Run these through 06e_refresh_loop.py or the app, which set ",
+              "LS_MARKERS,
+  or set it yourself: LS_MARKERS=AF568,AF488"))
+}
+
+RESULTS_DEFAULT <- local({
+  root <- Sys.getenv("LS_OUT_ROOT", "")
+  if (!nzchar(root)) {
+    root <- study_config()$out_root
+    if (is.null(root)) root <- ""
+  }
+  if (nzchar(root)) file.path(root, "results") else ""
+})
+
+# Where the figures are read from and written to. One rule, three callers, so
+# the three cannot disagree about which study they are drawing.
+results_dir <- function(args) {
+  d <- if (length(args) >= 1) args[1] else RESULTS_DEFAULT
+  if (!nzchar(d)) {
+    stop(paste0("no results directory.
+",
+                "  Pass one as the first argument, or set LS_OUT_ROOT, or ",
+                "point LS_CONFIG at the study."))
+  }
+  d
+}
 
 # WHICH MARKER THESE FIGURES ARE ABOUT.
 #
@@ -32,7 +118,11 @@ RESULTS_DEFAULT <- "D:/LS-analysis/results"
 # all three entry points pass through, rather than left to each of them.
 #
 # Override with LS_MARKER=AF488 in the environment.
-MARKER <- Sys.getenv("LS_MARKER", "AF568")
+# The first declared marker is this study's headline set. NOT a literal:
+# "AF568" was the first declared marker of THIS study, and on another study it
+# names nothing at all - which no amount of validation inside R could catch.
+PRIMARY <- MARKERS[1]
+MARKER <- Sys.getenv("LS_MARKER", PRIMARY)
 MARKER_LABEL <- c(AF568 = "pERK", AF488 = "PCNA")
 
 marker_label <- function(m = MARKER) {
@@ -43,6 +133,15 @@ marker_label <- function(m = MARKER) {
   lbl <- MARKER_LABEL[m]
   if (is.na(lbl)) m else unname(lbl)
 }
+
+# THE SUFFIX RULE, in one place for all three figure scripts.
+#
+# The first declared marker's outputs carry no suffix so nothing already cited
+# moves; every other marker's are suffixed, so a second marker's run writes
+# BESIDE the first rather than over it. Same rule as 05a's per-marker box files
+# and 04a's section directories - stated once here because it decided four
+# output names in three scripts, each with its own copy of the literal.
+marker_suffix <- function(m = MARKER) if (identical(m, PRIMARY)) "" else paste0("_", m)
 
 # Filter any per-section table to the marker in play.
 #
@@ -80,6 +179,20 @@ filter_marker <- function(df, what, require_rows = FALSE) {
 # Colour-blind safe, and deliberately not red/green.
 TREATMENT_COLOURS <- c(control = "#4C72B0", exercise = "#DD8452")
 
+# REGIONS NO FIGURE DRAWS.
+#
+# All 8 Rm seeds are flagged uncertain in the atlas itself (LOGS.md), so a panel
+# of it would look exactly like the others and mean less. Dropped from the
+# FIGURES only - every spreadsheet keeps the rows, which is where a region under
+# review should still be countable.
+#
+# Applied centrally, in load_sheet, for the same reason the marker filter is.
+# It used to live in plot_roi_figures.R alone, so the per-ROI deck dropped Rm
+# while the two overview panels drew it as one point in one arm with a "nothing
+# to compare yet" warning under it - the same decision made in one place and not
+# the other, which is the shape of drift rather than a choice.
+DROP_ROIS <- c("Rm")
+
 load_sheet <- function(path, sheet) {
   if (!file.exists(path)) {
     stop(sprintf("no dataset at %s\n  build it with: python scripts/%s",
@@ -94,6 +207,14 @@ load_sheet <- function(path, sheet) {
 
   df <- df[!is.na(df$treatment) & df$treatment != "", ]
   df$treatment <- factor(df$treatment, levels = names(TREATMENT_COLOURS))
+  # BEFORE the ROI factor below, whose levels are read off a table of whatever
+  # is left: dropping afterwards would leave an empty Rm level, and ggplot draws
+  # empty levels as empty panels.
+  n_drop <- sum(as.character(df$ROI) %in% DROP_ROIS)
+  if (n_drop) message(sprintf("  dropped %d row%s: %s", n_drop,
+                              if (n_drop == 1) "" else "s",
+                              paste(DROP_ROIS, collapse = ", ")))
+  df <- df[!as.character(df$ROI) %in% DROP_ROIS, ]
   # Longest region names first would reorder the panels arbitrarily; sort by how
   # much data each region has, so the well-covered ones are read first.
   n_by_roi <- sort(table(df$ROI), decreasing = TRUE)

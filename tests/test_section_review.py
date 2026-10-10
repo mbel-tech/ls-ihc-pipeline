@@ -34,6 +34,23 @@ import tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCRIPTS = os.path.join(os.path.dirname(HERE), "scripts")
 
+# This suite imports stage modules, which read config at import. Without a
+# config of its own it would fall through to the operator's live study and
+# then pass or fail on their data. See tests/_fixture.py.
+if HERE not in sys.path:
+    sys.path.insert(0, HERE)
+from _fixture import use_temp_study  # noqa: E402
+
+# PAIRED, explicitly. Every assertion below about "the other marker's row"
+# is a statement about the paired layout, where the two markers are separate
+# scans with separate indexes. config.example.json is multiplex - one frame
+# per scene, shared by every marker - and there the same rows deliberately DO
+# apply; see tests/test_reformat_layout.py. This suite used to inherit the
+# example's multiplex layout while asserting the paired rule, which only
+# passed because apply_review did not yet know the difference.
+STUDY = use_temp_study(acquisition={"layout": "paired",
+                                    "markers": ["AF568", "AF488"]})
+
 _spec = importlib.util.spec_from_file_location(
     "rf", os.path.join(SCRIPTS, "04a_reformat.py"))
 RF = importlib.util.module_from_spec(_spec)
