@@ -12,6 +12,7 @@ import csv
 import importlib.util
 import os
 import shutil
+import sys
 import tempfile
 
 import numpy as np
@@ -21,6 +22,11 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 SCRIPTS = os.path.join(os.path.dirname(HERE), "scripts")
 
 
+sys.path.insert(0, HERE)
+from _fixture import use_temp_study  # noqa: E402
+use_temp_study(atlas_source="wullimann1996")   # 04w/04x read config on import, like every stage
+
+
 def load(name, fname):
     spec = importlib.util.spec_from_file_location(name, os.path.join(SCRIPTS, fname))
     mod = importlib.util.module_from_spec(spec)
@@ -28,7 +34,6 @@ def load(name, fname):
     return mod
 
 
-IO = load("lsio", "ls_io.py")
 AP = load("ap", "atlas_polygons.py")
 W04 = load("w04", "04w_wullimann_plates.py")
 X04 = load("x04", "04x_wullimann_polygons.py")
@@ -54,24 +59,28 @@ def raises(fn):
 
 
 # ---- choosing the atlas --------------------------------------------------------
-chk("default source is salmon", IO.atlas_source({}), "salmon")
+sys.path.insert(0, SCRIPTS)
+import ls_atlas as AT  # noqa: E402
+
+chk("default source is salmon", AT.source({}), "salmon")
 chk("salmon keeps the configured plate set",
-    IO.plate_set({"atlas_plate_set": {"dir": "plates_final"}}), "plates_final")
-chk("salmon default plate set", IO.plate_set({}), "plates")
+    AT.set_name({"atlas_plate_set": {"dir": "plates_final"}}), "plates_final")
+chk("salmon default plate set", AT.set_name({}), "plates")
 chk("wullimann ignores atlas_plate_set",
-    IO.plate_set({"atlas_source": "wullimann1996", "atlas_plate_set": {"dir": "plates_final"}}),
+    AT.set_name({"atlas_source": "wullimann1996", "atlas_plate_set": {"dir": "plates_final"}}),
     "plates_wullimann")
+chk("plate_dir follows the source",
+    AT.plate_dir({"out_root": "/o", "atlas_source": "wullimann1996"}).replace("\\", "/"),
+    "/o/atlas/plates_wullimann")
 chk("unknown source is an error, not a silent salmon",
-    raises(lambda: IO.atlas_source({"atlas_source": "zebra"})))
-chk("salmon reformatted plates folder unchanged", IO.reformatted_plates_dir({}), "plates")
+    raises(lambda: AT.source({"atlas_source": "zebra"})))
+chk("salmon reformatted plates folder unchanged", AT.reformatted_dir({}), "plates")
 chk("wullimann has its own reformatted folder",
-    IO.reformatted_plates_dir({"atlas_source": "wullimann1996"}), "plates_wullimann")
-IO.check_plate_set([{"plate_set": "plates_final"}, {"plate_set": ""}], "plates_final")
-chk("rows from the same plate set pass", True)
-chk("rows from another plate set are refused",
-    raises(lambda: IO.check_plate_set([{"plate_set": "plates"}], "plates_wullimann")))
-IO.check_plate_set([{"scene_uid": "a"}], "plates_wullimann")
-chk("rows with no plate_set column (old exports) pass", True)
+    AT.reformatted_dir({"atlas_source": "wullimann1996"}), "plates_wullimann")
+chk("wullimann ids sort the way the sections run",
+    [r["plate_id"] for r in AT.plate_order([{"plate_id": "wplate_100"}, {"plate_id": "wplate_023"},
+                                              {"plate_id": "wplate_050"}])],
+    ["wplate_023", "wplate_050", "wplate_100"])
 
 
 # ---- synthetic plate -------------------------------------------------------------

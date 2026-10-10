@@ -31,6 +31,7 @@ Run:  python 04b_atlas_match.py
       then open D:/LS-analysis/qc/atlasmatch/atlas_curator.html
 """
 
+import sys
 import argparse
 import csv
 import importlib.util
@@ -46,17 +47,31 @@ _lsio = importlib.util.spec_from_file_location(
 IO = importlib.util.module_from_spec(_lsio)
 _lsio.loader.exec_module(IO)
 
-# LS_CONFIG names the file explicitly; the file-relative path is the fallback.
-# Frozen, the scripts sit inside _internal/ while config.json is beside the
-# executable, so the fallback would point at a file that does not exist.
-CONFIG_PATH = os.environ.get("LS_CONFIG") or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config.json")
-with open(CONFIG_PATH, encoding="utf-8") as _fh:
-    CONFIG = json.load(_fh)
+_HERE = os.path.dirname(os.path.abspath(__file__))
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+# ls_config resolves LS_CONFIG, applies the defaults and validates once for
+# the whole process. Imported, not re-implemented: this block used to be four
+# lines copy-pasted into every stage.
+from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
+import ls_atlas as AT  # noqa: E402
+import ls_channels as CH  # noqa: E402
+import ls_naming as NM  # noqa: E402
+
+MARKERS = list(CH.marker_names(CONFIG))
 
 OUT_ROOT = CONFIG["out_root"]
 OVERVIEW_DIR = os.path.join(OUT_ROOT, "overviews")
-PLATE_SET = IO.plate_set(CONFIG)
-PLATE_DIR = os.path.join(OUT_ROOT, "atlas", PLATE_SET)
+# THE EXTRACTION SET, deliberately - not the study's configured set.
+#
+# 04b is in app/stages.py NOT_LISTED as "measured to fail on this data
+# (LOGS 2026-08-12); kept as evidence". Re-pointing it at plates_final would
+# change the candidate universe from 47 figures to 64 plates and invalidate the
+# measurement it exists to record. The literal is gone; the choice is not.
+#
+# KNOWN GAP: its atlas_proposals_v2.csv still feeds 04d's plate preview, which
+# renders from the configured set. Not closed here - see the plan's scope note.
+PLATE_DIR = AT.plate_dir(CONFIG, set_name=AT.EXTRACTED)
 QC_CSV = os.path.join(OUT_ROOT, "qc", "focus.csv")
 REPORT_DIR = os.path.join(OUT_ROOT, "qc", "atlasmatch")
 
@@ -211,11 +226,33 @@ def best_path(sim):
     return path
 
 
-def main():
+def build_parser():
+    """The parser, built separately so a test can read the marker choices and
+    default off the object argparse will actually use.
+
+    `--marker` used to be `default="AF488"` with NO `choices=` at all - the one
+    shape argparse cannot validate: it accepted any string, the `marker_channel`
+    filter matched nothing, and the stage walked zero sections and wrote zero
+    atlas proposals without erroring. Derived choices make a marker this study
+    does not have a usage error instead.
+
+    The default is the SECOND declared marker. That is not a fluorophore fact:
+    the sections registered against the atlas are the pass whose geometry every
+    other stage is expressed in, which is `04a.DEFAULT_MARKER`, and under
+    `paired` that is `MARKERS[1]`. Deriving `MARKERS[0]` here would silently
+    register the other pass - the trap this migration keeps meeting, since the
+    marker with the unsuffixed outputs is the second declared.
+    """
     ap = argparse.ArgumentParser()
     ap.add_argument("--animal", default=None, help="restrict to one animal")
-    ap.add_argument("--marker", default="AF488", help="channel whose DAPI is used")
-    args = ap.parse_args()
+    _default = MARKERS[1] if len(MARKERS) > 1 else (MARKERS[0] if MARKERS else None)
+    ap.add_argument("--marker", default=_default, choices=MARKERS,
+                    help=f"channel whose DAPI is used (default {_default})")
+    return ap
+
+
+def main():
+    args = build_parser().parse_args()
     os.makedirs(REPORT_DIR, exist_ok=True)
 
     with open(os.path.join(PLATE_DIR, "plates.csv"), newline="", encoding="utf-8") as fh:
@@ -241,7 +278,7 @@ def main():
         by_animal.setdefault(r["animal"], []).append(r)
 
     proposals = []
-    for animal, group in sorted(by_animal.items(), key=lambda kv: int(kv[0][2:])):
+    for animal, group in sorted(by_animal.items(), key=lambda kv: NM.natural_key(kv[0])):
         group.sort(key=lambda r: int(r["section_order"]))
         sils, keep = [], []
         for r in group:

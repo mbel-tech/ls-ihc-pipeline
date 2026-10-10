@@ -17,6 +17,7 @@ unmatched sections explicitly rather than dropping them.
 Run:  python 02_pair_passes.py
 """
 
+import sys
 import csv
 import json
 import os
@@ -25,15 +26,29 @@ from collections import defaultdict
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 
-# LS_CONFIG names the file explicitly; the file-relative path is the fallback.
-# Frozen, the scripts sit inside _internal/ while config.json is beside the
-# executable, so the fallback would point at a file that does not exist.
-CONFIG_PATH = os.environ.get("LS_CONFIG") or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config.json")
-with open(CONFIG_PATH, encoding="utf-8") as _fh:
-    CONFIG = json.load(_fh)
+_HERE = os.path.dirname(os.path.abspath(__file__))
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+# ls_config resolves LS_CONFIG, applies the defaults and validates once for
+# the whole process. Imported, not re-implemented: this block used to be four
+# lines copy-pasted into every stage.
+from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
+import ls_naming as NM  # noqa: E402
+import ls_channels as CH  # noqa: E402
+import ls_paths as LP  # noqa: E402
 
 OUT_ROOT = CONFIG["out_root"]
 MANIFEST_DIR = os.path.join(OUT_ROOT, "manifest")
+
+# The two passes, in declared order. `paired` means "two physical scans of one
+# section", not "two scans called AF568 and AF488" - this stage is reachable
+# for any paired study (ls_layouts.RESTRICTED), and it used to compute this
+# list and then discard it in favour of the two fluorophore names.
+#
+# Order is the config's, and it is the only thing that decides which pass is
+# `a`: they are symmetric here, and the column names below carry the marker's
+# own name, so nothing depends on which came first beyond the column order.
+MARKERS = tuple(CH.marker_names(CONFIG))
 
 # Tolerances are expressed as fractions of the nearest-neighbour spacing within
 # a constellation, never as absolute distances. Scan regions are hand-drawn, so
@@ -214,12 +229,52 @@ def main():
     rows = load_scenes()
     chosen, variant_notes = choose_variants(rows)
 
-    markers = sorted({r["marker_channel"] for r in rows})
-    if len(markers) != 2:
-        print(f"  !! expected two marker channels, found {markers}")
-    marker_a, marker_b = "AF568", "AF488"
+    # THE TWO PASSES COME FROM THE STUDY. This was `marker_a, marker_b =
+    # "AF568", "AF488"`, three lines under a `markers = sorted({...})` whose
+    # result it discarded. For any other paired study `chosen.get((animal,
+    # slide, "AF568"))` was [] for every slide, the "only one pass present"
+    # branch then iterated an empty list, nothing was appended, and _write
+    # printed "(nothing to write for pairs.csv)". The warning below did not
+    # fire - there really were two markers - so that one line was the only
+    # sign that stage 2 had produced nothing at all.
+    #
+    # A stop rather than a warning: 02 pairs sections between exactly two
+    # passes, and there is no sensible thing for it to do with one or three.
+    # Carrying on printed a warning and then wrote an empty pairs.csv, which
+    # reads exactly like a study where nothing happened to pair.
+    if len(MARKERS) != 2:
+        raise SystemExit(
+            f"02 pairs two passes of the same physical sections; this study "
+            f"declares {list(MARKERS)}. Fix acquisition.markers in "
+            f"{CONFIG_PATH}, or - if the study really has one scan per section "
+            f"carrying every marker - set acquisition.layout to multiplex, "
+            f"which skips this stage.")
+    marker_a, marker_b = MARKERS
 
-    animals = sorted({r["animal"] for r in rows}, key=lambda a: int(a[2:]))
+    # What the manifest actually holds, against what the study declared. A
+    # channel nobody declared is a hard stop, not a note: `chosen` is keyed on
+    # it, only marker_a and marker_b are ever looked up, and every scene of a
+    # third channel would drop out of pairs.csv without appearing in any count.
+    seen = sorted({r["marker_channel"] for r in rows})
+    undeclared = [m for m in seen if m not in MARKERS]
+    if undeclared:
+        raise SystemExit(
+            f"manifest_scenes.csv carries marker channel(s) {undeclared} that "
+            f"{CONFIG_PATH} does not declare (acquisition.markers = "
+            f"{list(MARKERS)}). Their scenes would be dropped silently.")
+    if len(seen) != 2:
+        print(f"  !! the manifest carries {seen}, not both declared passes "
+              f"{list(MARKERS)} - every section will come out as only_<marker>")
+
+    # Derived column and status names. `slug("AF568")` is "af568", which is the
+    # literal this stage has always written, so the live pairs.csv header comes
+    # back character for character and no fallback is needed - pinned in
+    # tests/test_layouts.py rather than left as a coincidence. The STATUS
+    # values keep the marker name verbatim, because that is what is on disk in
+    # the marker_channel column and in every overview path.
+    a_slug, b_slug = LP.slug(marker_a), LP.slug(marker_b)
+
+    animals = sorted({r["animal"] for r in rows}, key=NM.natural_key)
     pair_rows, offset_rows = [], []
 
     for animal in animals:
@@ -236,8 +291,9 @@ def main():
                     entries.append({"slide": slide, "serial": r["slide_serial"], "marker": only,
                                     "a": r if a_rows else None, "b": None if a_rows else r,
                                     "dist": "", "status": f"only_{only}"})
-                offset_rows.append({"animal": animal, "slide": slide, "n_af568": len(a_rows),
-                                    "n_af488": len(b_rows), "same_slide": "",
+                offset_rows.append({"animal": animal, "slide": slide,
+                                    f"n_{a_slug}": len(a_rows),
+                                    f"n_{b_slug}": len(b_rows), "same_slide": "",
                                     "tight_fraction": "", "median_residual_um": "",
                                     "dx_um": "", "dy_um": "",
                                     "inlier_votes": "", "n_matched": 0,
@@ -253,15 +309,17 @@ def main():
             for r in un_a:
                 entries.append({"slide": slide, "serial": r["slide_serial"], "marker": marker_a,
                                 "a": r, "b": None, "dist": "",
-                                "status": "unmatched_AF568" if same else "separate_slide_AF568"})
+                                "status": (f"unmatched_{marker_a}" if same
+                                           else f"separate_slide_{marker_a}")})
             for r in un_b:
                 entries.append({"slide": slide, "serial": r["slide_serial"], "marker": marker_b,
                                 "a": None, "b": r, "dist": "",
-                                "status": "unmatched_AF488" if same else "separate_slide_AF488"})
+                                "status": (f"unmatched_{marker_b}" if same
+                                           else f"separate_slide_{marker_b}")})
 
             offset_rows.append({
                 "animal": animal, "slide": slide,
-                "n_af568": len(a_rows), "n_af488": len(b_rows),
+                f"n_{a_slug}": len(a_rows), f"n_{b_slug}": len(b_rows),
                 "same_slide": int(same),
                 "tight_fraction": diag["tight_fraction"],
                 "median_residual_um": diag["median_residual_um"],
@@ -280,12 +338,12 @@ def main():
                 "slide": e["slide"],
                 "slide_serial": e["serial"],
                 "status": e["status"],
-                "af568_file": a["file"] if a else "",
-                "af568_scene": a["scene_index"] if a else "",
-                "af568_scene_uid": a["scene_uid"] if a else "",
-                "af488_file": b["file"] if b else "",
-                "af488_scene": b["scene_index"] if b else "",
-                "af488_scene_uid": b["scene_uid"] if b else "",
+                f"{a_slug}_file": a["file"] if a else "",
+                f"{a_slug}_scene": a["scene_index"] if a else "",
+                f"{a_slug}_scene_uid": a["scene_uid"] if a else "",
+                f"{b_slug}_file": b["file"] if b else "",
+                f"{b_slug}_scene": b["scene_index"] if b else "",
+                f"{b_slug}_scene_uid": b["scene_uid"] if b else "",
                 "match_distance_um": e["dist"],
                 "center_x_um": round((a or b)["center_x_um"], 1),
                 "center_y_um": round((a or b)["center_y_um"], 1),
@@ -339,7 +397,7 @@ def _report(pair_rows, offset_rows, variant_notes):
     for r in pair_rows:
         by_animal[r["animal"]][r["status"]] += 1
     print("\nper animal (matched / total):")
-    for animal in sorted(by_animal, key=lambda a: int(a[2:])):
+    for animal in sorted(by_animal, key=NM.natural_key):
         d = by_animal[animal]
         tot = sum(d.values())
         print(f"  {animal:<7} {d.get('matched', 0):>4} / {tot:<4}"

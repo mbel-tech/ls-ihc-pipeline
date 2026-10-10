@@ -48,10 +48,10 @@ except ImportError:
 
 tmp = tempfile.mkdtemp()
 try:
-    out_root = os.path.join(tmp, "out")
-    cfg = os.path.join(tmp, "config.json")
-    with open(cfg, "w") as fh:
-        json.dump({"out_root": out_root, "atlas_source": "wullimann1996"}, fh)
+    sys.path.insert(0, HERE)
+    from _fixture import write_study
+    cfg = write_study(tmp, atlas_source="wullimann1996")
+    out_root = json.load(open(cfg))["out_root"]
     os.environ["LS_CONFIG"] = cfg
 
     spec = importlib.util.spec_from_file_location("r04e", os.path.join(SCRIPTS, "04e_register_elastix.py"))

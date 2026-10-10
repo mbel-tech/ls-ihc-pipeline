@@ -7,11 +7,17 @@ Those images are already cut and tilted; what they are not is the two-colour
 picture the section is actually read as, and the marker channel - the thing being
 quantified - is not in them at all.
 
-This writes the same sections as RGB composites in the *same* frame:
+This writes the same sections as RGB composites in the *same* frame: the
+counterstain in its colour - blue unless `display.nuclear_colour` says
+otherwise, and it is the geometry channel, exactly what the curator showed
+before - plus ONE marker in its own, from `display.colours`.
 
-    blue   DAPI    - the geometry channel, exactly what the curator showed before
-    red    AF568   - pERK
-    green  AF488   - PCNA
+One marker, because this stage builds one marker per run (`--marker`) into that
+marker's own `sections*_rgb/`. Under the paired layout a composite is therefore
+a marker and the counterstain, never two markers: the two markers are separate
+physical sections and have separate directories. The set across two runs is
+red-and-green; no single picture is. An earlier version of this docstring
+listed both markers here, which is how a reader comes to believe otherwise.
 
 The frame has to be identical or every landmark placed on it is placed on the
 wrong picture, so the marker is not reformatted separately. It rides through
@@ -66,6 +72,7 @@ Run:  python 04o_section_rgb.py
       python 04o_section_rgb.py --thumbs --all --marker AF488
 """
 
+import sys
 import argparse
 import csv
 import importlib.util
@@ -75,17 +82,107 @@ import numpy as np
 from PIL import Image
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
+_HERE = os.path.dirname(os.path.abspath(__file__))
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+# ls_config resolves LS_CONFIG, applies the defaults and validates once for
+# the whole process. Imported, not re-implemented: this block used to be four
+# lines copy-pasted into every stage.
+from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
+import ls_channels as CH  # noqa: E402
+
+# The markers this study measures, in declared order. ls_channels is the
+# single source of that list; naming a fluorophore here would pin the stage
+# to one study.
+MARKERS = list(CH.marker_names(CONFIG))
+
 _spec = importlib.util.spec_from_file_location("_rf", os.path.join(_HERE, "04a_reformat.py"))
 RF = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(RF)
+
+_lsio = importlib.util.spec_from_file_location(
+    "_lsio", os.path.join(_HERE, "ls_io.py"))
+IO = importlib.util.module_from_spec(_lsio)
+_lsio.loader.exec_module(IO)
 
 OUT_ROOT = RF.OUT_ROOT
 REFORMAT_DIR = RF.REFORMAT_DIR
 WORKLIST_CSV = os.path.join(REFORMAT_DIR, "roi_worklist.csv")
 FOCUS_CSV = os.path.join(OUT_ROOT, "qc", "focus.csv")
 
-# Marker channel -> which RGB plane it lands in. DAPI always takes blue.
-MARKER_PLANE = {"AF568": 0, "AF488": 1}
+# Marker -> the colour it is drawn in, and the counterstain's own colour.
+# Positional by default - first marker shown red, second green, which is what
+# this stage has always written - and named by `display.colours` when a study
+# wants otherwise. ls_channels owns the rule, and the curator's Review pane
+# reads the SAME function: naming a fluorophore or a plane index here is how
+# the pane and the composites came to disagree about what colour a section is.
+MARKER_COLOURS = CH.marker_colours(CONFIG)
+NUCLEAR_COLOUR = CH.nuclear_colour(CONFIG)
+
+
+def composite(marker_img, dapi_img, colour, nuclear=(0., 0., 1.)):
+    """One marker in its own colour, over the counterstain in its own.
+
+    Per plane the two contributions are combined with MAX, not sum. For a
+    marker with no blue in it - which is every marker this pipeline has ever
+    had - max(0, dapi) is dapi exactly, so the blue plane is still the
+    byte-for-byte greyscale the geometry was decided on and --verify still
+    means what it meant.
+
+    Where they DO share a plane - a magenta marker is red plus blue, and blue
+    is the counterstain - max keeps both readable and never clips. Sum was the
+    alternative: it makes overlap brighter, the conventional way to read
+    co-localisation, but it saturates to 255 and then a very bright marker and
+    a marker-over-counterstain look identical. This picture exists so somebody
+    can judge whether a section is measurable, so not clipping wins.
+
+    Both images are uint8 and both coefficients are exact in binary for every
+    colour in the table, so a plane whose coefficient is 1.0 comes back as the
+    input array byte for byte. tests/test_composite.py pins that with
+    np.array_equal against the plane assignment this replaced, because the
+    constants probe cannot see pixels and 130 curated sections carry landmark
+    coordinates placed on the composites already on disk.
+    """
+    mark = np.asarray(marker_img, dtype=np.float64)
+    dapi = np.asarray(dapi_img, dtype=np.float64)
+    rgb = np.zeros(mark.shape + (3,), np.uint8)
+    for p in range(3):
+        plane = np.maximum(colour[p] * mark, nuclear[p] * dapi)
+        rgb[..., p] = np.clip(np.rint(plane), 0, 255).astype(np.uint8)
+    return rgb
+
+
+def worklist_uid_column(marker, fields):
+    """Which `roi_worklist.csv` column carries this marker's scene uid.
+
+    The worklist is keyed on the pass being quantified, and reaches the other
+    pass only through the pairing - so one marker reads the row's own uid and
+    the other reads the partner's. Which is which was `args.marker == "AF488"`,
+    a literal that was true for exactly one study; every marker of any other
+    study took the `else` branch and both passes were built from the SAME uids,
+    silently.
+
+    `RF.DEFAULT_MARKER` is the comparison, not `MARKERS[1]` spelled out here:
+    the partner column belongs to whichever pass owns the unsuffixed outputs,
+    and 04a is where that is decided.
+
+    NOT `RF.marker_paths(marker)["uid_col"]`, which the plan for this change
+    suggested. That table names 04a's OVERRIDE columns - `perk_scene_uid` for
+    the non-default marker, `scene_uid` for the default - and this file's
+    columns are `scene_uid` and `partner_scene_uid`. Taking the name from
+    there would ask a header that has never had a `perk_scene_uid` column for
+    one, which `pick_column` would refuse, and would hand the DEFAULT marker
+    `scene_uid`, which is the other pass's section.
+
+    `pick_column`, not a literal and not `.get()`: 04n renamed this column from
+    `pcna_scene_uid` to `partner_scene_uid`, so a worklist under either
+    spelling has to keep working, and a `.get()` on the wrong one yields an
+    empty uid list and a run that builds no composites at all without saying so.
+    """
+    if marker == RF.DEFAULT_MARKER:
+        return IO.pick_column(fields, "partner_scene_uid", "pcna_scene_uid",
+                              what=os.path.basename(WORKLIST_CSV))
+    return "scene_uid"
 
 
 def write_thumbs(rgb_dir, size=RF.GRID, force=False):
@@ -125,7 +222,9 @@ def write_thumbs(rgb_dir, size=RF.GRID, force=False):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--marker", choices=("AF488", "AF568"), default="AF568")
+    _default = MARKERS[0] if MARKERS else None
+    ap.add_argument("--marker", choices=MARKERS, default=_default,
+                    help=f"which marker to process (default {_default})")
     ap.add_argument("--tier", default=None, help="only this worklist tier")
     ap.add_argument("--scale", type=int, default=3, metavar="N",
                     help="render at N x the canonical 256 grid (default 3 = 768). "
@@ -186,11 +285,14 @@ def main():
             uids = [r["id"] for r in csv.DictReader(fh) if r["kind"] == "section"]
     else:
         with open(WORKLIST_CSV, newline="", encoding="utf-8") as fh:
-            want = [r for r in csv.DictReader(fh) if not args.tier or r["tier"] == args.tier]
-        # The worklist is keyed on pERK. Building the PCNA side from it means
-        # following the pairing to the partner scene, which the 30 unpaired
-        # sections do not have - hence --all, which reads the marker's own index.
-        uid_col = "pcna_scene_uid" if args.marker == "AF488" else "scene_uid"
+            rd = csv.DictReader(fh)
+            fields = list(rd.fieldnames or [])
+            want = [r for r in rd if not args.tier or r["tier"] == args.tier]
+        # The worklist is keyed on the measured pass. Building the other side
+        # from it means following the pairing to the partner scene, which the
+        # 30 unpaired sections do not have - hence --all, which reads the
+        # marker's own index. Which column that is, see worklist_uid_column.
+        uid_col = worklist_uid_column(args.marker, fields)
         uids = [u for u in ((w.get(uid_col) or "").strip() for w in want) if u]
 
     # The index is the definition of "survived", so it is also the definition of
@@ -199,7 +301,21 @@ def main():
     with open(index_path, newline="", encoding="utf-8") as fh:
         in_index = {r["id"] for r in csv.DictReader(fh) if r["kind"] == "section"}
 
-    plane = MARKER_PLANE[args.marker]
+    colour = MARKER_COLOURS.get(args.marker)
+    if colour is None:
+        # Measured, but this study never said what colour to draw it in. Not a
+        # loop body - this stage builds one marker per run - so it stops here
+        # and says which markers DO have a colour. Picking one for it would be
+        # a marker silently wearing another marker's colour, which is the
+        # fault `display.colours` exists to remove; drawing it black would be
+        # a picture of nothing that looks like a failed render.
+        shown = ", ".join(sorted(MARKER_COLOURS))
+        print(f"{args.marker} is not composited: this study gives a colour to "
+              f"{shown or 'no marker'}, and the first two markers shown get "
+              f"red and green by default.")
+        print(f"  Give it one: `display.colours: {{\"{args.marker}\": "
+              f"\"magenta\"}}` in config.json.")
+        return
     made = skipped = mismatched = existing = 0
     missing = []
 
@@ -245,10 +361,7 @@ def main():
                     print(f"  MISMATCH {uid}")
                 continue
 
-        rgb = np.zeros(img.shape + (3,), np.uint8)
-        rgb[..., plane] = comp
-        rgb[..., 2] = img
-        Image.fromarray(rgb).save(out_path)
+        Image.fromarray(composite(comp, img, colour, NUCLEAR_COLOUR)).save(out_path)
         made += 1
 
     if args.verify:

@@ -23,7 +23,7 @@ from import_slides import ImportScreen
 from runner import Runner
 
 DOT = {"done": "#3fb950", "todo": "#8b949e", "cli": "#6e4d99",
-       "running": "#4da3ff", "failed": "#f85149"}
+       "running": "#4da3ff", "failed": "#f85149", "skip": "#484f58"}
 
 
 class _Job(QObject):
@@ -41,10 +41,13 @@ class _Job(QObject):
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, repo_root, scripts_dir=None):
+    def __init__(self, repo_root, scripts_dir=None, config_path=None):
         super().__init__()
         self.repo_root = repo_root
-        self.config_path = os.path.join(repo_root, "config.json")
+        # Whichever study the picker settled on. Falls back to the module's
+        # own resolution so the window can still be opened directly in a test.
+        import ls_config as LC
+        self.config_path = os.path.abspath(config_path or LC.resolve_path())
         # Frozen, the stages ship inside the bundle while config.json sits beside
         # the executable, so the two roots are not the same folder.
         self.scripts_dir = scripts_dir or os.path.join(repo_root, "scripts")
@@ -112,7 +115,8 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(split)
 
         self._build_menu()
-        self.statusBar().showMessage(f"out_root  {self.out_root}")
+        self.statusBar().showMessage(
+            f"{self._study_name()}   out_root  {self.out_root}")
         self._build_list()
         self.refresh()
         self._log(f"repo    {repo_root}")
@@ -140,7 +144,8 @@ class MainWindow(QMainWindow):
         """
         self._menu = self.menuBar().addMenu("&Pipeline")
         self._actions = []
-        for label, slot in (("Settings…", self._settings),
+        for label, slot in (("Studies…", self._studies),
+                            ("Settings…", self._settings),
                             (None, None),
                             ("Import curation state…", self._import_state),
                             ("Where is my curation state?", self._explain_state)):
@@ -151,16 +156,39 @@ class MainWindow(QMainWindow):
             act.triggered.connect(slot)
             self._actions.append(act)
 
+    def _studies(self):
+        """Switch to another study, or make one."""
+        from study_picker import StudyPicker
+        dlg = StudyPicker(self.repo_root, self)
+        if dlg.exec() and dlg.chosen and os.path.normcase(dlg.chosen) !=                 os.path.normcase(self.config_path):
+            self.config_path = dlg.chosen
+            self.runner.rebind(dlg.chosen)
+            self.importer.config_path = dlg.chosen
+            self._rebase()
+            self._log(f"study is now {self.config_path}")
+
+    def _rebase(self):
+        """Re-root everything that was pointed at the previous out_root."""
+        self.out_root = self._config()["out_root"]
+        # The server, the curator view and the curation store were all rooted
+        # at the old out_root; without this they keep serving and saving into
+        # the tree that was just moved away from.
+        self.server.stop()
+        self.server = LocalServer(self.out_root)
+        self.curator.rebase(self.server, self.out_root)
+        self.refresh()
+        self.statusBar().showMessage(f"{self._study_name()}   out_root  {self.out_root}")
+
+    def _study_name(self):
+        try:
+            return (self._config().get("study") or {}).get("name") or                 os.path.splitext(os.path.basename(self.config_path))[0]
+        except Exception:                                   # noqa: BLE001
+            return "?"
+
     def _settings(self):
-        if ConfigDialog(self.repo_root, self).exec():
-            self.out_root = self._config()["out_root"]
-            # The server, the curator view and the curation store were all
-            # rooted at the old out_root; without this they keep serving and
-            # saving into the tree that was just moved away from.
-            self.server.stop()
-            self.server = LocalServer(self.out_root)
-            self.curator.rebase(self.server, self.out_root)
-            self.refresh()
+        if ConfigDialog(self.repo_root, path=self.config_path,
+                        parent=self).exec():
+            self._rebase()
             self._log(f"config updated - out_root {self.out_root}, serving on "
                       f"127.0.0.1:{self.server.port}; stage modules reload on next run")
 
@@ -234,22 +262,34 @@ class MainWindow(QMainWindow):
                 it.setData(Qt.UserRole, st.sid)
                 self.list.addItem(it)
 
-    def _state_of(self, st):
+    def _state_of(self, st, names=None):
         if self._states.get(st.sid) in ("running", "failed"):
             return self._states[st.sid]
+        if names is None:
+            names = self.runner.names()
+        # A stage this study's acquisition layout does not have. Dimmed and
+        # still listed, for the reason the stage table gives for cli_only
+        # stages: hiding it turns "your study does not do this" into "this
+        # does not exist". run_all.sh skips exactly the same list.
+        if not st.applies(names.layout):
+            return "skip"
         if st.cli_reason():
             return "cli"
-        return "done" if st.done(self.out_root) else "todo"
+        return "done" if st.done(self.out_root, names) else "todo"
 
     def refresh(self):
         self.out_root = self._config()["out_root"]
+        # Asked ONCE for the whole sweep. Resolving it per stage would re-read
+        # config.json 57 times on every refresh, and a refresh happens on every
+        # stage completion.
+        names = self.runner.names()
         for i in range(self.list.count()):
             it = self.list.item(i)
             sid = it.data(Qt.UserRole)
             if not sid or sid == "__import__":
                 continue
             st = S.BY_ID[sid]
-            state = self._state_of(st)
+            state = self._state_of(st, names)
             # The figure's red outline: a person decides here. And the one
             # stage that reads the group key, marked so it cannot be run by
             # accident while the analysis is meant to be blind.
@@ -285,8 +325,14 @@ class MainWindow(QMainWindow):
         else:
             self.stack.setCurrentIndex(0)
 
-        blocked = S.blocked_by(st, self.out_root)
+        # One resolution for the whole panel: which markers this study has and
+        # what its artifacts are called. Asked before anything uses it, because
+        # `names` below is a list of stage TITLES and shadowing is how a panel
+        # ends up calling .markers on a string.
+        study = self.runner.names()
+        blocked = S.blocked_by(st, self.out_root, study)
         reason = st.cli_reason()
+        off_layout = not st.applies(study.layout)
         bits = [f"<b>{st.title}</b>", st.blurb]
         if st.operator:
             bits.append("<span style='color:#f85149'><b>An operator decides here.</b> "
@@ -294,6 +340,11 @@ class MainWindow(QMainWindow):
         if st.unblinds:
             bits.append("<span style='color:#f85149'><b>Reads the treatment group.</b> "
                         "Nothing before this stage may.</span>")
+        if off_layout:
+            bits.append(
+                "<span style='color:#8b949e'><b>Not part of this study.</b> "
+                f"It applies to {' and '.join(st.layouts)} acquisition; this "
+                f"study is {study.layout}.</span>")
         if reason:
             bits.append(f"<span style='color:#bc8cff'><b>Not run here.</b> {reason}</span>")
         elif blocked:
@@ -303,17 +354,25 @@ class MainWindow(QMainWindow):
         # The right-hand column of the figure: the file each stage leaves
         # behind, and which reader touched pixels to make it.
         if st.outputs:
-            missing = set(st.missing(self.out_root))
+            # The NAMES this study writes, not the table's tokens: a stage that
+            # leaves `sections_{marker0}` is a sentence about the code, and the
+            # operator is looking for a folder on their drive.
+            shown = st.output_names(self.out_root, study)
+            missing = set(st.missing(self.out_root, study))
             files = ", ".join(
                 (f"<span style='color:#d29922'>{o}</span>" if o in missing else o)
-                for o in st.outputs)
+                for o in shown)
             bits.append(f"<span style='color:#9aa0a8'>leaves: {files}</span>")
         if st.reader != "none":
             bits.append(f"<span style='color:#9aa0a8'>pixels read by {st.reader}</span>")
         if st.script:
-            bits.append(f"<code>{st.script} {' '.join(st.argv)}</code>")
+            # The command as it would actually run: `--marker {marker0}`
+            # is not something anyone can type.
+            argv = " ".join(S.fill_markers(a, study.markers)
+                            for a in st.argv)
+            bits.append(f"<code>{st.script} {argv}</code>")
         self.blurb.setText("<br>".join(b for b in bits if b))
-        self.run_btn.setEnabled(bool(st.script) and not reason)
+        self.run_btn.setEnabled(bool(st.script) and not reason and not off_layout)
         self.run_btn.setText("Regenerate" if st.curator else "Run stage")
 
     # ---- running ----------------------------------------------------------

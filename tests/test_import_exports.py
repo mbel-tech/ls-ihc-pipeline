@@ -23,13 +23,18 @@ import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "app"))
+sys.path.insert(0, os.path.join(os.path.dirname(HERE), "scripts"))
+if HERE not in sys.path:
+    sys.path.insert(0, HERE)
 
 import import_exports as IE                                    # noqa: E402
+from _fixture import temp_study                                # noqa: E402
 
 PLATES = """\
 scene_uid,animal,marker,subset,section_order,plate_set,plate_id,plate_index,\
+plate_fp,plate_px,plate_verified,\
 plate_has_seeds,n_landmarks,n_background,transform,status,favorite,view_rotation_deg,excluded
-LS22_s01a_sc00,LS22,AF568,roi_worklist,1,plates_final,plate_009,8,1,3,2,affine,registered,1,0.0,0
+LS22_s01a_sc00,LS22,AF568,roi_worklist,1,plates_final,plate_009,8,edd3b3e74d7f,1409x1134,,1,3,2,affine,registered,1,0.0,0
 """
 
 LANDMARKS = """\
@@ -164,13 +169,18 @@ def per_section_frame(d):
     """
     print("\n\nper-section frames:\n")
     rd = frames(d)
-    fo = IE.frame_from_disk(rd)
-    chk("a composite section is a 768 frame", fo("LS22_s01a_sc00", "AF568"), 768.0)
-    chk("a greyscale-only section is 256", fo("LS22_s02a_sc00", "AF568"), 256.0)
-    chk("an unknown section falls back to the export's own grid",
-        fo("LS22_s09z_sc00", "AF568"), 256.0)
-    chk("--no-rgb ignores the composite",
-        IE.frame_from_disk(rd, rgb=False)("LS22_s01a_sc00", "AF568"), 256.0)
+    # Named, because the directory a marker's sections went into is a fact
+    # about the STUDY, and this suite must not read the operator's. The shape
+    # here is the live one, so the answers below are the live answers.
+    with temp_study(acquisition={"layout": "paired",
+                                 "markers": ["AF568", "AF488"]}):
+        fo = IE.frame_from_disk(rd)
+        chk("a composite section is a 768 frame", fo("LS22_s01a_sc00", "AF568"), 768.0)
+        chk("a greyscale-only section is 256", fo("LS22_s02a_sc00", "AF568"), 256.0)
+        chk("an unknown section falls back to the export's own grid",
+            fo("LS22_s09z_sc00", "AF568"), 256.0)
+        chk("--no-rgb ignores the composite",
+            IE.frame_from_disk(rd, rgb=False)("LS22_s01a_sc00", "AF568"), 256.0)
 
     pl = write(d, "plates2.csv", PLATES_2)
     lm = write(d, "landmarks2.csv", LANDMARKS_2)
@@ -192,6 +202,43 @@ def per_section_frame(d):
     chk("an explicit flat k still applies to every section",
         [round(S2[u]["pairs"][0][0], 2) for u in sorted(S2)], [300.0, 300.0])
     chk("...and is stamped as a frame", S2["LS22_s02a_sc00"]["frame"], 768.0)
+
+
+def other_study_frames(d):
+    """The same frame question, under a study whose markers are not LS's.
+
+    `marker_dir` was `"sections_AF568" if marker == "AF568" else "sections"` -
+    the LS study's answer written out as though it were everybody's. For any
+    other study every marker resolved to `sections`, the probe for the 768-px
+    composite missed the directory 04o had actually written, the frame fell
+    back to 256, and every landmark and background disc came back at a THIRD
+    of the coordinate the operator clicked. Nothing raised: the store rebuilds,
+    the page opens, and the discs are somewhere plausible.
+
+    Mk2 is the geometry source (the SECOND declared owns the unsuffixed
+    names), so this pins both halves of the rule at once - a fix that gave
+    every marker a suffix would fail on Mk2.
+    """
+    print("\n\nframes under a study that is not LS:\n")
+    from PIL import Image
+    rd = os.path.join(d, "other_study", "reformatted")
+    with temp_study(acquisition={"layout": "paired",
+                                 "markers": ["Mk1", "Mk2"]}):
+        import ls_paths as LP
+        names = LP.Names(os.path.dirname(rd), ["Mk1", "Mk2"], "paired")
+        for marker, uid in (("Mk1", "X_mk1"), ("Mk2", "X_mk2")):
+            sub = os.path.basename(names.path("sections", marker)) + "_rgb"
+            os.makedirs(os.path.join(rd, sub), exist_ok=True)
+            Image.new("L", (768, 768)).save(os.path.join(rd, sub, uid + ".png"))
+
+        chk("the directory is the one 04a wrote, per marker",
+            (IE.marker_dir("Mk1"), IE.marker_dir("Mk2")),
+            ("sections_Mk1", "sections"))
+        fo = IE.frame_from_disk(rd)
+        chk("the suffixed marker's composite is found: 768, not 256",
+            fo("X_mk1", "Mk1"), 768.0)
+        chk("...and the geometry source's, in the unsuffixed directory",
+            fo("X_mk2", "Mk2"), 768.0)
 
 
 def main():
@@ -245,6 +292,7 @@ def main():
 
         replace_guard(d, pl)
         per_section_frame(d)
+        other_study_frames(d)
 
     print("\n" + (f"{fails} FAILED" if fails else "ALL PASS"))
     return 1 if fails else 0

@@ -63,22 +63,20 @@ def _export_stamp(name):
 def _export_root(out_root):
     """Where stamped exports are filed. `config.export_dir`, else out_root/exports.
 
-    Read here rather than passed in, because the download handler is the only
-    thing in the app that needs it and a constructor argument would have to be
-    threaded through every caller for one string. Frozen, config.json sits beside
-    the executable; from source it is the repo root - try both, as the rest of
-    the app does.
+    This used to find config.json by guessing its own location - beside the app
+    from source, beside the executable when frozen - and ignored LS_CONFIG
+    entirely. That was merely fragile while there was one config at a known
+    path; with named studies it is wrong, because the active study is not
+    beside the app at all. It asks ls_config now, which is the same answer 04l
+    and 05a get, so the page and the handler that catches its downloads cannot
+    disagree about where an export went.
     """
-    for cfg in (os.path.join(os.path.dirname(HERE), "config.json"),
-                os.path.join(HERE, "config.json")):
-        try:
-            with open(cfg, encoding="utf-8") as fh:
-                configured = json.load(fh).get("export_dir")
-            if configured:
-                return configured
-        except (OSError, ValueError):
-            continue
-    return os.path.join(out_root, "exports")
+    try:
+        import ls_config as LC
+        return LC.export_dir()
+    except BaseException:                                   # noqa: BLE001
+        # A download must still land somewhere if config cannot be read at all.
+        return os.path.join(out_root, "exports")
 
 
 class _QuietHandler(http.server.SimpleHTTPRequestHandler):

@@ -53,6 +53,7 @@ Run:  python 04g_artifact_mask.py --preview 8     # look before committing
       python 04g_artifact_mask.py
 """
 
+import sys
 import argparse
 import csv
 import importlib.util
@@ -75,12 +76,19 @@ _lsio.loader.exec_module(IO)
 
 tissue_mask, WORK = _RF.tissue_mask, _RF.WORK_SIZE
 
-# LS_CONFIG names the file explicitly; the file-relative path is the fallback.
-# Frozen, the scripts sit inside _internal/ while config.json is beside the
-# executable, so the fallback would point at a file that does not exist.
-CONFIG_PATH = os.environ.get("LS_CONFIG") or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config.json")
-with open(CONFIG_PATH, encoding="utf-8") as _fh:
-    CONFIG = json.load(_fh)
+_HERE = os.path.dirname(os.path.abspath(__file__))
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+# ls_config resolves LS_CONFIG, applies the defaults and validates once for
+# the whole process. Imported, not re-implemented: this block used to be four
+# lines copy-pasted into every stage.
+from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
+import ls_channels as CH  # noqa: E402
+
+# The markers this study measures, in declared order. ls_channels is the
+# single source of that list; naming a fluorophore here would pin the stage
+# to one study.
+MARKERS = list(CH.marker_names(CONFIG))
 
 OUT_ROOT = CONFIG["out_root"]
 OVERVIEW_DIR = os.path.join(OUT_ROOT, "overviews")
@@ -292,17 +300,46 @@ def run_plan(preview, collected):
         return True, True
     return collected < preview, False
 
-def main():
+def summary_csv(marker):
+    """This stage's own per-marker summary. 04a's naming rule, 04g's directory.
+
+    Not from 04a.marker_paths - that table is about the reformat's files, and
+    this one lives in MASK_DIR - but the RULE is 04a's and is taken from it:
+    the unsuffixed name belongs to DEFAULT_MARKER, and under `multiplex` one
+    scan carries every marker so every marker answers with the unsuffixed
+    name. This used to test the literal "AF488", which agreed with 04a only
+    for the live study.
+    """
+    if _RF.LAYOUT == CH.LAYOUT_MULTIPLEX or marker == _RF.DEFAULT_MARKER:
+        return os.path.join(MASK_DIR, "artifact_summary.csv")
+    return os.path.join(MASK_DIR, f"artifact_summary_{marker}.csv")
+
+
+def build_parser():
+    """The parser, built separately so a test can read the marker default off
+    it. The default is not a detail: it selects which pass gets masked."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--preview", type=int, default=0, help="render N overlays and stop")
     ap.add_argument("--limit", type=int, default=0)
-    ap.add_argument("--marker", default="AF488", choices=["AF488", "AF568"],
-                    help="AF488 = PCNA (default), AF568 = pERK")
+    # 04a and 04g have always defaulted to the SECOND marker (AF488 = PCNA):
+    # it is the pass that was curated first. Kept rather than adopting the
+    # first-declared default, because this default selects which sections get
+    # written and a silent flip would process the wrong pass. Pinned in
+    # tests/test_reformat_layout.py, alongside 04a's, and read off the built
+    # parser rather than from the help text - a reviewer flipped this to
+    # MARKERS[0] and the whole suite stayed green.
+    _default = MARKERS[1] if len(MARKERS) > 1 else (MARKERS[0] if MARKERS else None)
+    ap.add_argument("--marker", default=_default, choices=MARKERS,
+                    help=f"which marker to process (default {_default})")
     ap.add_argument("--include-excluded", action="store_true",
                     help="also mask sections in excluded_sections_<marker>.csv, so "
                          "they can be reviewed with a mask like every other "
                          "section. They are marked excluded=1 in the summary.")
-    args = ap.parse_args()
+    return ap
+
+
+def main():
+    args = build_parser().parse_args()
     os.makedirs(MASK_DIR, exist_ok=True)
     os.makedirs(REPORT_DIR, exist_ok=True)
 
@@ -319,8 +356,14 @@ def main():
             except (KeyError, ValueError):
                 pass
 
-    index_csv = (os.path.join(REFORMAT_DIR, "reformat_index.csv") if args.marker == "AF488"
-                 else os.path.join(REFORMAT_DIR, f"reformat_index_{args.marker}.csv"))
+    # 04a WROTE these files, so 04a says what they are called. This used to
+    # rebuild the names against the literal "AF488", which agreed with 04a
+    # only because AF488 happens to be this study's DEFAULT_MARKER: for
+    # markers ['Mk1', 'Mk2'], 04a writes Mk2's index as reformat_index.csv
+    # while this read reformat_index_Mk2.csv and failed - or worse, under a
+    # study whose second marker is called AF488, read the other pass.
+    paths = _RF.marker_paths(args.marker)
+    index_csv = paths["index"]
     with open(index_csv, newline="", encoding="utf-8") as fh:
         index = [{"id": r["id"], "animal": r["animal"],
                   "section_order": r["section_order"], "excluded": 0}
@@ -339,9 +382,7 @@ def main():
     # changes nothing downstream: 04a reads the mask only for sections it
     # reformats, and these are not in its index either.
     if args.include_excluded:
-        exc_csv = os.path.join(REFORMAT_DIR,
-                               "excluded_sections.csv" if args.marker == "AF488"
-                               else f"excluded_sections_{args.marker}.csv")
+        exc_csv = paths["excluded"]
         have = {r["id"] for r in index}
         meta = {}
         with open(QC_CSV, newline="", encoding="utf-8") as fh:
@@ -403,8 +444,7 @@ def main():
         if args.preview:
             return
 
-    out = os.path.join(MASK_DIR, "artifact_summary.csv" if args.marker == "AF488"
-                       else f"artifact_summary_{args.marker}.csv")
+    out = summary_csv(args.marker)
     IO.atomic_write_csv(out, rows, SUMMARY_KEYS)
 
     pct = np.array([r["artifact_pct_of_tissue"] for r in rows])

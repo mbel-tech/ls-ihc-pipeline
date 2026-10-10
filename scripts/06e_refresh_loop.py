@@ -31,7 +31,21 @@ import sys
 import time
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
+_HERE = os.path.dirname(os.path.abspath(__file__))
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+# ls_config resolves LS_CONFIG, applies the defaults and validates once for
+# the whole process. Imported, not re-implemented: this block used to be four
+# lines copy-pasted into every stage.
+from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
+import ls_channels as CH  # noqa: E402
+
 _REPO = os.path.dirname(_HERE)
+
+# The markers this study declares, in declared order. The order is load-bearing
+# here - see marker_list below - so it is taken from the study rather than from
+# whatever order the measurements file happens to yield.
+MARKERS = list(CH.marker_names(CONFIG))
 
 
 def _load(name, filename):
@@ -116,21 +130,30 @@ def marker_list():
 
     Read from `roi_measurements.csv` rather than from config or a constant, so
     the loop plots what exists rather than what was expected to exist. Falls
-    back to the R default if the column or the file is missing, which is what a
-    dataset built before the column existed looks like.
+    back to the FIRST DECLARED MARKER if the column or the file is missing,
+    which is what a dataset built before the column existed looks like - and is
+    the same marker `roi_plots.R` falls back to when LS_MARKER is unset.
+
+    `MARKERS[0]`, not `"AF568"`, in all three places. The two fallbacks were
+    merely wrong for another study; the ORDER below was wrong SILENTLY. Its
+    whole purpose is to re-plot the watched marker before any other, and a
+    literal that matches nothing degrades it to plain `sorted()` - alphabetical
+    - with no error and no output to say the intent was dropped.
     """
+    watched = MARKERS[0] if MARKERS else None
     path = G6C.MEAS_CSV
     if not os.path.exists(path):
-        return ["AF568"]
+        return MARKERS[:1]
     rows = G5.load_csv(path)
     seen = sorted({r.get("marker") for r in rows if r.get("marker")})
     if not seen:
-        return ["AF568"]
-    # AF568 FIRST. A plotting failure ends the loop, and plain sorted() puts
-    # AF488 in front - so an untested marker on the thinnest data would take the
-    # loop down before the pERK figures had been redrawn even once.
-    return ([m for m in seen if m == "AF568"]
-            + [m for m in seen if m != "AF568"])
+        return MARKERS[:1]
+    # THE WATCHED MARKER FIRST. A plotting failure ends the loop, and plain
+    # sorted() orders by name - so an untested marker on the thinnest data
+    # would take the loop down before the marker the operator is actually
+    # watching had been redrawn even once.
+    return ([m for m in seen if m == watched]
+            + [m for m in seen if m != watched])
 
 
 def progress():
@@ -169,8 +192,8 @@ def refresh(rscript, quiet=True):
     # ONE R RUN PER MARKER PRESENT.
     #
     # The figures draw one marker at a time - LS_MARKER selects it, defaulting
-    # to AF568 - so a bare Rscript call rebuilds the pERK figures and nothing
-    # else. That is wrong in exactly the situation this loop exists for: the
+    # to the FIRST DECLARED marker - so a bare Rscript call rebuilds the first
+    # marker's figures and nothing else. That is wrong in exactly the situation this loop exists for: the
     # long run it is meant to babysit is the PCNA one, and it would have spent
     # hours redrawing unchanged pERK figures, reporting success, and never
     # producing a PCNA figure at all. Nothing would have errored.
@@ -180,7 +203,15 @@ def refresh(rscript, quiet=True):
     markers = marker_list()
     results_dir = os.path.join(G5.OUT_ROOT, "results")
     for mk in markers:
-        env = dict(os.environ, LS_MARKER=mk)
+        # LS_MARKERS and LS_OUT_ROOT alongside LS_MARKER, because the R scripts
+        # need two things the marker name alone cannot tell them: which marker
+        # is FIRST (that is the one whose figures carry no suffix, so getting it
+        # wrong overwrites the cited set), and where results live. Both are
+        # answered here by the authoritative Python - ls_channels.marker_names
+        # and the config - rather than by a second copy of those rules in R.
+        env = dict(os.environ, LS_MARKER=mk,
+                   LS_MARKERS=",".join(MARKERS),
+                   LS_OUT_ROOT=G5.OUT_ROOT)
         for script in R_SCRIPTS:
             name = os.path.basename(script)
             # R writes UTF-8 (a degree sign in a caption, an em dash in a

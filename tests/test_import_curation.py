@@ -30,6 +30,15 @@ import tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCRIPTS = os.path.join(os.path.dirname(HERE), "scripts")
 
+# This suite imports stage modules, which read config at import. Without a
+# config of its own it would fall through to the operator's live study and
+# then pass or fail on their data. See tests/_fixture.py.
+if HERE not in sys.path:
+    sys.path.insert(0, HERE)
+from _fixture import use_temp_study  # noqa: E402
+
+STUDY = use_temp_study()
+
 _spec = importlib.util.spec_from_file_location(
     "q4", os.path.join(SCRIPTS, "04q_import_curation.py"))
 Q = importlib.util.module_from_spec(_spec)
@@ -60,17 +69,25 @@ def close(label, got, want, tol=1e-9):
 # pERK one is displayed as a 768px composite (K=3), the PCNA one as the 256px
 # greyscale (K=1). A global K cannot satisfy both, which is the point.
 PLATES = [
+    # plate_id and plate_index deliberately DISAGREE. They used to, because the
+    # page wrote the index it had and the id it had and nothing checked them
+    # against each other; the importer took the index, so an export made against
+    # one atlas restored against another silently. The id is the key now.
     {"scene_uid": "A_s01a_sc00", "marker": "AF568", "plate_id": "plate_010",
-     "plate_index": "9", "status": "registered", "favorite": "0",
+     "plate_index": "9", "plate_fp": "aaaaaaaaaaaa", "plate_px": "100x200",
+     "status": "registered", "favorite": "0",
      "view_rotation_deg": "12.5", "excluded": "0"},
     {"scene_uid": "B_s01b_sc00", "marker": "AF488", "plate_id": "",
-     "plate_index": "", "status": "favourite_only", "favorite": "1",
+     "plate_index": "", "plate_fp": "", "plate_px": "",
+     "status": "favourite_only", "favorite": "1",
      "view_rotation_deg": "0.0", "excluded": "0"},
     {"scene_uid": "C_s02a_sc00", "marker": "AF568", "plate_id": "",
-     "plate_index": "", "status": "excluded", "favorite": "0",
+     "plate_index": "", "plate_fp": "", "plate_px": "",
+     "status": "excluded", "favorite": "0",
      "view_rotation_deg": "270.0", "excluded": "1"},
     {"scene_uid": "D_s02b_sc00", "marker": "AF488", "plate_id": "plate_003",
-     "plate_index": "2", "status": "no_roi", "favorite": "0",
+     "plate_index": "2", "plate_fp": "", "plate_px": "",
+     "status": "no_roi", "favorite": "0",
      "view_rotation_deg": "0.0", "excluded": "0"},
 ]
 
@@ -210,7 +227,12 @@ def main():
 
     # ---- the decision flags ------------------------------------------------
     chk("a named plate reads as assigned", state["A_s01a_sc00"]["assigned"], True)
-    chk("...and carries its index", state["A_s01a_sc00"]["plate"], 9)
+    # THE ID WINS. The index is kept as a record of what the array looked like
+    # and used only when there is no id at all.
+    chk("...and the plate comes from the id", state["A_s01a_sc00"]["plate_id"], "plate_010")
+    chk("...not from the index it disagrees with", state["A_s01a_sc00"]["plate"], 9)
+    chk("...and it is marked unverified until the atlas is there to check",
+        state["A_s01a_sc00"]["verified"], "unchecked")
     chk("no plate named, not assigned", state["B_s01b_sc00"]["assigned"], False)
     chk("...and the index falls back to 0", state["B_s01b_sc00"]["plate"], 0)
     chk("favourite is read", state["B_s01b_sc00"]["fav"], True)
@@ -301,6 +323,52 @@ def main():
     finally:
         import shutil
         shutil.rmtree(tmp, ignore_errors=True)
+
+    # ---- k_from_disk under a study that is not LS --------------------------
+    #
+    # Everything above drives build() with a k_of the suite made up. This
+    # drives the REAL one, off real files, under a study whose markers are not
+    # AF568/AF488.
+    #
+    # `marker_dir` was `"sections_AF568" if marker == "AF568" else "sections"`.
+    # For any other study every marker resolved to `sections`, so the probe for
+    # `<dir>_rgb/<uid>.png` missed, `k` fell back to 1.0 - and the page had
+    # drawn at K=3, because the composite it loaded really is 768 px. Every
+    # imported disc, landmark and polygon vertex then landed at one THIRD of
+    # its true coordinate. Nothing raised, nothing logged: the seed file loads
+    # and puts the discs somewhere plausible, which is verbatim the failure
+    # this stage's own docstring says it exists to prevent.
+    from _fixture import temp_study, load_stage
+    from PIL import Image
+    with temp_study(acquisition={"layout": "paired",
+                                 "markers": ["Mk1", "Mk2"]}) as mk:
+        RF = load_stage("04a_reformat.py", name="lsstage_04a_q")
+        Q2 = load_stage("04q_import_curation.py", name="lsstage_04q_mk")
+        reformat = os.path.join(mk.out_root, "reformatted")
+
+        # One 768-px composite per marker, each in the directory 04a would have
+        # written it to. Mk2 is the geometry source, so its is unsuffixed.
+        for marker, uid in (("Mk1", "U_mk1"), ("Mk2", "U_mk2")):
+            d = RF.marker_paths(marker)["sections"] + "_rgb"
+            os.makedirs(d, exist_ok=True)
+            Image.new("RGB", (768, 768)).save(os.path.join(d, uid + ".png"))
+
+        k_disk = Q2.k_from_disk(reformat)
+        chk("the suffixed marker's composite is found: K=3, not 1.0",
+            k_disk("U_mk1", "Mk1"), 3.0)
+        chk("...and the geometry source's, in the unsuffixed directory",
+            k_disk("U_mk2", "Mk2"), 3.0)
+        chk("a section with no image on disk is still 1.0",
+            k_disk("U_none", "Mk1"), 1.0)
+        # And the directory itself, stated directly, so a future reader does
+        # not have to infer the rule from a scale factor.
+        chk("marker_dir is 04a's directory, basename for basename",
+            (Q2.marker_dir("Mk1"), Q2.marker_dir("Mk2")),
+            (os.path.basename(RF.marker_paths("Mk1")["sections"]),
+             os.path.basename(RF.marker_paths("Mk2")["sections"])))
+        chk("...which for a paired study means suffixed and unsuffixed",
+            (Q2.marker_dir("Mk1"), Q2.marker_dir("Mk2")),
+            ("sections_Mk1", "sections"))
 
     print()
     print("ALL PASS" if not fails else "%d FAILED" % fails)

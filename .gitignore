@@ -28,6 +28,10 @@ work/
 # Machine-specific: absolute paths and the marker-identity assignment.
 # Commit config.example.json instead.
 config.json
+# ...and anything beside it: the atomic writer's .tmp, and the backups
+# a migration leaves. None of them may reach a public repo - config.json
+# holds absolute paths and, for now, the unblinding key.
+config.json.*
 
 # Python
 __pycache__/

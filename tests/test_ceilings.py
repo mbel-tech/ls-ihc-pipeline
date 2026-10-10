@@ -16,10 +16,24 @@ import tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCRIPTS = os.path.join(os.path.dirname(HERE), "scripts")
 
+# This suite imports stage modules, which read config at import. Without a
+# config of its own it would fall through to the operator's live study and
+# then pass or fail on their data. See tests/_fixture.py.
+if HERE not in sys.path:
+    sys.path.insert(0, HERE)
+from _fixture import use_temp_study  # noqa: E402
+
+STUDY = use_temp_study()
+
 _spec = importlib.util.spec_from_file_location(
     "ov", os.path.join(SCRIPTS, "01_overviews.py"))
 OV = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(OV)
+
+_spec_k = importlib.util.spec_from_file_location(
+    "k01", os.path.join(SCRIPTS, "01k_saturation_raw.py"))
+K = importlib.util.module_from_spec(_spec_k)
+_spec_k.loader.exec_module(K)
 
 fails = 0
 
@@ -89,6 +103,44 @@ with tempfile.TemporaryDirectory() as tmp:
     c = OV.load_ceilings()
     chk("missing manifest file -> empty mapping", c, {})
     chk("...and therefore the fallback", OV.ceiling_for(c, "anything.czi"), 65535)
+
+
+# --------------------------------------------------------------------------
+print()
+print("--- 01k names the scene it measures ---")
+
+
+class _Rect:
+    def __init__(self, x, y, w, h):
+        self.x, self.y, self.w, self.h = x, y, w, h
+
+
+class _FakeDoc:
+    def __init__(self):
+        self.calls = []
+
+    def read(self, **kwargs):
+        self.calls.append(kwargs)
+        import numpy as _np
+        return _np.zeros((4, 6), dtype=_np.uint16)
+
+
+_doc = _FakeDoc()
+K.measure(_doc, _Rect(0, 0, 6, 4), {}, 1.0, False, scene=9)
+chk("both channels are read from the named scene",
+    sorted({c["scene"] for c in _doc.calls}), [9])
+chk("...and they are the two channels it measures",
+    sorted(c["plane"]["C"] for c in _doc.calls), [0, 1])
+
+print()
+print("--- masks are written for the study's markers ---")
+
+import ls_channels as _CH                                   # noqa: E402
+
+chk("01k's mask markers are the configured ones",
+    list(K.MASK_MARKERS), _CH.marker_names(K.CONFIG))
+chk("...which for this temp study is the example's one marker",
+    list(K.MASK_MARKERS), ["Marker1"])
 
 print()
 print("FAILURES" if fails else "ALL PASS")

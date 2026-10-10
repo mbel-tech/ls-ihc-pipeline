@@ -39,19 +39,21 @@ Run:  python 04w_wullimann_plates.py [--src DIR] [--out DIR]
 
 import argparse
 import csv
-import importlib.util
-import json
 import os
 import re
 import shutil
+import sys
 
 import numpy as np
 from PIL import Image
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-_lsio = importlib.util.spec_from_file_location("_lsio", os.path.join(HERE, "ls_io.py"))
-IO = importlib.util.module_from_spec(_lsio)
-_lsio.loader.exec_module(IO)
+if HERE not in sys.path:
+    sys.path.insert(0, HERE)
+# ls_config resolves LS_CONFIG once for the whole process, like every stage.
+from ls_config import CONFIG, CONFIG_PATH  # noqa: E402,F401
+import ls_atlas as AT  # noqa: E402
+import ls_io as IO  # noqa: E402
 
 PLATE_KEYS = ["plate_id", "page", "image_file", "px_w", "px_h", "n_seeds",
               "regions", "section_level", "midline_frac"]
@@ -144,10 +146,7 @@ def main():
     src = args.src or os.path.join(os.path.dirname(HERE), "atlas", "wullimann1996")
     out_dir = args.out
     if not out_dir:
-        cfg_path = os.environ.get("LS_CONFIG") or os.path.join(os.path.dirname(HERE), "config.json")
-        with open(cfg_path, encoding="utf-8") as fh:
-            cfg = json.load(fh)
-        out_dir = os.path.join(cfg["out_root"], "atlas", IO.WULLIMANN_SET)
+        out_dir = os.path.join(CONFIG["out_root"], "atlas", AT.WULLIMANN_SET)
     rows, bad_mid, missing = build(src, out_dir)
     print("%d plates -> %s" % (len(rows), out_dir))
     print("sections %d .. %d" % (rows[0]["section_level"], rows[-1]["section_level"]))

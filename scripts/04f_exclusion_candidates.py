@@ -60,6 +60,7 @@ Run:  python 04f_exclusion_candidates.py
       python 04f_exclusion_candidates.py --survey      # measure and plot only
 """
 
+import sys
 import argparse
 import csv
 import json
@@ -86,12 +87,20 @@ _lsio.loader.exec_module(IO)
 
 tissue_mask, WORK = _RF.tissue_mask, _RF.WORK_SIZE
 
-# LS_CONFIG names the file explicitly; the file-relative path is the fallback.
-# Frozen, the scripts sit inside _internal/ while config.json is beside the
-# executable, so the fallback would point at a file that does not exist.
-CONFIG_PATH = os.environ.get("LS_CONFIG") or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config.json")
-with open(CONFIG_PATH, encoding="utf-8") as _fh:
-    CONFIG = json.load(_fh)
+_HERE = os.path.dirname(os.path.abspath(__file__))
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+# ls_config resolves LS_CONFIG, applies the defaults and validates once for
+# the whole process. Imported, not re-implemented: this block used to be four
+# lines copy-pasted into every stage.
+from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
+import ls_channels as CH  # noqa: E402
+
+MARKERS = list(CH.marker_names(CONFIG))
+# The pass that owns the UNSUFFIXED outputs - `reformat_index.csv` and
+# `sections/` - which is the index this stage walks. 04a's rule: under `paired`
+# that is the SECOND declared marker, not the first.
+DEFAULT_MARKER = MARKERS[1] if len(MARKERS) > 1 else (MARKERS[0] if MARKERS else None)
 
 OUT_ROOT = CONFIG["out_root"]
 OVERVIEW_DIR = os.path.join(OUT_ROOT, "overviews")
@@ -104,6 +113,24 @@ def output_path(survey):
     """--survey measures and proposes nothing, so it must not overwrite the
     proposals 04d reads. It gets its own file under qc/."""
     return SURVEY_CSV if survey else CANDIDATES_CSV
+
+
+def source_png(animal, uid, chan):
+    """Where this section's DAPI overview is, given the manifest's channel map.
+
+    The fallback used to be the literal `"AF488"`, which for any other study
+    named a directory that does not exist - so `measure()` returned None on the
+    missing file and the section dropped out of the candidate list with nothing
+    said. That is the worst shape a default can have here: this stage's whole
+    job is to propose which sections to exclude, and a section it never
+    measured is simply never proposed.
+
+    `DEFAULT_MARKER` is the right fallback rather than the first marker: the
+    index being walked is `reformat_index.csv`, the unsuffixed one, whose
+    sections belong to the default marker's pass.
+    """
+    return os.path.join(OVERVIEW_DIR, animal, chan.get(uid, DEFAULT_MARKER),
+                        uid + "_DAPI.png")
 QC_CSV = os.path.join(OUT_ROOT, "qc", "focus.csv")
 REPORT_DIR = os.path.join(OUT_ROOT, "qc", "exclusion")
 
@@ -193,8 +220,7 @@ def main():
 
     rows = []
     for i, r in enumerate(index):
-        src = os.path.join(OVERVIEW_DIR, r["animal"], chan.get(r["id"], "AF488"),
-                           r["id"] + "_DAPI.png")
+        src = source_png(r["animal"], r["id"], chan)
         m = measure(src)
         if m is None:
             continue

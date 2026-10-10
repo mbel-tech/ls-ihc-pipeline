@@ -199,6 +199,7 @@ Run:  python 04l_roi_curator.py
       python 04l_roi_curator.py --animal LS45
 """
 
+import sys
 import argparse
 import csv
 import importlib.util
@@ -210,23 +211,99 @@ _lsio = importlib.util.spec_from_file_location(
     "_lsio", os.path.join(os.path.dirname(os.path.abspath(__file__)), "ls_io.py"))
 IO = importlib.util.module_from_spec(_lsio)
 _lsio.loader.exec_module(IO)
-_ap = importlib.util.spec_from_file_location(
-    "_atlas_polygons", os.path.join(os.path.dirname(os.path.abspath(__file__)), "atlas_polygons.py"))
-AP = importlib.util.module_from_spec(_ap)
-_ap.loader.exec_module(AP)
 
-# LS_CONFIG names the file explicitly; the file-relative path is the fallback.
-# Frozen, the scripts sit inside _internal/ while config.json is beside the
-# executable, so the fallback would point at a file that does not exist.
-CONFIG_PATH = os.environ.get("LS_CONFIG") or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config.json")
-with open(CONFIG_PATH, encoding="utf-8") as _fh:
-    CONFIG = json.load(_fh)
+_HERE = os.path.dirname(os.path.abspath(__file__))
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+# ls_config resolves LS_CONFIG, applies the defaults and validates once for
+# the whole process. Imported, not re-implemented: this block used to be four
+# lines copy-pasted into every stage.
+import ls_config as LC  # noqa: E402
+from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
+import ls_channels as CH  # noqa: E402
+import ls_paths as LP  # noqa: E402
+import ls_atlas as AT  # noqa: E402
+import atlas_polygons as AP  # noqa: E402
+
+# The markers this study measures, in declared order. ls_channels is the
+# single source of that list; naming a fluorophore here would pin the stage
+# to one study.
+MARKERS = list(CH.marker_names(CONFIG))
+
+# What the channel selector calls each marker.
+#
+# LEGACY_LABEL names a DISPLAY CONVENTION for this study, not a rule about what
+# a fluorophore means. This study's paired layout declares its markers by
+# fluorophore, so there is no channel table to read a friendlier name out of,
+# and these are the two labels this page has always shown. Any other study
+# either names its channels - a multiplex table typically carries the antibody
+# name - or sees the marker's own name, which beats every marker being labelled
+# "PCNA".
+LEGACY_LABEL = {"AF568": "pERK", "AF488": "PCNA"}
+# Derived the same way 04j_censor_clipped.py derives its LABEL: the study's own
+# channel table where it declares one.
+LABEL = {c.name: c.name for c in
+         CH.markers(CH.parse((CONFIG.get("acquisition") or {}).get("channels")))}
+
+
+def marker_label(marker):
+    """The display name for one marker: study, then legacy, then the name."""
+    return LABEL.get(marker) or LEGACY_LABEL.get(marker, marker)
+
+
+# What colour each marker is drawn in, and the counterstain's own. THE SAME
+# FUNCTIONS 04o_section_rgb CALLS: the Review pane and the section composites
+# in the grid beside it show the same section, and until this existed they
+# decided its colour separately - the pane from `p.marker === "AF568"`, the
+# composites from the declared order - and disagreed for every study but one.
+MARKER_COLOURS = CH.marker_colours(CONFIG)
+NUCLEAR_COLOUR = CH.nuclear_colour(CONFIG)
+# The same map in the operator's language, for the button that names it.
+MARKER_COLOUR_NAMES = CH.marker_colour_names(CONFIG)
+
+#: What the counterstain is CALLED. Its colour and its lift already came from
+#: the config; its name was the literal "DAPI" in the Review pane's header, so
+#: a study counterstaining with Hoechst was shown a header naming a dye it does
+#: not use. Read from the channel table, which is where a multiplex study names
+#: it. A paired study declares no table - each scan carries the counterstain
+#: plus one marker - so there is nothing to read and "DAPI" stands, which is
+#: also the name every `_DAPI.png` this pipeline writes already carries.
+_NUCLEAR_CHANNEL = CH.nuclear(CH.parse((CONFIG.get("acquisition") or {}).get("channels")))
+NUCLEAR_NAME = (_NUCLEAR_CHANNEL.name if _NUCLEAR_CHANNEL
+                and _NUCLEAR_CHANNEL.name else "DAPI")
+
 
 OUT_ROOT = CONFIG["out_root"]
 REFORMAT_DIR = os.path.join(OUT_ROOT, "reformatted")
-ANALYSIS_CSV = os.path.join(REFORMAT_DIR, "perk_analysis_set.csv")
-PERK_MAP_CSV = os.path.join(REFORMAT_DIR, "perk_overrides.csv")
+
+# The section-directory and index rule, borrowed rather than restated. ls_paths
+# rather than 04a: this stage builds an HTML page and importing 04a would pull
+# numpy, scipy and PIL in to answer a question about a filename.
+NAMES = LP.for_config(CONFIG)
 WORKLIST_CSV = os.path.join(REFORMAT_DIR, "roi_worklist.csv")
+
+
+def analysis_set_csv(marker):
+    """The analysis set 04j wrote for ONE marker.
+
+    This was the module constant `perk_analysis_set.csv`, restated here from
+    04j's LEGACY_ANALYSIS_SET with a comment in each file telling the reader
+    about the other. 04j returns a legacy name for those two markers only and
+    `<marker>_analysis_set.csv` for everybody else - so the literal named a
+    file 04j would never have written for any other study, and `analysis_uids`
+    now correctly lets MARKERS[0] through whatever it is called, which is what
+    makes that reachable rather than theoretical.
+
+    Per-marker rather than a constant because that is the shape of the
+    question: every use site already has a marker in hand.
+
+    ASKED OF ls_paths RATHER THAN OF 04j, for the reason 04m gives beside the
+    same call: 04j imports 04a_reformat, 900 lines of numpy, scipy and PIL, and
+    this stage builds an HTML page. The rule itself moved INTO ls_paths, beside
+    the LEGACY table it was already half-written in, so 04j and this now read
+    one copy instead of keeping two in step.
+    """
+    return NAMES.analysis_set_path(marker)
 
 # Regions that cannot be told apart without knowing the rostrocaudal level.
 # A telencephalic section is recognisable as telencephalon, but how far front or
@@ -468,37 +545,195 @@ def tag_rois(sd, hulls):
 
 
 def marker_paths(marker):
-    """Index and image directory for a marker, mirroring `04a_reformat`."""
-    if marker == "AF568":
-        return (os.path.join(REFORMAT_DIR, "reformat_index_AF568.csv"), "sections_AF568")
-    return (os.path.join(REFORMAT_DIR, "reformat_index.csv"), "sections")
+    """(index CSV, section directory NAME) for one marker.
+
+    Delegated to ls_paths, which is where `04a_reformat` gets the same two
+    answers - "mirroring 04a" is what the previous version's docstring
+    claimed, and the version under it was `if marker == "AF568"`, which mirrors
+    04a only for the one study whose second marker happens to be called AF488.
+
+    The directory comes back as a bare NAME because the page resolves it
+    relative to itself: these end up in an <img> src, not on a filesystem.
+    """
+    return (NAMES.path("index", marker), NAMES.basename("sections", marker))
+
+
+def section_dirs():
+    """{marker: directory name} for the page. See `__SECDIRS__` in the script.
+
+    The page had this rule written into it twice, in JavaScript, as
+    `p.marker === "AF568" ? "_AF568" : ""`. A generated page is the worst place
+    for a study-specific literal: it is invisible to every Python test, the JS
+    suites only see it if it lands in the largest <script> block, and a wrong
+    directory shows up as an <img> that silently does not load.
+    """
+    return {m: marker_paths(m)[1] for m in MARKERS}
+
+
+#: How far the Review pane lifts the counterstain. Not a contrast preference:
+#: in tissue the marker runs 4.0-4.6x brighter than DAPI across 24 sampled
+#: sections, so at native scale the counterstain is swamped by the thing
+#: sitting on top of it and the section reads as marker-only. The pipeline
+#: measures the raw data; this is the viewing pane.
+DAPI_LIFT = 4
+
+#: The filters that do not depend on which marker is on screen.
+FILTER_LUM_ALPHA = "revLumAlpha"
+FILTER_DAPI_ONLY = "revDapiOnly"
+FILTER_BLANK = "revBlank"
+FILTER_FALLBACK = "revNoColour"
+
+#: What a marker this study declared no colour for is drawn in. Grey says "no
+#: colour set". Any real colour would be a marker silently borrowing another
+#: marker's, which is the fault this whole model removes.
+FALLBACK_COLOUR = CH.NAMED_COLOURS["grey"]
+
+#: LUMINANCE -> ALPHA. Canvas compositing reads alpha, and a greyscale mask PNG
+#: is opaque everywhere, so `source-in` kept the fill across the whole rectangle
+#: rather than only where the mask was set. This matrix copies the red channel
+#: into RGB and into A, which makes the stencil's alpha mean what its brightness
+#: means. Written out rather than built by `_matrix` because its alpha row reads
+#: input R, which no colour filter ever does.
+LUM_ALPHA_MATRIX = "1 0 0 0 0  1 0 0 0 0  1 0 0 0 0  1 0 0 0 0"
+
+
+def _num(value):
+    """A matrix coefficient as short as it can be written without changing."""
+    value = round(float(value), 4)
+    return str(int(value)) if value == int(value) else f"{value:g}"
+
+
+def _matrix(colour, nuclear, lift):
+    """One feColorMatrix `values` string: 4x5, row-major, over (R,G,B,A,1)."""
+    rows = [[colour[p], 0, lift * nuclear[p], 0, 0] for p in range(3)]
+    rows.append([0, 0, 0, 1, 0])
+    return "  ".join(" ".join(_num(v) for v in row) for row in rows)
+
+
+def review_filters(markers, colours, nuclear, lift=DAPI_LIFT, name=None):
+    """The Review pane's colour filters, as DATA rather than as HTML.
+
+    The arithmetic is here, in Python, beside the composite's - one rule, so
+    the picture in the grid and the picture in the pane cannot disagree, which
+    is the whole point of this change. The page installs them; it does not
+    compute them. Before this the pane chose between four hand-written filters
+    on `p.marker === "AF568"`, so under any other study every marker rendered
+    green while the composites beside them put the first marker in red.
+
+    Returns {"byMarker":    {marker: {"dapi": id, "only": id}},
+             "defs":        [{"id": id, "values": "<20 numbers>"}],
+             "dapiOnly":    id, "blank": id, "lumAlpha": id,
+             "fallback":    {"dapi": id, "only": id},
+             "nuclearLabel": what the counterstain is called,
+             "nuclearName": the counterstain's colour as a word,
+             "lift":        how far it is lifted}
+
+    The last three are for the pane's own header, which read "DAPI blue x4" as
+    a literal. The colour and the lift were fixed first; the NAME was still
+    hardcoded in the page, so a study counterstaining with Hoechst was told it
+    was looking at DAPI. All three now come from the study, so the header can
+    only be wrong if the config is.
+
+    `fallback` is grey, for a marker this study declared no colour for - it is
+    absent from `byMarker`, so the page resolves it with `byMarker[m] ||
+    fallback`. Grey says "no colour set"; green would be the old bug back.
+
+    WHICH INPUT COLUMN IS THE MARKER. Input R, always, in every filter. The
+    overview composite is `np.dstack([m8, m8, d8])` (01_overviews.py), so R and
+    G are literally the same array, and `_MARK.png` is greyscale - so R carries
+    the marker in every source this pane loads and the coefficient on input G
+    is always 0. It cannot be per-marker: a magenta marker needs the marker in
+    output B, and input B is the counterstain in `_RGB.png`. The four
+    hand-written filters took the second marker from input G, which was the
+    same picture only because those two columns happen to be equal.
+
+    WHY A PAIR PER CHANNEL rather than one filter with a toggle. Input B is the
+    counterstain in `_RGB.png` and the MARKER AGAIN in `_MARK.png`. A single
+    filter with the blue row switched off would still read input B for a marker
+    that has blue in it, and on `_MARK.png` that is the marker arriving twice.
+    So the marker-only variant zeroes the counterstain's whole contribution and
+    never reads input B at all.
+
+    Ids are indexed by the marker's position, not built from its name: a marker
+    name may contain spaces and `+`, and these become HTML ids referenced from
+    `url(#...)` in a CSS filter property.
+    """
+    dark = (0., 0., 0.)
+    defs = [{"id": FILTER_LUM_ALPHA, "values": LUM_ALPHA_MATRIX}]
+    by_marker = {}
+    for i, marker in enumerate(markers):
+        colour = colours.get(marker)
+        if colour is None:
+            # Measured, but this study never said what colour to draw it in.
+            # No filter of its own, so the page falls through to `fallback`.
+            continue
+        pair = {"dapi": f"revMk{i}Dapi", "only": f"revMk{i}Only"}
+        defs.append({"id": pair["dapi"],
+                     "values": _matrix(colour, nuclear, lift)})
+        defs.append({"id": pair["only"],
+                     "values": _matrix(colour, dark, lift)})
+        by_marker[marker] = pair
+
+    fallback = {"dapi": FILTER_FALLBACK + "Dapi",
+                "only": FILTER_FALLBACK + "Only"}
+    defs.append({"id": fallback["dapi"],
+                 "values": _matrix(FALLBACK_COLOUR, nuclear, lift)})
+    defs.append({"id": fallback["only"],
+                 "values": _matrix(FALLBACK_COLOUR, dark, lift)})
+
+    # DAPI alone. `_DAPI.png` is greyscale, so R=G=B and only the blue row does
+    # anything. Still lifted: the point of a toggle is to compare, and a
+    # channel that changed brightness depending on what was next to it would
+    # make that comparison a guess.
+    defs.append({"id": FILTER_DAPI_ONLY, "values": _matrix(dark, nuclear, lift)})
+    # Both channels off. The image still LOADS - blanked rather than removed -
+    # because the overlay canvas takes its size from the base image, so a
+    # missing one would take the artifact and censor layers down with it. This
+    # way the masks can be read on their own against black.
+    defs.append({"id": FILTER_BLANK, "values": _matrix(dark, dark, lift)})
+
+    return {"byMarker": by_marker, "defs": defs,
+            "dapiOnly": FILTER_DAPI_ONLY, "blank": FILTER_BLANK,
+            "lumAlpha": FILTER_LUM_ALPHA, "fallback": fallback,
+            "nuclearLabel": NUCLEAR_NAME if name is None else name,
+            "nuclearName": CH.colour_name(nuclear), "lift": lift}
 
 
 def analysis_uids(marker):
-    """The pERK sections that survived clipped-pixel censoring - the 454.
+    """The first marker's sections that survived clipped-pixel censoring.
 
-    pERK only, and deliberately. The analysis set is defined by clipped-pixel
-    censoring measured on the pERK scans, so it says nothing about a PCNA
-    section; deriving a PCNA subset by following the pairing would make one
-    channel's curation depend on the other's, and they are separate physical
-    sections cut at different times. PCNA is curated on its own full set.
+    THE FIRST DECLARED MARKER ONLY, and deliberately. The analysis set is
+    defined by clipped-pixel censoring measured on that marker's own scans, so
+    it says nothing about the other marker's sections; deriving a subset for
+    them by following the pairing would make one channel's curation depend on
+    the other's, and under `paired` they are separate physical sections cut at
+    different times. Every other marker is curated on its own full set.
+
+    `MARKERS[0]`, not `"AF568"`. The literal was right for the one study whose
+    first marker happens to be called AF568 and refused for every other study's
+    first marker instead.
     """
-    if marker != "AF568":
+    if not MARKERS or marker != MARKERS[0]:
+        first = MARKERS[0] if MARKERS else "the first declared marker"
         raise SystemExit(
-            "--analysis-set is a pERK subset (clipped-pixel censoring is measured on "
-            "the pERK scans) and does not define a PCNA one.\n"
-            "Run PCNA without it: python 04l_roi_curator.py --marker AF488")
-    with open(ANALYSIS_CSV, newline="", encoding="utf-8") as fh:
+            f"--analysis-set is a {marker_label(first)} subset (clipped-pixel "
+            f"censoring is measured on that marker's scans) and does not "
+            f"define one for {marker_label(marker)}.\n"
+            f"Run {marker_label(marker)} without it: "
+            f"python 04l_roi_curator.py --marker {marker}")
+    with open(analysis_set_csv(marker), newline="", encoding="utf-8") as fh:
         perk = {r["scene_uid"] for r in csv.DictReader(fh) if r["in_analysis_set"] == "1"}
     return perk, len(perk), 0
-# Which plate set to use, from config. The two sets reuse the same plate_NNN
+# Which plate set to use, resolved through ls_atlas - the same call
+# 04k_level_curator.py and 04e_register_elastix.py make, rather than each
+# carrying its own copy of this lookup. The two sets reuse the same plate_NNN
 # names for different images, so this must not be hard-coded in two places.
-PLATE_SET = IO.plate_set(CONFIG)
-PLATE_DIR = os.path.join(OUT_ROOT, "atlas", PLATE_SET)
+PLATE_SET = AT.set_name(CONFIG)
+PLATE_DIR = AT.plate_dir(CONFIG)
 CURATOR_HTML = os.path.join(REFORMAT_DIR, "roi_curator.html")
 # Where exports are filed. Config so the app and this stage cannot disagree
 # about it; one dated folder per export is created inside it.
-EXPORT_DIR = CONFIG.get("export_dir") or os.path.join(OUT_ROOT, "exports")
+EXPORT_DIR = LC.export_dir(CONFIG)
 PROVENANCE_CSV = os.path.join(REFORMAT_DIR, "section_provenance.csv")
 
 # The Review mode needs one row per SCANNED section - 2,572, against the ~1,242
@@ -875,6 +1110,7 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
   <span class="row" style="color:#f85149"><b id="nexcl"></b> excluded</span>
   <span class="row" id="savedAt" style="color:#3fb950"></span>
   <span class="row" id="seedOffer" style="display:none"></span>
+  <span class="row" id="plateWarn" style="display:none;color:#e8a33d"></span>
   <span class="row" id="shotStat" style="color:#e8a33d"></span>
   <span class="row"><b id="npair"></b> pairs on this section</span>
   <span class="row" id="fit"></span>
@@ -885,7 +1121,7 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
   <button id="favBtn" class="btn-fav" onclick="toggleFav()">Favourite</button>
   <button id="noroiBtn" class="btn-excl" onclick="toggleNoRoi()">No ROI here</button>
   <button id="exclBtn" class="btn-kill" onclick="toggleExcl()">Exclude</button>
-  <button id="dapiBtn" class="btn-plate" onclick="toggleDapi()">DAPI</button>
+  <button id="dapiBtn" class="btn-plate" onclick="toggleDapi()">__NUCLEAR__</button>
   <button id="bgBtn" class="btn-bg" onclick="toggleBgMode()">Background</button>
   <button id="hullBtn" class="btn-region" onclick="toggleHulls()">Hulls</button>
   <button id="undoPolyBtn" class="btn-edit" onclick="undoPoly()">Undo region</button>
@@ -908,62 +1144,34 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
   </span>
   </span>
 </header>
-<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
-  <!-- LUMINANCE -> ALPHA. Canvas compositing reads alpha, and a greyscale mask
-       PNG is opaque everywhere, so `source-in` kept the fill across the whole
-       rectangle rather than only where the mask was set. This matrix copies the
-       red channel into RGB and into A, which makes the stencil's alpha mean what
-       its brightness means. sRGB so the values are not linearised first. -->
-  <filter id="revLumAlpha" color-interpolation-filters="sRGB">
-    <feColorMatrix type="matrix" values="1 0 0 0 0  1 0 0 0 0  1 0 0 0 0  1 0 0 0 0"/>
-  </filter>
+<!-- The Review pane's colour filters are NOT written out here. They are built
+     in Python by 04l.review_filters(), shipped as data in the FILTERS constant
+     and installed into this empty <defs> by the script below.
 
-  <!-- THE OVERVIEW PUTS THE MARKER IN BOTH RED AND GREEN, so every section
-       renders yellow whichever channel it is - and the section composites next
-       to it are red for pERK and green for PCNA. Same section, two colour
-       schemes, and the one that looks like a third marker is the overview.
+     Two reasons, and the second is the decisive one:
 
-       The duplication is what makes this exact rather than a tint: R and G hold
-       the identical marker image (measured: means equal to 2dp), so dropping
-       one loses nothing and leaves the marker in its own colour. Blue is DAPI
-       and is untouched by the choice.
+       1. IO.fill JSON-encodes every value it substitutes, so raw HTML cannot
+          travel through a placeholder, and a separate str.replace would throw
+          away fill()'s one-pass guarantee.
+       2. tests/run.sh lifts only the LARGEST script block out of the built
+          page and runs the JS suites against that. Filters written as HTML in
+          here are invisible to every one of them; as data in the script they
+          are directly assertable - and so is the tie between a marker's colour
+          and the vector 04o composites it with.
 
-       DAPI is then lifted 4x. It is not a contrast preference: in tissue the
-       marker runs 4.0-4.6x brighter than DAPI across 24 sampled sections, so
-       at native scale the counterstain is swamped by the thing sitting on top
-       of it and the section reads as marker-only. The pipeline measures the
-       raw data; this is the viewing pane.
+          The word above is deliberately not spelt with its angle brackets:
+          the lifter's regex is `<script>(.*?)</script>`, so an opening tag
+          written out anywhere in this page - even inside a comment - starts a
+          block of its own, and the run that first put this note here lifted
+          from HERE to the end of the real script instead.
 
-       Marker-only (_MARK.png) is greyscale, so R=G=B there and the same matrix
-       gives the marker its colour with no blue to lift - hence a pair per
-       channel rather than one filter with a toggle. -->
-  <filter id="revPerkDapi" color-interpolation-filters="sRGB">
-    <feColorMatrix type="matrix" values="1 0 0 0 0  0 0 0 0 0  0 0 4 0 0  0 0 0 1 0"/>
-  </filter>
-  <filter id="revPerkOnly" color-interpolation-filters="sRGB">
-    <feColorMatrix type="matrix" values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0"/>
-  </filter>
-  <filter id="revPcnaDapi" color-interpolation-filters="sRGB">
-    <feColorMatrix type="matrix" values="0 0 0 0 0  0 1 0 0 0  0 0 4 0 0  0 0 0 1 0"/>
-  </filter>
-  <filter id="revPcnaOnly" color-interpolation-filters="sRGB">
-    <feColorMatrix type="matrix" values="0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 1 0"/>
-  </filter>
-  <!-- DAPI alone. _DAPI.png is greyscale, so R=G=B and only the blue row does
-       anything. Still lifted 4x: the point of a toggle is to compare, and a
-       channel that changed brightness depending on what was next to it would
-       make that comparison a guess. -->
-  <filter id="revDapiOnly" color-interpolation-filters="sRGB">
-    <feColorMatrix type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 4 0 0  0 0 0 1 0"/>
-  </filter>
-  <!-- Both channels off. The image still LOADS - blanked rather than removed -
-       because the overlay canvas takes its size from the base image, so a
-       missing one would take the artifact and censor layers down with it. This
-       way the masks can be read on their own against black. -->
-  <filter id="revBlank" color-interpolation-filters="sRGB">
-    <feColorMatrix type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0"/>
-  </filter>
-</defs></svg>
+     The reasoning that used to live in this block - why R is the marker column
+     in every source, why there is a pair of filters per channel rather than one
+     with a toggle, why the counterstain is lifted - is in review_filters()'s
+     docstring, beside the arithmetic it explains. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs id="revDefs"></defs>
+</svg>
 <div id="review">
   <div id="revGrid"></div>
   <div id="revSide">
@@ -988,7 +1196,7 @@ kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-rad
         <canvas id="revOv"></canvas></div>
       <div class="kv" id="revImgNote" style="margin-top:4px"></div>
       <div class="deliver" style="flex-wrap:wrap;margin-top:4px">
-        <button id="revDapiBtn" class="btn-plate" onclick="revLayer('dapi')">DAPI</button>
+        <button id="revDapiBtn" class="btn-plate" onclick="revLayer('dapi')">__NUCLEAR__</button>
         <button id="revMarkBtn" class="btn-fav" onclick="revLayer('mark')">Marker</button>
         <button id="revArtBtn" class="btn-rot" onclick="revLayer('art')">Artifacts</button>
         <button id="revCenBtn" class="btn-kill" onclick="revLayer('cen')">Censored</button>
@@ -1107,6 +1315,8 @@ const PLATES = __PLATES__;  // [{id, img, w, h, labelled, seeds:[{region,xf,yf,h
 // DIFFERENT image in each, so every export carries this and a landmark file can
 // never be silently matched against the wrong plates.
 const PLATE_SET = __PLATESET__;
+// ls_atlas.ASPECT_TOLERANCE, substituted rather than repeated. See verifyPlate.
+const ASPECT_TOL = __ASPECTTOL__;
 // The unblinding key, and the ONLY thing in this page that reads one. Empty
 // unless config.json declares `groups`, which is what keeps the Shotgun button
 // off by default. See the Shotgun section at the foot of this script.
@@ -1120,7 +1330,39 @@ const GROUPS = __GROUPS__;
 // for it, and every export writes the row's own marker rather than a page-wide
 // one. Scene uids never collide (`_s01a_` is pERK, `_s01b_` is PCNA), which is
 // what lets a single store hold both without keying on the channel.
-const MARKERS = __MARKERS__;          // [{id, label, n, sub}]
+const MARKERS = __MARKERS__;          // [{id, label, n, sub, colour}]
+// The Review pane's colour filters, computed in Python by review_filters()
+// from the SAME ls_channels.marker_colours() that 04o_section_rgb builds the
+// composites with. The page installs them; it does not know the arithmetic.
+// This is the fix: the pane used to pick between four hand-written filters on
+// `p.marker === "AF568"`, so every marker but that one rendered green while
+// the composites in the grid beside them put the first marker in red.
+//
+// DATA rather than HTML in <defs>, for two reasons. IO.fill JSON-encodes every
+// value, so raw HTML cannot go through a placeholder at all. And decisively:
+// tests/run.sh lifts only the largest <script> block, so filters written as
+// HTML would be invisible to every JS suite, while as data they are directly
+// assertable.
+const FILTERS = __FILTERS__;
+// Installed once, before anything renders. innerHTML on an SVG element parses
+// in the SVG namespace, which createElement() would not.
+document.getElementById("revDefs").innerHTML = FILTERS.defs.map(f =>
+  `<filter id="${f.id}" color-interpolation-filters="sRGB">`
+  + `<feColorMatrix type="matrix" values="${f.values}"/></filter>`).join("");
+// The marker's own entry, for its label and its colour. A row whose marker is
+// not in MARKERS cannot happen from this pipeline, but the page is also opened
+// on stale exports, so it degrades to the raw id rather than throwing.
+function mkOf(id){
+  return MARKERS.find(m => m.id === id) || {id: id, label: id, colour: null};
+}
+// {marker: "sections" | "sections_<marker>"} - the directory 04a wrote each
+// marker's reformatted sections into, computed in Python by section_dirs().
+// The page INSTALLS this rule; it does not know it. Both sites below used to
+// carry `p.marker === "AF568" ? "_AF568" : ""`, which for any other study
+// pointed every marker at one directory and left the other one's sections
+// unreachable - a broken <img>, which is to say nothing on screen and
+// nothing in the console.
+const SECDIRS = __SECDIRS__;
 const DEFAULT_MARKER = __MARKER__;
 // The canonical reformatted grid (04a GRID). Display may be a multiple of it.
 const SEC_GRID = __SECGRID__;
@@ -1134,6 +1376,126 @@ const KEY = "ls_roi_curator_v1";
 // Whatever this browser already holds wins. The seed only fills an empty store,
 // so opening a stale copy of the page can never overwrite work in progress.
 const SEED_STATE = __SEED__;
+// ---- plate identity --------------------------------------------------------
+//
+// A section records which plate it sits on. Stored as the INTEGER INDEX into
+// PLATES, that is a claim about an array, not about an atlas: swap the plate
+// set and every assignment means a different plate, silently. Stored as the ID
+// alone it is a claim that succeeds against a plate that has been re-rendered -
+// which is what happened here on 2026-09-06, all 64 ids reused, 34 of them a
+// different picture.
+//
+// So: resolve by id, then CHECK the image's fingerprint.
+//
+// DECLARED HERE, above initState, and not down beside st(). These are `const`,
+// which does not hoist, and `let S = initState(...)` a few lines below calls
+// resolvePlate while the page is still loading. Any lower and the page dies on
+// `Cannot access 'PLATE_BY_ID' before initialization` before anything is drawn.
+const BLANK_PLATE = {id: "", fp: "", w: 0, h: 0, missing: 1, seeds: [], hulls: []};
+const PLATE_BY_ID = Object.fromEntries(PLATES.map((p, i) => [p.id, i]));
+// The id -> slot map for whatever array is being resolved AGAINST. PLATES is
+// the atlas on screen and is mapped once; a caller passing its own array gets a
+// map of THAT array. Taking a slot number out of PLATES and then reading it out
+// of a different array is the index-means-a-different-plate bug one level up
+// from the one this whole section exists to close.
+const plateIndex = plates => (!plates || plates === PLATES) ? PLATE_BY_ID
+  : Object.fromEntries(plates.map((p, i) => [p.id, i]));
+
+// Never PLATES[s.plate] bare. A store written against a LONGER atlas indexes
+// past the end, and `.seeds` on undefined is a TypeError that takes the page
+// down on load - the one moment the operator has no way to recover. The blank
+// carries missing:1, so drawPl's fail-closed placeholder fires and says so,
+// rather than another plate's pixels appearing under this plate's header.
+const plateAt = (s, plates) => (plates || PLATES)[s && s.plate] || BLANK_PLATE;
+
+// `"1089x643"` -> [1089, 643]. The grammar is pinned to `ls_atlas._shape`:
+// integers only, lowercase x, nothing either side, and zero is not a size -
+// "0x0" is what a blank plate stamps, and dividing by it below would hand the
+// fit an Infinity. The same stored string must read the same on both sides.
+const shapeOf = px => {
+  const m = /^(\d+)x(\d+)$/.exec(typeof px === "string" ? px : "");
+  if(!m) return null;
+  const w = +m[1], h = +m[2];
+  return (w > 0 && h > 0) ? [w, h] : null;
+};
+
+// The same six outcomes `ls_atlas.plate_status` answers with, tested in the
+// SAME ORDER and computed the same way, because the page and the importers
+// must agree about what "still the same plate" means or a section verifies in
+// one and not the other. The order is load-bearing: GONE is decided BEFORE
+// UNCHECKED there too, so a record carrying an id but no fingerprint, whose
+// plate this atlas does not have, reads "gone" on both sides rather than
+// "unchecked" here and "gone" there.
+//
+// "unchecked" is NOT "by_index". by_index means no id was ever recorded;
+// unchecked means an id was, and there is nothing to check it against yet.
+// Neither is ok - fingerprinting whatever is on disk on first sight and calling
+// it verified would launder the 2026-09-06 failure into a green tick.
+function verifyPlate(rec, plates){
+  if(!rec || !rec.plate_id) return "by_index";
+  const i = plateIndex(plates)[rec.plate_id];
+  const p = i === undefined ? null : (plates || PLATES)[i];
+  // No readable image is GONE, not a state of its own: `ls_atlas` does not tell
+  // "the id left the set" from "its image cannot be read right now" either, and
+  // both need a person.
+  if(!p || p.missing || !p.fp) return "gone";
+  if(!rec.plate_fp) return "unchecked";
+  if(rec.plate_fp === p.fp) return "ok";
+  const was = shapeOf(rec.plate_px);
+  if(!was || !p.w || !p.h) return "changed";
+  const a = was[0] / was[1], b = p.w / p.h;
+  // ASPECT_TOL comes from ls_atlas.ASPECT_TOLERANCE through IO.fill, NOT a
+  // literal 0.01. Python and JS agreeing today is not the same as agreeing
+  // after someone tunes the tolerance, and a section that verifies in the
+  // importer but not in the page is exactly the split ls_atlas exists to close.
+  return Math.abs(a - b) <= ASPECT_TOL * Math.max(a, b) ? "resized" : "changed";
+}
+
+// Rebuild one stored record against the atlas that is actually loaded.
+//
+// THE ASSIGNMENT IS ALWAYS KEPT. A section whose plate no longer verifies is
+// shown with the plate the operator chose, marked, and its landmarks withheld
+// from the fit until a person confirms - never dropped, and never used as if
+// nothing had happened.
+function resolvePlate(rec, plates){
+  const out = Object.assign({}, rec);
+  const state = verifyPlate(rec, plates);
+  out.verified = state;
+  const i = plateIndex(plates)[rec && rec.plate_id];
+  // Follow the id to its new slot. A record with no id, or with one this atlas
+  // does not have, keeps the index it was stored with: that index is the only
+  // thing left saying which plate the operator was looking at, and moving it to
+  // a guess would destroy the one clue a person has to re-confirm from.
+  if(i !== undefined) out.plate = i;
+  if(state === "resized"){
+    // plate_x/plate_y are pixels of the plate image AS IT WAS. A re-render at a
+    // new size leaves them wrong by exactly the size ratio. Scaled and STILL
+    // MARKED, not accepted: a re-render can crop as well as scale, and the
+    // ratio cannot tell the two apart.
+    //
+    // PER AXIS, like `ls_atlas.scale_between`, which returns (sx, sy) for this
+    // reason: "resized" tolerates ASPECT_TOL of aspect drift, which on a
+    // 1634 px plate is on the order of ten pixels of height that one
+    // width-only factor would get wrong - handed to a registration fit as a
+    // coordinate nothing was ever measured against.
+    //
+    // Only `pairs`. A polygon's vertices are coordinates on the SECTION image,
+    // not on the plate (see polysOf and img2can), so scaling them by a plate's
+    // re-render would move drawn regions off the tissue they were drawn on.
+    const was = shapeOf(rec.plate_px), p = (plates || PLATES)[i];
+    if(was && p && p.w && p.h){
+      const kx = p.w / was[0], ky = p.h / was[1];
+      out.pairs = (rec.pairs || []).map(q => {
+        const c = q.slice();
+        c[2] = c[2] * kx;
+        c[3] = c[3] * ky;
+        return c;
+      });
+    }
+  }
+  return out;
+}
+
 // WHAT COUNTS AS WORK. `st()` creates a record the moment a section is looked
 // at, and the slider writes into it - so "the store has records" never meant
 // "the operator decided something". These two predicates are the only rule:
@@ -1152,10 +1514,52 @@ const decided = obj => Object.fromEntries(
 // Whatever this browser already holds wins - but only what it holds that is a
 // decision. A store of looked-at sections is an empty store.
 function initState(raw, seed){
+  let v = null;
   try {
-    if (raw) { const v = decided(JSON.parse(raw)); if (Object.keys(v).length) return v; }
+    if (raw) { const parsed = decided(JSON.parse(raw)); if (Object.keys(parsed).length) v = parsed; }
   } catch (e) {}
-  return decided(seed);
+  if (!v) v = decided(seed);
+  // EVERY stored record passes through here - the browser's store and the
+  // embedded seed both - so this is the ONE place an assignment made against a
+  // different plate set can be checked. Migrating anywhere else would leave
+  // whichever of the two did not pass through it silently trusted.
+  return Object.fromEntries(
+    Object.entries(v).map(([uid, rec]) => [uid, resolvePlate(rec, PLATES)]));
+}
+// WHAT THE OPERATOR IS TOLD, and the reason a marked record is allowed to stay
+// on screen at all: a count, not a silent degradation. A section whose plate no
+// longer verifies still shows the plate the operator chose, and the only way to
+// know its landmarks are being withheld is to be told.
+//
+// Into the header's own status row, beside "saved HH:MM:SS" and the Shotgun
+// status - the page already has a notice area - rather than an element built
+// and prepended at load. A bar inserted before document.body.firstChild lands
+// outside the flex column the header, the panes and the strip live in.
+//
+// Returns the count so this is assertable rather than only visible.
+function plateNotice(){
+  const by = {};
+  Object.values(S).forEach(r => {
+    if(r && r.verified && r.verified !== "ok") by[r.verified] = (by[r.verified]||0)+1;
+  });
+  const n = Object.values(by).reduce((a, b) => a + b, 0);
+  const box = el("plateWarn");
+  if(box){
+    box.style.display = n ? "" : "none";
+    if(!n) box.textContent = "";
+    else {
+      const parts = [];
+      if(by.changed)   parts.push(by.changed + " changed");
+      if(by.resized)   parts.push(by.resized + " re-rendered at a new size");
+      if(by.gone)      parts.push(by.gone + " no longer in this atlas");
+      if(by.unchecked) parts.push(by.unchecked + " never fingerprinted");
+      if(by.by_index)  parts.push(by.by_index + " recorded before plate ids were kept");
+      box.textContent = n + " section(s) need their plate re-confirming: "
+        + parts.join(", ") + " - their landmarks are not used in any fit until"
+        + " you re-choose each one's plate.";
+    }
+  }
+  return n;
 }
 let S = initState(localStorage.getItem(KEY), SEED_STATE);
 let active = null, pending = null;   // pending section point awaiting its plate partner
@@ -1218,6 +1622,9 @@ el("marker").innerHTML =
   MARKERS.map(m=>`<option value="${m.id}">${m.label} - ${m.n}</option>`).join("")
   + (MARKERS.length>1 ? `<option value="both">both channels - ${DATA.length}</option>` : "");
 el("marker").value = DEFAULT_MARKER;
+// Said once, as soon as there is a header to say it in. initState has
+// already resolved every stored record against the atlas on disk.
+plateNotice();
 // One listener per container instead of an onclick string per cell: the uid
 // never has to survive being pasted into a JS string literal.
 el("strip").addEventListener("click", e => {
@@ -1352,7 +1759,17 @@ function tpsApply(T,px,py){
 }
 
 // The transform actually used: TPS once there are enough points, affine below.
-function transform(pairs){
+function transform(s){
+  // NOTHING IS COMPUTED FROM AN UNVERIFIED SECTION. Its landmarks were placed
+  // against a plate image that is no longer the one on screen, so a fit from
+  // them is a number with no meaning - and it would look exactly like a good
+  // one. Confirming the plate is what releases them; see confirmPlate.
+  //
+  // `s.verified` is absent on a record made in this session, and an absent
+  // verdict is not a failed one: a section curated now was matched against the
+  // atlas now loaded, and there is nothing to re-confirm.
+  if (s && s.verified && s.verified !== "ok") return null;
+  const pairs = (s && s.pairs) || [];
   // A background disc is a position on the SECTION with no counterpart on the
   // plate, so it must never enter the fit - its (0,0) plate coordinate would
   // drag the whole spline to the corner. Filtered here rather than at each call
@@ -1411,7 +1828,10 @@ function dapiBtnState(){
   const rgb = hasRgb(active), on = rgb && dapiOn;
   el("dapiBtn").disabled = !rgb;
   el("dapiBtn").classList.toggle("mode-on", on);
-  el("dapiBtn").textContent = on ? "DAPI ✓" : "DAPI";
+  // FILTERS.nuclearLabel, not "DAPI". The label in the button's HTML comes
+  // from the study; relabelling it from a literal here would put the word back
+  // the first time a section was shown, so the template alone was never enough.
+  el("dapiBtn").textContent = FILTERS.nuclearLabel + (on ? " ✓" : "");
   el("dapiBtn").title = rgb ? ""
     : "no colour composite for this section - run 04o_section_rgb.py --all";
 }
@@ -1456,9 +1876,9 @@ function drawSec(){
   // Hiding DAPI means drawing the blue-stripped copy instead - see markerOnly().
   x.drawImage((hasRgb(active) && !dapiOn) ? markerOnly() : secImg, -g.w/2, -g.h/2);
   x.restore();
-  const s=st(active), T=transform(s.pairs), u=uiScale(c);
+  const s=st(active), T=transform(s), u=uiScale(c);
   // NP went with the region labels; mark() sizes its own badge from ns.
-  const ns=numScale(PLATES[s.plate], c, u);
+  const ns=numScale(plateAt(s), c, u);
   // ROIs are the ones that were placed. Nothing is positioned by the transform.
   //
   // This used to warp every seed on the plate through the fit and draw them all,
@@ -1489,7 +1909,7 @@ function drawSec(){
   //
   // Cased, like the shapes on the plate: Dl is pure yellow and the tissue under
   // it is pale.
-  const Ppl = PLATES[s.plate];
+  const Ppl = plateAt(s);
   polysOf(s).forEach(pg => {
     const col = polyCol(Ppl, pg);
     x.beginPath();
@@ -1575,10 +1995,29 @@ function drawSec(){
 function drawPl(){
   const c=el("cPl"), x=c.getContext("2d");
   if(!active) return;
+  const s=st(active), P=plateAt(s);
+  if(P && P.missing){
+    // No readable image for this plate. Fails CLOSED, before `plateImg()` is
+    // even touched: a 404'd <img> never fires `load`, so the wait below used
+    // to hang forever and leave the PREVIOUS plate's pixels on screen under
+    // the NEW plate's header - the operator would place landmarks against
+    // the wrong anatomy with nothing on screen to say so. A gap plate was
+    // never reachable here before the plate array stopped dropping them.
+    // This is only the minimal guard; the full banner/confirm flow is
+    // Task 5's.
+    x.clearRect(0, 0, c.width, c.height);
+    x.fillStyle="#1a1a1a"; x.fillRect(0, 0, c.width, c.height);
+    x.fillStyle="#e5534b"; x.textAlign="center";
+    x.font="16px sans-serif";
+    x.fillText(P.id + ": no readable image", c.width/2, c.height/2 - 10);
+    x.font="12px sans-serif";
+    x.fillText("landmarks are not drawn against the wrong plate", c.width/2, c.height/2 + 14);
+    return;
+  }
   const img=plateImg();
   if(!img.naturalWidth){ img.addEventListener("load", drawPl, {once:true}); return; }
   fit(c,img); x.drawImage(img,0,0);
-  const s=st(active), P=PLATES[s.plate], u=uiScale(c), done=usedRois(s);
+  const u=uiScale(c), done=usedRois(s);
   const ns=numScale(P, c, u);
   // ---- the ROIs, as areas --------------------------------------------------
   //
@@ -1921,7 +2360,7 @@ addEventListener("mouseup", ()=>{
 // useful matching feature is not a region centre, but it is no longer what you
 // get by accident on first load.
 let guided=true, gTarget=0;
-const seedsOf   = s => PLATES[s.plate].seeds;
+const seedsOf   = s => plateAt(s).seeds;
 // ---- the guided walk is over ROIs, not seeds ------------------------------
 //
 // An ROI is an AREA - one region, one lobe - and the several atlas dots under it
@@ -1931,7 +2370,7 @@ const seedsOf   = s => PLATES[s.plate].seeds;
 //
 // The seeds keep their own numbering underneath; see `region_hulls`. Only what
 // is DRAWN and what a polygon RECORDS is the ROI number.
-const roisOf = s => (PLATES[s.plate].hulls || []);
+const roisOf = s => (plateAt(s).hulls || []);
 // Which ROIs this section already answers. Derived from the polygons rather than
 // kept as a separate fact that could disagree with them - the same reason the
 // seed cursor was derived from the pairs.
@@ -2314,7 +2753,7 @@ function clickPl(e){
   // how you go back to one you skipped or jump ahead to one you can plainly see.
   // Same gesture the seed walk offered, now over areas.
   if(guided){
-    const c=el("cPl"), P=PLATES[st(active).plate], fx=px/c.width, fy=py/c.height;
+    const c=el("cPl"), P=plateAt(st(active)), fx=px/c.width, fy=py/c.height;
     let hit=null;
     for(const h of (P.hulls||[])){
       if(h.v.length>=3 && inPoly(fx, fy, h.v.flat())){ hit=h; break; }
@@ -2444,7 +2883,7 @@ function clearPts(){
 
 function status(){
   if(!active) return;
-  const s=st(active), T=transform(s.pairs);
+  const s=st(active), T=transform(s);
   const nRoi = roiPairs(s).length, nBg = bgPairs(s).length;
   el("npair").textContent = nRoi;
   el("bgBtn").textContent = bgMode ? "Background \u2713" : "Background";
@@ -2540,7 +2979,7 @@ function status(){
       ? `<b style="color:#7c5cff">thin-plate spline</b> on ${nRoi} points `
         + `&middot; residual is 0 by construction`
       : `<b>affine</b> &middot; mean residual <b>${(tot/nRoi).toFixed(1)} px</b>`;
-    const P=PLATES[s.plate];
+    const P=plateAt(s);
     // Ambiguous regions are listed as their group and flagged, so the summary
     // never reads as a firmer claim than the section supports.
     // The names were printed in one flat colour under a legend reading
@@ -2580,7 +3019,7 @@ function status(){
   // Outside the transform branch on purpose: the colour key is a fact about
   // the plate on screen, and it is most wanted before three landmarks exist,
   // not after.
-  regionKey(PLATES[st(active).plate], st(active));
+  regionKey(plateAt(st(active)), st(active));
   navState();
   dapiBtnState();
   el("rotBtn").textContent = rotMode ? "Rotate ✓" : "Rotate";
@@ -2598,11 +3037,33 @@ function status(){
 // setting .value from script does not dispatch it. That is what makes the
 // distinction between "the operator chose this plate" and "this section has
 // never been looked at" reliable.
+// CHOOSING A PLATE IS THE CONFIRMATION. It is the one gesture that means a
+// person looked at THIS image and picked it, so it re-stamps identity from the
+// atlas loaded now: a section confirmed after a swap carries the new
+// fingerprint and stops being flagged.
+//
+// Called from the three places a person moves the plate - the slider, the
+// prev/next buttons and their arrow keys, and the Assign plate button - and
+// deliberately NOT from onSlide, which select() calls for every section merely
+// clicked in the strip. Stamping there would re-fingerprint a stored record
+// against the new atlas just for being looked at, which is the 2026-09-06
+// laundering with a nicer interface.
+function confirmPlate(s, v){
+  if(!s) return;
+  const P = PLATES[+v] || BLANK_PLATE;
+  s.plate_id = P.id; s.plate_fp = P.fp || ""; s.plate_px = P.w + "x" + P.h;
+  // verifyPlate, not a hardcoded "ok". A slider position past the end stamps a
+  // blank identity, and writing "ok" over that would have the page say verified
+  // where ls_atlas.plate_status - reading the same columns back out of
+  // roi_plates.csv - says by_index. Self-consistent by construction instead.
+  s.verified = verifyPlate(s, PLATES);
+  plateNotice();
+}
 function onSlideUser(v){
   undoMark(active, "plate");
-  const s=st(active); s.assigned=true; save(); onSlide(v); paintCell(active);
+  const s=st(active); s.assigned=true; confirmPlate(s, v); save(); onSlide(v); paintCell(active);
 }
-function markAssigned(){ if(active){ undoMark(active, "assign plate"); st(active).assigned=true; save(); paintCell(active); status(); } }
+function markAssigned(){ if(active){ undoMark(active, "assign plate"); const s=st(active); s.assigned=true; confirmPlate(s, s.plate); save(); paintCell(active); status(); } }
 // Favourite marks the subset chosen for actual quantification. It is ORTHOGONAL
 // to the plate assignment - a section can be worth quantifying before anyone has
 // landmarked it - so it sets no other flag and the export carries it on its own.
@@ -2637,6 +3098,17 @@ function stepPlate(d){
   if(!active) return;
   const v = Math.min(PLATES.length - 1, Math.max(0, +el("slider").value + d));
   el("slider").value = v;
+  // Same gesture as dragging the slider, so the same confirmation - and the
+  // same undo entry, because a confirmation releases withheld landmarks and
+  // that must have a way back. It still must not set `assigned`, which
+  // stepping the plate has never done.
+  //
+  // It cannot simply leave the identity alone: onSlide below moves s.plate,
+  // and a record whose index says one plate while its stored plate_id says
+  // another would be pulled back to the id's slot on the next load - the
+  // operator's step silently undone.
+  undoMark(active, "plate");
+  confirmPlate(st(active), v);
   onSlide(v);
   navState();
 }
@@ -2661,7 +3133,7 @@ function navState(){
 function onSlide(v){
   const s=st(active); s.plate=+v; save();
   gSync();                     // a different plate is a different seed list
-  const P=PLATES[+v];
+  const P = PLATES[+v] || BLANK_PLATE;
   el("plName").textContent = P.id;
   el("plLab").innerHTML = P.labelled
     ? `<span class="lab">${P.seeds.length} region seeds: ${[...new Set(P.seeds.map(x=>x.region))].join(", ")}</span>`
@@ -2751,7 +3223,7 @@ function cellTag(uid){
   // the index yet, and nothing else on the strip distinguishes it.
   if(isReinstated(uid) && !n) return "reinstated";
   return isNoRoi(uid) ? "no ROI" : n ? n+" pts"
-       : isPlateOnly(uid) ? PLATES[s.plate].id.replace("plate_","pl ") : "";
+       : isPlateOnly(uid) ? plateAt(s).id.replace("plate_","pl ") : "";
 }
 function counts(){
   const list=rows();
@@ -3018,6 +3490,7 @@ function exportCsv(){
   // three landmarks, which is exactly the case where the operator has decided the
   // section is not worth landmarking.
   const pl=[["scene_uid","animal","marker","subset","section_order","plate_set","plate_id","plate_index",
+             "plate_fp","plate_px","plate_verified",
              "plate_has_seeds","n_landmarks","n_background","transform","status",
              "favorite","view_rotation_deg",
              "excluded"]];
@@ -3069,8 +3542,8 @@ function exportCsv(){
     // Background discs are work too, so a section carrying only those is
     // reported rather than dropped for having made no other decision.
     if(!hasRoiWork(s)) continue;
-    const P=PLATES[s.plate], n=roiPairs(s).length, nBg=bgPairs(s).length;
-    const T=transform(s.pairs);
+    const P=plateAt(s), n=roiPairs(s).length, nBg=bgPairs(s).length;
+    const T=transform(s);
     const chosen = s.assigned || n>0;   // is the plate a decision, or still the default?
     // isExcl(), not s.excl: a Review-mode reinstatement beats the flag, and the
     // strip already honours that. The two must not disagree.
@@ -3080,7 +3553,48 @@ function exportCsv(){
                  : chosen ? "plate_only" : "favourite_only";
     // Blank rather than plate_001 when no plate was ever chosen - otherwise a
     // favourite with no assignment reads as a deliberate call on plate_001.
-    pl.push([d.uid,d.animal,d.m,d.sub,d.order,PLATE_SET, chosen?P.id:"", chosen?s.plate:"",
+    //
+    // THE STORED ID WHEN THERE IS ONE, the plate at that index otherwise. A
+    // column carries the most specific true statement available, and
+    // plate_verified beside it says how much to trust it. A record resolved
+    // GONE still knows which plate the operator chose - the id is simply not in
+    // THIS atlas - so naming it puts the row's own fingerprint beside the id
+    // that fingerprint belongs to. Taking P.id there would name whatever plate
+    // now occupies that index instead, next to another plate's fingerprint.
+    //
+    // The fallback is NOT blank, and that is the difference from plate_fp: the
+    // id at the stored index is a real statement about where the section points
+    // today, qualified by by_index, whereas a synthesised fingerprint would be
+    // a false claim about what the section was checked against. Every record
+    // from before ids were kept exports what it exports today.
+    pl.push([d.uid,d.animal,d.m,d.sub,d.order,PLATE_SET, chosen?(s.plate_id||P.id):"", chosen?s.plate:"",
+             // THE IDENTITY THE ASSIGNMENT WAS MADE AGAINST - s.plate_fp and
+             // s.plate_px, never the plate as it is NOW.
+             //
+             // The columns exist so a later restore can CHECK. Writing the
+             // current atlas's fingerprint into a row whose stored plate no
+             // longer verifies destroys the only evidence that anything
+             // changed, and hands the next importer a row that recomputes to
+             // "ok" - the 2026-09-06 failure laundered through the CSV.
+             //
+             // plate_px is worse than useless taken from the current set: its
+             // whole purpose is to give a re-render's landmarks an OLD width to
+             // scale by, and the current set can no longer supply one. The new
+             // size makes the factor 1.0 and the rescale a no-op that looks
+             // like it worked. This comment argued for the old size while the
+             // code wrote the new one, which is how that hid.
+             //
+             // Blank when there is no stored identity - a record from before
+             // ids were kept. plate_verified already says why; synthesising one
+             // from whatever sits at that index today is the same laundering.
+             // A section confirmed in this session has s.plate_fp stamped from
+             // the atlas now loaded, so it exports the current fingerprint
+             // correctly, because that IS what it was assigned against.
+             chosen?(s.plate_fp||""):"", chosen?(s.plate_px||""):"",
+             // A verdict about the three columns before it, so it is gated with
+             // them: a row that declines to name a plate must not carry a
+             // judgement about one.
+             chosen?(s.verified||""):"",
              chosen?(P.labelled?1:0):"", n, nBg, T?T.kind:"", status,
              s.fav?1:0, (s.rot||0).toFixed(1),
              excl?1:0]);
@@ -3805,7 +4319,7 @@ async function shotBuild(by){
     const sl = slides[si];
     // Undefined rather than a plate in region mode - a region has no single one,
     // and picking any would assert a level the slide does not have.
-    const P = sl.plate === undefined ? null : PLATES[sl.plate];
+    const P = sl.plate === undefined ? null : plateAt(sl);
     const head = mode === "region" ? sl.region : P.id;
     const mk = MARKERS.find(m => m.id === sl.marker);
     const rel = [{id: "rId1", type: REL + "/slideLayout",
@@ -3830,14 +4344,22 @@ async function shotBuild(by){
 
     // The plate the sections were matched to, at its own aspect and its own
     // resolution: fetched as bytes rather than redrawn, so nothing is resampled.
-    if(P){
-      const pw = Math.round(inch(L.plateH) * (P.w / P.h));
+    const pw = P ? Math.round(inch(L.plateH) * (P.w / P.h)) : 0;
+    if(P && !P.missing){
       const prid = await addPic(P.img, () => fetch(P.img).then(r => {
         if(!r.ok) throw new Error("plate " + P.id + ": HTTP " + r.status);
         return r.arrayBuffer();
       }).then(b => new Uint8Array(b)));
       body += pic(Math.round(SLIDE_W / 2 - pw / 2), inch(L.plateY),
                   pw, inch(L.plateH), prid, P.id);
+    } else if(P && P.missing){
+      // No readable image for this plate. A thrown fetch/addPic here used to
+      // take the WHOLE deck down over one gap plate rather than one slide;
+      // this skips the picture and says why, in the slide itself, instead.
+      // The full presentation is Task 5's - this is only the minimal guard.
+      body += tbox(Math.round(SLIDE_W / 2 - pw / 2), inch(L.plateY),
+                   pw, inch(L.plateH),
+                   P.id + ": no readable image", L.capSz, false, DIM, "ctr");
     }
     // Drawn in both modes: the split down the middle is the point of the slide,
     // not decoration around the plate.
@@ -4006,7 +4528,7 @@ function revSrc(p, what){
     // here infers one file from another - 1,066 sections have no composite and
     // a failed <img> is silent.
     if(!p.has_section) return "";
-    const dir = `sections${p.marker === "AF568" ? "_AF568" : ""}`;
+    const dir = SECDIRS[p.marker];
     const sub = p.has_section_thumb ? "_rgb_thumb"
               : p.has_section_rgb   ? "_rgb" : "";
     return `${dir}${sub}/${p.scene_uid}.png`;
@@ -4071,7 +4593,7 @@ function drawRevOverlays(p, hasCen){
     // at 0; the censor mask is already 0/255 and passes through unchanged. Then
     // luminance becomes alpha, so the source-in below clips to the mask instead
     // of to the whole rectangle.
-    g.filter = "brightness(255) url(#revLumAlpha)";
+    g.filter = "brightness(255) url(#" + FILTERS.lumAlpha + ")";
     g.drawImage(img, 0, 0, t.width, t.height);
     g.filter = "none";
     // HIDE THE PEN RING: keep only the part of the stencil that is on tissue.
@@ -4110,7 +4632,7 @@ function drawRevOverlays(p, hasCen){
       const tsrc = el("revTissue");
       if(tsrc && tsrc.naturalWidth){
         g.globalCompositeOperation = "destination-in";
-        g.filter = "url(#revLumAlpha)";       // already 0/255, only alpha needed
+        g.filter = "url(#" + FILTERS.lumAlpha + ")";  // already 0/255, only alpha needed
         g.drawImage(tsrc, 0, 0, t.width, t.height);
         g.filter = "none";
       }
@@ -4226,7 +4748,7 @@ function revRender(){
   const parts = [];
   for(const [k, ps] of groups){
     ps.sort((a, b) => (+a.section_order || 0) - (+b.section_order || 0));
-    const lab = ps[0].marker === "AF568" ? "pERK" : "PCNA";
+    const lab = esc(mkOf(ps[0].marker).label);
     parts.push(`<div class="revGroup"><h4>${esc(ps[0].animal)} &middot; slide `
       + `${esc(ps[0].slide)} &middot; ${lab} &middot; ${ps.length} sections `
       + `&middot; ${esc(ps[0].czi_file)}</h4><div class="revCells">`
@@ -4290,7 +4812,7 @@ function revChainRows(p){
   const out = [];
   const row = (name, txt, on) =>
     out.push(`<div class="st${on ? "" : " no"}"><b>${name}</b><span>${esc(txt)}</span></div>`);
-  row("scan", `${p.czi_file} scene ${p.scene_index} - ${p.marker === "AF568" ? "pERK" : "PCNA"}`, true);
+  row("scan", `${p.czi_file} scene ${p.scene_index} - ${mkOf(p.marker).label}`, true);
   row("01 overview", p.tissue_area_mm2
       ? `tissue ${p.tissue_area_mm2} mm2, focus ${p.focus_score}` : "no QC row", !!p.tissue_area_mm2);
   row("04f propose", p.proposed_excluded === "1"
@@ -4308,7 +4830,8 @@ function revChainRows(p){
       : "not reformatted - original scan only", !!p.has_section);
   row("04j censor", p.in_analysis_set === "1" ? "in the analysis set"
       : p.in_analysis_set === "0" ? `CENSORED OUT - ${p.censor_reason || ""}`
-      : "pERK only", p.in_analysis_set !== "");
+      : `${MARKERS.length ? MARKERS[0].label : "first marker"} only`,
+      p.in_analysis_set !== "");
   row("05a/05c", +p.n_nuclei ? `${p.n_rois} ROIs, ${p.n_nuclei} nuclei`
       : +p.n_rois ? `${p.n_rois} ROIs, not yet measured` : "nothing measured", !!+p.n_nuclei);
   return out.join("");
@@ -4375,18 +4898,29 @@ function revImg(){
   // channel knocked out of a composite - "marker off" shows the counterstain
   // that was actually recorded, not the composite with a plane zeroed.
   //
-  // Marker in ITS OWN colour, matching the composites in the grid beside it -
-  // red pERK, green PCNA - instead of the overview's yellow-for-both. See the
-  // filter definitions for why this is exact and why DAPI is lifted.
-  const perk = p.marker === "AF568";
+  // Marker in ITS OWN colour, matching the composites in the grid beside it,
+  // instead of the overview's yellow-for-both. The colour is the study's, out
+  // of FILTERS, which Python built from the same ls_channels.marker_colours()
+  // that 04o composites with. See review_filters() for why this is exact and
+  // why the counterstain is lifted.
+  //
+  // NOT `p.marker === "AF568"`, which is what was here. That made every marker
+  // but one take the green filter, so any study whose first marker is not
+  // called AF568 was shown its sections green in this pane and red in the grid
+  // one panel away, with nothing on the page saying which was right.
+  //
+  // A marker this study gave no colour to has no pair of its own and falls
+  // through to the grey fallback. Borrowing a real marker's was the bug.
+  const M = mkOf(p.marker);
+  const F = FILTERS.byMarker[p.marker] || FILTERS.fallback;
   el("revImg").src = (REV.mark || !REV.dapi)
       ? revSrc(p, "overview")     // RGB when REV.dapi, MARK when not
       : revSrc(p, "dapi");
   el("revImg").style.filter = "url(#" + (
-        !REV.mark && !REV.dapi ? "revBlank"
-      : !REV.mark              ? "revDapiOnly"
-      : REV.dapi               ? (perk ? "revPerkDapi" : "revPcnaDapi")
-                               : (perk ? "revPerkOnly" : "revPcnaOnly")) + ")";
+        !REV.mark && !REV.dapi ? FILTERS.blank
+      : !REV.mark              ? FILTERS.dapiOnly
+      : REV.dapi               ? F.dapi
+                               : F.only) + ")";
   el("revMask").src = revSrc(p, "mask");
   el("revCensor").src = hasCen ? revSrc(p, "censor") : "";
   el("revTissue").src = p.has_tissue ? revSrc(p, "tissue") : "";
@@ -4411,20 +4945,31 @@ function revImg(){
   on("revArtBtn",   REV.art,   !p.has_mask);
   on("revCenBtn",   REV.cen,   !hasCen);
   on("revApplyBtn", REV.apply, !p.has_mask);
-  el("revDapiBtn").textContent = REV.dapi ? "DAPI ✓" : "DAPI";
-  el("revMarkBtn").textContent = REV.mark
-    ? (perk ? "pERK ✓" : "PCNA ✓") : (perk ? "pERK" : "PCNA");
+  // Both buttons name their channel from the data the page was built with -
+  // the marker's from MARKERS, the counterstain's from FILTERS - so a study
+  // that calls either of them something else renames the buttons too.
+  el("revDapiBtn").textContent = FILTERS.nuclearLabel + (REV.dapi ? " ✓" : "");
+  el("revMarkBtn").textContent = M.label + (REV.mark ? " ✓" : "");
   el("revCenBtn").title = hasCen ? "" :
     "no censor mask for this section - run 04j_censor_clipped.py";
 
-  // The 4x is named rather than left to be noticed. A viewer that quietly
-  // rescales one channel invites reading brightness off the screen, and DAPI
-  // here is 4x further from its neighbours than it looks.
-  const mk = perk ? "pERK red" : "PCNA green";
+  // The lift is named rather than left to be noticed. A viewer that quietly
+  // rescales one channel invites reading brightness off the screen, and the
+  // counterstain here is several times further from its neighbours than it
+  // looks. The NAME, the colour word and the factor all come from FILTERS:
+  // written out as "DAPI blue x4" this went quietly wrong the moment a study
+  // set display.nuclear_colour - or counterstained with anything but DAPI.
+  const nuc = `${FILTERS.nuclearLabel} ${FILTERS.nuclearName} x${FILTERS.lift}`;
+  // The label, then the colour it is drawn in - the study's word for it, so
+  // the pane says what it is doing rather than restating a convention. A
+  // marker with no colour says so; it is on screen in grey. The old version
+  // stripped the colour word with /( red|green)$/, which left "PCNA magenta"
+  // intact and read "PCNA magenta only".
+  const mk = M.colour ? `${M.label} ${M.colour}` : `${M.label} - no colour set`;
   el("revImgH").textContent = "IMAGE - "
-    + (REV.mark && REV.dapi ? mk + " + DAPI blue x4"
-     : REV.mark            ? mk.replace(/ (red|green)$/, "") + " only"
-     : REV.dapi            ? "DAPI blue x4, no marker"
+    + (REV.mark && REV.dapi ? mk + " + " + nuc
+     : REV.mark            ? M.label + " only"
+     : REV.dapi            ? nuc + ", no marker"
                            : "both channels hidden - masks only")
     + (REV.apply ? ", artifacts removed" : "");
   const bits = [];
@@ -4455,8 +5000,7 @@ function revImg(){
 // subset is written as "reinstated" so the export says where the row came from
 // rather than implying it was in the worklist all along.
 function reinstatedRow(p){
-  const dir = "sections" + (p.marker === "AF568" ? "_AF568" : "")
-            + (p.has_section_rgb ? "_rgb" : "");
+  const dir = SECDIRS[p.marker] + (p.has_section_rgb ? "_rgb" : "");
   return {uid: p.scene_uid, animal: p.animal, m: p.marker, sub: "reinstated",
           order: +p.section_order || 0, rgb: !!p.has_section_rgb,
           img: dir + "/" + p.scene_uid + ".png", reinstated: true};
@@ -4659,22 +5203,39 @@ expRestoreDir();
 """
 
 
-def main():
+def build_parser():
+    """The parser, built separately so a test can read the marker default and
+    the flag help off the object argparse will actually use.
+
+    The help text is DERIVED for the same reason the choices are. Both subset
+    flags narrow the first declared marker and leave every other marker on its
+    own full set - that is a rule about declared order, not about pERK - and
+    the help said "pERK" and "PCNA", which are this study's antibodies. An
+    operator of another study reading `--analysis-set` was told the flag
+    applied to a marker they do not have.
+    """
     ap = argparse.ArgumentParser()
     ap.add_argument("--animal", default=None)
-    ap.add_argument("--marker", choices=("AF488", "AF568"), default="AF568",
+    _default = MARKERS[0] if MARKERS else None
+    _first = marker_label(_default) if _default else "the first declared marker"
+    _rest = "every other marker keeps its full set"
+    ap.add_argument("--marker", choices=MARKERS, default=_default,
                     help="which channel the page OPENS on. Both are always loaded - "
                          "the selector next to the sample selector switches - so this "
                          "chooses the starting view, not what is in the page. "
-                         "AF568 = pERK (the channel that gets quantified), AF488 = PCNA")
+                         f"Opens on {_default}.")
+    _aset = (os.path.basename(analysis_set_csv(_default)) if _default
+             else "the first marker's analysis set")
     ap.add_argument("--analysis-set", action="store_true",
-                    help="narrow the pERK side to perk_analysis_set.csv. A pERK "
-                         "subset only; PCNA keeps its full set")
+                    help=f"narrow the {_first} side to "
+                         f"{_aset}. Clipped-pixel "
+                         f"censoring is measured on that marker's own scans, "
+                         f"so it defines a subset for it alone; {_rest}")
     ap.add_argument("--worklist", nargs="?", const=WORKLIST_CSV, default=None,
                     metavar="CSV",
-                    help="order the pERK side by 04n_roi_worklist.py, so stopping "
+                    help=f"order the {_first} side by 04n_roi_worklist.py, so stopping "
                          "part way still leaves every animal and every level covered. "
-                         "Keyed on pERK uids, so PCNA keeps its full set")
+                         f"Keyed on {_first} uids, so {_rest}")
     ap.add_argument("--tier", default=None,
                     help="with --worklist: only this tier (e.g. core)")
     ap.add_argument("--no-seed", action="store_true",
@@ -4700,7 +5261,102 @@ def main():
                     help="where to write the page (default: the live curator under "
                          "out_root). tests/run.sh points this at tests/build/ so a "
                          "test run never rewrites the page being curated in")
-    args = ap.parse_args()
+    return ap
+
+
+def plate_rows(plate_dir=None, polygon_statuses=("reviewed",), mirror=None):
+    """The plate array the page indexes into, in atlas order.
+
+    TWO THINGS THAT USED TO BE WRONG HERE, both silently.
+
+    The sort was `key=lambda p: p["plate_id"]` - a STRING sort, correct only
+    because this atlas zero-pads to three digits. An atlas numbering
+    `plate_1 .. plate_100` orders 1, 10, 100, 2, and every index stored against
+    it means a different plate with no error anywhere. `ls_atlas.plate_order`
+    is numeric-aware and falls back to text when the ids carry no number.
+
+    And a plate whose image was absent was `continue`d - dropped from the array,
+    shifting every later index by one. One missing PNG renumbered the back half
+    of the atlas. It now keeps its slot and carries `missing: 1`, so the page
+    can refuse to draw it and say why.
+
+    `missing` means "no readable image", not "no file": `ls_atlas.fingerprints`
+    returns `fp: None` both when `image_file` is absent AND when it is there
+    but cannot currently be read - locked, mid-write, a permissions error. This
+    function does not tell those apart (neither does `ls_atlas`, deliberately -
+    see its GONE outcome), so nothing here or in the page may say "missing" to
+    the operator; "no readable image" is accurate in both cases.
+
+    POLYGON PLATES. Where the plate set carries `polygons.csv` (the Wullimann
+    atlas, whose regions are outlines rather than seed dots) the outline IS the
+    area, so it replaces the hull built from seeds: same numbering, colour and
+    guided-mode behaviour, one synthetic seed per polygon. Only polygons whose
+    status is in `polygon_statuses` are shown - by default just the reviewed
+    ones, because an OCR-named polygon is a guess and the name becomes a
+    measurement key. `mirror` reflects them about the plate midline; None takes
+    `atlas_polygon_mirror` from the study, for the Wullimann atlas only.
+
+    Calls `ls_atlas.fingerprints`, which maintains `<plate_dir>/fingerprints.csv`
+    - the one sanctioned on-disk write under a plate set's directory. Building
+    the page used to be read-only there; it no longer is, on a cold cache.
+    """
+    plate_dir = plate_dir or PLATE_DIR
+    # The set name for the `img` URL below has to come from THIS directory,
+    # not from the module-level PLATE_SET constant: a caller that passed an
+    # override (a test, or a future caller pointed at a different set) would
+    # otherwise get rows whose `img` points into the WRONG set's directory
+    # while every other field was read from the right one.
+    set_name = os.path.basename(os.path.normpath(plate_dir))
+    with open(os.path.join(plate_dir, "plates.csv"), newline="",
+              encoding="utf-8") as fh:
+        plates = list(csv.DictReader(fh))
+    seeds = load_seeds(plate_dir)
+    polys = AP.read_polygons(os.path.join(plate_dir, "polygons.csv"))
+    if mirror is None:
+        mirror = bool(CONFIG.get("atlas_polygon_mirror")) and AT.source(CONFIG) == AT.WULLIMANN
+    prints = AT.fingerprints(plate_dir, plates)
+
+    out = []
+    for p in AT.plate_order(plates):
+        pid = p["plate_id"]
+        sd = seeds.get(pid, [])
+        if polys.get(pid):
+            mid = float(p["midline_frac"]) if mirror and p.get("midline_frac") else None
+            sd, hulls = AP.plate_view(polys[pid], mid, polygon_statuses)
+        else:
+            # The ROI grouping, and the number every seed under it carries.
+            hulls = region_hulls(sd)
+            tag_rois(sd, hulls)
+        pw, ph = int(p["px_w"]), int(p["px_h"])
+        # How much room a label actually has on THIS plate: the median distance
+        # from a seed to its nearest neighbour, as a fraction of the plate
+        # diagonal. A fraction rather than pixels because the page has to turn it
+        # into screen pixels against whatever size the pane currently is - bake
+        # in pixels and the scaling goes stale the moment the window changes.
+        nn = 0.0
+        if len(sd) > 1:
+            pts = [(x["xf"] * pw, x["yf"] * ph) for x in sd]
+            diag = math.hypot(pw, ph)
+            near = sorted(min(math.dist(a, b) for j, b in enumerate(pts) if j != i)
+                          for i, a in enumerate(pts))
+            nn = near[len(near) // 2] / diag
+        fp = (prints.get(pid) or {}).get("fp")
+        out.append({"id": pid, "nn": round(nn, 5),
+                    # Original plate, NOT reformatted: the seeds are fractions
+                    # of this image, so no transform chain is needed.
+                    "img": f"../atlas/{set_name}/{p['image_file']}",
+                    "image_file": p["image_file"],
+                    "w": pw, "h": ph,
+                    "fp": fp, "missing": 0 if fp else 1,
+                    "labelled": int(bool(sd)), "seeds": sd,
+                    # What a REGION is on this plate, as opposed to where its
+                    # individual seeds are. One entry per region per lobe.
+                    "hulls": hulls})
+    return out
+
+
+def main():
+    args = build_parser().parse_args()
     if args.worklist and not os.path.exists(args.worklist):
         raise SystemExit(f"--worklist: {args.worklist} not found - run 04n_roi_worklist.py first")
 
@@ -4714,18 +5370,29 @@ def main():
             rows = [r for r in csv.DictReader(fh) if r["kind"] == "section"]
         before, subset = len(rows), "all"
 
-        if args.analysis_set and marker == "AF568":
-            keep, _n_perk, _unpaired = analysis_uids(marker)
+        # MARKERS[0], not "AF568". Both of these read `== "AF568"`, so under
+        # any other study neither flag narrowed anything and BOTH channels came
+        # back on their full set - the operator asked for the worklist order,
+        # got front-to-back, and was told nothing. The subset belongs to
+        # whichever marker is declared first, which for this study IS AF568.
+        first = MARKERS[0] if MARKERS else None
+        if args.analysis_set and marker == first:
+            keep, _n_first, _unpaired = analysis_uids(marker)
             rows = [r for r in rows if r["id"] in keep]
-            subset = "perk_analysis_set"
+            # The tag the page shows for this side, taken from the file the
+            # rows actually came from rather than named again. "perk" was the
+            # third copy of a name only one study has.
+            subset = os.path.splitext(os.path.basename(
+                analysis_set_csv(marker)))[0]
 
-        # The worklist is keyed on pERK uids, because that is the channel being
-        # quantified. Reaching the PCNA side means following the pairing, which
-        # the 30 unpaired sections do not survive and which would make one
-        # channel's job depend on the other's. So it narrows pERK only; PCNA is
-        # curated on its own full set, by the same logic in the same tool.
+        # The worklist is keyed on the first marker's uids, because that is the
+        # channel being quantified. Reaching the other marker's side means
+        # following the pairing, which the 30 unpaired sections do not survive
+        # and which would make one channel's job depend on the other's. So it
+        # narrows the first marker only; the rest are curated on their own full
+        # set, by the same logic in the same tool.
         rank = None
-        if args.worklist and marker == "AF568":
+        if args.worklist and marker == first:
             with open(args.worklist, newline="", encoding="utf-8") as fh:
                 wl = [r for r in csv.DictReader(fh)
                       if not args.tier or r["tier"] == args.tier]
@@ -4753,59 +5420,31 @@ def main():
         return out, subset, before
 
     per_marker, markers = {}, []
-    for mk in ("AF568", "AF488"):
+    for mk in MARKERS:
         got, subset, before = build(mk)
         per_marker[mk] = (got, subset, before)
-        markers.append({"id": mk, "label": "pERK" if mk == "AF568" else "PCNA",
-                        "n": len(got), "sub": subset})
-    data = per_marker["AF568"][0] + per_marker["AF488"][0]
+        # `colour` is the word for what this marker is drawn in, from the
+        # same map review_filters() builds the matrices from - so the page's
+        # label and the page's pixels cannot say different things. None when
+        # this study declared no colour for it; the pane says "no colour set"
+        # and draws it grey rather than borrowing another marker's.
+        markers.append({"id": mk, "label": marker_label(mk),
+                        "n": len(got), "sub": subset,
+                        "colour": MARKER_COLOUR_NAMES.get(mk)})
+    data = [row for mk in MARKERS for row in per_marker[mk][0]]
 
-    with open(os.path.join(PLATE_DIR, "plates.csv"), newline="", encoding="utf-8") as fh:
-        plates = list(csv.DictReader(fh))
-    # Loaded and numbered by the shared helpers above, so this tool and the
-    # atlas region tracer agree about which seed is seed 4.
-    seeds = load_seeds()
-    # Region polygons, where the plate set carries them (Wullimann): the outline
-    # is the area, so it replaces the hull built from seeds.
-    polys = AP.read_polygons(os.path.join(PLATE_DIR, "polygons.csv"))
-    poly_status = ("reviewed", "auto") if args.use_auto_polygons else ("reviewed",)
-    mirror_on = bool(CONFIG.get("atlas_polygon_mirror")) and IO.atlas_source(CONFIG) == "wullimann1996"
-
-    pl = []
-    for p in sorted(plates, key=lambda p: p["plate_id"]):
-        img = os.path.join(PLATE_DIR, p["image_file"])
-        if not os.path.exists(img):
-            continue
-        sd = seeds.get(p["plate_id"], [])
-        if polys.get(p["plate_id"]):
-            mid = float(p["midline_frac"]) if mirror_on and p.get("midline_frac") else None
-            sd, hulls = AP.plate_view(polys[p["plate_id"]], mid, poly_status)
-        else:
-            # The ROI grouping, and the number every seed under it carries.
-            hulls = region_hulls(sd)
-            tag_rois(sd, hulls)
-        # How much room a label actually has on THIS plate: the median distance
-        # from a seed to its nearest neighbour, as a fraction of the plate
-        # diagonal. A fraction rather than pixels because the page has to turn it
-        # into screen pixels against whatever size the pane currently is - bake
-        # in pixels and the scaling goes stale the moment the window changes.
-        nn = 0.0
-        if len(sd) > 1:
-            pw, ph = int(p["px_w"]), int(p["px_h"])
-            pts = [(x["xf"] * pw, x["yf"] * ph) for x in sd]
-            diag = math.hypot(pw, ph)
-            near = sorted(min(math.dist(a, b) for j, b in enumerate(pts) if j != i)
-                          for i, a in enumerate(pts))
-            nn = near[len(near) // 2] / diag
-        pl.append({"id": p["plate_id"], "nn": round(nn, 5),
-                   # Original plate, NOT reformatted: the seeds are fractions of
-                   # this image, so no transform chain is needed.
-                   "img": f"../atlas/{PLATE_SET}/{p['image_file']}",
-                   "w": int(p["px_w"]), "h": int(p["px_h"]),
-                   "labelled": int(bool(sd)), "seeds": sd,
-                   # What a REGION is on this plate, as opposed to where its
-                   # individual seeds are. One entry per region per lobe.
-                   "hulls": hulls})
+    pl = plate_rows(polygon_statuses=("reviewed", "auto") if args.use_auto_polygons else ("reviewed",))
+    gaps = [p for p in pl if p["missing"]]
+    if gaps:
+        # The id alone matches no file on this atlas - `plate_001`'s image is
+        # `plate_001_p01.png`, the whole reason `ls_atlas._image_stem` exists -
+        # so the filename and the directory are printed too, or an operator
+        # checking the report against the folder would be looking for a path
+        # that was never going to be there.
+        named = ", ".join(f"{p['id']} ({p['image_file']})" for p in gaps[:8])
+        print(f"  !! {len(gaps)} plate image(s) not readable in {PLATE_DIR}: "
+              + named + (" ..." if len(gaps) > 8 else ""))
+        print("     They keep their place in the array so no assignment moves.")
 
     # The curation the app has on file, carried into the page so a browser copy
     # opens with the same work rather than empty. --no-seed leaves it out, which
@@ -4822,8 +5461,21 @@ def main():
     page = IO.fill(PAGE, {
         "__SEED__": seed, "__PROV__": load_provenance(), "__DATA__": data,
         "__PLATES__": pl, "__PLATESET__": PLATE_SET, "__MARKERS__": markers,
-        "__MARKER__": args.marker, "__SECGRID__": SEC_GRID, "__GROUPS__": GROUPS,
-        "__EXPORTDIR__": args.export_dir})
+        # The page compares aspect ratios exactly as `ls_atlas.plate_status`
+        # does, so it is handed THAT number rather than repeating it. A literal
+        # 0.01 in the script is a section that verifies in the importer and not
+        # in the page the moment anyone tunes the tolerance.
+        "__ASPECTTOL__": AT.ASPECT_TOLERANCE,
+        "__MARKER__": args.marker, "__SECDIRS__": section_dirs(),
+        "__SECGRID__": SEC_GRID, "__GROUPS__": GROUPS,
+        "__FILTERS__": review_filters(MARKERS, MARKER_COLOURS, NUCLEAR_COLOUR),
+        "__EXPORTDIR__": args.export_dir},
+        # The counterstain's name is the one value here that lands in HTML TEXT
+        # rather than in the script: it is the label on the two toggle buttons.
+        # Through the data argument it would arrive JSON-encoded, quote marks
+        # and all, so `text=` HTML-escapes it instead - same single pass, see
+        # ls_io.fill.
+        text={"__NUCLEAR__": NUCLEAR_NAME})
     with open(args.out, "w", encoding="utf-8") as fh:
         fh.write(page)
 

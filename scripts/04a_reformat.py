@@ -34,6 +34,7 @@ Run:  python 04a_reformat.py
       python 04a_reformat.py --preview 12
 """
 
+import sys
 import argparse
 import csv
 import importlib.util
@@ -49,19 +50,52 @@ _lsio = importlib.util.spec_from_file_location(
 IO = importlib.util.module_from_spec(_lsio)
 _lsio.loader.exec_module(IO)
 
-# LS_CONFIG names the file explicitly; the file-relative path is the fallback.
-# Frozen, the scripts sit inside _internal/ while config.json is beside the
-# executable, so the fallback would point at a file that does not exist.
-CONFIG_PATH = os.environ.get("LS_CONFIG") or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config.json")
-with open(CONFIG_PATH, encoding="utf-8") as _fh:
-    CONFIG = json.load(_fh)
+_HERE = os.path.dirname(os.path.abspath(__file__))
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+# ls_config resolves LS_CONFIG, applies the defaults and validates once for
+# the whole process. Imported, not re-implemented: this block used to be four
+# lines copy-pasted into every stage.
+from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
+import ls_channels as CH  # noqa: E402
+import ls_paths as LP  # noqa: E402
+import ls_atlas as AT  # noqa: E402
+
+# The markers this study measures, in declared order. ls_channels is the
+# single source of that list; naming a fluorophore here would pin the stage
+# to one study.
+MARKERS = list(CH.marker_names(CONFIG))
+
+# Which acquisition layout this study used. `paired` means each marker is a
+# separate physical scan of the same sections, so the reformat is decided once
+# per marker; `multiplex` means one scan carries every marker, so it is decided
+# once per SCENE. Defaulted to multiplex to match ls_channels and the example
+# config: a study that declares no layout is a new one.
+LAYOUT = (CONFIG.get("acquisition") or {}).get("layout", CH.LAYOUT_MULTIPLEX)
+
+# 04a and 04g have always defaulted to the SECOND marker (AF488 = PCNA on the
+# LS study): it is the pass that was curated first, and its outputs are the
+# unsuffixed ones. Kept rather than adopting the first-declared default,
+# because this default selects which sections get written and a silent flip
+# would process the wrong pass.
+DEFAULT_MARKER = MARKERS[1] if len(MARKERS) > 1 else (MARKERS[0] if MARKERS else None)
 
 OUT_ROOT = CONFIG["out_root"]
 OVERVIEW_DIR = os.path.join(OUT_ROOT, "overviews")
-PLATE_SET = IO.plate_set(CONFIG)
-PLATE_DIR = os.path.join(OUT_ROOT, "atlas", PLATE_SET)
+# The set the study CHOSE, not the raw extraction. 04a writes
+# reformatted/plates/<plate_id>.png, and 04d:527 and 04e:405 read those images
+# while taking plates.csv from the configured set. On this drive that join was
+# wrong for every id: plates holds 47 merged figures and plates_final holds 64
+# reframed plates, so 17 ids had no image at all (04e silently continue'd past
+# them) and the other 47 resolved to a picture of a different plate.
+PLATE_DIR = AT.plate_dir(CONFIG)
 QC_CSV = os.path.join(OUT_ROOT, "qc", "focus.csv")
 REFORMAT_DIR = os.path.join(OUT_ROOT, "reformatted")
+
+# The naming rule, borrowed rather than restated. ls_paths owns it; this
+# module is one of its callers. See marker_paths below for what still is not
+# routed through it and why.
+NAMES = LP.for_config(CONFIG)
 
 GRID = 256                  # normalised output is GRID x GRID
 MIN_COMPONENT_FRACTION = 0.12   # debris threshold, relative to the largest component
@@ -388,22 +422,77 @@ def reformat(path, light_background, extra_angle=0.0, flip=False, artifact=None,
     return out_i, out_m, angle % 360.0, out_a, out_c, out_p
 
 
+def _overrides_path(marker):
+    """The rotation-override file for one marker. Delegated to ls_paths.
+
+    This key used to be the literal `perk_overrides.csv` for every marker that
+    is not the geometry source - an ANTIBODY name, with no marker in it. For
+    the LS study that reads as a quirk; for a paired study with three markers
+    it is a collision, because the first and third markers were both handed
+    the same file and whichever ran second overwrote the other's curation.
+    Nothing raised.
+
+    `read()`, not `path()`, and the distinction is the whole risk here. The
+    operator's `perk_overrides.csv` is 82,893 bytes of hand-entered rotations
+    and exclusions covering 130 curated sections, and `load_overrides` returns
+    ({}, {}) for a file that is not there - so a reader that stopped resolving
+    to it would drop every one of them with no error at all. Every writer of
+    this file goes through this same function (04i), so the writer and the
+    reader cannot name different files.
+
+    A marker this study did not declare is given the derived name rather than
+    the refusal `Names` would normally raise: `marker_paths` has always
+    answered for any string - `tests/test_reformat_layout.py` flips LAYOUT and
+    asks for two invented names - and turning that into a ValueError is a
+    behaviour change this does not make. `including()` is that widening, and
+    it lives in ls_paths so the rule is still not restated here.
+
+    LAYOUT is re-read rather than taken from NAMES, because the rest of
+    `marker_paths` reads the module-level one and a suite flips it in place to
+    ask what the other layout does. A Names frozen at import would keep
+    answering `paired` after the flip and hand two markers separate override
+    files from inside a branch that gives them one shared index - the two
+    halves of one answer disagreeing, which is the whole failure mode this
+    change is about.
+    """
+    names = NAMES if LAYOUT == NAMES.layout else LP.Names(OUT_ROOT, MARKERS, LAYOUT)
+    return names.including(marker).read("overrides", marker)
+
+
 def marker_paths(marker):
     """Per-marker output paths and override source.
 
-    The two markers are separate acquisitions of the same sections, so they get
-    separate index files and separate section directories. Scene uids differ
-    anyway (`..._s03b_...` vs `..._s03a_...`), but sharing an index would let one
-    run silently overwrite the other's.
+    **Paired only.** The two markers are separate acquisitions of the same
+    sections, so they get separate index files and separate section
+    directories. Scene uids differ anyway (`..._s03b_...` vs `..._s03a_...`),
+    but sharing an index would let one run silently overwrite the other's.
+
+    Under `multiplex` there is one scan per section carrying every marker, so
+    every marker answers with the SAME set of paths - see the branch below.
+
+    The unsuffixed set belongs to `DEFAULT_MARKER`, the pass that was curated
+    first, not to a fluorophore this stage names itself.
     """
-    if marker == "AF488":
-        return {"overrides": os.path.join(REFORMAT_DIR, "rotation_overrides.csv"),
+    if LAYOUT == CH.LAYOUT_MULTIPLEX:
+        # One scan carries every marker, so there is ONE frame per scene and
+        # the reformat is decided once. Suffixing these by marker would write
+        # the same pixels several times under different names, and would let
+        # two markers of one section disagree about where the section is -
+        # which is the thing the curator then has to reconcile by hand.
+        return {"overrides": _overrides_path(marker),
                 "uid_col": "scene_uid",
                 "sections": os.path.join(REFORMAT_DIR, "sections"),
                 "index": os.path.join(REFORMAT_DIR, "reformat_index.csv"),
                 "excluded": os.path.join(REFORMAT_DIR, "excluded_sections.csv"),
                 "lost": os.path.join(REFORMAT_DIR, "lost_sections.csv")}
-    return {"overrides": os.path.join(REFORMAT_DIR, f"perk_overrides.csv"),
+    if marker == DEFAULT_MARKER:
+        return {"overrides": _overrides_path(marker),
+                "uid_col": "scene_uid",
+                "sections": os.path.join(REFORMAT_DIR, "sections"),
+                "index": os.path.join(REFORMAT_DIR, "reformat_index.csv"),
+                "excluded": os.path.join(REFORMAT_DIR, "excluded_sections.csv"),
+                "lost": os.path.join(REFORMAT_DIR, "lost_sections.csv")}
+    return {"overrides": _overrides_path(marker),
             # 04i writes the pERK scene under its own column name.
             "uid_col": "perk_scene_uid",
             "sections": os.path.join(REFORMAT_DIR, f"sections_{marker}"),
@@ -439,10 +528,19 @@ def apply_review(excluded, marker):
     with open(REVIEW_CSV, newline="", encoding="utf-8") as fh:
         for r in csv.DictReader(fh):
             uid = r.get("scene_uid", "")
-            # Rows for the other marker belong to the other run's index and
-            # would never match a section here; skipping them keeps the counts
-            # honest rather than reporting decisions this run did not apply.
-            if not uid or (r.get("marker") and r["marker"] != marker):
+            # Paired: rows for the other marker belong to the other run's
+            # index and would never match a section here; skipping them keeps
+            # the counts honest rather than reporting decisions this run did
+            # not apply.
+            #
+            # Multiplex: there is one frame per scene, so a decision is about
+            # THAT frame whatever marker the reviewer happened to have on
+            # screen when they made it. Filtering by marker here would let two
+            # markers of one section disagree about whether it is excluded,
+            # which is exactly what one frame per scene exists to prevent.
+            other_marker = (LAYOUT != CH.LAYOUT_MULTIPLEX
+                            and r.get("marker") and r["marker"] != marker)
+            if not uid or other_marker:
                 continue
             if r.get("mask_rejected") == "1":
                 rejected.add(uid)
@@ -458,6 +556,24 @@ def apply_review(excluded, marker):
     return out, rejected
 
 
+def frames_for(rows, marker):
+    """The QC rows this run reformats - one frame per SCENE.
+
+    Paired: each marker is its own physical scan, so a run takes the rows for
+    that scan and the other marker's rows belong to the other run.
+
+    Multiplex: one scan carries every marker, so there is a single frame per
+    scene and every scene is reformatted once. `marker_channel` is filled by
+    00_manifest from the file's SECOND channel name, so under multiplex it
+    names at most one of the declared markers - filtering by it would silently
+    reformat nothing for all the others. The overview path is built from each
+    row's own `marker_channel`, not from `marker`, so it still resolves.
+    """
+    if LAYOUT == CH.LAYOUT_MULTIPLEX:
+        return list(rows)
+    return [r for r in rows if r["marker_channel"] == marker]
+
+
 def load_overrides(paths=None, write=False):
     """Manual rotation corrections from 04d_rotation_curator.py.
 
@@ -465,7 +581,7 @@ def load_overrides(paths=None, write=False):
     absolute orientation, so improving the auto-rotation later does not
     invalidate the manual work.
     """
-    paths = paths or marker_paths("AF488")
+    paths = paths or marker_paths(DEFAULT_MARKER)
     path, uid_col = paths["overrides"], paths["uid_col"]
     if not os.path.exists(path):
         return {}, {}
@@ -559,11 +675,46 @@ def select_only(spec, excluded):
     return want
 
 
+def regions_from_seeds(plate_dir):
+    """{plate_id: [region, ...]} from `<plate_dir>/seeds.csv`, or `{}` when
+    there is no seeds.csv to read.
+
+    regions came from a plates.csv column that only the raw extraction set
+    has. seeds.csv carries the same information in every set, under an
+    identical header, so it is derived rather than required.
+    """
+    regions_of = {}
+    try:
+        with open(os.path.join(plate_dir, "seeds.csv"), newline="",
+                  encoding="utf-8") as fh:
+            for s in csv.DictReader(fh):
+                regions_of.setdefault(s["plate_id"], []).append(s.get("region", ""))
+    except OSError:
+        pass
+    return regions_of
+
+
+def plate_regions(plate_row, regions_of):
+    """The `regions` value for one plates.csv row.
+
+    `plate_row["regions"]` when the plate set's own plates.csv carries that
+    column (the raw extraction set) - a no-op for anyone still pointed at
+    `plates`. Otherwise the seeds-derived list for that plate_id: sorted and
+    deduplicated, so the value is stable rather than dependent on set
+    iteration order or seeds.csv row order.
+    """
+    return (plate_row.get("regions")
+            or ";".join(sorted(set(
+                r for r in regions_of.get(plate_row["plate_id"], []) if r))))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--preview", type=int, default=8)
-    ap.add_argument("--marker", default="AF488", choices=["AF488", "AF568"],
-                    help="AF488 = PCNA (default), AF568 = pERK")
+    # The pass that was curated first; see DEFAULT_MARKER.
+    _default = DEFAULT_MARKER
+    ap.add_argument("--marker", default=_default, choices=MARKERS,
+                    help=f"which marker to process (default {_default})")
     ap.add_argument("--censor", action="store_true",
                     help="carry 04j clipped-pixel censor masks through the geometry")
     ap.add_argument("--mask-artifacts", action="store_true",
@@ -592,7 +743,7 @@ def main():
         write_excluded(paths["excluded"], excluded)
 
     sec_dir = paths["sections"]
-    plate_dir = os.path.join(REFORMAT_DIR, IO.reformatted_plates_dir(CONFIG))
+    plate_dir = os.path.join(REFORMAT_DIR, AT.reformatted_dir(CONFIG))
     os.makedirs(sec_dir, exist_ok=True)
     os.makedirs(plate_dir, exist_ok=True)
 
@@ -601,6 +752,8 @@ def main():
     with open(os.path.join(PLATE_DIR, "plates.csv"), newline="", encoding="utf-8") as fh:
         plates = list(csv.DictReader(fh))
     ok = 0
+    regions_of = regions_from_seeds(PLATE_DIR)
+
     # A --only run repairs section pictures; the plates are not sections and
     # rewriting them would be a side effect nobody asked for, even though the
     # bytes would come out the same.
@@ -618,12 +771,13 @@ def main():
         Image.fromarray(img).save(os.path.join(plate_dir, p["plate_id"] + ".png"))
         np.save(os.path.join(plate_dir, p["plate_id"] + "_mask.npy"), mask)
         rows.append({"kind": "plate", "id": p["plate_id"], "angle": round(angle, 1),
-                     "fill": round(float(mask.mean()), 4), "regions": p["regions"]})
+                     "fill": round(float(mask.mean()), 4),
+                     "regions": plate_regions(p, regions_of)})
         ok += 1
     print(f"plates reformatted: {ok}/{len(plates)}")
 
     with open(QC_CSV, newline="", encoding="utf-8") as fh:
-        secs = [r for r in csv.DictReader(fh) if r["marker_channel"] == args.marker]
+        secs = frames_for(csv.DictReader(fh), args.marker)
 
     # A PARTIAL RUN REPAIRS PICTURES AND NOTHING ELSE.
     #

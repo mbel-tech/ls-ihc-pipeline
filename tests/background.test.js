@@ -20,7 +20,7 @@ const { els, blobs, fire } = env;
 
 const X = load(`{KEY, PLATES, DATA, st, rows, select, onSlideUser, exportCsv,
   markAssigned, toggleFav, secDown, toggleBgMode, transform, toggleGuided,
-  clickPl,
+  clickPl, stepPlate, resolvePlate,
   usedRois, roisOf, polysOf, roiPairs, bgPairs, isBg, pairR, defaultR,
   drawSec,
   get guided(){return guided}, get gTarget(){return gTarget},
@@ -92,8 +92,12 @@ pair(120, 120, 30, 30);
 pair(200, 140, 90, 45);
 pair(260, 120, 140, 80);
 chk("three landmarks placed", X.roiPairs(s).length, 3);
-const withBg = X.transform(s.pairs);
-const withoutBg = X.transform(X.roiPairs(s));
+// transform() takes the SECTION, not a list of pairs: it has to read
+// `verified` to refuse a section whose plate no longer checks out, and a bare
+// array cannot carry that. The second call wraps a filtered list in the same
+// shape to ask the same question of it.
+const withBg = X.transform(s);
+const withoutBg = X.transform({verified: s.verified, pairs: X.roiPairs(s)});
 chk("a fit exists", !!withBg, true);
 chk("it is identical to one built without the background disc",
     JSON.stringify(withBg), JSON.stringify(withoutBg));
@@ -139,6 +143,136 @@ const plRow = pl.slice(1).find(r => r[0] === uid);
 chk("roi_plates.csv gained n_background", col(pl[0], "n_background") > 0, true);
 chk("...and reports it", plRow[col(pl[0], "n_background")], "1");
 chk("n_landmarks excludes the background disc", plRow[col(pl[0], "n_landmarks")], "3");
+// The header and the row are built in two different places in the source -
+// a header of N names and a row of N+1 values silently shifts every column
+// after the mismatch, with nothing on screen or in the diff saying so. Check
+// it mechanically rather than by eye.
+chk("roi_plates.csv header and row line up", plRow.length, pl[0].length);
+chk("...gained plate_fp", col(pl[0], "plate_fp") > 0, true);
+chk("...carrying the chosen plate's own fingerprint",
+    plRow[col(pl[0], "plate_fp")], P.fp || "");
+chk("...and plate_px, the size that fingerprint was taken at",
+    plRow[col(pl[0], "plate_px")], P.w + "x" + P.h);
+// Assigning the plate through the slider IS the confirmation - it re-stamps
+// the identity from the atlas loaded now - so a section curated in this
+// session reports ok rather than blank.
+chk("...and plate_verified, which assigning the plate has now stamped",
+    plRow[col(pl[0], "plate_verified")], "ok");
+
+// A VERDICT ABOUT A PLATE THE ROW DECLINES TO NAME.
+//
+// plate_id, plate_fp and plate_px are all blanked when the plate was never
+// chosen - a favourite with no assignment must not read as a deliberate call
+// on plate_001. plate_verified is a judgement about those three, so it is
+// blanked with them. Stepping the plate confirms it (it is the keyboard twin
+// of the slider) WITHOUT setting `assigned`, which is the one combination that
+// can produce a stamped verdict on an unchosen plate.
+const fav = X.rows()[1].uid;
+X.select(fav, true); X.active = fav;
+X.toggleFav();
+X.stepPlate(1);
+chk("stepping the plate confirms it", X.st(fav).verified, "ok");
+chk("...without making it an assignment", !!X.st(fav).assigned, false);
+blobs.length = 0;
+X.exportCsv();
+const favRow = rows(blobs[0]).slice(1).find(r => r[0] === fav);
+chk("a favourite with no assignment names no plate",
+    favRow[col(pl[0], "plate_id")], "");
+chk("...and carries no verdict about one either",
+    favRow[col(pl[0], "plate_verified")], "");
+chk("...and is still reported as work", favRow[col(pl[0], "status")], "favourite_only");
+
+// THE ROW CARRIES THE PLATE AS IT WAS, NOT AS IT IS.
+//
+// A section whose plate was re-cropped since it was curated must export the
+// fingerprint and the size it was MATCHED against. Exporting the current
+// atlas's values instead destroys the only evidence anything changed: the next
+// importer compares that fingerprint to the set it came from, finds it
+// matches, and calls the section verified. That is the swap this whole plan
+// exists to stop, laundered through the CSV rather than the page.
+//
+// plate_px doubly so - a re-render's landmarks are scaled by new/old, and with
+// the new size in both places the factor is 1.0 and the rescale silently does
+// nothing.
+const chg = X.rows()[2].uid;
+X.select(chg, true); X.active = chg;
+// What initState hands back for a record stored against the plate as it was:
+// same id, a different picture, re-cropped to a different shape.
+const stale = X.resolvePlate({plate: pi, assigned: true, pairs: [],
+  plate_id: P.id, plate_fp: "0123456789ab", plate_px: "111x222"}, X.PLATES);
+chk("a re-cropped plate reads as changed", stale.verified, "changed");
+Object.assign(X.st(chg), stale);
+blobs.length = 0;
+X.exportCsv();
+const chgRow = rows(blobs[0]).slice(1).find(r => r[0] === chg);
+chk("the plate on disk does have a fingerprint to be confused with",
+    (P.fp || "").length > 0, true);
+chk("the row keeps the fingerprint it was curated against",
+    chgRow[col(pl[0], "plate_fp")], "0123456789ab");
+chk("...which is NOT the one the current atlas would verify",
+    chgRow[col(pl[0], "plate_fp")] === P.fp, false);
+chk("...and the size that fingerprint was taken at, not today's",
+    chgRow[col(pl[0], "plate_px")], "111x222");
+chk("...with the verdict that says not to trust it",
+    chgRow[col(pl[0], "plate_verified")], "changed");
+chk("...and no fit, because its landmarks are withheld",
+    chgRow[col(pl[0], "transform")], "");
+delete X.st(chg).plate_id; delete X.st(chg).plate_fp;
+delete X.st(chg).plate_px; delete X.st(chg).verified;
+X.st(chg).assigned = false;
+
+// A PLATE THIS ATLAS NO LONGER HAS IS STILL THE PLATE THAT WAS CHOSEN.
+//
+// A gone record keeps its stored index, because that index is the only clue
+// left to re-confirm from - so plateAt() resolves it to whatever plate now
+// occupies that slot. Exporting THAT id would name one plate beside another
+// plate's fingerprint: a row that is internally incoherent, and the only
+// surviving record of what the operator actually chose destroyed on the way
+// out. The stored id is exported instead, with plate_verified saying why it
+// cannot be found.
+const away = X.rows()[3].uid;
+X.select(away, true); X.active = away;
+const lost = X.resolvePlate({plate: pi, assigned: true, pairs: [],
+  plate_id: "plate_999", plate_fp: "0123456789ab", plate_px: "111x222"}, X.PLATES);
+chk("an id this atlas does not have reads as gone", lost.verified, "gone");
+chk("...and it keeps the index, the only clue left", lost.plate, pi);
+Object.assign(X.st(away), lost);
+blobs.length = 0;
+X.exportCsv();
+const awayRow = rows(blobs[0]).slice(1).find(r => r[0] === away);
+chk("the row names the plate the operator chose",
+    awayRow[col(pl[0], "plate_id")], "plate_999");
+chk("...which is NOT the plate now sitting at that index",
+    awayRow[col(pl[0], "plate_id")] === P.id, false);
+chk("...and the index is still there to re-confirm from",
+    awayRow[col(pl[0], "plate_index")], String(pi));
+chk("...beside the fingerprint that id belongs to",
+    awayRow[col(pl[0], "plate_fp")], "0123456789ab");
+chk("...and the verdict that says it cannot be found",
+    awayRow[col(pl[0], "plate_verified")], "gone");
+delete X.st(away).plate_id; delete X.st(away).plate_fp;
+delete X.st(away).plate_px; delete X.st(away).verified;
+
+// AND THE SHAPE EVERY RECORD ON THIS DRIVE IS IN TODAY: an assignment made
+// before ids were kept - an index and nothing else. It must keep exporting the
+// id at that index, because that is a true statement about where the section
+// points and by_index is the qualifier for it. Blanking it here is what would
+// break every downstream join for the operator's whole dataset, and nothing
+// requires that: only plate_fp and plate_px blank, because a synthesised
+// fingerprint would be a false claim rather than a qualified one.
+const old = X.st(away);
+old.plate = pi; old.assigned = true;
+blobs.length = 0;
+X.exportCsv();
+const oldRow = rows(blobs[0]).slice(1).find(r => r[0] === away);
+chk("a record from before ids were kept still names its plate",
+    oldRow[col(pl[0], "plate_id")], P.id);
+chk("...but claims no fingerprint for it", oldRow[col(pl[0], "plate_fp")], "");
+chk("...and no size either", oldRow[col(pl[0], "plate_px")], "");
+X.st(away).assigned = false;
+
+X.select(uid, true); X.active = uid;
+blobs.length = 0;
 X.toggleGuided();
 
 // ---- a section with too few landmarks for a fit --------------------------
@@ -195,7 +329,7 @@ for (const Q of X.PLATES) {
   nPlates++;
   const pr = Q.seeds.slice(0, 3).map((sd, i) =>
     [100 + i * 10, 100 + i * 90, sd.xf * Q.w, sd.yf * Q.h, i + 1, 8]);
-  const T2 = X.transform(pr);
+  const T2 = X.transform({pairs: pr});
   if (T2 === null) nNoFit++;
   else if (![...T2.a, ...T2.d].every(Number.isFinite)) nNaN++;
 }

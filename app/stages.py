@@ -25,24 +25,152 @@ Hiding them would turn "we chose not to wrap this" into "this does not exist".
 
 import importlib.util
 import os
+import re
 import sys
 
 READERS = ("pylibCZIrw", "czifile", "fiji", "none")
+
+# scripts/ holds the two facts this file used to restate: which acquisition
+# layouts a stage applies to, and what a legacy artifact name is. Loaded rather
+# than copied, so the sidebar and run_all.sh cannot disagree about which stages
+# a study runs. Neither module reads a config, so importing them here costs
+# nothing and cannot fail on an unplugged drive.
+_REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_SCRIPTS = os.path.join(_REPO, "scripts")
+
+
+def _sibling(name, module):
+    spec = importlib.util.spec_from_file_location(
+        module, os.path.join(_SCRIPTS, name))
+    mod = importlib.util.module_from_spec(spec)
+    added = _SCRIPTS not in sys.path
+    if added:
+        sys.path.insert(0, _SCRIPTS)
+    try:
+        spec.loader.exec_module(mod)
+    finally:
+        if added:
+            try:
+                sys.path.remove(_SCRIPTS)
+            except ValueError:
+                pass
+    return mod
+
+
+LY = _sibling("ls_layouts.py", "_app_ls_layouts")
+LP = _sibling("ls_paths.py", "_app_ls_paths")
+
+MARKER_TOKEN = re.compile(r"\{marker(\d+)\}")
+
+
+def fill_markers(text, markers):
+    """Replace `{marker0}`, `{marker1}`, ... with the study's declared markers.
+
+    This file is static data: it is imported without a config and must stay
+    that way, because the sidebar is drawn before a study is chosen and can be
+    re-pointed at a different one while it is open. So the marker POSITIONS are
+    written here and the names are filled in by whoever knows the study - the
+    runner for argv, the window for output paths.
+
+    A token past the end of the list is left EXACTLY AS WRITTEN rather than
+    dropped or filled with something plausible. A two-marker study has no
+    `{marker2}`, and an output path with a literal `{marker2}` in it is a
+    missing file the operator can see; a silently emptied token is a path that
+    happens to exist and a stage that reports done over work never run.
+    """
+    markers = list(markers or [])
+
+    def one(m):
+        i = int(m.group(1))
+        return markers[i] if i < len(markers) else m.group(0)
+
+    return MARKER_TOKEN.sub(one, text)
+
+
+class Art:
+    """An output whose name is `ls_paths`' answer, not a literal in this file.
+
+    Four artifacts were renamed out of this study's antibody names, and this
+    operator's drive still holds the old ones. Writing both names here as a
+    pair would be a second copy of `ls_paths.LEGACY` - and a copy that goes
+    stale silently, because a wrong legacy name simply never matches and the
+    stage shows as never-run while every `needs=` chain behind it stays
+    blocked. So the pair is asked for, per study.
+
+    `marker` is an INDEX into the study's declared markers, not a name: which
+    marker each stage handles is a fact about the pipeline's shape, which is
+    what this file is for; what that marker is CALLED is a fact about the
+    study, which is not.
+    """
+
+    def __init__(self, artifact, marker, tail=""):
+        self.artifact = artifact
+        self.marker = marker
+        # `sections_AF568_rgb` and `sections_AF568_rgb_thumb` are 04o's
+        # derivatives of the section directory - the same name with something
+        # appended. They are not artifacts in their own right, but the SUFFIX
+        # RULE they carry is the section directory's, so they are built from it
+        # rather than spelled out. Spelled out they would read
+        # `sections_{marker0}_rgb`, which is right for this paired study only
+        # because marker0 is not the geometry source, and silently wrong under
+        # multiplex where every marker's directory is unsuffixed.
+        self.tail = tail
+
+    def __repr__(self):
+        return f"<Art {self.artifact} marker{self.marker}{self.tail}>"
+
+    def resolve(self, names):
+        """`(what to show, [paths that satisfy it])` for one study.
+
+        With no study yet - the sidebar is drawn before one is chosen - the
+        token is shown unfilled rather than guessed at, and nothing satisfies
+        it. A stage then reads as not-done, which is the honest answer to "has
+        this been run?" when nobody has said for which study.
+        """
+        token = "{marker%d}" % self.marker
+        if names is None or self.marker >= len(names.markers):
+            return f"{self.artifact}{self.tail} {token}", []
+        marker = names.markers[self.marker]
+        if self.artifact == "analysis_set":
+            # 04j PINS the two pre-rename names rather than adopting them on
+            # sight: the first run creates the file, so existence cannot be
+            # what decides. Ask the same method 04j writes through.
+            current = names.analysis_set_path(marker)
+        else:
+            current = names.path(self.artifact, marker)
+        legacy = names.legacy_path(self.artifact, marker)
+        paths = [current] + ([legacy] if legacy and legacy != current else [])
+        if self.tail:
+            # A derivative has no legacy name of its own; it is only ever the
+            # current directory with something on the end.
+            current += self.tail
+            paths = [current]
+        # Forward slashes: every other entry in this table is written
+        # "reformatted/x.csv", and the panel lists them side by side.
+        shown = os.path.relpath(current, names.out_root).replace(os.sep, "/")
+        return shown, paths
 
 
 class Stage:
     """One pipeline step.
 
     `outputs` are checked for existence to decide `done`, relative to
-    out_root. `argv` is what follows the script name; `{out_root}`, `{repo}`
-    and `{scripts}` are expanded by the runner. `cli_only` is a reason string,
+    out_root. An entry may be an `Art`, which is satisfied by EITHER the name
+    a writer writes today or the pre-rename name this operator's drive still
+    holds - exactly as `ls_paths.read()` decides for the stages themselves.
+    Without it every renamed stage would show as never-run and every `needs=`
+    chain hanging off it would stay blocked.
+
+    `argv` is what follows the script name; `{out_root}`, `{repo}` and
+    `{scripts}` are expanded by the runner, and `{marker0}`/`{marker1}` in
+    either argv or outputs by `fill_markers`. `cli_only` is a reason string,
     None, or a callable returning either - detection depends on what the
     running interpreter can import.
     """
 
     def __init__(self, sid, title, group, script=None, argv=(), outputs=(),
                  blurb="", cli_only=None, curator=None, needs=(),
-                 operator=False, reader="none", unblinds=False):
+                 operator=False, reader="none", unblinds=False, layouts=None):
         self.sid = sid
         self.title = title
         self.group = group
@@ -56,11 +184,36 @@ class Stage:
         self.operator = operator
         self.reader = reader
         self.unblinds = unblinds
+        # Which acquisition layouts this stage applies to. None means both -
+        # the default has to be "applies", so a new stage cannot vanish from
+        # every study by omission.
+        self.layouts = tuple(layouts) if layouts else None
+
+    def applies(self, layout):
+        """True when this stage should be offered for a study of this layout."""
+        return self.layouts is None or layout in self.layouts
 
     def cli_reason(self):
         return self.cli_only() if callable(self.cli_only) else self.cli_only
 
-    def done(self, out_root):
+    def _alternatives(self, entry, out_root, names):
+        """One declared output as `(what to show, [paths that satisfy it])`.
+
+        Absolute paths, because an `Art` entry is answered by `ls_paths`, which
+        speaks in absolute paths and is the only thing that knows whether this
+        operator's drive still holds the pre-rename name.
+        """
+        markers = names.markers if names is not None else ()
+        if isinstance(entry, Art):
+            return entry.resolve(names)
+        shown = fill_markers(entry, markers)
+        return shown, [os.path.join(out_root, shown)]
+
+    def output_names(self, out_root="", names=None):
+        """What this stage leaves behind, as the operator should see it."""
+        return [self._alternatives(e, out_root, names)[0] for e in self.outputs]
+
+    def done(self, out_root, names=None):
         """True when every declared output exists.
 
         Deliberately existence-only. Reading row counts would be a better
@@ -70,11 +223,18 @@ class Stage:
         """
         if not self.outputs:
             return False
-        return all(os.path.exists(os.path.join(out_root, p)) for p in self.outputs)
+        return all(any(os.path.exists(p) for p in paths)
+                   for _shown, paths in
+                   (self._alternatives(e, out_root, names) for e in self.outputs))
 
-    def missing(self, out_root):
-        return [p for p in self.outputs
-                if not os.path.exists(os.path.join(out_root, p))]
+    def missing(self, out_root, names=None):
+        """The output NAMES - as `output_names` gives them - that are absent."""
+        out = []
+        for entry in self.outputs:
+            shown, paths = self._alternatives(entry, out_root, names)
+            if not any(os.path.exists(p) for p in paths):
+                out.append(shown)
+        return out
 
     def __repr__(self):
         return f"<Stage {self.sid} {self.title!r}>"
@@ -171,6 +331,7 @@ STAGES = [
 
     Stage("pair", "02  Pair the two marker passes", "Ingest and QC",
           script="02_pair_passes.py",
+          layouts=LY.layouts_for("02_pair_passes.py"),
           outputs=["pairs.csv"],
           needs=["overviews"],
           blurb="Matches AF568 and AF488 scans onto the same physical sections "
@@ -263,7 +424,7 @@ STAGES = [
     Stage("saturation_map", "01g  Where the clipping falls",
           "Instrument characterisation",
           script="01g_saturation_map.py",
-          outputs=["qc/saturation/saturation_AF568.csv"],
+          outputs=["qc/saturation/saturation_{marker0}.csv"],
           needs=["saturation_raw"],
           blurb="Separates cosmetic clipping (edges, debris) from consequential "
                 "clipping (parenchyma) per section: in-tissue fraction, edge "
@@ -376,8 +537,8 @@ STAGES = [
                 "overview resolution, so the mask is the same for both markers."),
 
     Stage("censor_pcna", "04j  Censor clipped pixels - PCNA", "Normalisation and curation",
-          script="04j_censor_clipped.py", argv=["--marker", "AF488"],
-          outputs=[REF + "pcna_analysis_set.csv"],
+          script="04j_censor_clipped.py", argv=["--marker", "{marker1}"],
+          outputs=[Art("analysis_set", 1)],
           needs=["saturation_raw", "reformat_pcna_curated"],
           blurb="Sections above the 1% clipped tolerance are set aside with a "
                 "flag; surviving clipped pixels are right-censored, not masked. "
@@ -396,29 +557,30 @@ STAGES = [
     Stage("propagate_perk", "04i  Carry the curation onto the pERK scans",
           "Normalisation and curation",
           script="04i_propagate_to_perk.py",
-          outputs=[REF + "perk_overrides.csv"],
+          layouts=LY.layouts_for("04i_propagate_to_perk.py"),
+          outputs=[Art("overrides", 0)],
           needs=["pair", "reformat_pcna_final"],
           blurb="Exclusions transfer directly through pairs.csv; rotations are "
                 "re-derived by aligning the pERK silhouette onto the curated "
                 "PCNA one, because the scan boxes differ."),
 
     Stage("reformat_perk", "04a  Reformat pERK sections", "Normalisation and curation",
-          script="04a_reformat.py", argv=["--marker", "AF568", "--apply-overrides"],
-          outputs=[REF + "reformat_index_AF568.csv"],
+          script="04a_reformat.py", argv=["--marker", "{marker0}", "--apply-overrides"],
+          outputs=[Art("index", 0)],
           needs=["propagate_perk"],
           blurb="The pERK pass into the same frame, with the propagated "
                 "curation applied."),
 
     Stage("artifact_perk", "04g  Mask artifacts - pERK", "Normalisation and curation",
-          script="04g_artifact_mask.py", argv=["--marker", "AF568", "--include-excluded"],
-          outputs=["artifacts/artifact_summary_AF568.csv"],
+          script="04g_artifact_mask.py", argv=["--marker", "{marker0}", "--include-excluded"],
+          outputs=[Art("artifact_summary", 0)],
           needs=["reformat_perk"],
           blurb="The same detector on the pERK scan's DAPI. The two scans image "
                 "different fields, so artifacts are not propagated."),
 
     Stage("censor_perk", "04j  Censor clipped pixels - pERK", "Normalisation and curation",
           script="04j_censor_clipped.py",
-          outputs=[REF + "perk_analysis_set.csv", "censor"],
+          outputs=[Art("analysis_set", 0), "censor"],
           needs=["saturation_raw", "reformat_perk"],
           blurb="The 1000 ms AF568 exposure pins pixels at the ceiling on a "
                 "third of sections. Writes perk_analysis_set.csv - the "
@@ -427,8 +589,8 @@ STAGES = [
     Stage("reformat_perk_final", "04a  Reformat pERK - masked and censored",
           "Normalisation and curation",
           script="04a_reformat.py",
-          argv=["--marker", "AF568", "--apply-overrides", "--mask-artifacts", "--censor"],
-          outputs=[REF + "sections_AF568"],
+          argv=["--marker", "{marker0}", "--apply-overrides", "--mask-artifacts", "--censor"],
+          outputs=[Art("sections", 0)],
           needs=["artifact_perk", "censor_perk"],
           blurb="The analysis frame for pERK. 05c reads the censor and artifact "
                 "masks this writes."),
@@ -436,8 +598,8 @@ STAGES = [
     Stage("render_excluded_perk", "04a  Render excluded pERK sections for Review",
           "Normalisation and curation",
           script="04a_reformat.py",
-          argv=["--marker", "AF568", "--apply-overrides", "--render-excluded"],
-          outputs=[REF + "sections_AF568"],
+          argv=["--marker", "{marker0}", "--apply-overrides", "--render-excluded"],
+          outputs=[Art("sections", 0)],
           needs=["reformat_perk_final"],
           blurb="pERK exclusions were applied before reformatting, so the 473 "
                 "had no picture. Renders them for the curator's Review mode "
@@ -446,7 +608,8 @@ STAGES = [
     Stage("sections_dataset", "04m  Every pERK section and its fate",
           "Normalisation and curation",
           script="04m_sections_dataset.py",
-          outputs=[REF + "perk_sections_dataset.csv"],
+          layouts=LY.layouts_for("04m_sections_dataset.py"),
+          outputs=[Art("sections_dataset", 0)],
           needs=["censor_perk"],
           blurb="One row per pERK section - analysis set, censored out, or "
                 "excluded and why - joined to its PCNA partner. The exclusion "
@@ -460,27 +623,27 @@ STAGES = [
                 "advanced to the same fraction, spread across each brain."),
 
     Stage("rgb_perk", "04o  Colour composites - pERK", "Normalisation and curation",
-          script="04o_section_rgb.py", argv=["--marker", "AF568", "--all"],
-          outputs=[REF + "sections_AF568_rgb"],
+          script="04o_section_rgb.py", argv=["--marker", "{marker0}", "--all"],
+          outputs=[Art("sections", 0, "_rgb")],
           needs=["reformat_perk_final"],
           blurb="DAPI blue plus the marker, in the reformatted frame, so the "
                 "curator shows the channel being quantified."),
 
     Stage("rgb_pcna", "04o  Colour composites - PCNA", "Normalisation and curation",
-          script="04o_section_rgb.py", argv=["--marker", "AF488", "--all"],
-          outputs=[REF + "sections_rgb"],
+          script="04o_section_rgb.py", argv=["--marker", "{marker1}", "--all"],
+          outputs=[Art("sections", 1, "_rgb")],
           needs=["reformat_pcna_final"],
           blurb="The same for the PCNA channel."),
 
     Stage("thumbs_perk", "04o  Review thumbnails - pERK", "Normalisation and curation",
-          script="04o_section_rgb.py", argv=["--marker", "AF568", "--thumbs"],
-          outputs=[REF + "sections_AF568_rgb_thumb"],
+          script="04o_section_rgb.py", argv=["--marker", "{marker0}", "--thumbs"],
+          outputs=[Art("sections", 0, "_rgb_thumb")],
           needs=["rgb_perk"],
           blurb="256 px colour thumbnails for the curator's Review grid."),
 
     Stage("thumbs_pcna", "04o  Review thumbnails - PCNA", "Normalisation and curation",
-          script="04o_section_rgb.py", argv=["--marker", "AF488", "--thumbs"],
-          outputs=[REF + "sections_rgb_thumb"],
+          script="04o_section_rgb.py", argv=["--marker", "{marker1}", "--thumbs"],
+          outputs=[Art("sections", 1, "_rgb_thumb")],
           needs=["rgb_pcna"],
           blurb="The same for PCNA."),
 
@@ -495,7 +658,7 @@ STAGES = [
 
     Stage("roi_curator", "04l  ROI curator", "Normalisation and curation",
           script="04l_roi_curator.py",
-          argv=["--marker", "AF568", "--worklist", "--rgb"],
+          argv=["--marker", "{marker0}", "--worklist", "--rgb"],
           outputs=[REF + "roi_curator.html"],
           curator=REF + "roi_curator.html", operator=True,
           needs=["worklist", "rgb_perk", "rgb_pcna", "atlas_rebuild"],
@@ -534,7 +697,7 @@ STAGES = [
 
     Stage("roi_geometry", "05a  Place the ROIs on the slide", "Quantification",
           script="05a_roi_geometry.py",
-          outputs=[REF + "roi_geometry_AF568.csv", REF + "roi_boxes_AF568.csv"],
+          outputs=[Art("roi_geometry", 0), Art("roi_boxes", 0)],
           needs=["roi_curator"],
           blurb="One affine per section and one CZI-pixel box per curated disc. "
                 "Reads the newest roi_regions.csv export. Per marker, so a PCNA "
@@ -565,6 +728,15 @@ STAGES = [
                 "recorded it: nuclei outside the DAPI silhouette, which drag a "
                 "background disc's cut down."),
 
+    Stage("seg_provenance", "06h  Backfill segmentation provenance", "Quantification",
+          script="06h_backfill_provenance.py",
+          outputs=["results/_pre_06h_backup"],
+          needs=["detect"],
+          blurb="Backfills segmented_on / backend / nucleus_shaped onto a "
+                "roi_nuclei.csv written before 05c recorded them. Every row in "
+                "such a file is nuclear / stardist / nucleus-shaped - there was "
+                "no other route - and 06a's Abercrombie gate reads them."),
+
     Stage("roi_dataset", "06a  Per-ROI dataset", "Quantification",
           script="06a_roi_dataset.py",
           outputs=["results/roi_measurements.csv", "results/detector_specificity.csv"],
@@ -587,14 +759,16 @@ STAGES = [
           outputs=["results/roi_dataset.xlsx"],
           needs=["roi_dataset"],
           blurb="One row per ROI per sample, plus per-disc, per-section and "
-                "coverage sheets. Buildable mid-run."),
+                "coverage sheets. A row here is one animal, which is why the "
+                "per-ROI figures read this one. Buildable mid-run."),
 
     Stage("excel_slide", "06d  Spreadsheet - per slide", "Beyond blinding",
           script="06d_excel_by_slide.py",
           outputs=["results/roi_dataset_by_slide.xlsx"],
           needs=["roi_dataset"],
           blurb="The same table one level finer, so within-animal spread is "
-                "visible. The R figures read this workbook."),
+                "visible. plot_by_slide.R draws that spread; the per-ROI "
+                "figures and their statistics read 06c's per-animal sheet."),
 
     Stage("refresh_loop", "06e  Refresh datasets and figures hourly", "Beyond blinding",
           script="06e_refresh_loop.py",
@@ -613,11 +787,15 @@ def in_group(group):
     return [s for s in STAGES if s.group == group]
 
 
-def blocked_by(stage, out_root):
+def blocked_by(stage, out_root, names=None):
     """Stage ids this stage needs that are not done yet.
 
     Advisory, not enforced: the stages themselves fail with a clear message when
     an input is missing, and that message is better than anything guessed here.
+
+    `names` is this study's `ls_paths.Names`, and it has to reach `done()` or a
+    prerequisite whose output was renamed reads as never-run and every stage
+    behind it is reported blocked for a file that is sitting on the drive.
     """
     return [n for n in stage.needs
-            if n in BY_ID and not BY_ID[n].done(out_root)]
+            if n in BY_ID and not BY_ID[n].done(out_root, names)]

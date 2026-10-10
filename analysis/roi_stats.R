@@ -3,23 +3,29 @@
 # Kept out of the plotting file because this is the part worth reading on its
 # own: what is being tested, on which unit, and what happens when it cannot be.
 #
-# ONE MODEL FAMILY, fitted on SLIDE-level rows:
+# ONE ROW PER ANIMAL, so the model is ordinary least squares:
 #
-#     lmer(value ~ <fixed> + (1 | animal))
+#     lm(value ~ <fixed>)
 #
-# The animal is the experimental unit - slides from one fish are not independent
-# replicates of a treatment - but the slides carry real information about
-# within-animal variability. A random intercept per animal uses that without
-# claiming 33 fish. Fitting a plain aov() on slides instead would roughly treble
-# the apparent sample size and every p value with it.
+# plot_roi_figures.R hands over 06c's per-animal table, where an animal's nuclei
+# are already pooled over its discs and weighted by the area those discs
+# covered. The animal is the experimental unit, so least squares is operating on
+# that unit directly: this is the ANOVA the design asks for, not a fallback.
+#
+# THE MIXED BRANCH IS KEPT, and it is what makes the above safe rather than
+# merely true today. Hand this file a section- or slide-level table and it fits
+# lmer(value ~ <fixed> + (1 | sample)) instead of quietly reading 130 sections
+# as 130 fish, which would treble the apparent sample size and shrink every p
+# value with it. Which model ran is printed on the figure, so the two can never
+# be confused for one another after the fact.
 #
 # CORRECTED AND RAW ARE NEVER COMPARED. They are the same animals measured two
 # ways, so each gets its own fit and its own letters.
 #
-# WHEN A FIT FAILS IT SAYS SO. Cells here are 3/2/3/3 animals, singular fits are
-# expected, and a ROI can have a group with no slides at all - in which case the
-# interaction is inestimable. Every fit is wrapped, and the failure becomes the
-# label. A caption that quietly disappears looks like a figure nobody tested.
+# WHEN A FIT FAILS IT SAYS SO. Cells here are 3/2/3/3 animals, and a ROI can
+# have a group with no animal in it at all - in which case the interaction is
+# inestimable. Every fit is wrapped, and the failure becomes the label. A
+# caption that quietly disappears looks like a figure nobody tested.
 
 suppressPackageStartupMessages({
   have <- vapply(c("lme4", "lmerTest", "emmeans", "multcomp", "multcompView"),
@@ -40,17 +46,17 @@ emm_options(msg.interaction = FALSE, msg.nesting = FALSE)
 
 # Which model the data shape actually supports.
 #
-# A random intercept per animal needs animals with MORE THAN ONE slide - with
-# exactly one row per animal the animal effect and the residual are the same
-# thing and lmer cannot separate them, so the fit fails outright. Five of the
-# ten ROIs here are in that position: Vc, Vd, Vl, Vs and Vv were placed on one
-# slide per fish.
+# A random intercept per animal needs animals with MORE THAN ONE row - with
+# exactly one the animal effect and the residual are the same thing and lmer
+# cannot separate them, so the fit fails outright. On the per-animal table every
+# ROI is in that position, which is why lm is now the ordinary path here and not
+# the exception it was when the rows were sections.
 #
-# For those a plain lm IS the correct model, not a fallback with an asterisk:
-# one observation per animal means ordinary least squares is already operating
-# on the experimental unit, and it is exactly the ANOVA that was asked for.
-# Reporting "could not be fitted" and drawing no test would have thrown away
-# five real comparisons to protect against a problem those data do not have.
+# lm is not a fallback with an asterisk: one observation per animal means
+# ordinary least squares is already operating on the experimental unit, and it
+# is exactly the ANOVA that was asked for. Reporting "could not be fitted" and
+# drawing no test would throw away every real comparison to protect against a
+# problem these data do not have.
 #
 # The caption says which was used, because it changes how the df read.
 needs_mixed <- function(d) {
@@ -75,11 +81,13 @@ fmt_p <- function(p) {
   if (p < 0.001) "p < 0.001" else sprintf("p = %.3f", p)
 }
 
-# A one-line F test from a fitted lmer, for a named fixed term.
+# A one-line F test from a fitted model, for a named fixed term.
 #
-# Denominator df comes from Satterthwaite (lmerTest's default) and is worth
-# looking at: it should land near the number of ANIMALS. If it reports the
-# number of SLIDES, the random effect is not doing its job and the result is
+# The denominator df is the number worth looking at, and on the per-animal table
+# it is simply n_animals - k: read it as the sample size the figure is entitled
+# to. On a finer table it comes from Satterthwaite (lmerTest's default) and
+# should still land near the number of ANIMALS - if it reports the number of
+# rows, the random effect is not doing its job and the result is
 # pseudoreplicated.
 # Returns the formatted line, and carries the p value on it as an attribute so
 # a caller can ask "was this significant?" without re-parsing the sentence it
@@ -132,7 +140,7 @@ stat_treatment <- function(d) {
   line <- term_line(m$fit, "treatment", "treatment")
   list(caption = paste0(line, "<br>",
                         if (m$mixed) "mixed model, animal as a random effect"
-                        else "one slide per animal, plain ANOVA"),
+                        else "one point per animal, plain ANOVA"),
        p = attr(line, "p"))
 }
 
@@ -176,17 +184,20 @@ stat_group4 <- function(d) {
   # still computed - the fixed effects are fine - but it is said out loud,
   # because it is the model telling you the design is thin.
   cap <- paste0(cap, "<br>", if (m$mixed) "mixed model, animal as a random effect"
-                             else "one slide per animal, plain ANOVA")
+                             else "one point per animal, plain ANOVA")
   # A singular fit is not a cosmetic warning. The animal variance has collapsed
   # to zero, so the random effect stops absorbing anything and the denominator
-  # df run to the SECTION count rather than the animal count - 36 rather than
-  # about 7 for Posterior tuberculum. The p value is then the pseudoreplicated
-  # one, which is the thing this whole model was chosen to avoid, so the caption
-  # says so instead of printing "(singular fit)" and leaving the reader to know
-  # what that implies. Four of the ten ROIs are in this state.
+  # df run to the ROW count rather than the animal count. The p value is then
+  # the pseudoreplicated one, which is the thing the mixed model was chosen to
+  # avoid, so the caption says so instead of printing "(singular fit)" and
+  # leaving the reader to know what that implies.
+  #
+  # It cannot fire on the per-animal table - one row per animal never reaches
+  # lmer - and it is kept for the finer tables where it used to fire on four of
+  # the ten ROIs.
   if (m$mixed && isTRUE(lme4::isSingular(fit))) {
     cap <- paste0(cap, "<br>SINGULAR FIT: animal variance collapsed to zero, so ",
-                  "the df above are per section, not per animal - treat this p as ",
+                  "the df above are per row, not per animal - treat this p as ",
                   "anti-conservative")
   }
 
@@ -207,6 +218,15 @@ stat_group4 <- function(d) {
   lets <- tryCatch({
     fit1 <- if (full) fit_model(value ~ group4, d)$fit else fit
     em <- emmeans(fit1, ~ group4)
+    # TUKEY ON ONE RESIDUAL DEGREE OF FREEDOM RETURNS NaN, and cld does not
+    # object: it files every group under "a", which on the figure is
+    # indistinguishable from "tested, and nothing differs". The per-animal table
+    # reaches that state wherever four animals fall in three groups - Vc and Vs
+    # here - so the p values are checked before the letters are believed, and
+    # the caption says the comparison was not estimable rather than reporting a
+    # null result nobody computed.
+    pv <- suppressWarnings(as.data.frame(pairs(em, adjust = "tukey"))$p.value)
+    if (!length(pv) || !all(is.finite(pv))) stop("tukey p values not estimable")
     cl <- as.data.frame(multcomp::cld(em, alpha = 0.05, Letters = letters,
                                       adjust = "tukey"))
     data.frame(group4 = as.character(cl$group4),
@@ -215,7 +235,10 @@ stat_group4 <- function(d) {
                stringsAsFactors = FALSE)
   }, error = function(e) NULL)
 
-  if (is.null(lets)) cap <- paste(cap, "- letters unavailable")
+  # On its own line, like every other caption line: joined with a space it
+  # lengthened the last F line past the panel edge, where ggtext clips it.
+  if (is.null(lets)) cap <- paste0(
+    cap, "<br>Tukey: not estimable on these cells, so no letters are drawn")
 
   # With only TWO groups present, compact letters carry no information a reader
   # cannot get from a single mark: "a / b" just means significant. The figure

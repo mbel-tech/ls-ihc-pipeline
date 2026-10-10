@@ -68,6 +68,7 @@ Run:  python 04c_atlas_match.py
       python 04c_atlas_match.py --animal LS45 --variants 12
 """
 
+import sys
 import argparse
 import csv
 import importlib.util
@@ -84,17 +85,23 @@ _lsio.loader.exec_module(IO)
 
 from scipy import ndimage
 
-# LS_CONFIG names the file explicitly; the file-relative path is the fallback.
-# Frozen, the scripts sit inside _internal/ while config.json is beside the
-# executable, so the fallback would point at a file that does not exist.
-CONFIG_PATH = os.environ.get("LS_CONFIG") or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config.json")
-with open(CONFIG_PATH, encoding="utf-8") as _fh:
-    CONFIG = json.load(_fh)
+_HERE = os.path.dirname(os.path.abspath(__file__))
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+# ls_config resolves LS_CONFIG, applies the defaults and validates once for
+# the whole process. Imported, not re-implemented: this block used to be four
+# lines copy-pasted into every stage.
+from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
+import ls_atlas as AT  # noqa: E402
+import ls_naming as NM  # noqa: E402
 
 OUT_ROOT = CONFIG["out_root"]
 REFORMAT_DIR = os.path.join(OUT_ROOT, "reformatted")
-PLATE_SET = IO.plate_set(CONFIG)
-PLATE_DIR = os.path.join(OUT_ROOT, "atlas", PLATE_SET)
+# THE EXTRACTION SET, deliberately - not the study's configured set. See
+# 04b_atlas_match.py's comment: 04c is measured to fail on this data and kept
+# as evidence, and re-pointing it at a different plate set would invalidate
+# that measurement.
+PLATE_DIR = AT.plate_dir(CONFIG, set_name=AT.EXTRACTED)
 REPORT_DIR = os.path.join(OUT_ROOT, "qc", "atlasmatch")
 
 TOP_K = 4
@@ -224,7 +231,7 @@ def main():
     os.makedirs(REPORT_DIR, exist_ok=True)
     rng = np.random.default_rng(SEED)
 
-    plate_files = sorted(glob.glob(os.path.join(REFORMAT_DIR, IO.reformatted_plates_dir(CONFIG), "*_mask.npy")))
+    plate_files = sorted(glob.glob(os.path.join(REFORMAT_DIR, "plates", "*_mask.npy")))
     if not plate_files:
         raise SystemExit("no reformatted plates - run 04a_reformat.py first")
     plate_ids = [os.path.basename(f).replace("_mask.npy", "") for f in plate_files]
@@ -249,7 +256,7 @@ def main():
         by_animal.setdefault(r["animal"], []).append(r)
 
     proposals = []
-    for animal, group in sorted(by_animal.items(), key=lambda kv: int(kv[0][2:])):
+    for animal, group in sorted(by_animal.items(), key=lambda kv: NM.natural_key(kv[0])):
         group.sort(key=lambda r: int(r["section_order"]))
         masks, keep = [], []
         for r in group:

@@ -109,6 +109,52 @@ try:
     with open(q, "rb") as fh:
         chk("...and leaves the previous file alone", fh.read(), b"abc")
     chk("...and cleans the temp up", os.path.exists(t), False)
+    # ---- pick_column: a moved column is a stop, never a blank -------------
+    #
+    # The failure this exists to prevent has no symptom. `04n`'s num(r, k) read
+    # its partner columns with `.get(k, "")`, so a renamed column and a
+    # genuinely empty cell produce the same character in the same place - and
+    # the worklist still has 454 rows, still has the column, and carries no
+    # numbers in it at all.
+    header = ["scene_uid", "partner_focus_score", "n_pieces"]
+    chk("the current name is found", IO.pick_column(header, "partner_focus_score"),
+        "partner_focus_score")
+    chk("the first candidate present wins",
+        IO.pick_column(header, "partner_focus_score", "pcna_focus_score"),
+        "partner_focus_score")
+    chk("...and a legacy header still reads",
+        IO.pick_column(["pcna_focus_score"], "partner_focus_score",
+                       "pcna_focus_score"), "pcna_focus_score")
+    chk("candidate order decides, not header order",
+        IO.pick_column(header, "n_pieces", "scene_uid"), "n_pieces")
+
+    got = "accepted"
+    try:
+        IO.pick_column(header, "partner_n_pieces", "pcna_n_pieces")
+    except SystemExit as exc:
+        got = str(exc)
+    chk("a header with neither name refuses",
+        got.startswith("none of the columns ['partner_n_pieces', 'pcna_n_pieces']"),
+        True)
+    chk("...and the refusal shows the header it actually saw",
+        "'partner_focus_score'" in got, True)
+
+    got = "accepted"
+    try:
+        IO.pick_column(header, "gone", what="roi_worklist.csv")
+    except SystemExit as exc:
+        got = str(exc)
+    chk("...and names the file when told which one",
+        "in roi_worklist.csv" in got, True)
+
+    # DictReader hands back None for a file with no header at all. That must
+    # refuse rather than raise TypeError on `in None`.
+    got = "accepted"
+    try:
+        IO.pick_column(None, "scene_uid")
+    except SystemExit:
+        got = "refused"
+    chk("no header at all refuses", got, "refused")
 finally:
     IO.os.replace, IO.time.sleep = real_replace, real_sleep
     shutil.rmtree(tmp, ignore_errors=True)

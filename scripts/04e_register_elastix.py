@@ -23,6 +23,7 @@ Run:  python 04e_register_elastix.py --limit 6      # try a few, inspect
       python 04e_register_elastix.py                # all confirmed matches
 """
 
+import sys
 import argparse
 import csv
 import json
@@ -33,28 +34,24 @@ import importlib.util
 import numpy as np
 from PIL import Image
 
-_lsio = importlib.util.spec_from_file_location(
-    "_lsio", os.path.join(os.path.dirname(os.path.abspath(__file__)), "ls_io.py"))
-IO = importlib.util.module_from_spec(_lsio)
-_lsio.loader.exec_module(IO)
-_ap = importlib.util.spec_from_file_location(
-    "_atlas_polygons", os.path.join(os.path.dirname(os.path.abspath(__file__)), "atlas_polygons.py"))
-AP = importlib.util.module_from_spec(_ap)
-_ap.loader.exec_module(AP)
-
-# LS_CONFIG names the file explicitly; the file-relative path is the fallback.
-# Frozen, the scripts sit inside _internal/ while config.json is beside the
-# executable, so the fallback would point at a file that does not exist.
-CONFIG_PATH = os.environ.get("LS_CONFIG") or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config.json")
-with open(CONFIG_PATH, encoding="utf-8") as _fh:
-    CONFIG = json.load(_fh)
+_HERE = os.path.dirname(os.path.abspath(__file__))
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+# ls_config resolves LS_CONFIG, applies the defaults and validates once for
+# the whole process. Imported, not re-implemented: this block used to be four
+# lines copy-pasted into every stage.
+from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
+import ls_atlas as AT  # noqa: E402
+import atlas_polygons as AP  # noqa: E402
 
 OUT_ROOT = CONFIG["out_root"]
 REFORMAT_DIR = os.path.join(OUT_ROOT, "reformatted")
-# Which plate set to use, from config. The two sets reuse the same plate_NNN
-# names for different images, so this must not be hard-coded in two places.
-PLATE_SET = IO.plate_set(CONFIG)
-PLATE_DIR = os.path.join(OUT_ROOT, "atlas", PLATE_SET)
+# Which plate set to use, from config - resolved through ls_atlas, the one
+# place this is answered, rather than a copy of the same lookup carried
+# separately in 04k and 04l. The two sets reuse the same plate_NNN names for
+# different images, so the three copies could disagree with no error anywhere.
+PLATE_SET = AT.set_name(CONFIG)
+PLATE_DIR = AT.plate_dir(CONFIG)
 MATCH_CSV = os.path.join(OUT_ROOT, "qc", "atlasmatch", "atlas_proposals_v2.csv")
 REG_DIR = os.path.join(OUT_ROOT, "registered")
 
@@ -107,7 +104,7 @@ def micrograph_x0(plate, whole_plate=False):
     has no tissue texture for mutual information to match against a section. 0
     means the whole plate, which is what salmon plates and `--whole-plate` get.
     """
-    if whole_plate or IO.atlas_source(CONFIG) != "wullimann1996":
+    if whole_plate or AT.source(CONFIG) != AT.WULLIMANN:
         return 0
     mid = plate.get("midline_frac")
     if not mid:
@@ -286,8 +283,6 @@ def run_from_landmarks(itk, args):
         by_sec = {}
         for r in csv.DictReader(fh):
             by_sec.setdefault(r["scene_uid"], []).append(r)
-    IO.check_plate_set([r for rows in by_sec.values() for r in rows], PLATE_SET,
-                       "roi_landmarks.csv")
 
     with open(os.path.join(PLATE_DIR, "plates.csv"), newline="", encoding="utf-8") as fh:
         plates = {p["plate_id"]: p for p in csv.DictReader(fh)}
@@ -476,11 +471,22 @@ def main():
 
     po = parameter_maps(itk, args.spacing)
     results = []
+    skipped = 0
     for i, r in enumerate(rows, 1):
         plate_id = r["confirmed_plate"] or r["proposed_plate"] if args.use == "confirmed" else r["proposed_plate"]
         sec_path = os.path.join(REFORMAT_DIR, "sections", r["scene_uid"] + ".png")
-        plate_path = os.path.join(REFORMAT_DIR, IO.reformatted_plates_dir(CONFIG), plate_id + ".png")
+        plate_path = os.path.join(REFORMAT_DIR, AT.reformatted_dir(CONFIG), plate_id + ".png")
+        # A plate id with no reformatted image is SKIPPED silently below. That
+        # was masking a real mismatch until 2026-09-23: 04a_reformat builds
+        # these images from its own hardcoded extraction set (untouched here -
+        # that move is Task 8b) while PLATE_DIR above now comes from the
+        # study's configured set. On this drive plates_final has 64 ids and
+        # the extraction set's reformatted/plates/ only ever held images for
+        # 47 of them, so 17 hit this branch every run. Counted here rather
+        # than only vanishing from the loop, so the gap is measured, not
+        # rediscovered.
         if not (os.path.exists(sec_path) and os.path.exists(plate_path)):
+            skipped += 1
             continue
 
         section = np.asarray(Image.open(sec_path).convert("L")).astype(np.float32)
@@ -517,6 +523,8 @@ def main():
         print(f"\r  [{i}/{len(rows)}] {r['scene_uid']} -> {plate_id}  IoU {overlap:.3f}   ", end="")
 
     print()
+    if skipped:
+        print(f"  skipped {skipped} row(s) with no reformatted section or plate image")
     if not results:
         raise SystemExit("nothing registered")
 
