@@ -469,6 +469,22 @@ STAGES = [
           blurb="Re-renders each box from the PDF at full resolution and carries "
                 "the seeds across. This is the set the ROI curator uses "
                 "(config.atlas_plate_set)."),
+    Stage("atlas_wullimann_plates", "04w  Build the Wullimann plate set", "Atlas",
+          script="04w_wullimann_plates.py",
+          outputs=["atlas/plates_wullimann/plates.csv"],
+          blurb="Alternative to the salmon atlas (config.atlas_source = "
+                "wullimann1996): arranges the extracted Wullimann 1996 cross "
+                "sections into a plate set, ids zero-padded so they sort "
+                "rostral to caudal, plus a micrograph half for registration."),
+
+    Stage("atlas_wullimann_polygons", "04x  Region outlines to numbered polygons", "Atlas",
+          script="04x_wullimann_polygons.py", argv=["--qc"],
+          outputs=["atlas/plates_wullimann/polygons.csv"],
+          needs=["atlas_wullimann_plates"],
+          blurb="Finds the enclosed regions in each Wullimann plate's drawing and "
+                "writes them as polygons, numbered in the pipeline's reading "
+                "order. Names are read by OCR and are guesses until a person "
+                "reviews them; 04l shows reviewed polygons only."),
     # ---- Normalisation and curation ----------------------------------------
     Stage("reformat_pcna", "04a  Reformat PCNA sections", "Normalisation and curation",
           script="04a_reformat.py",

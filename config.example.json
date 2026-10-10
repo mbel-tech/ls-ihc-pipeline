@@ -72,6 +72,10 @@
       "min_area_um2": 5.0
     }
   },
+  "_atlas_source_note": "salmon takes its plates from atlas_pdf and atlas_plate_set. wullimann1996 is the zebrafish cross-section atlas: 04w builds its plate set (plates_wullimann), 04x turns each plate's region outlines into numbered polygons, and atlas_plate_set is then ignored. Plate ids differ between the two (wplate_NNN), and the plate fingerprint the importers already check catches rows made against another plate set.",
+  "atlas_source": "salmon",
+  "_atlas_polygon_mirror_note": "Each Wullimann plate draws one hemisphere beside the micrograph of the other, so the outlines cover half the brain. Mirroring gives the numbered guide on both sides in 04l. Registration (04e) always mirrors, because it reads the micrograph half.",
+  "atlas_polygon_mirror": false,
   "atlas_plate_set": {
     "_dir_note": "Both read this, so they cannot drift apart. IDs COLLIDE between sets - the same plate_NNN name exists in more than one set and points at a different image - so a landmark file records the set it was made against. Set this once, before any landmark is placed; changing it later invalidates landmarks made against the old set. plates = one image per atlas page as extracted; plates_merged = one image per figure; plates_final = the curated set. Start at plates and move up as the atlas chain produces them.",
     "dir": "plates"

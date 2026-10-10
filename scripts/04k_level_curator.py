@@ -272,6 +272,17 @@ const rows = () => DATA.filter(d => d.animal === el("animal").value)
 // Level is linear in section number between anchors. Outside the outermost
 // anchors it continues at the same rate, which is a weaker claim, so those are
 // marked separately rather than silently blended in.
+// Plates may carry a real level (Wullimann section numbers, which are NOT evenly
+// spaced). Interpolation then runs on the level and the nearest plate is picked;
+// without levels (salmon) lv/at are the identity and nothing changes.
+const HAS_LEVEL = PLATES.length > 0 && PLATES.every(p => p.level !== null && p.level !== undefined);
+const lv = i => (HAS_LEVEL && PLATES[i]) ? PLATES[i].level : i;
+const at = v => {
+  if(!HAS_LEVEL) return Math.round(v);
+  let best = 0;
+  for(let i=1;i<PLATES.length;i++) if(Math.abs(PLATES[i].level - v) < Math.abs(PLATES[best].level - v)) best = i;
+  return best;
+};
 function assign(list){
   const anc = list.map((d,i) => [i, anchors[d.uid] && anchors[d.uid].at])
                   .filter(x => x[1] !== undefined);
@@ -287,15 +298,15 @@ function assign(list){
     const [i0,p0] = anc[k], [i1,p1] = anc[k+1];
     for(let i=i0+1;i<i1;i++){
       const t = (list[i].order - list[i0].order) / (list[i1].order - list[i0].order);
-      out[i] = {plate: Math.round(p0 + t*(p1-p0)), kind: "interp"};
+      out[i] = {plate: at(lv(p0) + t*(lv(p1)-lv(p0))), kind: "interp"};
     }
   }
   const [f,pf] = anc[0], [l,pl] = anc[anc.length-1];
-  const rate = (pl - pf) / Math.max(list[l].order - list[f].order, 1);
+  const rate = (lv(pl) - lv(pf)) / Math.max(list[l].order - list[f].order, 1);
   for(let i=0;i<f;i++)
-    out[i] = {plate: clamp(Math.round(pf + rate*(list[i].order-list[f].order))), kind:"extrap"};
+    out[i] = {plate: clamp(at(lv(pf) + rate*(list[i].order-list[f].order))), kind:"extrap"};
   for(let i=l+1;i<list.length;i++)
-    out[i] = {plate: clamp(Math.round(pl + rate*(list[i].order-list[l].order))), kind:"extrap"};
+    out[i] = {plate: clamp(at(lv(pl) + rate*(list[i].order-list[l].order))), kind:"extrap"};
   return out;
 }
 const clamp = v => Math.max(0, Math.min(PLATES.length-1, v));
@@ -309,7 +320,7 @@ function render(){
   el("nextrap").textContent = asg.filter(a=>a.kind==="extrap").length;
   el("strip").innerHTML = list.map((d,i) => {
     const a = asg[i];
-    const lbl = a.plate===null ? "-" : plateAt(a.plate).id.replace("plate_","");
+    const lbl = a.plate===null ? "-" : (HAS_LEVEL ? String(plateAt(a.plate).level) : plateAt(a.plate).id.replace("plate_",""));
     return `<div class="cell ${a.kind==="anchor"?"anchor":""} ${a.kind==="extrap"?"extrap":""}
                  ${active===d.uid?"active":""}" data-uid="${esc(d.uid)}">
       <img src="${d.img}" loading="lazy" alt="">
@@ -448,7 +459,11 @@ def main():
     # has no regions column, so p["regions"] would raise KeyError.
     pl = [{"id": p["plate_id"], "img": f"../atlas/{PLATE_SET}/{p['image_file']}",
            "regions": p.get("regions", ""),
-           "missing": 0 if os.path.exists(os.path.join(PLATE_DIR, p["image_file"])) else 1}
+           "missing": 0 if os.path.exists(os.path.join(PLATE_DIR, p["image_file"])) else 1,
+           # Real section number where the atlas has one (Wullimann): its
+           # sections are unevenly spaced, so position in the list is no
+           # measure of level. Salmon plates carry none.
+           "level": int(p["section_level"]) if p.get("section_level") else None}
           for p in AT.plate_order(plates)]
 
     page = IO.fill(PAGE, {"__DATA__": data, "__PLATES__": pl,

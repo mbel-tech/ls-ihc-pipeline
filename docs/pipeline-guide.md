@@ -562,6 +562,28 @@ boxes are merged or split to match it.
 Re-renders each box straight from the PDF at full resolution and carries the region markers across.
 This is the plate set the ROI curator actually shows.
 
+## 04w  Build the Wullimann plate set {#stage-atlas_wullimann_plates}
+
+*`scripts/04w_wullimann_plates.py` → `atlas/plates_wullimann/plates.csv`*
+
+Only for the alternative atlas (`atlas_source: wullimann1996`). The Wullimann 1996 zebrafish cross
+sections were already cut out of the book, so this arranges them into the same layout the curators
+read. Plate ids are zero-padded section numbers so that they sort rostral to caudal; the real section
+number is kept alongside, because the sections are not evenly spaced. Each plate is a line drawing of
+one hemisphere beside a micrograph of the other, and the step records where they meet.
+
+## 04x  Region outlines to numbered polygons {#stage-atlas_wullimann_polygons}
+
+*`scripts/04x_wullimann_polygons.py` → `atlas/plates_wullimann/polygons.csv`*
+
+The Wullimann plates carry no coloured dots; each region is drawn as a closed outline, so the outline
+is the area. This step finds the enclosed regions in each drawing and writes them as polygons,
+numbered in the order the pipeline already numbers regions in. The region curator then shows them as
+the numbered guide when you draw the region on a section.
+
+The names are read from the printed labels by OCR and are guesses until a person has checked them, so
+the curator shows only polygons marked reviewed. `--review` writes the page where that happens.
+
 \newpage
 
 # Part 4 — Normalisation and curation

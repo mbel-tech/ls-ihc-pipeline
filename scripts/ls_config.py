@@ -455,6 +455,27 @@ SPEC = [
         consumers=["05c"]),
 
     # ---- atlas -----------------------------------------------------------
+    Key("atlas_source", "str",
+        "Which atlas the run uses: salmon (the default) or wullimann1996.",
+        default="salmon", label="Atlas", choices=["salmon", "wullimann1996"],
+        note="salmon takes its plates from atlas_pdf and atlas_plate_set. "
+             "wullimann1996 is the zebrafish cross-section atlas: 04w builds "
+             "its plate set (plates_wullimann), 04x turns each plate's region "
+             "outlines into numbered polygons, and atlas_plate_set is then "
+             "ignored. Plate ids differ between the two (wplate_NNN), and the "
+             "plate fingerprint the importers already check catches rows made "
+             "against another plate set.",
+        consumers=["04e", "04k", "04l", "04w", "04x"]),
+
+    Key("atlas_polygon_mirror", "bool",
+        "Wullimann only: mirror the plate outlines about the midline.",
+        default=False, label="Mirror atlas polygons",
+        note="Each Wullimann plate draws one hemisphere beside the micrograph "
+             "of the other, so the outlines cover half the brain. Mirroring "
+             "gives the numbered guide on both sides in 04l. Registration "
+             "(04e) always mirrors, because it reads the micrograph half.",
+        consumers=["04l"]),
+
     Key("atlas_plate_set.dir", "str",
         "Which plate set the ROI curator and the registration use.",
         default="plates", label="Atlas plate set", choices=["plates", "plates_merged", "plates_final"],

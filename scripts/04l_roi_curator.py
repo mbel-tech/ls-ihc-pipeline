@@ -223,6 +223,7 @@ from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
 import ls_channels as CH  # noqa: E402
 import ls_paths as LP  # noqa: E402
 import ls_atlas as AT  # noqa: E402
+import atlas_polygons as AP  # noqa: E402
 
 # The markers this study measures, in declared order. ls_channels is the
 # single source of that list; naming a fluorophore here would pin the stage
@@ -5252,6 +5253,10 @@ def build_parser():
                          "app. A browser writes here only once the operator has "
                          "picked the folder with the page's own Folder... button, "
                          "because a web page cannot be handed a path")
+    ap.add_argument("--use-auto-polygons", action="store_true",
+                    help="Wullimann plate set only: also show polygons the program named "
+                         "but nobody has reviewed. Off by default - the name is a guess "
+                         "and it becomes a measurement key.")
     ap.add_argument("--out", default=CURATOR_HTML, metavar="HTML",
                     help="where to write the page (default: the live curator under "
                          "out_root). tests/run.sh points this at tests/build/ so a "
@@ -5259,7 +5264,7 @@ def build_parser():
     return ap
 
 
-def plate_rows(plate_dir=None):
+def plate_rows(plate_dir=None, polygon_statuses=("reviewed",), mirror=None):
     """The plate array the page indexes into, in atlas order.
 
     TWO THINGS THAT USED TO BE WRONG HERE, both silently.
@@ -5282,6 +5287,15 @@ def plate_rows(plate_dir=None):
     see its GONE outcome), so nothing here or in the page may say "missing" to
     the operator; "no readable image" is accurate in both cases.
 
+    POLYGON PLATES. Where the plate set carries `polygons.csv` (the Wullimann
+    atlas, whose regions are outlines rather than seed dots) the outline IS the
+    area, so it replaces the hull built from seeds: same numbering, colour and
+    guided-mode behaviour, one synthetic seed per polygon. Only polygons whose
+    status is in `polygon_statuses` are shown - by default just the reviewed
+    ones, because an OCR-named polygon is a guess and the name becomes a
+    measurement key. `mirror` reflects them about the plate midline; None takes
+    `atlas_polygon_mirror` from the study, for the Wullimann atlas only.
+
     Calls `ls_atlas.fingerprints`, which maintains `<plate_dir>/fingerprints.csv`
     - the one sanctioned on-disk write under a plate set's directory. Building
     the page used to be read-only there; it no longer is, on a cold cache.
@@ -5297,15 +5311,22 @@ def plate_rows(plate_dir=None):
               encoding="utf-8") as fh:
         plates = list(csv.DictReader(fh))
     seeds = load_seeds(plate_dir)
+    polys = AP.read_polygons(os.path.join(plate_dir, "polygons.csv"))
+    if mirror is None:
+        mirror = bool(CONFIG.get("atlas_polygon_mirror")) and AT.source(CONFIG) == AT.WULLIMANN
     prints = AT.fingerprints(plate_dir, plates)
 
     out = []
     for p in AT.plate_order(plates):
         pid = p["plate_id"]
         sd = seeds.get(pid, [])
-        # The ROI grouping, and the number every seed under it carries.
-        hulls = region_hulls(sd)
-        tag_rois(sd, hulls)
+        if polys.get(pid):
+            mid = float(p["midline_frac"]) if mirror and p.get("midline_frac") else None
+            sd, hulls = AP.plate_view(polys[pid], mid, polygon_statuses)
+        else:
+            # The ROI grouping, and the number every seed under it carries.
+            hulls = region_hulls(sd)
+            tag_rois(sd, hulls)
         pw, ph = int(p["px_w"]), int(p["px_h"])
         # How much room a label actually has on THIS plate: the median distance
         # from a seed to its nearest neighbour, as a fraction of the plate
@@ -5412,7 +5433,7 @@ def main():
                         "colour": MARKER_COLOUR_NAMES.get(mk)})
     data = [row for mk in MARKERS for row in per_marker[mk][0]]
 
-    pl = plate_rows()
+    pl = plate_rows(polygon_statuses=("reviewed", "auto") if args.use_auto_polygons else ("reviewed",))
     gaps = [p for p in pl if p["missing"]]
     if gaps:
         # The id alone matches no file on this atlas - `plate_001`'s image is

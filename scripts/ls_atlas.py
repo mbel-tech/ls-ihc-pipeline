@@ -70,14 +70,46 @@ _TRAILING_INT = re.compile(r"(\d+)\s*$")
 _SHAPE_RE = re.compile(r"^(\d+)x(\d+)$")
 
 
+SALMON = "salmon"
+WULLIMANN = "wullimann1996"
+SOURCES = (SALMON, WULLIMANN)
+WULLIMANN_SET = "plates_wullimann"
+
+
+def source(cfg):
+    """Which atlas the study uses: "salmon" (the default) or "wullimann1996".
+
+    An unknown value raises rather than falling back to salmon. A typo that
+    silently chose the other atlas would register sections against the wrong
+    species and nothing downstream would say so.
+    """
+    src = (cfg or {}).get("atlas_source") or SALMON
+    if src not in SOURCES:
+        raise ValueError("atlas_source %r is not one of %s" % (src, ", ".join(SOURCES)))
+    return src
+
+
+def reformatted_dir(cfg):
+    """Subfolder of `reformatted/` for this atlas's reformatted plates.
+
+    Salmon keeps `plates`, so existing work is untouched. Wullimann gets its
+    own, so a tool that globs the folder never sees the other atlas's plates.
+    """
+    return WULLIMANN_SET if source(cfg) == WULLIMANN else "plates"
+
+
 def set_name(cfg):
     """The plate set directory name this study uses.
+
+    Wullimann has one fixed set; `atlas_plate_set` is then ignored.
 
     A malformed block is judged rather than crashed on, for the reason
     `ls_channels.marker_names` gives: every caller of this is a module-level
     stage constant evaluated at import, and a traceback there takes all 46
     stages down at once.
     """
+    if source(cfg) == WULLIMANN:
+        return WULLIMANN_SET
     block = (cfg or {}).get("atlas_plate_set")
     if not isinstance(block, dict):
         return EXTRACTED

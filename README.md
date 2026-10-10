@@ -81,9 +81,52 @@ Every stage is resumable — re-running skips completed work.
 | 1c | `01d_contactsheets.py` | Per-animal montages in rostro-caudal order, plus an HTML gallery |
 | 2 | `02_pair_passes.py` | Pairs the two marker passes onto the same physical sections via stage coordinates |
 | 4a | `04a_atlas_extract.py` | Extracts labelled plates and region seed points from the atlas PDF |
+| 4w | `04w_wullimann_plates.py` | Alternative atlas: arranges the Wullimann 1996 cross sections into a plate set, ids sorting rostral to caudal |
+| 4x | `04x_wullimann_polygons.py` | Alternative atlas: turns each plate's region outlines into numbered polygons; `--review` writes the page where they are named |
 
 The 04-series curation chain is not in `run_all.sh`: it needs the operator between the steps —
 assigning plates, placing ROIs — so there is nothing to batch.
+
+### A second atlas: Wullimann 1996 (zebrafish)
+
+`atlas_source` in `config.json` picks the atlas the run uses: `salmon` (the default, unchanged) or
+`wullimann1996`. The Wullimann ids (`wplate_NNN`) are not salmon ids, and the importers already
+verify a stored plate by id and image fingerprint, so a curation made against the other atlas is reported
+rather than silently restored.
+
+The Wullimann plates carry no colour-coded dots. Each region is drawn as a closed outline, so the outline
+is the area: `04x` finds the enclosed regions and `04l` shows them as numbered, shaded polygons, in the
+reading order it already numbers ROIs in, as the guide when you draw the region on a section.
+
+```bash
+python scripts/04w_wullimann_plates.py          # plate set from atlas/wullimann1996/
+python scripts/04x_wullimann_polygons.py        # outlines -> polygons.csv (OCR names them)
+python scripts/04x_wullimann_polygons.py --review   # polygon_review.html in the plate set
+python scripts/04x_wullimann_polygons.py --import-review polygons_review.csv
+```
+
+**Names are guesses until reviewed.** OCR names about half the regions on the real plates, and a label with
+a leader line can sit inside the wrong cell, so `04l` shows only polygons marked *reviewed*
+(`--use-auto-polygons` overrides, for a trial). The review page lists each plate's legend; click a polygon,
+click its legend entry, `Enter` confirms an OCR name. Regions the drawing does not outline (Dl and Dm on
+some plates share one cell) are split by drawing the two polygons and deleting the merged one.
+
+Things that differ from salmon, so they are not a surprise later:
+
+- Sections are numbered 23 to 363 and are not evenly spaced (steps of 8 to 21). `04k` interpolates a
+  section's level on that number, not on its position in the list.
+- Each plate draws one hemisphere beside the micrograph of the other. `atlas_polygon_mirror: true`
+  reflects the outlines about the plate midline to give the guide on both sides.
+- `04e --from-landmarks` registers the **micrograph half** only (the drawing has no tissue texture to match). Landmarks
+  and seeds stay in the full-plate frame; only the image is cropped, and a coverage mask keeps the metric off the part
+  of the section the micrograph does not cover. Each reviewed polygon contributes one point, **mirrored onto the
+  micrograph half**, and that is the region position written to `roi_regions_refined.csv`. `--whole-plate` restores the
+  old behaviour for comparison. On a synthetic exact-affine case the elastic stage moved the point 4.7 px from a truth
+  that the landmark fit alone had to 0.35 px, and the whole plate did the same, so it is the elastic stage, not the
+  crop. On real stippled zebrafish micrographs against salmon sections it is untested: compare
+  `roi_regions_refined.csv` with the curator's `roi_regions.csv` before trusting it.
+- Needs tesseract for the name proposals: `requirements-wullimann.txt`.
+- The plates come from a book that is not ours to redistribute; `atlas/` is ignored by git.
 
 ### Reviewing the decisions made before the ROI curator
 

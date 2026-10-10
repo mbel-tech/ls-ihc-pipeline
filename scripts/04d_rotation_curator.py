@@ -63,6 +63,7 @@ if _HERE not in sys.path:
 # the whole process. Imported, not re-implemented: this block used to be four
 # lines copy-pasted into every stage.
 from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
+import ls_atlas as AT  # noqa: E402
 
 OUT_ROOT = CONFIG["out_root"]
 REFORMAT_DIR = os.path.join(OUT_ROOT, "reformatted")
@@ -523,8 +524,9 @@ def main():
     data = []
     for r in rows:
         plate = proposed.get(r["id"])
-        ref = f"plates/{plate}.png" if plate and os.path.exists(
-            os.path.join(REFORMAT_DIR, "plates", plate + ".png")) else None
+        rp = AT.reformatted_dir(CONFIG)
+        ref = f"{rp}/{plate}.png" if plate and os.path.exists(
+            os.path.join(REFORMAT_DIR, rp, plate + ".png")) else None
         data.append({
             "uid": r["id"], "animal": r["animal"], "order": r["section_order"],
             "img": f"sections/{r['id']}.png", "ref": ref, "plate": plate or "",

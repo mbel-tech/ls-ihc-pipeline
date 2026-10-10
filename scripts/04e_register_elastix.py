@@ -29,6 +29,8 @@ import csv
 import json
 import os
 
+import importlib.util
+
 import numpy as np
 from PIL import Image
 
@@ -40,6 +42,7 @@ if _HERE not in sys.path:
 # lines copy-pasted into every stage.
 from ls_config import CONFIG, CONFIG_PATH  # noqa: E402
 import ls_atlas as AT  # noqa: E402
+import atlas_polygons as AP  # noqa: E402
 
 OUT_ROOT = CONFIG["out_root"]
 REFORMAT_DIR = os.path.join(OUT_ROOT, "reformatted")
@@ -94,7 +97,45 @@ def parameter_maps(itk, bspline_spacing):
     return po
 
 
-def load_seeds(plate_id, px_w, px_h):
+def micrograph_x0(plate, whole_plate=False):
+    """Pixel column where the micrograph half of a Wullimann plate starts, else 0.
+
+    Registration reads only this half: the other half is a line drawing, which
+    has no tissue texture for mutual information to match against a section. 0
+    means the whole plate, which is what salmon plates and `--whole-plate` get.
+    """
+    if whole_plate or AT.source(CONFIG) != AT.WULLIMANN:
+        return 0
+    mid = plate.get("midline_frac")
+    if not mid:
+        return 0
+    return int(round(float(mid) * int(plate["px_w"])))
+
+
+def crop_affine(A, x0):
+    """The landmark affine for a plate cropped from column `x0`.
+
+    Landmarks and seeds stay in the full-plate frame; only the image handed to
+    elastix is cropped. A crop pixel (u, v) is full-plate (u + x0, v), so the
+    crop's matrix is A composed with that translation.
+    """
+    T = np.array([[1.0, 0.0, float(x0)], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
+    return A @ T
+
+
+def coverage_mask(shape_crop, A_crop, shape_out):
+    """uint8 mask of where the cropped plate lands in the section's frame.
+
+    Without it the zeros that fill the rest of the section frame count as image
+    content, and mutual information spends its effort matching the section's
+    other hemisphere against nothing.
+    """
+    from scipy import ndimage
+    ones = np.ones(shape_crop, np.float32)
+    return (warp_plate_into_section(ones, A_crop, shape_out) > 0.5).astype(np.uint8)
+
+
+def load_seeds(plate_id, px_w, px_h, plate=None):
     """Atlas seed points for a plate, in ORIGINAL plate pixel coordinates.
 
     **This used to claim it carried the seeds through the reformat geometry, and
@@ -110,6 +151,13 @@ def load_seeds(plate_id, px_w, px_h):
     the reformat's rotate-crop-pad-resize chain entirely.
     """
     seeds = []
+    # A polygon plate has no seed dots: its regions are outlines, and each
+    # reviewed one contributes a point on the micrograph half.
+    polys = AP.read_polygons(os.path.join(PLATE_DIR, "polygons.csv")).get(plate_id)
+    if polys and plate and plate.get("midline_frac"):
+        for r in AP.registration_seeds(polys, float(plate["midline_frac"])):
+            seeds.append({"region": r["region"], "x": r["xf"] * px_w, "y": r["yf"] * px_h})
+        return seeds
     path = os.path.join(PLATE_DIR, "seeds.csv")
     if not os.path.exists(path):
         return seeds
@@ -270,7 +318,23 @@ def run_from_landmarks(itk, args):
         pairs = [(float(r["sec_x"]), float(r["sec_y"]),
                   float(r["plate_x"]), float(r["plate_y"])) for r in rows]
         A = landmark_affine(pairs)
-        plate_w = warp_plate_into_section(plate, A, section.shape)
+        # Wullimann: register the micrograph half only. The landmarks and seeds
+        # stay in the full-plate frame; only the image is cropped, and the
+        # crop's matrix carries the shift.
+        x0 = micrograph_x0(p, args.whole_plate)
+        mask = None
+        if x0:
+            plate = plate[:, x0:]
+            A_img = crop_affine(A, x0)
+            mask = coverage_mask(plate.shape, A_img, section.shape)
+            if mask.sum() < 0.05 * mask.size:
+                print(f"  !! {uid}: the micrograph lands on under 5% of the section "
+                      "(landmarks on the wrong half?) - skipped")
+                skipped += 1
+                continue
+        else:
+            A_img = A
+        plate_w = warp_plate_into_section(plate, A_img, section.shape)
 
         def to_sec(x, y):
             v = A @ np.array([x, y, 1.0])
@@ -288,6 +352,8 @@ def run_from_landmarks(itk, args):
             el = itk.ElastixRegistrationMethod.New(itk.image_from_array(plate_w),
                                                    itk.image_from_array(section))
             el.SetParameterObject(po)
+            if mask is not None:
+                el.SetFixedMask(itk.image_from_array(mask))
             el.SetFixedPointSetFileName(fp)
             el.SetMovingPointSetFileName(mp)
             el.SetLogToConsole(False)
@@ -298,7 +364,7 @@ def run_from_landmarks(itk, args):
             failed += 1
             continue
 
-        seeds = load_seeds(pid, int(p["px_w"]), int(p["px_h"]))
+        seeds = load_seeds(pid, int(p["px_w"]), int(p["px_h"]), p)
         if not seeds:
             continue
         sf = os.path.join(tmp, "seeds.txt")
@@ -373,6 +439,9 @@ def main():
                     help="seed elastix with 04l's clicked landmark pairs and refine")
     ap.add_argument("--landmark-weight", type=float, default=1.0,
                     help="weight of the corresponding-points metric against image MI")
+    ap.add_argument("--whole-plate", action="store_true",
+                    help="Wullimann only: register the whole plate, drawing included, "
+                         "instead of the micrograph half (for comparison)")
     ap.add_argument("--use", default="proposed",
                     choices=["proposed", "confirmed"],
                     help="which plate assignment to register against")
@@ -406,7 +475,7 @@ def main():
     for i, r in enumerate(rows, 1):
         plate_id = r["confirmed_plate"] or r["proposed_plate"] if args.use == "confirmed" else r["proposed_plate"]
         sec_path = os.path.join(REFORMAT_DIR, "sections", r["scene_uid"] + ".png")
-        plate_path = os.path.join(REFORMAT_DIR, "plates", plate_id + ".png")
+        plate_path = os.path.join(REFORMAT_DIR, AT.reformatted_dir(CONFIG), plate_id + ".png")
         # A plate id with no reformatted image is SKIPPED silently below. That
         # was masking a real mismatch until 2026-09-23: 04a_reformat builds
         # these images from its own hardcoded extraction set (untouched here -

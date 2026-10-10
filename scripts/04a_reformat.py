@@ -743,7 +743,7 @@ def main():
         write_excluded(paths["excluded"], excluded)
 
     sec_dir = paths["sections"]
-    plate_dir = os.path.join(REFORMAT_DIR, "plates")
+    plate_dir = os.path.join(REFORMAT_DIR, AT.reformatted_dir(CONFIG))
     os.makedirs(sec_dir, exist_ok=True)
     os.makedirs(plate_dir, exist_ok=True)
 
