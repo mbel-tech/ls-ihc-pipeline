@@ -67,26 +67,20 @@ tests/build/
 docs/*.docx
 docs/*.pdf
 
-# Virtual environments and compiled binaries
-work/czienv/
-**/czienv/
+# Compiled binaries (the venv itself is covered by work/ above)
 *.pyd
 *.exe
 *.dll
 *.lib
-*.pyc
-__pycache__/
 
-# Image and array data (too large for git)
-*.tif
-*.tiff
-*.npy
+# More array formats and local leftovers
 *.npz
-*.png
-
-# Local backups, logs and keys
 *.backup
 *.pre_new_atlas
-*.log
 *.pfx
 *.pem
+
+# These embed the animal -> treatment assignment (the unblinding key), which
+# must never reach this public repo. Regenerate them locally.
+reformatted/shotgun_manifest*.csv
+reformatted/roi_curator.html
