@@ -1,0 +1,1135 @@
+perk_scene_uid,pcna_scene_uid,animal,extra_rotation,flip,excluded,align_iou,flip_margin,confidence,reason
+LS22_s04a_sc07,LS22_s04b_sc07,LS22,0,0,1,,,,PCNA partner excluded by the operator
+LS87_s05a_sc06,LS87_s05b_sc06,LS87,0,0,1,,,,PCNA partner excluded by the operator
+LS136_s03a_sc07,LS136_s03b_sc07,LS136,0,0,1,,,,PCNA partner excluded by the operator
+LS37_s07a_sc08,LS37_s07b_sc07,LS37,0,0,1,,,,PCNA partner excluded by the operator
+LS69_s08a_sc01,LS69_s08b_sc01,LS69,0,0,1,,,,PCNA partner excluded by the operator
+LS138_s08a_sc03,LS138_s08b_sc03,LS138,0,0,1,,,,PCNA partner excluded by the operator
+LS61_s02a_sc08,LS61_s02b_sc11,LS61,0,0,1,,,,PCNA partner excluded by the operator
+LS138_s05a_sc08,LS138_s05b_sc08,LS138,0,0,1,,,,PCNA partner excluded by the operator
+LS136_s07a_sc04,LS136_s07b_sc05,LS136,0,0,1,,,,PCNA partner excluded by the operator
+LS37_s02a_sc11,LS37_s02b_sc11,LS37,0,0,1,,,,PCNA partner excluded by the operator
+LS138_s06a_sc09,LS138_s06b_sc09,LS138,0,0,1,,,,PCNA partner excluded by the operator
+LS22_s08a_sc10,LS22_s08b_sc10,LS22,0,0,1,,,,PCNA partner excluded by the operator
+LS120_s03a_sc01,LS120_s03b_sc01,LS120,0,0,1,,,,PCNA partner excluded by the operator
+LS45_s07a_sc06,LS45_s07b_sc07,LS45,0,0,1,,,,PCNA partner excluded by the operator
+LS87_s01a_sc17,LS87_s01b_sc18,LS87,0,0,1,,,,PCNA partner excluded by the operator
+LS45_s03a_sc11,LS45_s03b_sc11,LS45,0,0,1,,,,PCNA partner excluded by the operator
+LS138_s08a_sc07,LS138_s08b_sc07,LS138,0,0,1,,,,PCNA partner excluded by the operator
+LS69_s02a_sc13,LS69_s02b_sc14,LS69,0,0,1,,,,PCNA partner excluded by the operator
+LS85_s06a_sc04,LS85_s06b_sc06,LS85,0,0,1,,,,PCNA partner excluded by the operator
+LS69_s02a_sc07,LS69_s02b_sc09,LS69,0,0,1,,,,PCNA partner excluded by the operator
+LS120_s07a_sc03,LS120_s07b_sc03,LS120,0,0,1,,,,PCNA partner excluded by the operator
+LS69_s05a_sc00,LS69_s05b_sc00,LS69,0,0,1,,,,PCNA partner excluded by the operator
+LS37_s05a_sc02,LS37_s05b_sc03,LS37,0,0,1,,,,PCNA partner excluded by the operator
+LS136_s03a_sc00,LS136_s03b_sc00,LS136,0,0,1,,,,PCNA partner excluded by the operator
+LS69_s08a_sc10,LS69_s08b_sc11,LS69,0,0,1,,,,PCNA partner excluded by the operator
+LS61_s05a_sc04,LS61_s05b_sc04,LS61,0,0,1,,,,PCNA partner excluded by the operator
+LS22_s03a_sc05,LS22_s03b_sc05,LS22,0,0,1,,,,PCNA partner excluded by the operator
+LS45_s04a_sc07,LS45_s04b_sc07,LS45,0,0,1,,,,PCNA partner excluded by the operator
+LS22_s08a_sc09,LS22_s08b_sc09,LS22,0,0,1,,,,PCNA partner excluded by the operator
+LS61_s01a_sc10,LS61_s01b_sc10,LS61,0,0,1,,,,PCNA partner excluded by the operator
+LS138_s05a_sc06,LS138_s05b_sc06,LS138,0,0,1,,,,PCNA partner excluded by the operator
+LS53_s02b_sc10,LS53_s02c_sc10,LS53,0,0,1,,,,PCNA partner excluded by the operator
+LS85_s02a_sc03,LS85_s02b_sc03,LS85,0,0,1,,,,PCNA partner excluded by the operator
+LS87_s05a_sc10,LS87_s05b_sc10,LS87,0,0,1,,,,PCNA partner excluded by the operator
+LS138_s02a_sc04,LS138_s02b_sc04,LS138,0,0,1,,,,PCNA partner excluded by the operator
+LS138_s03a_sc03,LS138_s03b_sc03,LS138,0,0,1,,,,PCNA partner excluded by the operator
+LS37_s10a_sc10,LS37_s10b_sc10,LS37,0,0,1,,,,PCNA partner excluded by the operator
+LS69_s04a_sc01,LS69_s04b_sc01,LS69,0,0,1,,,,PCNA partner excluded by the operator
+LS69_s05a_sc06,LS69_s05b_sc08,LS69,0,0,1,,,,PCNA partner excluded by the operator
+LS87_s07a_sc11,LS87_s07b_sc10,LS87,0,0,1,,,,PCNA partner excluded by the operator
+LS87_s09a_sc06,LS87_s09b_sc06,LS87,0,0,1,,,,PCNA partner excluded by the operator
+LS22_s07a_sc08,LS22_s07b_sc08,LS22,0,0,1,,,,PCNA partner excluded by the operator
+LS105_s09a_sc01,LS105_s09b_sc01,LS105,0,0,1,,,,PCNA partner excluded by the operator
+LS138_s06a_sc01,LS138_s06b_sc01,LS138,0,0,1,,,,PCNA partner excluded by the operator
+LS22_s07a_sc10,LS22_s07b_sc10,LS22,0,0,1,,,,PCNA partner excluded by the operator
+LS45_s08a_sc08,LS45_s08b_sc09,LS45,0,0,1,,,,PCNA partner excluded by the operator
+LS45_s09a_sc01,LS45_s09b_sc00,LS45,0,0,1,,,,PCNA partner excluded by the operator
+LS120_s07a_sc09,LS120_s07b_sc09,LS120,0,0,1,,,,PCNA partner excluded by the operator
+LS45_s05a_sc09,LS45_s05b_sc09,LS45,0,0,1,,,,PCNA partner excluded by the operator
+LS69_s09a_sc02,LS69_s09b_sc04,LS69,0,0,1,,,,PCNA partner excluded by the operator
+LS87_s03a_sc07,LS87_s03b_sc09,LS87,0,0,1,,,,PCNA partner excluded by the operator
+LS69_s09a_sc01,LS69_s09b_sc03,LS69,0,0,1,,,,PCNA partner excluded by the operator
+LS37_s08a_sc10,LS37_s08b_sc10,LS37,0,0,1,,,,PCNA partner excluded by the operator
+LS22_s09a_sc10,LS22_s09b_sc10,LS22,0,0,1,,,,PCNA partner excluded by the operator
+LS45_s09a_sc08,LS45_s09b_sc07,LS45,0,0,1,,,,PCNA partner excluded by the operator
+LS61_s02a_sc00,LS61_s02b_sc00,LS61,0,0,1,,,,PCNA partner excluded by the operator
+LS61_s01a_sc00,LS61_s01b_sc00,LS61,0,0,1,,,,PCNA partner excluded by the operator
+LS22_s07a_sc09,LS22_s07b_sc09,LS22,0,0,1,,,,PCNA partner excluded by the operator
+LS69_s08a_sc11,LS69_s08b_sc12,LS69,0,0,1,,,,PCNA partner excluded by the operator
+LS138_s02a_sc05,LS138_s02b_sc05,LS138,0,0,1,,,,PCNA partner excluded by the operator
+LS37_s05a_sc09,LS37_s05b_sc10,LS37,0,0,1,,,,PCNA partner excluded by the operator
+LS120_s09a_sc04,LS120_s09b_sc06,LS120,0,0,1,,,,PCNA partner excluded by the operator
+LS87_s01a_sc15,LS87_s01b_sc16,LS87,0,0,1,,,,PCNA partner excluded by the operator
+LS87_s09a_sc07,LS87_s09b_sc07,LS87,0,0,1,,,,PCNA partner excluded by the operator
+LS22_s07a_sc01,LS22_s07b_sc01,LS22,0,0,1,,,,PCNA partner excluded by the operator
+LS45_s06a_sc07,LS45_s06b_sc07,LS45,0,0,1,,,,PCNA partner excluded by the operator
+LS22_s07a_sc07,LS22_s07b_sc07,LS22,0,0,1,,,,PCNA partner excluded by the operator
+LS61_s04a_sc00,LS61_s04c_sc00,LS61,0,0,1,,,,PCNA partner excluded by the operator
+LS85_s01a_sc01,LS85_s01b_sc01,LS85,0,0,1,,,,PCNA partner excluded by the operator
+LS85_s09a_sc08,LS85_s09b_sc08,LS85,0,0,1,,,,PCNA partner excluded by the operator
+LS136_s07a_sc02,LS136_s07b_sc03,LS136,0,0,1,,,,PCNA partner excluded by the operator
+LS85_s01a_sc02,LS85_s01b_sc02,LS85,0,0,1,,,,PCNA partner excluded by the operator
+LS45_s02a_sc03,LS45_s02b_sc03,LS45,0,0,1,,,,PCNA partner excluded by the operator
+LS85_s03a_sc11,LS85_s03b_sc11,LS85,0,0,1,,,,PCNA partner excluded by the operator
+LS45_s06a_sc08,LS45_s06b_sc08,LS45,0,0,1,,,,PCNA partner excluded by the operator
+LS120_s02a_sc10,LS120_s02b_sc10,LS120,0,0,1,,,,PCNA partner excluded by the operator
+LS69_s06a_sc11,LS69_s06b_sc10,LS69,0,0,1,,,,PCNA partner excluded by the operator
+LS69_s03a_sc00,LS69_s03b_sc00,LS69,0,0,1,,,,PCNA partner excluded by the operator
+LS53_s02b_sc09,LS53_s02c_sc09,LS53,0,0,1,,,,PCNA partner excluded by the operator
+LS45_s07a_sc03,LS45_s07b_sc03,LS45,0,0,1,,,,PCNA partner excluded by the operator
+LS87_s06a_sc08,LS87_s06b_sc08,LS87,0,0,1,,,,PCNA partner excluded by the operator
+LS105_s03a_sc01,LS105_s03b_sc01,LS105,0,0,1,,,,PCNA partner excluded by the operator
+LS87_s07a_sc09,LS87_s07b_sc08,LS87,0,0,1,,,,PCNA partner excluded by the operator
+LS136_s07a_sc03,LS136_s07b_sc04,LS136,0,0,1,,,,PCNA partner excluded by the operator
+LS45_s09a_sc10,LS45_s09b_sc09,LS45,0,0,1,,,,PCNA partner excluded by the operator
+LS61_s05a_sc11,LS61_s05b_sc11,LS61,0,0,1,,,,PCNA partner excluded by the operator
+LS120_s06a_sc01,LS120_s06b_sc01,LS120,0,0,1,,,,PCNA partner excluded by the operator
+LS87_s02a_sc10,LS87_s02b_sc12,LS87,0,0,1,,,,PCNA partner excluded by the operator
+LS138_s03a_sc09,LS138_s03b_sc09,LS138,0,0,1,,,,PCNA partner excluded by the operator
+LS45_s08a_sc00,LS45_s08b_sc00,LS45,0,0,1,,,,PCNA partner excluded by the operator
+LS85_s10a_sc02,LS85_s10b_sc02,LS85,0,0,1,,,,PCNA partner excluded by the operator
+LS87_s02a_sc04,LS87_s02b_sc05,LS87,0,0,1,,,,PCNA partner excluded by the operator
+LS136_s01a_sc01,LS136_s01b_sc00,LS136,0,0,1,,,,PCNA partner excluded by the operator
+LS22_s05a_sc07,LS22_s05b_sc07,LS22,0,0,1,,,,PCNA partner excluded by the operator
+LS87_s08a_sc08,LS87_s08b_sc08,LS87,0,0,1,,,,PCNA partner excluded by the operator
+LS120_s01a_sc10,LS120_s01b_sc09,LS120,0,0,1,,,,PCNA partner excluded by the operator
+LS85_s03a_sc04,LS85_s03b_sc04,LS85,0,0,1,,,,PCNA partner excluded by the operator
+LS120_s08a_sc05,LS120_s08b_sc06,LS120,0,0,1,,,,PCNA partner excluded by the operator
+LS105_s04a_sc02,LS105_s04b_sc02,LS105,0,0,1,,,,PCNA partner excluded by the operator
+LS87_s07a_sc03,LS87_s07b_sc03,LS87,0,0,1,,,,PCNA partner excluded by the operator
+LS45_s06a_sc00,LS45_s06b_sc00,LS45,0,0,1,,,,PCNA partner excluded by the operator
+LS105_s09a_sc02,LS105_s09b_sc02,LS105,0,0,1,,,,PCNA partner excluded by the operator
+LS45_s07a_sc02,LS45_s07b_sc02,LS45,0,0,1,,,,PCNA partner excluded by the operator
+LS22_s08a_sc01,LS22_s08b_sc01,LS22,0,0,1,,,,PCNA partner excluded by the operator
+LS45_s05a_sc04,LS45_s05b_sc04,LS45,0,0,1,,,,PCNA partner excluded by the operator
+LS69_s09a_sc06,LS69_s09b_sc08,LS69,0,0,1,,,,PCNA partner excluded by the operator
+LS69_s01a_sc14,LS69_s01b_sc15,LS69,0,0,1,,,,PCNA partner excluded by the operator
+LS105_s09a_sc05,LS105_s09b_sc05,LS105,0,0,1,,,,PCNA partner excluded by the operator
+LS45_s02a_sc04,LS45_s02b_sc04,LS45,0,0,1,,,,PCNA partner excluded by the operator
+LS61_s01a_sc01,LS61_s01b_sc02,LS61,0,0,1,,,,PCNA partner excluded by the operator
+LS85_s09a_sc00,LS85_s09b_sc00,LS85,0,0,1,,,,PCNA partner excluded by the operator
+LS87_s07a_sc07,LS87_s07b_sc06,LS87,0,0,1,,,,PCNA partner excluded by the operator
+LS136_s08a_sc05,LS136_s08b_sc07,LS136,0,0,1,,,,PCNA partner excluded by the operator
+LS22_s01a_sc11,LS22_s01b_sc10,LS22,0,0,1,,,,PCNA partner excluded by the operator
+LS53_s02b_sc11,LS53_s02c_sc11,LS53,0,0,1,,,,PCNA partner excluded by the operator
+LS45_s07a_sc05,LS45_s07b_sc06,LS45,0,0,1,,,,PCNA partner excluded by the operator
+LS45_s02a_sc07,LS45_s02b_sc07,LS45,0,0,1,,,,PCNA partner excluded by the operator
+LS85_s08a_sc02,LS85_s08b_sc02,LS85,0,0,1,,,,PCNA partner excluded by the operator
+LS85_s03a_sc08,LS85_s03b_sc08,LS85,0,0,1,,,,PCNA partner excluded by the operator
+LS61_s08a_sc02,LS61_s08b_sc05,LS61,0,0,1,,,,PCNA partner excluded by the operator
+LS87_s01a_sc09,LS87_s01b_sc09,LS87,0,0,1,,,,PCNA partner excluded by the operator
+LS61_s05a_sc09,LS61_s05b_sc09,LS61,0,0,1,,,,PCNA partner excluded by the operator
+LS87_s07a_sc02,LS87_s07b_sc02,LS87,0,0,1,,,,PCNA partner excluded by the operator
+LS136_s07a_sc01,LS136_s07b_sc02,LS136,0,0,1,,,,PCNA partner excluded by the operator
+LS69_s02a_sc03,LS69_s02b_sc04,LS69,0,0,1,,,,PCNA partner excluded by the operator
+LS45_s04a_sc02,LS45_s04b_sc02,LS45,0,0,1,,,,PCNA partner excluded by the operator
+LS136_s03a_sc01,LS136_s03b_sc01,LS136,0,0,1,,,,PCNA partner excluded by the operator
+LS120_s08a_sc07,LS120_s08b_sc08,LS120,0,0,1,,,,PCNA partner excluded by the operator
+LS120_s06a_sc05,LS120_s06b_sc05,LS120,0,0,1,,,,PCNA partner excluded by the operator
+LS69_s06a_sc08,LS69_s06b_sc08,LS69,0,0,1,,,,PCNA partner excluded by the operator
+LS87_s08a_sc04,LS87_s08b_sc04,LS87,0,0,1,,,,PCNA partner excluded by the operator
+LS136_s04a_sc04,LS136_s04b_sc04,LS136,0,0,1,,,,PCNA partner excluded by the operator
+LS53_s02b_sc05,LS53_s02c_sc05,LS53,0,0,1,,,,PCNA partner excluded by the operator
+LS45_s03a_sc00,LS45_s03b_sc00,LS45,0,0,1,,,,PCNA partner excluded by the operator
+LS87_s03a_sc00,LS87_s03b_sc02,LS87,0,0,1,,,,PCNA partner excluded by the operator
+LS61_s01a_sc12,LS61_s01b_sc12,LS61,0,0,1,,,,PCNA partner excluded by the operator
+LS105_s09a_sc10,LS105_s09b_sc12,LS105,0,0,1,,,,PCNA partner excluded by the operator
+LS45_s10a_sc04,LS45_s10b_sc04,LS45,0,0,1,,,,PCNA partner excluded by the operator
+LS138_s08a_sc09,LS138_s08b_sc09,LS138,0,0,1,,,,PCNA partner excluded by the operator
+LS22_s01a_sc04,LS22_s01b_sc03,LS22,0,0,1,,,,PCNA partner excluded by the operator
+LS138_s01a_sc03,LS138_s01b_sc04,LS138,0,0,1,,,,PCNA partner excluded by the operator
+LS120_s03a_sc04,LS120_s03b_sc04,LS120,0,0,1,,,,PCNA partner excluded by the operator
+LS22_s04a_sc04,LS22_s04b_sc04,LS22,0,0,1,,,,PCNA partner excluded by the operator
+LS69_s06a_sc07,LS69_s06b_sc07,LS69,0,0,1,,,,PCNA partner excluded by the operator
+LS69_s02a_sc10,LS69_s02b_sc12,LS69,0,0,1,,,,PCNA partner excluded by the operator
+LS85_s09a_sc03,LS85_s09b_sc03,LS85,0,0,1,,,,PCNA partner excluded by the operator
+LS87_s07a_sc10,LS87_s07b_sc09,LS87,0,0,1,,,,PCNA partner excluded by the operator
+LS138_s08a_sc01,LS138_s08b_sc01,LS138,0,0,1,,,,PCNA partner excluded by the operator
+LS105_s01a_sc05,LS105_s01b_sc06,LS105,0,0,1,,,,PCNA partner excluded by the operator
+LS136_s03a_sc05,LS136_s03b_sc05,LS136,0,0,1,,,,PCNA partner excluded by the operator
+LS87_s01a_sc08,LS87_s01b_sc08,LS87,0,0,1,,,,PCNA partner excluded by the operator
+LS138_s03a_sc00,LS138_s03b_sc00,LS138,0,0,1,,,,PCNA partner excluded by the operator
+LS22_s05a_sc06,LS22_s05b_sc06,LS22,0,0,1,,,,PCNA partner excluded by the operator
+LS136_s04a_sc00,LS136_s04b_sc00,LS136,0,0,1,,,,PCNA partner excluded by the operator
+LS85_s08a_sc00,LS85_s08b_sc00,LS85,0,0,1,,,,PCNA partner excluded by the operator
+LS120_s07a_sc06,LS120_s07b_sc06,LS120,0,0,1,,,,PCNA partner excluded by the operator
+LS136_s01a_sc15,LS136_s01b_sc18,LS136,0,0,1,,,,PCNA partner excluded by the operator
+LS37_s07a_sc09,LS37_s07b_sc08,LS37,0,0,1,,,,PCNA partner excluded by the operator
+LS85_s05a_sc08,LS85_s05b_sc08,LS85,0,0,1,,,,PCNA partner excluded by the operator
+LS69_s03a_sc03,LS69_s03b_sc03,LS69,0,0,1,,,,PCNA partner excluded by the operator
+LS87_s06a_sc09,LS87_s06b_sc09,LS87,0,0,1,,,,PCNA partner excluded by the operator
+LS37_s08a_sc04,LS37_s08b_sc04,LS37,0,0,1,,,,PCNA partner excluded by the operator
+LS37_s08a_sc11,LS37_s08b_sc11,LS37,0,0,1,,,,PCNA partner excluded by the operator
+LS22_s07a_sc04,LS22_s07b_sc04,LS22,0,0,1,,,,PCNA partner excluded by the operator
+LS69_s03a_sc02,LS69_s03b_sc02,LS69,0,0,1,,,,PCNA partner excluded by the operator
+LS22_s02a_sc06,LS22_s02b_sc06,LS22,0,0,1,,,,PCNA partner excluded by the operator
+LS87_s01a_sc13,LS87_s01b_sc13,LS87,0,0,1,,,,PCNA partner excluded by the operator
+LS138_s08a_sc08,LS138_s08b_sc08,LS138,0,0,1,,,,PCNA partner excluded by the operator
+LS37_s08a_sc06,LS37_s08b_sc06,LS37,0,0,1,,,,PCNA partner excluded by the operator
+LS22_s03a_sc01,LS22_s03b_sc01,LS22,0,0,1,,,,PCNA partner excluded by the operator
+LS61_s06a_sc04,LS61_s06b_sc05,LS61,0,0,1,,,,PCNA partner excluded by the operator
+LS85_s10a_sc05,LS85_s10b_sc05,LS85,0,0,1,,,,PCNA partner excluded by the operator
+LS105_s01a_sc11,LS105_s01b_sc12,LS105,0,0,1,,,,PCNA partner excluded by the operator
+LS87_s01a_sc16,LS87_s01b_sc17,LS87,0,0,1,,,,PCNA partner excluded by the operator
+LS85_s04a_sc01,LS85_s04b_sc01,LS85,0,0,1,,,,PCNA partner excluded by the operator
+LS45_s10a_sc09,LS45_s10b_sc09,LS45,0,0,1,,,,PCNA partner excluded by the operator
+LS136_s06a_sc02,LS136_s06b_sc03,LS136,0,0,1,,,,PCNA partner excluded by the operator
+LS136_s02a_sc06,LS136_s02b_sc07,LS136,0,0,1,,,,PCNA partner excluded by the operator
+LS22_s05a_sc05,LS22_s05b_sc05,LS22,0,0,1,,,,PCNA partner excluded by the operator
+LS136_s01a_sc04,LS136_s01b_sc04,LS136,0,0,1,,,,PCNA partner excluded by the operator
+LS61_s06a_sc09,LS61_s06b_sc10,LS61,0,0,1,,,,PCNA partner excluded by the operator
+LS120_s05a_sc06,LS120_s05b_sc07,LS120,0,0,1,,,,PCNA partner excluded by the operator
+LS120_s07a_sc07,LS120_s07b_sc07,LS120,0,0,1,,,,PCNA partner excluded by the operator
+LS85_s05a_sc09,LS85_s05b_sc09,LS85,0,0,1,,,,PCNA partner excluded by the operator
+LS87_s09a_sc08,LS87_s09b_sc08,LS87,0,0,1,,,,PCNA partner excluded by the operator
+LS87_s09a_sc09,LS87_s09b_sc09,LS87,0,0,1,,,,PCNA partner excluded by the operator
+LS61_s05a_sc10,LS61_s05b_sc10,LS61,0,0,1,,,,PCNA partner excluded by the operator
+LS61_s01a_sc04,LS61_s01b_sc05,LS61,0,0,1,,,,PCNA partner excluded by the operator
+LS69_s03a_sc01,LS69_s03b_sc01,LS69,0,0,1,,,,PCNA partner excluded by the operator
+LS138_s02a_sc09,LS138_s02b_sc09,LS138,0,0,1,,,,PCNA partner excluded by the operator
+LS105_s05a_sc00,LS105_s05b_sc00,LS105,0,0,1,,,,PCNA partner excluded by the operator
+LS22_s07a_sc06,LS22_s07b_sc06,LS22,0,0,1,,,,PCNA partner excluded by the operator
+LS136_s06a_sc01,LS136_s06b_sc01,LS136,0,0,1,,,,PCNA partner excluded by the operator
+LS85_s10a_sc08,LS85_s10b_sc08,LS85,0,0,1,,,,PCNA partner excluded by the operator
+LS105_s02a_sc00,LS105_s02b_sc00,LS105,0,0,1,,,,PCNA partner excluded by the operator
+LS61_s07a_sc08,LS61_s07b_sc08,LS61,0,0,1,,,,PCNA partner excluded by the operator
+LS138_s02a_sc00,LS138_s02b_sc00,LS138,0,0,1,,,,PCNA partner excluded by the operator
+LS22_s03a_sc02,LS22_s03b_sc02,LS22,0,0,1,,,,PCNA partner excluded by the operator
+LS136_s04a_sc06,LS136_s04b_sc07,LS136,0,0,1,,,,PCNA partner excluded by the operator
+LS87_s03a_sc03,LS87_s03b_sc05,LS87,0,0,1,,,,PCNA partner excluded by the operator
+LS85_s03a_sc02,LS85_s03b_sc02,LS85,0,0,1,,,,PCNA partner excluded by the operator
+LS22_s06a_sc09,LS22_s06b_sc09,LS22,0,0,1,,,,PCNA partner excluded by the operator
+LS136_s02a_sc14,LS136_s02b_sc16,LS136,0,0,1,,,,PCNA partner excluded by the operator
+LS69_s09a_sc03,LS69_s09b_sc05,LS69,0,0,1,,,,PCNA partner excluded by the operator
+LS69_s03a_sc05,LS69_s03b_sc05,LS69,0,0,1,,,,PCNA partner excluded by the operator
+LS85_s08a_sc06,LS85_s08b_sc06,LS85,0,0,1,,,,PCNA partner excluded by the operator
+LS120_s01a_sc07,LS120_s01b_sc06,LS120,0,0,1,,,,PCNA partner excluded by the operator
+LS85_s10a_sc09,LS85_s10b_sc09,LS85,0,0,1,,,,PCNA partner excluded by the operator
+LS87_s07a_sc00,LS87_s07b_sc00,LS87,0,0,1,,,,PCNA partner excluded by the operator
+LS138_s09a_sc05,LS138_s09b_sc05,LS138,0,0,1,,,,PCNA partner excluded by the operator
+LS136_s07a_sc05,LS136_s07b_sc07,LS136,0,0,1,,,,PCNA partner excluded by the operator
+LS138_s09a_sc04,LS138_s09b_sc04,LS138,0,0,1,,,,PCNA partner excluded by the operator
+LS87_s05a_sc08,LS87_s05b_sc08,LS87,0,0,1,,,,PCNA partner excluded by the operator
+LS136_s02a_sc04,LS136_s02b_sc05,LS136,0,0,1,,,,PCNA partner excluded by the operator
+LS87_s01a_sc06,LS87_s01b_sc06,LS87,0,0,1,,,,PCNA partner excluded by the operator
+LS105_s03a_sc02,LS105_s03b_sc02,LS105,0,0,1,,,,PCNA partner excluded by the operator
+LS37_s03a_sc00,LS37_s03b_sc00,LS37,0,0,1,,,,PCNA partner excluded by the operator
+LS105_s01a_sc12,LS105_s01b_sc14,LS105,0,0,1,,,,PCNA partner excluded by the operator
+LS45_s07a_sc08,LS45_s07b_sc09,LS45,0,0,1,,,,PCNA partner excluded by the operator
+LS120_s01a_sc01,LS120_s01b_sc01,LS120,0,0,1,,,,PCNA partner excluded by the operator
+LS37_s09a_sc06,LS37_s09b_sc05,LS37,0,0,1,,,,PCNA partner excluded by the operator
+LS105_s05a_sc10,LS105_s05b_sc10,LS105,0,0,1,,,,PCNA partner excluded by the operator
+LS61_s02a_sc11,LS61_s02b_sc14,LS61,0,0,1,,,,PCNA partner excluded by the operator
+LS22_s04a_sc10,LS22_s04b_sc10,LS22,0,0,1,,,,PCNA partner excluded by the operator
+LS61_s08a_sc05,LS61_s08b_sc11,LS61,0,0,1,,,,PCNA partner excluded by the operator
+LS136_s01a_sc06,LS136_s01b_sc07,LS136,0,0,1,,,,PCNA partner excluded by the operator
+LS85_s02a_sc01,LS85_s02b_sc01,LS85,0,0,1,,,,PCNA partner excluded by the operator
+LS87_s02a_sc08,LS87_s02b_sc10,LS87,0,0,1,,,,PCNA partner excluded by the operator
+LS105_s09a_sc03,LS105_s09b_sc03,LS105,0,0,1,,,,PCNA partner excluded by the operator
+LS85_s01a_sc03,LS85_s01b_sc03,LS85,0,0,1,,,,PCNA partner excluded by the operator
+LS138_s09a_sc01,LS138_s09b_sc01,LS138,0,0,1,,,,PCNA partner excluded by the operator
+LS136_s06a_sc04,LS136_s06b_sc04,LS136,0,0,1,,,,PCNA partner excluded by the operator
+LS120_s02a_sc05,LS120_s02b_sc05,LS120,0,0,1,,,,PCNA partner excluded by the operator
+LS120_s07a_sc04,LS120_s07b_sc04,LS120,0,0,1,,,,PCNA partner excluded by the operator
+LS105_s01a_sc03,LS105_s01b_sc04,LS105,0,0,1,,,,PCNA partner excluded by the operator
+LS61_s02a_sc07,LS61_s02b_sc10,LS61,0,0,1,,,,PCNA partner excluded by the operator
+LS105_s09a_sc09,LS105_s09b_sc11,LS105,0,0,1,,,,PCNA partner excluded by the operator
+LS105_s06a_sc10,LS105_s06b_sc10,LS105,0,0,1,,,,PCNA partner excluded by the operator
+LS138_s07a_sc01,LS138_s07b_sc01,LS138,0,0,1,,,,PCNA partner excluded by the operator
+LS87_s03a_sc02,LS87_s03b_sc04,LS87,0,0,1,,,,PCNA partner excluded by the operator
+LS61_s07a_sc02,LS61_s07b_sc02,LS61,0,0,1,,,,PCNA partner excluded by the operator
+LS85_s09a_sc02,LS85_s09b_sc02,LS85,0,0,1,,,,PCNA partner excluded by the operator
+LS105_s09a_sc00,LS105_s09b_sc00,LS105,0,0,1,,,,PCNA partner excluded by the operator
+LS22_s09a_sc09,LS22_s09b_sc09,LS22,0,0,1,,,,PCNA partner excluded by the operator
+LS22_s09a_sc00,LS22_s09b_sc00,LS22,0,0,1,,,,PCNA partner excluded by the operator
+LS37_s03a_sc08,LS37_s03b_sc09,LS37,0,0,1,,,,PCNA partner excluded by the operator
+LS45_s08a_sc06,LS45_s08b_sc07,LS45,0,0,1,,,,PCNA partner excluded by the operator
+LS22_s05a_sc08,LS22_s05b_sc08,LS22,0,0,1,,,,PCNA partner excluded by the operator
+LS120_s04a_sc05,LS120_s04b_sc07,LS120,0,0,1,,,,PCNA partner excluded by the operator
+LS136_s03a_sc10,LS136_s03b_sc10,LS136,0,0,1,,,,PCNA partner excluded by the operator
+LS87_s02a_sc03,LS87_s02b_sc04,LS87,0,0,1,,,,PCNA partner excluded by the operator
+LS136_s01a_sc05,LS136_s01b_sc03,LS136,0,0,1,,,,PCNA partner excluded by the operator
+LS37_s07a_sc01,LS37_s07b_sc00,LS37,0,0,1,,,,PCNA partner excluded by the operator
+LS105_s02a_sc11,LS105_s02b_sc11,LS105,0,0,1,,,,PCNA partner excluded by the operator
+LS85_s09a_sc09,LS85_s09b_sc09,LS85,0,0,1,,,,PCNA partner excluded by the operator
+LS136_s08a_sc04,LS136_s08b_sc06,LS136,0,0,1,,,,PCNA partner excluded by the operator
+LS45_s02a_sc11,LS45_s02b_sc10,LS45,0,0,1,,,,PCNA partner excluded by the operator
+LS61_s02a_sc09,LS61_s02b_sc12,LS61,0,0,1,,,,PCNA partner excluded by the operator
+LS22_s05a_sc09,LS22_s05b_sc09,LS22,0,0,1,,,,PCNA partner excluded by the operator
+LS45_s04a_sc11,LS45_s04b_sc11,LS45,0,0,1,,,,PCNA partner excluded by the operator
+LS69_s01a_sc07,LS69_s01b_sc08,LS69,0,0,1,,,,PCNA partner excluded by the operator
+LS69_s04a_sc00,LS69_s04b_sc00,LS69,0,0,1,,,,PCNA partner excluded by the operator
+LS120_s03a_sc05,LS120_s03b_sc05,LS120,0,0,1,,,,PCNA partner excluded by the operator
+LS22_s03a_sc03,LS22_s03b_sc03,LS22,0,0,1,,,,PCNA partner excluded by the operator
+LS61_s07a_sc03,LS61_s07b_sc03,LS61,0,0,1,,,,PCNA partner excluded by the operator
+LS69_s07a_sc10,LS69_s07b_sc10,LS69,0,0,1,,,,PCNA partner excluded by the operator
+LS22_s03a_sc04,LS22_s03b_sc04,LS22,0,0,1,,,,PCNA partner excluded by the operator
+LS120_s08a_sc02,LS120_s08b_sc03,LS120,0,0,1,,,,PCNA partner excluded by the operator
+LS138_s02a_sc11,LS138_s02b_sc10,LS138,0,0,1,,,,PCNA partner excluded by the operator
+LS37_s09a_sc11,LS37_s09b_sc09,LS37,0,0,1,,,,PCNA partner excluded by the operator
+LS37_s10a_sc08,LS37_s10b_sc08,LS37,0,0,1,,,,PCNA partner excluded by the operator
+LS22_s01a_sc13,LS22_s01b_sc12,LS22,0,0,1,,,,PCNA partner excluded by the operator
+LS45_s05a_sc06,LS45_s05b_sc06,LS45,0,0,1,,,,PCNA partner excluded by the operator
+LS37_s09a_sc08,LS37_s09b_sc07,LS37,0,0,1,,,,PCNA partner excluded by the operator
+LS61_s06a_sc06,LS61_s06b_sc07,LS61,0,0,1,,,,PCNA partner excluded by the operator
+LS45_s05a_sc07,LS45_s05b_sc07,LS45,0,0,1,,,,PCNA partner excluded by the operator
+LS136_s08a_sc02,LS136_s08b_sc04,LS136,0,0,1,,,,PCNA partner excluded by the operator
+LS105_s01a_sc02,LS105_s01b_sc03,LS105,0,0,1,,,,PCNA partner excluded by the operator
+LS45_s08a_sc09,LS45_s08b_sc11,LS45,0,0,1,,,,PCNA partner excluded by the operator
+LS69_s04a_sc04,LS69_s04b_sc04,LS69,0,0,1,,,,PCNA partner excluded by the operator
+LS138_s09a_sc03,LS138_s09b_sc03,LS138,0,0,1,,,,PCNA partner excluded by the operator
+LS87_s06a_sc10,LS87_s06b_sc10,LS87,0,0,1,,,,PCNA partner excluded by the operator
+LS105_s01a_sc08,LS105_s01b_sc09,LS105,0,0,1,,,,PCNA partner excluded by the operator
+LS61_s01a_sc08,LS61_s01b_sc08,LS61,0,0,1,,,,PCNA partner excluded by the operator
+LS136_s05a_sc07,LS136_s05b_sc07,LS136,0,0,1,,,,PCNA partner excluded by the operator
+LS87_s03a_sc04,LS87_s03b_sc06,LS87,0,0,1,,,,PCNA partner excluded by the operator
+LS105_s08a_sc04,LS105_s08b_sc03,LS105,0,0,1,,,,PCNA partner excluded by the operator
+LS136_s03a_sc06,LS136_s03b_sc06,LS136,0,0,1,,,,PCNA partner excluded by the operator
+LS85_s09a_sc01,LS85_s09b_sc01,LS85,0,0,1,,,,PCNA partner excluded by the operator
+LS61_s02a_sc10,LS61_s02b_sc13,LS61,0,0,1,,,,PCNA partner excluded by the operator
+LS120_s03a_sc03,LS120_s03b_sc03,LS120,0,0,1,,,,PCNA partner excluded by the operator
+LS138_s03a_sc02,LS138_s03b_sc02,LS138,0,0,1,,,,PCNA partner excluded by the operator
+LS136_s08a_sc01,LS136_s08b_sc01,LS136,0,0,1,,,,PCNA partner excluded by the operator
+LS45_s07a_sc04,LS45_s07b_sc05,LS45,0,0,1,,,,PCNA partner excluded by the operator
+LS53_s02b_sc02,LS53_s02c_sc02,LS53,0,0,1,,,,PCNA partner excluded by the operator
+LS136_s03a_sc09,LS136_s03b_sc09,LS136,0,0,1,,,,PCNA partner excluded by the operator
+LS120_s03a_sc13,LS120_s03b_sc12,LS120,0,0,1,,,,PCNA partner excluded by the operator
+LS138_s03a_sc06,LS138_s03b_sc06,LS138,0,0,1,,,,PCNA partner excluded by the operator
+LS120_s07a_sc10,LS120_s07b_sc10,LS120,0,0,1,,,,PCNA partner excluded by the operator
+LS105_s10a_sc02,LS105_s10b_sc02,LS105,0,0,1,,,,PCNA partner excluded by the operator
+LS138_s08a_sc10,LS138_s08b_sc10,LS138,0,0,1,,,,PCNA partner excluded by the operator
+LS61_s02a_sc02,LS61_s02b_sc02,LS61,0,0,1,,,,PCNA partner excluded by the operator
+LS120_s08a_sc09,LS120_s08b_sc10,LS120,0,0,1,,,,PCNA partner excluded by the operator
+LS61_s06a_sc10,LS61_s06b_sc11,LS61,0,0,1,,,,PCNA partner excluded by the operator
+LS85_s02a_sc02,LS85_s02b_sc02,LS85,0,0,1,,,,PCNA partner excluded by the operator
+LS120_s07a_sc02,LS120_s07b_sc02,LS120,0,0,1,,,,PCNA partner excluded by the operator
+LS105_s03a_sc08,LS105_s03b_sc08,LS105,0,0,1,,,,PCNA partner excluded by the operator
+LS136_s07a_sc06,LS136_s07b_sc09,LS136,0,0,1,,,,PCNA partner excluded by the operator
+LS87_s08a_sc09,LS87_s08b_sc09,LS87,0,0,1,,,,PCNA partner excluded by the operator
+LS69_s05a_sc07,LS69_s05b_sc09,LS69,0,0,1,,,,PCNA partner excluded by the operator
+LS37_s06a_sc09,LS37_s06b_sc09,LS37,0,0,1,,,,PCNA partner excluded by the operator
+LS61_s03a_sc13,LS61_s03b_sc14,LS61,0,0,1,,,,PCNA partner excluded by the operator
+LS136_s03a_sc08,LS136_s03b_sc08,LS136,0,0,1,,,,PCNA partner excluded by the operator
+LS69_s08a_sc02,LS69_s08b_sc02,LS69,0,0,1,,,,PCNA partner excluded by the operator
+LS69_s06a_sc09,LS69_s06b_sc09,LS69,0,0,1,,,,PCNA partner excluded by the operator
+LS85_s10a_sc04,LS85_s10b_sc04,LS85,0,0,1,,,,PCNA partner excluded by the operator
+LS61_s08a_sc06,LS61_s08b_sc12,LS61,0,0,1,,,,PCNA partner excluded by the operator
+LS136_s02a_sc13,LS136_s02b_sc15,LS136,0,0,1,,,,PCNA partner excluded by the operator
+LS105_s01a_sc07,LS105_s01b_sc08,LS105,0,0,1,,,,PCNA partner excluded by the operator
+LS120_s01a_sc13,LS120_s01b_sc12,LS120,0,0,1,,,,PCNA partner excluded by the operator
+LS136_s05a_sc06,LS136_s05b_sc06,LS136,0,0,1,,,,PCNA partner excluded by the operator
+LS85_s03a_sc10,LS85_s03b_sc10,LS85,0,0,1,,,,PCNA partner excluded by the operator
+LS138_s08a_sc06,LS138_s08b_sc06,LS138,0,0,1,,,,PCNA partner excluded by the operator
+LS69_s01a_sc15,LS69_s01b_sc16,LS69,0,0,1,,,,PCNA partner excluded by the operator
+LS87_s06a_sc11,LS87_s06b_sc11,LS87,0,0,1,,,,PCNA partner excluded by the operator
+LS37_s03a_sc10,LS37_s03b_sc11,LS37,0,0,1,,,,PCNA partner excluded by the operator
+LS22_s05a_sc03,LS22_s05b_sc03,LS22,0,0,1,,,,PCNA partner excluded by the operator
+LS120_s06a_sc09,LS120_s06b_sc09,LS120,0,0,1,,,,PCNA partner excluded by the operator
+LS138_s03a_sc10,LS138_s03b_sc10,LS138,0,0,1,,,,PCNA partner excluded by the operator
+LS120_s07a_sc01,LS120_s07b_sc01,LS120,0,0,1,,,,PCNA partner excluded by the operator
+LS45_s04a_sc01,LS45_s04b_sc01,LS45,0,0,1,,,,PCNA partner excluded by the operator
+LS87_s02a_sc00,LS87_s02b_sc00,LS87,0,0,1,,,,PCNA partner excluded by the operator
+LS136_s07a_sc07,LS136_s07b_sc10,LS136,0,0,1,,,,PCNA partner excluded by the operator
+LS61_s07a_sc01,LS61_s07b_sc01,LS61,0,0,1,,,,PCNA partner excluded by the operator
+LS85_s01a_sc05,LS85_s01b_sc05,LS85,0,0,1,,,,PCNA partner excluded by the operator
+LS105_s09a_sc04,LS105_s09b_sc04,LS105,0,0,1,,,,PCNA partner excluded by the operator
+LS22_s07a_sc03,LS22_s07b_sc03,LS22,0,0,1,,,,PCNA partner excluded by the operator
+LS37_s10a_sc11,LS37_s10b_sc11,LS37,0,0,1,,,,PCNA partner excluded by the operator
+LS87_s07a_sc04,LS87_s07b_sc04,LS87,0,0,1,,,,PCNA partner excluded by the operator
+LS136_s01a_sc02,LS136_s01b_sc01,LS136,0,0,1,,,,PCNA partner excluded by the operator
+LS138_s01a_sc04,LS138_s01b_sc05,LS138,0,0,1,,,,PCNA partner excluded by the operator
+LS85_s07a_sc09,LS85_s07c_sc09,LS85,0,0,1,,,,PCNA partner excluded by the operator
+LS87_s02a_sc02,LS87_s02b_sc03,LS87,0,0,1,,,,PCNA partner excluded by the operator
+LS22_s04a_sc09,LS22_s04b_sc09,LS22,0,0,1,,,,PCNA partner excluded by the operator
+LS136_s06a_sc06,LS136_s06b_sc06,LS136,0,0,1,,,,PCNA partner excluded by the operator
+LS136_s08a_sc06,LS136_s08b_sc08,LS136,0,0,1,,,,PCNA partner excluded by the operator
+LS37_s05a_sc10,LS37_s05b_sc11,LS37,0,0,1,,,,PCNA partner excluded by the operator
+LS69_s07a_sc11,LS69_s07b_sc11,LS69,0,0,1,,,,PCNA partner excluded by the operator
+LS138_s09a_sc06,LS138_s09b_sc06,LS138,0,0,1,,,,PCNA partner excluded by the operator
+LS69_s03a_sc09,LS69_s03b_sc09,LS69,0,0,1,,,,PCNA partner excluded by the operator
+LS85_s04a_sc00,LS85_s04b_sc00,LS85,0,0,1,,,,PCNA partner excluded by the operator
+LS69_s02a_sc05,LS69_s02b_sc06,LS69,0,0,1,,,,PCNA partner excluded by the operator
+LS37_s06a_sc11,LS37_s06b_sc11,LS37,0,0,1,,,,PCNA partner excluded by the operator
+LS87_s08a_sc11,LS87_s08b_sc11,LS87,0,0,1,,,,PCNA partner excluded by the operator
+LS61_s07a_sc09,LS61_s07b_sc09,LS61,0,0,1,,,,PCNA partner excluded by the operator
+LS69_s02a_sc12,LS69_s02b_sc13,LS69,0,0,1,,,,PCNA partner excluded by the operator
+LS136_s06a_sc08,LS136_s06b_sc08,LS136,0,0,1,,,,PCNA partner excluded by the operator
+LS120_s03a_sc02,LS120_s03b_sc02,LS120,0,0,1,,,,PCNA partner excluded by the operator
+LS37_s01a_sc00,LS37_s01b_sc00,LS37,0,0,1,,,,PCNA partner excluded by the operator
+LS85_s10a_sc03,LS85_s10b_sc03,LS85,0,0,1,,,,PCNA partner excluded by the operator
+LS120_s08a_sc03,LS120_s08b_sc04,LS120,0,0,1,,,,PCNA partner excluded by the operator
+LS136_s03a_sc11,LS136_s03b_sc11,LS136,0,0,1,,,,PCNA partner excluded by the operator
+LS136_s01a_sc09,LS136_s01b_sc11,LS136,0,0,1,,,,PCNA partner excluded by the operator
+LS53_s02b_sc06,LS53_s02c_sc06,LS53,0,0,1,,,,PCNA partner excluded by the operator
+LS136_s01a_sc07,LS136_s01b_sc09,LS136,0,0,1,,,,PCNA partner excluded by the operator
+LS85_s09a_sc11,LS85_s09b_sc11,LS85,0,0,1,,,,PCNA partner excluded by the operator
+LS61_s01a_sc13,LS61_s01b_sc13,LS61,0,0,1,,,,PCNA partner excluded by the operator
+LS61_s02a_sc06,LS61_s02b_sc09,LS61,0,0,1,,,,PCNA partner excluded by the operator
+LS138_s09a_sc09,LS138_s09b_sc08,LS138,0,0,1,,,,PCNA partner excluded by the operator
+LS37_s03a_sc09,LS37_s03b_sc10,LS37,0,0,1,,,,PCNA partner excluded by the operator
+LS61_s06a_sc08,LS61_s06b_sc09,LS61,0,0,1,,,,PCNA partner excluded by the operator
+LS69_s08a_sc12,LS69_s08b_sc13,LS69,0,0,1,,,,PCNA partner excluded by the operator
+LS69_s07a_sc04,LS69_s07b_sc04,LS69,0,0,1,,,,PCNA partner excluded by the operator
+LS87_s01a_sc03,LS87_s01b_sc03,LS87,0,0,1,,,,PCNA partner excluded by the operator
+LS105_s01a_sc10,LS105_s01b_sc11,LS105,0,0,1,,,,PCNA partner excluded by the operator
+LS37_s02a_sc09,LS37_s02b_sc09,LS37,0,0,1,,,,PCNA partner excluded by the operator
+LS61_s08a_sc01,LS61_s08b_sc02,LS61,0,0,1,,,,PCNA partner excluded by the operator
+LS37_s09a_sc04,LS37_s09b_sc03,LS37,0,0,1,,,,PCNA partner excluded by the operator
+LS87_s08a_sc00,LS87_s08b_sc00,LS87,0,0,1,,,,PCNA partner excluded by the operator
+LS138_s05a_sc07,LS138_s05b_sc07,LS138,0,0,1,,,,PCNA partner excluded by the operator
+LS22_s09a_sc07,LS22_s09b_sc07,LS22,0,0,1,,,,PCNA partner excluded by the operator
+LS53_s02b_sc08,LS53_s02c_sc08,LS53,0,0,1,,,,PCNA partner excluded by the operator
+LS69_s01a_sc09,LS69_s01b_sc10,LS69,0,0,1,,,,PCNA partner excluded by the operator
+LS87_s07a_sc08,LS87_s07b_sc07,LS87,0,0,1,,,,PCNA partner excluded by the operator
+LS37_s04a_sc01,LS37_s04b_sc01,LS37,0,0,1,,,,PCNA partner excluded by the operator
+LS61_s03a_sc04,LS61_s03b_sc04,LS61,0,0,1,,,,PCNA partner excluded by the operator
+LS85_s09a_sc04,LS85_s09b_sc04,LS85,0,0,1,,,,PCNA partner excluded by the operator
+LS105_s10a_sc00,LS105_s10b_sc00,LS105,0,0,1,,,,PCNA partner excluded by the operator
+LS87_s08a_sc01,LS87_s08b_sc01,LS87,0,0,1,,,,PCNA partner excluded by the operator
+LS120_s03a_sc12,LS120_s03b_sc11,LS120,0,0,1,,,,PCNA partner excluded by the operator
+LS61_s05a_sc06,LS61_s05b_sc06,LS61,0,0,1,,,,PCNA partner excluded by the operator
+LS22_s09a_sc11,LS22_s09b_sc11,LS22,0,0,1,,,,PCNA partner excluded by the operator
+LS69_s05a_sc02,LS69_s05b_sc04,LS69,0,0,1,,,,PCNA partner excluded by the operator
+LS85_s02a_sc04,LS85_s02b_sc04,LS85,0,0,1,,,,PCNA partner excluded by the operator
+LS105_s06a_sc09,LS105_s06b_sc09,LS105,0,0,1,,,,PCNA partner excluded by the operator
+LS69_s06a_sc06,LS69_s06b_sc06,LS69,0,0,1,,,,PCNA partner excluded by the operator
+LS61_s03a_sc02,LS61_s03b_sc02,LS61,0,0,1,,,,PCNA partner excluded by the operator
+LS87_s08a_sc10,LS87_s08b_sc10,LS87,0,0,1,,,,PCNA partner excluded by the operator
+LS105_s02a_sc01,LS105_s02b_sc01,LS105,0,0,1,,,,PCNA partner excluded by the operator
+LS61_s07a_sc10,LS61_s07b_sc10,LS61,0,0,1,,,,PCNA partner excluded by the operator
+LS105_s06a_sc11,LS105_s06b_sc11,LS105,0,0,1,,,,PCNA partner excluded by the operator
+LS136_s08a_sc03,LS136_s08b_sc05,LS136,0,0,1,,,,PCNA partner excluded by the operator
+LS138_s03a_sc11,LS138_s03b_sc11,LS138,0,0,1,,,,PCNA partner excluded by the operator
+LS85_s02a_sc07,LS85_s02b_sc07,LS85,0,0,1,,,,PCNA partner excluded by the operator
+LS105_s09a_sc06,LS105_s09b_sc06,LS105,0,0,1,,,,PCNA partner excluded by the operator
+LS22_s04a_sc08,LS22_s04b_sc08,LS22,0,0,1,,,,PCNA partner excluded by the operator
+LS69_s02a_sc14,LS69_s02b_sc15,LS69,0,0,1,,,,PCNA partner excluded by the operator
+LS105_s04a_sc12,LS105_s04b_sc12,LS105,0,0,1,,,,PCNA partner excluded by the operator
+LS120_s05a_sc10,LS120_s05b_sc11,LS120,0,0,1,,,,PCNA partner excluded by the operator
+LS138_s08a_sc00,LS138_s08b_sc00,LS138,0,0,1,,,,PCNA partner excluded by the operator
+LS120_s07a_sc05,LS120_s07b_sc05,LS120,0,0,1,,,,PCNA partner excluded by the operator
+LS61_s07a_sc00,LS61_s07b_sc00,LS61,0,0,1,,,,PCNA partner excluded by the operator
+LS45_s04a_sc12,LS45_s04b_sc12,LS45,0,0,1,,,,PCNA partner excluded by the operator
+LS37_s08a_sc01,LS37_s08b_sc01,LS37,0,0,1,,,,PCNA partner excluded by the operator
+LS45_s04a_sc10,LS45_s04b_sc10,LS45,0,0,1,,,,PCNA partner excluded by the operator
+LS120_s01a_sc08,LS120_s01b_sc08,LS120,0,0,1,,,,PCNA partner excluded by the operator
+LS87_s02a_sc01,LS87_s02b_sc02,LS87,0,0,1,,,,PCNA partner excluded by the operator
+LS87_s03a_sc01,LS87_s03b_sc03,LS87,0,0,1,,,,PCNA partner excluded by the operator
+LS136_s03a_sc02,LS136_s03b_sc02,LS136,0,0,1,,,,PCNA partner excluded by the operator
+LS105_s04a_sc00,LS105_s04b_sc00,LS105,0,0,1,,,,PCNA partner excluded by the operator
+LS138_s07a_sc09,LS138_s07b_sc09,LS138,0,0,1,,,,PCNA partner excluded by the operator
+LS136_s02a_sc11,LS136_s02b_sc13,LS136,0,0,1,,,,PCNA partner excluded by the operator
+LS138_s08a_sc02,LS138_s08b_sc02,LS138,0,0,1,,,,PCNA partner excluded by the operator
+LS136_s08a_sc00,LS136_s08b_sc00,LS136,0,0,1,,,,PCNA partner excluded by the operator
+LS85_s02a_sc00,LS85_s02b_sc00,LS85,0,0,1,,,,PCNA partner excluded by the operator
+LS138_s07a_sc08,LS138_s07b_sc08,LS138,0,0,1,,,,PCNA partner excluded by the operator
+LS105_s08a_sc10,LS105_s08b_sc08,LS105,0,0,1,,,,PCNA partner excluded by the operator
+LS37_s10a_sc09,LS37_s10b_sc09,LS37,0,0,1,,,,PCNA partner excluded by the operator
+LS22_s03a_sc09,LS22_s03b_sc09,LS22,0,0,1,,,,PCNA partner excluded by the operator
+LS136_s08a_sc09,LS136_s08b_sc11,LS136,0,0,1,,,,PCNA partner excluded by the operator
+LS37_s04a_sc07,LS37_s04b_sc07,LS37,0,0,1,,,,PCNA partner excluded by the operator
+LS61_s06a_sc03,LS61_s06b_sc04,LS61,0,0,1,,,,PCNA partner excluded by the operator
+LS87_s02a_sc09,LS87_s02b_sc11,LS87,0,0,1,,,,PCNA partner excluded by the operator
+LS85_s02a_sc08,LS85_s02b_sc08,LS85,0,0,1,,,,PCNA partner excluded by the operator
+LS105_s04a_sc05,LS105_s04b_sc05,LS105,0,0,1,,,,PCNA partner excluded by the operator
+LS138_s09a_sc02,LS138_s09b_sc02,LS138,0,0,1,,,,PCNA partner excluded by the operator
+LS105_s01a_sc04,LS105_s01b_sc05,LS105,0,0,1,,,,PCNA partner excluded by the operator
+LS69_s07a_sc00,LS69_s07b_sc00,LS69,0,0,1,,,,PCNA partner excluded by the operator
+LS120_s05a_sc08,LS120_s05b_sc09,LS120,0,0,1,,,,PCNA partner excluded by the operator
+LS136_s04a_sc12,LS136_s04b_sc13,LS136,0,0,1,,,,PCNA partner excluded by the operator
+LS45_s07a_sc07,LS45_s07b_sc08,LS45,0,0,1,,,,PCNA partner excluded by the operator
+LS37_s06a_sc10,LS37_s06b_sc10,LS37,0,0,1,,,,PCNA partner excluded by the operator
+LS136_s05a_sc08,LS136_s05b_sc08,LS136,0,0,1,,,,PCNA partner excluded by the operator
+LS138_s05a_sc09,LS138_s05b_sc09,LS138,0,0,1,,,,PCNA partner excluded by the operator
+LS138_s09a_sc00,LS138_s09b_sc00,LS138,0,0,1,,,,PCNA partner excluded by the operator
+LS45_s05a_sc08,LS45_s05b_sc08,LS45,0,0,1,,,,PCNA partner excluded by the operator
+LS85_s04a_sc05,LS85_s04b_sc05,LS85,0,0,1,,,,PCNA partner excluded by the operator
+LS120_s05a_sc04,LS120_s05b_sc05,LS120,0,0,1,,,,PCNA partner excluded by the operator
+LS136_s02a_sc09,LS136_s02b_sc11,LS136,0,0,1,,,,PCNA partner excluded by the operator
+LS37_s08a_sc09,LS37_s08b_sc09,LS37,0,0,1,,,,PCNA partner excluded by the operator
+LS105_s06a_sc03,LS105_s06b_sc03,LS105,0,0,1,,,,PCNA partner excluded by the operator
+LS61_s07a_sc04,LS61_s07b_sc04,LS61,0,0,1,,,,PCNA partner excluded by the operator
+LS61_s02a_sc04,LS61_s02b_sc06,LS61,0,0,1,,,,PCNA partner excluded by the operator
+LS61_s09a_sc00,LS61_s09b_sc01,LS61,0,0,1,,,,PCNA partner excluded by the operator
+LS87_s01a_sc07,LS87_s01b_sc07,LS87,0,0,1,,,,PCNA partner excluded by the operator
+LS22_s09a_sc08,LS22_s09b_sc08,LS22,0,0,1,,,,PCNA partner excluded by the operator
+LS61_s01a_sc14,LS61_s01b_sc14,LS61,0,0,1,,,,PCNA partner excluded by the operator
+LS45_s10a_sc01,LS45_s10b_sc01,LS45,0,0,1,,,,PCNA partner excluded by the operator
+LS61_s08a_sc04,LS61_s08b_sc09,LS61,0,0,1,,,,PCNA partner excluded by the operator
+LS138_s05a_sc01,LS138_s05b_sc01,LS138,0,0,1,,,,PCNA partner excluded by the operator
+LS87_s01a_sc12,LS87_s01b_sc12,LS87,0,0,1,,,,PCNA partner excluded by the operator
+LS87_s07a_sc05,LS87_s07b_sc05,LS87,0,0,1,,,,PCNA partner excluded by the operator
+LS85_s09a_sc10,LS85_s09b_sc10,LS85,0,0,1,,,,PCNA partner excluded by the operator
+LS22_s01a_sc07,LS22_s01b_sc06,LS22,0,0,1,,,,PCNA partner excluded by the operator
+LS105_s04a_sc03,LS105_s04b_sc03,LS105,0,0,1,,,,PCNA partner excluded by the operator
+LS61_s05a_sc05,LS61_s05b_sc05,LS61,0,0,1,,,,PCNA partner excluded by the operator
+LS87_s03a_sc06,LS87_s03b_sc08,LS87,0,0,1,,,,PCNA partner excluded by the operator
+LS53_s02b_sc07,LS53_s02c_sc07,LS53,0,0,1,,,,PCNA partner excluded by the operator
+LS87_s03a_sc08,LS87_s03b_sc10,LS87,0,0,1,,,,PCNA partner excluded by the operator
+LS69_s08a_sc08,LS69_s08b_sc09,LS69,0,0,1,,,,PCNA partner excluded by the operator
+LS85_s03a_sc00,LS85_s03b_sc00,LS85,0,0,1,,,,PCNA partner excluded by the operator
+LS105_s01a_sc01,LS105_s01b_sc01,LS105,0,0,1,,,,PCNA partner excluded by the operator
+LS87_s06a_sc07,LS87_s06b_sc07,LS87,0,0,1,,,,PCNA partner excluded by the operator
+LS105_s10a_sc01,LS105_s10b_sc01,LS105,94,0,0,0.7687,-0.045,high,
+LS105_s10a_sc03,LS105_s10b_sc03,LS105,136,0,0,0.7332,0.0016,high,
+LS105_s10a_sc04,LS105_s10b_sc04,LS105,103,0,0,0.6076,-0.0419,high,
+LS105_s10a_sc05,LS105_s10b_sc05,LS105,272,0,0,0.6802,-0.0894,high,
+LS105_s10a_sc06,LS105_s10b_sc06,LS105,154,0,0,0.5233,-0.0036,low,
+LS105_s10a_sc07,LS105_s10b_sc07,LS105,84,0,0,0.651,-0.0255,high,
+LS105_s10a_sc08,LS105_s10b_sc08,LS105,148,0,0,0.658,-0.141,high,
+LS105_s10a_sc09,LS105_s10b_sc09,LS105,97,0,0,0.7215,-0.0214,high,
+LS105_s01a_sc00,LS105_s01b_sc00,LS105,79,0,0,0.72,-0.0085,high,
+LS105_s01a_sc06,LS105_s01b_sc07,LS105,45,0,0,0.7596,-0.2566,high,
+LS105_s01a_sc09,LS105_s01b_sc10,LS105,237,0,0,0.7344,-0.0919,high,
+LS105_s01a_sc13,LS105_s01b_sc13,LS105,18,0,0,0.8315,-0.1713,high,
+LS105_s02a_sc02,LS105_s02b_sc02,LS105,7,0,0,0.7365,-0.1179,high,
+LS105_s02a_sc03,LS105_s02b_sc03,LS105,97,0,0,0.74,-0.143,high,
+LS105_s02a_sc04,LS105_s02b_sc04,LS105,336,0,0,0.8123,-0.1654,high,
+LS105_s02a_sc05,LS105_s02b_sc05,LS105,351,0,0,0.7725,-0.1162,high,
+LS105_s02a_sc06,LS105_s02b_sc06,LS105,359,0,0,0.6733,-0.0781,high,
+LS105_s02a_sc07,LS105_s02b_sc07,LS105,175,0,0,0.7187,-0.102,high,
+LS105_s02a_sc08,LS105_s02b_sc08,LS105,357,0,0,0.654,-0.1498,high,
+LS105_s02a_sc09,LS105_s02b_sc09,LS105,359,0,0,0.8758,-0.1654,high,
+LS105_s02a_sc10,LS105_s02b_sc10,LS105,10,0,0,0.7439,-0.0797,high,
+LS105_s03a_sc00,LS105_s03b_sc00,LS105,6,0,0,0.6988,-0.0812,high,
+LS105_s03a_sc03,LS105_s03b_sc03,LS105,182,0,0,0.6635,-0.0541,high,
+LS105_s03a_sc04,LS105_s03b_sc04,LS105,20,0,0,0.7259,-0.1466,high,
+LS105_s03a_sc05,LS105_s03b_sc05,LS105,195,0,0,0.3638,-0.0346,low,
+LS105_s03a_sc06,LS105_s03b_sc06,LS105,135,0,0,0.7228,-0.2365,high,
+LS105_s03a_sc07,LS105_s03b_sc07,LS105,60,0,0,0.4494,-0.0471,low,
+LS105_s03a_sc09,LS105_s03b_sc09,LS105,30,0,0,0.6122,-0.1474,high,
+LS105_s03a_sc10,LS105_s03b_sc10,LS105,292,0,0,0.7155,-0.1589,high,
+LS105_s03a_sc11,LS105_s03b_sc11,LS105,105,0,0,0.6136,-0.1261,high,
+LS105_s04a_sc01,LS105_s04b_sc01,LS105,10,0,0,0.7441,-0.1871,high,
+LS105_s04a_sc04,LS105_s04b_sc04,LS105,241,0,0,0.5909,-0.0656,high,
+LS105_s04a_sc06,LS105_s04b_sc06,LS105,32,0,0,0.6208,-0.0568,high,
+LS105_s04a_sc07,LS105_s04b_sc07,LS105,131,0,0,0.654,-0.0214,high,
+LS105_s04a_sc08,LS105_s04b_sc08,LS105,153,0,0,0.8083,-0.0759,high,
+LS105_s04a_sc09,LS105_s04b_sc09,LS105,171,0,0,0.6567,0.014,high,
+LS105_s04a_sc10,LS105_s04b_sc10,LS105,45,0,0,0.5252,0.0119,low,
+LS105_s04a_sc11,LS105_s04b_sc11,LS105,319,0,0,0.695,-0.0496,high,
+LS105_s05a_sc01,LS105_s05b_sc01,LS105,159,0,0,0.6285,-0.0617,high,
+LS105_s05a_sc02,LS105_s05b_sc02,LS105,325,0,0,0.6695,-0.0379,high,
+LS105_s05a_sc03,LS105_s05b_sc03,LS105,153,0,0,0.6123,-0.0436,high,
+LS105_s05a_sc04,LS105_s05b_sc04,LS105,10,0,0,0.866,-0.0257,high,
+LS105_s05a_sc05,LS105_s05b_sc05,LS105,164,0,0,0.4546,-0.0079,low,
+LS105_s05a_sc06,LS105_s05b_sc06,LS105,187,0,0,0.8455,-0.2103,high,
+LS105_s05a_sc07,LS105_s05b_sc07,LS105,174,0,0,0.5647,-0.0489,high,
+LS105_s05a_sc08,LS105_s05b_sc08,LS105,149,0,0,0.5552,0.0008,high,
+LS105_s05a_sc09,LS105_s05b_sc09,LS105,75,0,0,0.4952,-0.0083,low,
+LS105_s05a_sc11,LS105_s05b_sc11,LS105,56,0,0,0.49,0.067,low,
+LS105_s06a_sc00,LS105_s06b_sc00,LS105,331,0,0,0.5785,-0.0923,high,
+LS105_s06a_sc01,LS105_s06b_sc01,LS105,154,0,0,0.5675,-0.067,high,
+LS105_s06a_sc02,LS105_s06b_sc02,LS105,150,0,0,0.4949,-0.0302,low,
+LS105_s06a_sc04,LS105_s06b_sc04,LS105,247,0,0,0.7058,-0.0264,high,
+LS105_s06a_sc05,LS105_s06b_sc05,LS105,275,0,0,0.5377,0.07,low,
+LS105_s06a_sc06,LS105_s06b_sc06,LS105,65,0,0,0.7019,0.0295,high,
+LS105_s06a_sc07,LS105_s06b_sc07,LS105,349,0,0,0.8008,0.0046,high,
+LS105_s06a_sc08,LS105_s06b_sc08,LS105,14,0,0,0.8755,-0.0218,high,
+LS105_s08a_sc02,LS105_s08b_sc01,LS105,336,0,0,0.8745,-0.024,high,
+LS105_s08a_sc03,LS105_s08b_sc02,LS105,328,0,0,0.764,0.0006,high,
+LS105_s08a_sc05,LS105_s08b_sc04,LS105,180,0,0,0.6402,-0.0109,high,
+LS105_s08a_sc08,LS105_s08b_sc06,LS105,292,0,0,0.9199,-0.026,high,
+LS105_s08a_sc09,LS105_s08b_sc07,LS105,9,0,0,0.8548,-0.0249,high,
+LS105_s08a_sc11,LS105_s08b_sc09,LS105,335,0,0,0.7731,0.0055,high,
+LS105_s09a_sc07,LS105_s09b_sc09,LS105,290,0,0,0.8941,-0.058,high,
+LS105_s09a_sc08,LS105_s09b_sc10,LS105,292,0,0,0.607,0.0695,high,
+LS120_s01a_sc00,LS120_s01b_sc00,LS120,265,0,0,0.7488,-0.0133,high,
+LS120_s01a_sc03,LS120_s01b_sc02,LS120,354,0,0,0.8869,-0.0099,high,
+LS120_s01a_sc02,LS120_s01b_sc03,LS120,339,0,0,0.9116,-0.0278,high,
+LS120_s01a_sc06,LS120_s01b_sc04,LS120,59,0,0,0.8079,-0.0083,high,
+LS120_s01a_sc05,LS120_s01b_sc05,LS120,303,0,0,0.826,-0.0379,high,
+LS120_s01a_sc09,LS120_s01b_sc07,LS120,101,0,0,0.9271,-0.0518,high,
+LS120_s01a_sc12,LS120_s01b_sc10,LS120,331,0,0,0.6483,0.0044,high,
+LS120_s01a_sc11,LS120_s01b_sc11,LS120,119,0,0,0.7315,-0.0069,high,
+LS120_s01a_sc14,LS120_s01b_sc13,LS120,132,0,0,0.7684,-0.0185,high,
+LS120_s01a_sc15,LS120_s01b_sc14,LS120,300,0,0,0.6755,0.0281,high,
+LS120_s01a_sc17,LS120_s01b_sc15,LS120,142,0,0,0.9091,-0.0366,high,
+LS120_s01a_sc16,LS120_s01b_sc16,LS120,116,0,0,0.8401,0.0126,high,
+LS120_s01a_sc18,LS120_s01b_sc17,LS120,294,0,0,0.8409,-0.0009,high,
+LS120_s01a_sc19,LS120_s01b_sc18,LS120,340,0,0,0.6304,-0.021,high,
+LS120_s02a_sc00,LS120_s02b_sc00,LS120,231,0,0,0.6179,-0.0094,high,
+LS120_s02a_sc01,LS120_s02b_sc01,LS120,348,0,0,0.6351,-0.0046,high,
+LS120_s02a_sc02,LS120_s02b_sc02,LS120,324,0,0,0.8115,-0.0266,high,
+LS120_s02a_sc03,LS120_s02b_sc03,LS120,175,0,0,0.6885,-0.0342,high,
+LS120_s02a_sc04,LS120_s02b_sc04,LS120,254,0,0,0.769,-0.1161,high,
+LS120_s02a_sc06,LS120_s02b_sc06,LS120,182,0,0,0.7761,-0.0448,high,
+LS120_s02a_sc07,LS120_s02b_sc07,LS120,178,0,0,0.7475,-0.0552,high,
+LS120_s02a_sc08,LS120_s02b_sc08,LS120,227,0,0,0.7712,-0.0615,high,
+LS120_s02a_sc09,LS120_s02b_sc09,LS120,256,0,0,0.6746,-0.0551,high,
+LS120_s02a_sc11,LS120_s02b_sc11,LS120,95,0,0,0.5844,-0.0828,high,
+LS120_s02a_sc12,LS120_s02b_sc12,LS120,320,0,0,0.28,0.0039,low,
+LS120_s02a_sc13,LS120_s02b_sc13,LS120,198,0,0,0.3232,0.0252,low,
+LS120_s03a_sc00,LS120_s03b_sc00,LS120,25,0,0,0.7727,-0.0392,high,
+LS120_s03a_sc06,LS120_s03b_sc06,LS120,148,0,0,0.6006,-0.0032,high,
+LS120_s03a_sc07,LS120_s03b_sc07,LS120,34,0,0,0.6587,0.0152,high,
+LS120_s03a_sc09,LS120_s03b_sc08,LS120,33,0,0,0.6787,0.0145,high,
+LS120_s03a_sc10,LS120_s03b_sc09,LS120,36,0,0,0.7537,-0.0418,high,
+LS120_s03a_sc11,LS120_s03b_sc10,LS120,4,0,0,0.4672,-0.001,low,
+LS120_s04a_sc00,LS120_s04b_sc00,LS120,42,0,0,0.8945,-0.041,high,
+LS120_s04a_sc01,LS120_s04b_sc02,LS120,120,0,0,0.8897,-0.0299,high,
+LS120_s04a_sc02,LS120_s04b_sc04,LS120,356,0,0,0.8937,-0.0465,high,
+LS120_s04a_sc03,LS120_s04b_sc05,LS120,81,0,0,0.8037,0.0067,high,
+LS120_s04a_sc04,LS120_s04b_sc06,LS120,225,0,0,0.9368,-0.0391,high,
+LS120_s04a_sc06,LS120_s04b_sc08,LS120,232,0,0,0.8983,-0.0281,high,
+LS120_s04a_sc07,LS120_s04b_sc09,LS120,216,0,0,0.8348,0.0066,high,
+LS120_s04a_sc08,LS120_s04b_sc10,LS120,79,0,0,0.5621,-0.007,high,
+LS120_s04a_sc09,LS120_s04b_sc11,LS120,253,0,0,0.4849,-0.003,low,
+LS120_s05a_sc00,LS120_s05b_sc00,LS120,284,0,0,0.9406,-0.0346,high,
+LS120_s05a_sc01,LS120_s05b_sc02,LS120,30,0,0,0.8695,-0.012,high,
+LS120_s05a_sc02,LS120_s05b_sc03,LS120,297,0,0,0.8742,-0.0011,high,
+LS120_s05a_sc03,LS120_s05b_sc04,LS120,346,0,0,0.8844,-0.0122,high,
+LS120_s05a_sc05,LS120_s05b_sc06,LS120,304,0,0,0.9431,-0.0323,high,
+LS120_s05a_sc07,LS120_s05b_sc08,LS120,137,0,0,0.9285,0.0013,high,
+LS120_s05a_sc09,LS120_s05b_sc10,LS120,152,0,0,0.7532,0.0123,high,
+LS120_s06a_sc00,LS120_s06b_sc00,LS120,16,0,0,0.4724,0.0007,low,
+LS120_s06a_sc02,LS120_s06b_sc02,LS120,256,0,0,0.9705,-0.0081,high,
+LS120_s06a_sc03,LS120_s06b_sc03,LS120,133,0,0,0.755,0.0279,high,
+LS120_s06a_sc04,LS120_s06b_sc04,LS120,334,0,0,0.8469,-0.0721,high,
+LS120_s06a_sc06,LS120_s06b_sc06,LS120,313,0,0,0.9425,-0.0345,high,
+LS120_s06a_sc07,LS120_s06b_sc07,LS120,69,0,0,0.9187,-0.0181,high,
+LS120_s06a_sc08,LS120_s06b_sc08,LS120,113,0,0,0.9433,-0.0487,high,
+LS120_s07a_sc00,LS120_s07b_sc00,LS120,29,0,0,0.8809,-0.0078,high,
+LS120_s07a_sc08,LS120_s07b_sc08,LS120,244,0,0,0.9404,-0.0347,high,
+LS120_s08a_sc00,LS120_s08b_sc01,LS120,238,0,0,0.1577,-0.0004,low,
+LS120_s08a_sc01,LS120_s08b_sc02,LS120,346,0,0,0.8943,-0.0918,high,
+LS120_s09a_sc00,LS120_s09b_sc02,LS120,297,0,0,0.8497,-0.1632,high,
+LS120_s09a_sc01,LS120_s09b_sc03,LS120,180,0,0,0.2969,0.007,low,
+LS120_s09a_sc02,LS120_s09b_sc04,LS120,283,0,0,0.9034,-0.0826,high,
+LS120_s09a_sc03,LS120_s09b_sc05,LS120,14,0,0,0.4058,0.0139,low,
+LS136_s01a_sc08,LS136_s01b_sc12,LS136,356,0,0,0.6915,-0.045,high,
+LS136_s01a_sc10,LS136_s01b_sc13,LS136,26,0,0,0.6542,-0.0211,high,
+LS136_s01a_sc11,LS136_s01b_sc14,LS136,130,0,0,0.8162,-0.1124,high,
+LS136_s02a_sc00,LS136_s02b_sc00,LS136,125,0,0,0.6966,-0.1174,high,
+LS136_s02a_sc01,LS136_s02b_sc01,LS136,344,0,0,0.3337,-0.0006,low,
+LS136_s02a_sc03,LS136_s02b_sc04,LS136,334,0,0,0.7131,-0.1513,high,
+LS136_s02a_sc05,LS136_s02b_sc06,LS136,57,0,0,0.3909,0.0188,low,
+LS136_s02a_sc07,LS136_s02b_sc08,LS136,16,0,0,0.5804,-0.0957,high,
+LS136_s02a_sc08,LS136_s02b_sc10,LS136,354,0,0,0.6531,-0.0465,high,
+LS136_s02a_sc10,LS136_s02b_sc12,LS136,356,0,0,0.7532,-0.1193,high,
+LS136_s02a_sc12,LS136_s02b_sc14,LS136,340,0,0,0.5255,-0.0051,low,
+LS136_s03a_sc03,LS136_s03b_sc03,LS136,339,0,0,0.8202,-0.0593,high,
+LS136_s03a_sc04,LS136_s03b_sc04,LS136,4,0,0,0.706,-0.0616,high,
+LS136_s04a_sc01,LS136_s04b_sc01,LS136,184,0,0,0.638,0.0087,high,
+LS136_s04a_sc02,LS136_s04b_sc02,LS136,14,0,0,0.814,-0.0193,high,
+LS136_s04a_sc03,LS136_s04b_sc03,LS136,356,0,0,0.5002,0.0228,low,
+LS136_s04a_sc05,LS136_s04b_sc06,LS136,12,0,0,0.5015,0.0053,low,
+LS136_s04a_sc07,LS136_s04b_sc08,LS136,178,0,0,0.8725,-0.0118,high,
+LS136_s04a_sc08,LS136_s04b_sc09,LS136,123,0,0,0.662,-0.0444,high,
+LS136_s04a_sc09,LS136_s04b_sc10,LS136,204,0,0,0.4975,-0.0395,low,
+LS136_s04a_sc10,LS136_s04b_sc11,LS136,53,0,0,0.318,0.0029,low,
+LS136_s04a_sc11,LS136_s04b_sc12,LS136,205,0,0,0.5554,-0.0202,high,
+LS136_s05a_sc00,LS136_s05b_sc00,LS136,88,0,0,0.8103,-0.2018,high,
+LS136_s05a_sc01,LS136_s05b_sc01,LS136,176,0,0,0.5921,-0.0097,high,
+LS136_s05a_sc02,LS136_s05b_sc02,LS136,167,0,0,0.5256,-0.035,low,
+LS136_s05a_sc03,LS136_s05b_sc03,LS136,66,0,0,0.606,-0.0296,high,
+LS136_s05a_sc04,LS136_s05b_sc04,LS136,240,0,0,0.578,0.0001,high,
+LS136_s05a_sc05,LS136_s05b_sc05,LS136,198,0,0,0.576,-0.0075,high,
+LS136_s05a_sc09,LS136_s05b_sc09,LS136,59,0,0,0.4676,0.0011,low,
+LS136_s06a_sc00,LS136_s06b_sc00,LS136,254,0,0,0.8733,-0.071,high,
+LS136_s07a_sc00,LS136_s07b_sc00,LS136,245,0,0,0.4704,0.005,low,
+LS136_s08a_sc07,LS136_s08b_sc09,LS136,195,0,0,0.7808,-0.0525,high,
+LS136_s08a_sc08,LS136_s08b_sc10,LS136,335,0,0,0.7295,0.0079,high,
+LS136_s09a_sc00,LS136_s09b_sc00,LS136,267,0,0,0.9084,-0.02,high,
+LS136_s09a_sc01,LS136_s09b_sc01,LS136,113,0,0,0.9079,-0.0246,high,
+LS136_s09a_sc02,LS136_s09b_sc02,LS136,146,0,0,0.8838,-0.0324,high,
+LS136_s09a_sc03,LS136_s09b_sc06,LS136,321,0,0,0.6554,-0.0752,high,
+LS136_s09a_sc04,LS136_s09b_sc07,LS136,251,0,0,0.5868,-0.075,high,
+LS136_s09a_sc05,LS136_s09b_sc08,LS136,243,0,0,0.6057,-0.0296,high,
+LS138_s01a_sc00,LS138_s01b_sc01,LS138,252,0,0,0.7903,-0.2983,high,
+LS138_s01a_sc01,LS138_s01b_sc02,LS138,2,0,0,0.9161,-0.3345,high,
+LS138_s01a_sc02,LS138_s01b_sc03,LS138,6,0,0,0.8399,-0.2611,high,
+LS138_s01a_sc05,LS138_s01b_sc06,LS138,151,0,0,0.9308,-0.3412,high,
+LS138_s01a_sc06,LS138_s01b_sc07,LS138,315,0,0,0.8765,-0.3389,high,
+LS138_s01a_sc07,LS138_s01b_sc08,LS138,322,0,0,0.8575,-0.2896,high,
+LS138_s01a_sc08,LS138_s01b_sc09,LS138,118,0,0,0.8613,-0.3469,high,
+LS138_s01a_sc09,LS138_s01b_sc10,LS138,139,0,0,0.8992,-0.3568,high,
+LS138_s01a_sc10,LS138_s01b_sc11,LS138,106,0,0,0.8643,-0.307,high,
+LS138_s02a_sc01,LS138_s02b_sc01,LS138,120,0,0,0.749,-0.1332,high,
+LS138_s02a_sc02,LS138_s02b_sc02,LS138,48,0,0,0.8209,-0.1559,high,
+LS138_s02a_sc03,LS138_s02b_sc03,LS138,332,0,0,0.7939,-0.1383,high,
+LS138_s02a_sc06,LS138_s02b_sc06,LS138,230,0,0,0.7592,-0.1486,high,
+LS138_s02a_sc07,LS138_s02b_sc07,LS138,342,0,0,0.8478,-0.2086,high,
+LS138_s02a_sc08,LS138_s02b_sc08,LS138,182,0,0,0.9115,-0.2284,high,
+LS138_s03a_sc01,LS138_s03b_sc01,LS138,166,0,0,0.7774,-0.1378,high,
+LS138_s03a_sc04,LS138_s03b_sc04,LS138,238,0,0,0.6195,-0.0612,high,
+LS138_s03a_sc05,LS138_s03b_sc05,LS138,277,0,0,0.6661,-0.1242,high,
+LS138_s03a_sc07,LS138_s03b_sc07,LS138,50,0,0,0.8476,-0.3198,high,
+LS138_s03a_sc08,LS138_s03b_sc08,LS138,276,0,0,0.68,-0.1653,high,
+LS138_s04a_sc00,LS138_s04b_sc00,LS138,170,0,0,0.7607,-0.1852,high,
+LS138_s04a_sc01,LS138_s04b_sc01,LS138,165,0,0,0.6857,-0.0237,high,
+LS138_s04a_sc02,LS138_s04b_sc02,LS138,196,0,0,0.8163,-0.0916,high,
+LS138_s04a_sc03,LS138_s04b_sc03,LS138,180,0,0,0.9347,-0.1493,high,
+LS138_s04a_sc04,LS138_s04b_sc04,LS138,168,0,0,0.7488,-0.0342,high,
+LS138_s04a_sc05,LS138_s04b_sc05,LS138,191,0,0,0.8824,-0.0268,high,
+LS138_s04a_sc06,LS138_s04b_sc06,LS138,169,0,0,0.8166,0.0115,high,
+LS138_s04a_sc07,LS138_s04b_sc07,LS138,177,0,0,0.8865,-0.0205,high,
+LS138_s05a_sc00,LS138_s05b_sc00,LS138,308,0,0,0.8135,-0.0494,high,
+LS138_s05a_sc02,LS138_s05b_sc02,LS138,183,0,0,0.8496,-0.0116,high,
+LS138_s05a_sc03,LS138_s05b_sc03,LS138,192,0,0,0.7858,0.0132,high,
+LS138_s05a_sc04,LS138_s05b_sc04,LS138,185,0,0,0.5939,-0.0055,high,
+LS138_s05a_sc05,LS138_s05b_sc05,LS138,21,0,0,0.8135,-0.021,high,
+LS138_s06a_sc00,LS138_s06b_sc00,LS138,184,0,0,0.9773,-0.0836,high,
+LS138_s06a_sc02,LS138_s06b_sc02,LS138,35,0,0,0.6518,-0.0161,high,
+LS138_s06a_sc03,LS138_s06b_sc03,LS138,324,0,0,0.68,0.0221,high,
+LS138_s06a_sc04,LS138_s06b_sc04,LS138,185,0,0,0.9622,-0.0884,high,
+LS138_s06a_sc05,LS138_s06b_sc05,LS138,211,0,0,0.8253,0.017,high,
+LS138_s06a_sc06,LS138_s06b_sc06,LS138,322,0,0,0.7969,-0.013,high,
+LS138_s06a_sc07,LS138_s06b_sc07,LS138,123,0,0,0.7737,-0.0067,high,
+LS138_s06a_sc08,LS138_s06b_sc08,LS138,204,0,0,0.3279,-0.0013,low,
+LS138_s07a_sc00,LS138_s07b_sc00,LS138,5,0,0,0.9537,-0.0229,high,
+LS138_s07a_sc02,LS138_s07b_sc02,LS138,357,0,0,0.9785,-0.0548,high,
+LS138_s07a_sc03,LS138_s07b_sc03,LS138,100,0,0,0.6113,-0.0029,high,
+LS138_s07a_sc04,LS138_s07b_sc04,LS138,123,0,0,0.4984,-0.0004,low,
+LS138_s07a_sc05,LS138_s07b_sc05,LS138,25,0,0,0.6118,0.0115,high,
+LS138_s07a_sc06,LS138_s07b_sc06,LS138,355,0,0,0.7234,0.0042,high,
+LS138_s07a_sc07,LS138_s07b_sc07,LS138,355,0,0,0.7649,-0.0,high,
+LS138_s08a_sc04,LS138_s08b_sc04,LS138,219,0,0,0.8686,-0.0307,high,
+LS138_s08a_sc05,LS138_s08b_sc05,LS138,16,0,0,0.8054,0.0027,high,
+LS22_s01a_sc01,LS22_s01b_sc00,LS22,342,0,0,0.7837,-0.0704,high,
+LS22_s01a_sc02,LS22_s01b_sc01,LS22,160,0,0,0.843,-0.117,high,
+LS22_s01a_sc03,LS22_s01b_sc02,LS22,69,0,0,0.9208,-0.188,high,
+LS22_s01a_sc05,LS22_s01b_sc04,LS22,132,0,0,0.8742,-0.1619,high,
+LS22_s01a_sc06,LS22_s01b_sc05,LS22,180,0,0,0.935,-0.2131,high,
+LS22_s01a_sc08,LS22_s01b_sc07,LS22,73,0,0,0.9085,-0.1538,high,
+LS22_s01a_sc10,LS22_s01b_sc08,LS22,192,0,0,0.9276,-0.1464,high,
+LS22_s01a_sc09,LS22_s01b_sc09,LS22,164,0,0,0.6108,-0.0409,high,
+LS22_s01a_sc12,LS22_s01b_sc11,LS22,235,0,0,0.4094,-0.0024,low,
+LS22_s02a_sc00,LS22_s02b_sc00,LS22,258,0,0,0.6701,-0.0354,high,
+LS22_s02a_sc01,LS22_s02b_sc01,LS22,255,0,0,0.4514,0.0001,low,
+LS22_s02a_sc02,LS22_s02b_sc02,LS22,53,0,0,0.8888,-0.067,high,
+LS22_s02a_sc03,LS22_s02b_sc03,LS22,177,0,0,0.825,-0.0393,high,
+LS22_s02a_sc04,LS22_s02b_sc04,LS22,19,0,0,0.6682,-0.002,high,
+LS22_s02a_sc05,LS22_s02b_sc05,LS22,44,0,0,0.9271,-0.0926,high,
+LS22_s02a_sc07,LS22_s02b_sc07,LS22,182,0,0,0.753,-0.0205,high,
+LS22_s02a_sc08,LS22_s02b_sc08,LS22,187,0,0,0.86,-0.1175,high,
+LS22_s02a_sc09,LS22_s02b_sc09,LS22,147,0,0,0.7447,-0.0211,high,
+LS22_s02a_sc10,LS22_s02b_sc10,LS22,179,0,0,0.8899,-0.1623,high,
+LS22_s02a_sc11,LS22_s02b_sc11,LS22,245,0,0,0.8313,-0.1318,high,
+LS22_s03a_sc00,LS22_s03b_sc00,LS22,19,0,0,0.7798,-0.1681,high,
+LS22_s03a_sc06,LS22_s03b_sc06,LS22,80,0,0,0.7342,-0.033,high,
+LS22_s03a_sc07,LS22_s03b_sc07,LS22,167,0,0,0.8669,-0.1409,high,
+LS22_s03a_sc08,LS22_s03b_sc08,LS22,233,0,0,0.8307,-0.1312,high,
+LS22_s04a_sc00,LS22_s04b_sc00,LS22,136,0,0,0.7384,0.0014,high,
+LS22_s04a_sc01,LS22_s04b_sc01,LS22,326,0,0,0.7772,-0.0645,high,
+LS22_s04a_sc02,LS22_s04b_sc02,LS22,4,0,0,0.8705,-0.0694,high,
+LS22_s04a_sc03,LS22_s04b_sc03,LS22,354,0,0,0.9093,-0.0647,high,
+LS22_s04a_sc05,LS22_s04b_sc05,LS22,283,0,0,0.9311,-0.0572,high,
+LS22_s04a_sc06,LS22_s04b_sc06,LS22,353,0,0,0.8185,-0.0286,high,
+LS22_s05a_sc00,LS22_s05b_sc00,LS22,110,0,0,0.9513,-0.0429,high,
+LS22_s05a_sc01,LS22_s05b_sc01,LS22,181,0,0,0.9356,0.0044,high,
+LS22_s05a_sc02,LS22_s05b_sc02,LS22,7,0,0,0.9371,-0.032,high,
+LS22_s05a_sc04,LS22_s05b_sc04,LS22,182,0,0,0.8962,-0.0024,high,
+LS22_s06a_sc00,LS22_s06b_sc00,LS22,111,0,0,0.9118,0.0178,high,
+LS22_s06a_sc01,LS22_s06b_sc01,LS22,186,0,0,0.9466,-0.0024,high,
+LS22_s06a_sc02,LS22_s06b_sc02,LS22,352,0,0,0.5174,-0.0157,low,
+LS22_s06a_sc03,LS22_s06b_sc03,LS22,300,0,0,0.9615,-0.0473,high,
+LS22_s06a_sc04,LS22_s06b_sc04,LS22,3,0,0,0.9454,-0.0128,high,
+LS22_s06a_sc05,LS22_s06b_sc05,LS22,146,0,0,0.7117,-0.0264,high,
+LS22_s06a_sc06,LS22_s06b_sc06,LS22,360,0,0,0.9713,-0.0389,high,
+LS22_s06a_sc07,LS22_s06b_sc07,LS22,291,0,0,0.661,0.002,high,
+LS22_s06a_sc08,LS22_s06b_sc08,LS22,9,0,0,0.9462,-0.0035,high,
+LS22_s07a_sc00,LS22_s07b_sc00,LS22,213,0,0,0.8911,-0.0105,high,
+LS22_s07a_sc02,LS22_s07b_sc02,LS22,332,0,0,0.959,-0.049,high,
+LS22_s07a_sc05,LS22_s07b_sc05,LS22,169,0,0,0.934,-0.0528,high,
+LS22_s08a_sc00,LS22_s08b_sc00,LS22,294,0,0,0.8243,0.0018,high,
+LS22_s08a_sc02,LS22_s08b_sc02,LS22,85,0,0,0.7913,-0.0025,high,
+LS22_s08a_sc03,LS22_s08b_sc03,LS22,327,0,0,0.8211,-0.0273,high,
+LS22_s08a_sc04,LS22_s08b_sc04,LS22,289,0,0,0.9112,-0.0457,high,
+LS22_s08a_sc05,LS22_s08b_sc05,LS22,317,0,0,0.7165,-0.0138,high,
+LS22_s08a_sc06,LS22_s08b_sc06,LS22,139,0,0,0.6895,0.0047,high,
+LS22_s08a_sc07,LS22_s08b_sc07,LS22,284,0,0,0.9288,-0.033,high,
+LS22_s08a_sc08,LS22_s08b_sc08,LS22,273,0,0,0.4879,-0.0084,low,
+LS22_s09a_sc01,LS22_s09b_sc01,LS22,281,0,0,0.9232,-0.0436,high,
+LS22_s09a_sc02,LS22_s09b_sc02,LS22,283,0,0,0.939,-0.0378,high,
+LS22_s09a_sc03,LS22_s09b_sc03,LS22,281,0,0,0.8881,-0.04,high,
+LS22_s09a_sc04,LS22_s09b_sc04,LS22,294,0,0,0.949,-0.0662,high,
+LS22_s09a_sc05,LS22_s09b_sc05,LS22,306,0,0,0.8772,-0.0178,high,
+LS22_s09a_sc06,LS22_s09b_sc06,LS22,95,0,0,0.9344,-0.031,high,
+LS37_s10a_sc00,LS37_s10b_sc00,LS37,293,0,0,0.9275,-0.0391,high,
+LS37_s10a_sc01,LS37_s10b_sc01,LS37,240,0,0,0.9298,-0.017,high,
+LS37_s10a_sc02,LS37_s10b_sc02,LS37,31,0,0,0.9267,-0.0531,high,
+LS37_s10a_sc03,LS37_s10b_sc03,LS37,162,0,0,0.883,-0.0128,high,
+LS37_s10a_sc04,LS37_s10b_sc04,LS37,87,0,0,0.8957,-0.0246,high,
+LS37_s10a_sc05,LS37_s10b_sc05,LS37,58,0,0,0.9387,-0.0611,high,
+LS37_s10a_sc06,LS37_s10b_sc06,LS37,24,0,0,0.8205,-0.0006,high,
+LS37_s10a_sc07,LS37_s10b_sc07,LS37,330,0,0,0.8783,-0.0205,high,
+LS37_s01a_sc02,LS37_s01b_sc01,LS37,199,0,0,0.6983,-0.1633,high,
+LS37_s01a_sc03,LS37_s01b_sc02,LS37,186,0,0,0.8439,-0.1038,high,
+LS37_s01a_sc04,LS37_s01b_sc03,LS37,170,0,0,0.8428,-0.0905,high,
+LS37_s01a_sc05,LS37_s01b_sc04,LS37,83,0,0,0.8858,-0.1319,high,
+LS37_s01a_sc06,LS37_s01b_sc05,LS37,149,0,0,0.9364,-0.1584,high,
+LS37_s01a_sc07,LS37_s01b_sc06,LS37,178,0,0,0.8987,-0.1132,high,
+LS37_s01a_sc08,LS37_s01b_sc07,LS37,175,0,0,0.9207,-0.1188,high,
+LS37_s01a_sc09,LS37_s01b_sc08,LS37,173,0,0,0.8907,-0.1211,high,
+LS37_s01a_sc10,LS37_s01b_sc09,LS37,178,0,0,0.9482,-0.15,high,
+LS37_s01a_sc11,LS37_s01b_sc10,LS37,175,0,0,0.8565,-0.0829,high,
+LS37_s01a_sc12,LS37_s01b_sc11,LS37,155,0,0,0.7897,-0.0673,high,
+LS37_s02a_sc00,LS37_s02b_sc00,LS37,353,0,0,0.7964,-0.0884,high,
+LS37_s02a_sc01,LS37_s02b_sc01,LS37,228,0,0,0.5893,-0.0366,high,
+LS37_s02a_sc02,LS37_s02b_sc02,LS37,304,0,0,0.7973,-0.1133,high,
+LS37_s02a_sc03,LS37_s02b_sc03,LS37,35,0,0,0.885,-0.0871,high,
+LS37_s02a_sc04,LS37_s02b_sc04,LS37,290,0,0,0.8862,-0.1564,high,
+LS37_s02a_sc05,LS37_s02b_sc05,LS37,176,0,0,0.8532,-0.1202,high,
+LS37_s02a_sc06,LS37_s02b_sc06,LS37,150,0,0,0.9079,-0.178,high,
+LS37_s02a_sc07,LS37_s02b_sc07,LS37,157,0,0,0.915,-0.1651,high,
+LS37_s02a_sc08,LS37_s02b_sc08,LS37,111,0,0,0.9028,-0.155,high,
+LS37_s02a_sc10,LS37_s02b_sc10,LS37,301,0,0,0.6205,-0.1041,high,
+LS37_s03a_sc01,LS37_s03b_sc01,LS37,256,0,0,0.886,-0.2988,high,
+LS37_s03a_sc02,LS37_s03b_sc02,LS37,261,0,0,0.8428,-0.2566,high,
+LS37_s03a_sc03,LS37_s03b_sc03,LS37,235,0,0,0.8326,-0.2076,high,
+LS37_s03a_sc04,LS37_s03b_sc04,LS37,149,0,0,0.7672,-0.1633,high,
+LS37_s03a_sc05,LS37_s03b_sc06,LS37,32,0,0,0.7178,-0.1887,high,
+LS37_s03a_sc07,LS37_s03b_sc07,LS37,19,0,0,0.7124,-0.0952,high,
+LS37_s03a_sc06,LS37_s03b_sc08,LS37,197,0,0,0.753,-0.1137,high,
+LS37_s04a_sc00,LS37_s04b_sc00,LS37,285,0,0,0.71,-0.0171,high,
+LS37_s04a_sc02,LS37_s04b_sc02,LS37,174,0,0,0.7885,-0.1738,high,
+LS37_s04a_sc03,LS37_s04b_sc03,LS37,179,0,0,0.8691,-0.1806,high,
+LS37_s04a_sc04,LS37_s04b_sc04,LS37,168,0,0,0.8275,-0.0657,high,
+LS37_s04a_sc05,LS37_s04b_sc05,LS37,336,0,0,0.9123,-0.075,high,
+LS37_s04a_sc06,LS37_s04b_sc06,LS37,356,0,0,0.9529,-0.0977,high,
+LS37_s04a_sc08,LS37_s04b_sc08,LS37,186,0,0,0.922,-0.0354,high,
+LS37_s04a_sc09,LS37_s04b_sc09,LS37,184,0,0,0.903,-0.0646,high,
+LS37_s04a_sc10,LS37_s04b_sc10,LS37,186,0,0,0.772,0.0236,high,
+LS37_s04a_sc11,LS37_s04b_sc11,LS37,204,0,0,0.863,-0.0359,high,
+LS37_s05a_sc00,LS37_s05b_sc01,LS37,184,0,0,0.8079,-0.0571,high,
+LS37_s05a_sc01,LS37_s05b_sc02,LS37,12,0,0,0.7506,-0.0177,high,
+LS37_s05a_sc03,LS37_s05b_sc04,LS37,347,0,0,0.6669,-0.0084,high,
+LS37_s05a_sc04,LS37_s05b_sc05,LS37,346,0,0,0.9255,-0.0266,high,
+LS37_s05a_sc05,LS37_s05b_sc06,LS37,358,0,0,0.9351,-0.0407,high,
+LS37_s05a_sc06,LS37_s05b_sc07,LS37,185,0,0,0.937,-0.0249,high,
+LS37_s05a_sc07,LS37_s05b_sc08,LS37,349,0,0,0.8523,-0.0253,high,
+LS37_s05a_sc08,LS37_s05b_sc09,LS37,170,0,0,0.6445,-0.0068,high,
+LS37_s06a_sc00,LS37_s06b_sc00,LS37,1,0,0,0.9421,-0.0582,high,
+LS37_s06a_sc01,LS37_s06b_sc01,LS37,142,0,0,0.9058,-0.054,high,
+LS37_s06a_sc02,LS37_s06b_sc02,LS37,12,0,0,0.931,-0.0318,high,
+LS37_s06a_sc03,LS37_s06b_sc03,LS37,352,0,0,0.9439,-0.0637,high,
+LS37_s06a_sc04,LS37_s06b_sc04,LS37,17,0,0,0.5514,0.0137,high,
+LS37_s06a_sc05,LS37_s06b_sc05,LS37,1,0,0,0.738,-0.0968,high,
+LS37_s06a_sc06,LS37_s06b_sc06,LS37,354,0,0,0.942,-0.0428,high,
+LS37_s06a_sc07,LS37_s06b_sc07,LS37,17,0,0,0.5998,-0.0182,high,
+LS37_s06a_sc08,LS37_s06b_sc08,LS37,354,0,0,0.4635,-0.0443,low,
+LS37_s07a_sc02,LS37_s07b_sc01,LS37,347,0,0,0.9305,-0.0938,high,
+LS37_s07a_sc03,LS37_s07b_sc02,LS37,26,0,0,0.5868,-0.009,high,
+LS37_s07a_sc04,LS37_s07b_sc03,LS37,356,0,0,0.831,-0.0324,high,
+LS37_s07a_sc05,LS37_s07b_sc04,LS37,349,0,0,0.5603,0.068,high,
+LS37_s07a_sc06,LS37_s07b_sc05,LS37,186,0,0,0.8521,-0.074,high,
+LS37_s07a_sc07,LS37_s07b_sc06,LS37,355,0,0,0.5305,-0.0088,low,
+LS37_s08a_sc00,LS37_s08b_sc00,LS37,338,0,0,0.8141,0.001,high,
+LS37_s08a_sc02,LS37_s08b_sc02,LS37,10,0,0,0.8137,-0.0693,high,
+LS37_s08a_sc03,LS37_s08b_sc03,LS37,16,0,0,0.8908,-0.0541,high,
+LS37_s08a_sc05,LS37_s08b_sc05,LS37,16,0,0,0.9247,-0.0672,high,
+LS37_s08a_sc07,LS37_s08b_sc07,LS37,14,0,0,0.6259,-0.0202,high,
+LS37_s08a_sc08,LS37_s08b_sc08,LS37,21,0,0,0.8885,-0.0357,high,
+LS37_s09a_sc00,LS37_s09b_sc00,LS37,353,0,0,0.85,-0.0318,high,
+LS37_s09a_sc01,LS37_s09b_sc01,LS37,207,0,0,0.3999,-0.0163,low,
+LS37_s09a_sc05,LS37_s09b_sc04,LS37,152,0,0,0.8995,-0.024,high,
+LS37_s09a_sc07,LS37_s09b_sc06,LS37,70,0,0,0.9299,-0.0649,high,
+LS37_s09a_sc09,LS37_s09b_sc08,LS37,302,0,0,0.8751,-0.0261,high,
+LS45_s10a_sc00,LS45_s10b_sc00,LS45,270,0,0,0.9026,-0.041,high,
+LS45_s10a_sc02,LS45_s10b_sc02,LS45,9,0,0,0.8572,-0.0495,high,
+LS45_s10a_sc03,LS45_s10b_sc03,LS45,307,0,0,0.4131,-0.0094,low,
+LS45_s10a_sc05,LS45_s10b_sc05,LS45,249,0,0,0.5791,-0.0008,high,
+LS45_s10a_sc06,LS45_s10b_sc06,LS45,99,0,0,0.7291,-0.0129,high,
+LS45_s10a_sc07,LS45_s10b_sc07,LS45,64,0,0,0.8118,-0.074,high,
+LS45_s10a_sc08,LS45_s10b_sc08,LS45,249,0,0,0.7651,-0.1233,high,
+LS45_s01a_sc01,LS45_s01b_sc00,LS45,349,0,0,0.8837,-0.0832,high,
+LS45_s01a_sc02,LS45_s01b_sc01,LS45,180,0,0,0.8541,-0.1681,high,
+LS45_s01a_sc03,LS45_s01b_sc02,LS45,302,0,0,0.3766,0.0013,low,
+LS45_s01a_sc04,LS45_s01b_sc03,LS45,42,0,0,0.1777,-0.0081,low,
+LS45_s01a_sc05,LS45_s01b_sc04,LS45,174,0,0,0.8282,-0.2088,high,
+LS45_s01a_sc06,LS45_s01b_sc05,LS45,236,0,0,0.7598,-0.1608,high,
+LS45_s01a_sc07,LS45_s01b_sc06,LS45,54,0,0,0.8198,-0.167,high,
+LS45_s01a_sc08,LS45_s01b_sc07,LS45,236,0,0,0.7786,-0.1903,high,
+LS45_s01a_sc09,LS45_s01b_sc08,LS45,72,0,0,0.1801,0.0044,low,
+LS45_s01a_sc10,LS45_s01b_sc09,LS45,197,0,0,0.3764,-0.0592,low,
+LS45_s01a_sc11,LS45_s01b_sc10,LS45,189,0,0,0.5168,-0.0534,low,
+LS45_s01a_sc12,LS45_s01b_sc11,LS45,262,0,0,0.8024,-0.1735,high,
+LS45_s01a_sc13,LS45_s01b_sc12,LS45,175,0,0,0.3822,0.0008,low,
+LS45_s01a_sc14,LS45_s01b_sc13,LS45,320,0,0,0.6942,-0.0877,high,
+LS45_s02a_sc00,LS45_s02b_sc00,LS45,192,0,0,0.8123,-0.1743,high,
+LS45_s02a_sc01,LS45_s02b_sc01,LS45,51,0,0,0.4123,-0.0064,low,
+LS45_s02a_sc02,LS45_s02b_sc02,LS45,96,0,0,0.8449,-0.1729,high,
+LS45_s02a_sc05,LS45_s02b_sc05,LS45,225,0,0,0.6914,-0.0404,high,
+LS45_s02a_sc06,LS45_s02b_sc06,LS45,158,0,0,0.7545,-0.047,high,
+LS45_s02a_sc08,LS45_s02b_sc08,LS45,78,0,0,0.7258,-0.0813,high,
+LS45_s02a_sc10,LS45_s02b_sc09,LS45,258,0,0,0.7396,-0.0657,high,
+LS45_s02a_sc12,LS45_s02b_sc11,LS45,281,0,0,0.7376,-0.01,high,
+LS45_s02a_sc13,LS45_s02b_sc12,LS45,213,0,0,0.7572,0.0027,high,
+LS45_s03a_sc01,LS45_s03b_sc01,LS45,342,0,0,0.7762,-0.0613,high,
+LS45_s03a_sc02,LS45_s03b_sc02,LS45,11,0,0,0.711,-0.1288,high,
+LS45_s03a_sc03,LS45_s03b_sc03,LS45,255,0,0,0.5957,-0.0511,high,
+LS45_s03a_sc04,LS45_s03b_sc04,LS45,315,0,0,0.7383,-0.1054,high,
+LS45_s03a_sc05,LS45_s03b_sc05,LS45,340,0,0,0.7136,-0.1257,high,
+LS45_s03a_sc06,LS45_s03b_sc06,LS45,195,0,0,0.6876,-0.0245,high,
+LS45_s03a_sc07,LS45_s03b_sc07,LS45,173,0,0,0.7816,-0.0942,high,
+LS45_s03a_sc08,LS45_s03b_sc08,LS45,345,0,0,0.8609,-0.0442,high,
+LS45_s03a_sc09,LS45_s03b_sc09,LS45,331,0,0,0.88,-0.0562,high,
+LS45_s03a_sc10,LS45_s03b_sc10,LS45,77,0,0,0.5784,-0.0039,high,
+LS45_s03a_sc12,LS45_s03b_sc12,LS45,340,0,0,0.644,-0.0153,high,
+LS45_s03a_sc13,LS45_s03b_sc13,LS45,96,0,0,0.865,0.0211,high,
+LS45_s04a_sc00,LS45_s04b_sc00,LS45,227,0,0,0.8786,-0.0308,high,
+LS45_s04a_sc03,LS45_s04b_sc03,LS45,184,0,0,0.625,0.0204,high,
+LS45_s04a_sc04,LS45_s04b_sc04,LS45,4,0,0,0.8307,-0.0521,high,
+LS45_s04a_sc05,LS45_s04b_sc05,LS45,168,0,0,0.6014,-0.0002,high,
+LS45_s04a_sc06,LS45_s04b_sc06,LS45,162,0,0,0.9204,-0.0575,high,
+LS45_s04a_sc08,LS45_s04b_sc08,LS45,344,0,0,0.9047,-0.0243,high,
+LS45_s04a_sc09,LS45_s04b_sc09,LS45,85,0,0,0.7175,-0.0219,high,
+LS45_s05a_sc00,LS45_s05b_sc00,LS45,244,0,0,0.8313,0.0383,high,
+LS45_s05a_sc01,LS45_s05b_sc01,LS45,275,0,0,0.8947,-0.0067,high,
+LS45_s05a_sc02,LS45_s05b_sc02,LS45,148,0,0,0.8763,-0.0003,high,
+LS45_s05a_sc03,LS45_s05b_sc03,LS45,334,0,0,0.5237,-0.0073,low,
+LS45_s05a_sc05,LS45_s05b_sc05,LS45,297,0,0,0.9241,-0.0049,high,
+LS45_s06a_sc01,LS45_s06b_sc01,LS45,108,0,0,0.9524,-0.0066,high,
+LS45_s06a_sc02,LS45_s06b_sc02,LS45,31,0,0,0.8899,-0.0112,high,
+LS45_s06a_sc03,LS45_s06b_sc03,LS45,290,0,0,0.5179,0.0022,low,
+LS45_s06a_sc04,LS45_s06b_sc04,LS45,228,0,0,0.9066,-0.0003,high,
+LS45_s06a_sc05,LS45_s06b_sc05,LS45,158,0,0,0.8364,-0.0336,high,
+LS45_s06a_sc06,LS45_s06b_sc06,LS45,267,0,0,0.8632,0.0007,high,
+LS45_s06a_sc09,LS45_s06b_sc09,LS45,331,0,0,0.9696,-0.025,high,
+LS45_s07a_sc00,LS45_s07b_sc00,LS45,232,0,0,0.7459,0.0104,high,
+LS45_s07a_sc01,LS45_s07b_sc01,LS45,189,0,0,0.9177,-0.0105,high,
+LS45_s08a_sc01,LS45_s08b_sc01,LS45,285,0,0,0.8447,0.0069,high,
+LS45_s08a_sc02,LS45_s08b_sc03,LS45,67,0,0,0.7755,0.0001,high,
+LS45_s08a_sc03,LS45_s08b_sc04,LS45,132,0,0,0.9397,-0.0969,high,
+LS45_s08a_sc04,LS45_s08b_sc05,LS45,254,0,0,0.8505,-0.0573,high,
+LS45_s08a_sc05,LS45_s08b_sc06,LS45,142,0,0,0.7911,0.004,high,
+LS45_s08a_sc07,LS45_s08b_sc08,LS45,104,0,0,0.7194,-0.0024,high,
+LS45_s09a_sc02,LS45_s09b_sc01,LS45,122,0,0,0.7135,0.0041,high,
+LS45_s09a_sc03,LS45_s09b_sc02,LS45,343,0,0,0.8415,-0.0134,high,
+LS45_s09a_sc04,LS45_s09b_sc03,LS45,299,0,0,0.859,-0.016,high,
+LS45_s09a_sc05,LS45_s09b_sc04,LS45,75,0,0,0.8825,0.0147,high,
+LS45_s09a_sc06,LS45_s09b_sc05,LS45,150,0,0,0.7014,-0.0095,high,
+LS45_s09a_sc07,LS45_s09b_sc06,LS45,107,0,0,0.8865,-0.0316,high,
+LS45_s09a_sc09,LS45_s09b_sc08,LS45,116,0,0,0.7784,-0.025,high,
+LS45_s09a_sc11,LS45_s09b_sc10,LS45,76,0,0,0.5092,-0.0054,low,
+LS53_s02b_sc00,LS53_s02c_sc00,LS53,88,0,0,0.5041,-0.0843,low,
+LS53_s02b_sc01,LS53_s02c_sc01,LS53,15,0,0,0.7246,-0.0882,high,
+LS53_s02b_sc03,LS53_s02c_sc03,LS53,314,0,0,0.6112,-0.0141,high,
+LS53_s02b_sc04,LS53_s02c_sc04,LS53,33,0,0,0.4681,-0.0017,low,
+LS53_s05b_sc00,LS53_s05c_sc00,LS53,231,0,0,0.9094,-0.0088,high,
+LS53_s05b_sc01,LS53_s05c_sc01,LS53,287,0,0,0.9584,-0.055,high,
+LS53_s05b_sc02,LS53_s05c_sc02,LS53,114,0,0,0.9176,-0.035,high,
+LS53_s05b_sc03,LS53_s05c_sc03,LS53,203,0,0,0.5087,0.0109,low,
+LS53_s05b_sc04,LS53_s05c_sc04,LS53,264,0,0,0.922,-0.0268,high,
+LS53_s05b_sc05,LS53_s05c_sc05,LS53,343,0,0,0.9507,-0.0126,high,
+LS53_s05b_sc06,LS53_s05c_sc06,LS53,5,0,0,0.5884,0.0021,high,
+LS53_s05b_sc07,LS53_s05c_sc07,LS53,294,0,0,0.6268,-0.0105,high,
+LS53_s05b_sc08,LS53_s05c_sc08,LS53,115,0,0,0.9404,-0.0336,high,
+LS61_s01a_sc02,LS61_s01b_sc03,LS61,50,0,0,0.3633,0.0,low,
+LS61_s01a_sc06,LS61_s01b_sc07,LS61,27,0,0,0.567,-0.0131,high,
+LS61_s01a_sc09,LS61_s01b_sc09,LS61,54,0,0,0.4707,0.0216,low,
+LS61_s01a_sc11,LS61_s01b_sc11,LS61,175,0,0,0.3508,-0.0448,low,
+LS61_s02a_sc01,LS61_s02b_sc01,LS61,34,0,0,0.8085,-0.1795,high,
+LS61_s02a_sc03,LS61_s02b_sc03,LS61,48,0,0,0.7101,-0.1469,high,
+LS61_s02a_sc05,LS61_s02b_sc08,LS61,155,0,0,0.6674,-0.1067,high,
+LS61_s03a_sc00,LS61_s03b_sc00,LS61,347,0,0,0.7817,-0.0779,high,
+LS61_s03a_sc01,LS61_s03b_sc01,LS61,112,0,0,0.6689,-0.0576,high,
+LS61_s03a_sc03,LS61_s03b_sc03,LS61,7,0,0,0.6148,-0.0061,high,
+LS61_s03a_sc05,LS61_s03b_sc05,LS61,203,0,0,0.4588,-0.0023,low,
+LS61_s03a_sc06,LS61_s03b_sc06,LS61,242,0,0,0.9204,-0.1184,high,
+LS61_s03a_sc07,LS61_s03b_sc07,LS61,173,0,0,0.862,-0.0638,high,
+LS61_s03a_sc08,LS61_s03b_sc09,LS61,139,0,0,0.8714,-0.0649,high,
+LS61_s03a_sc09,LS61_s03b_sc10,LS61,153,0,0,0.7401,-0.0098,high,
+LS61_s03a_sc10,LS61_s03b_sc11,LS61,302,0,0,0.9208,-0.0454,high,
+LS61_s03a_sc11,LS61_s03b_sc12,LS61,37,0,0,0.6403,0.0035,high,
+LS61_s03a_sc12,LS61_s03b_sc13,LS61,259,0,0,0.7556,-0.0026,high,
+LS61_s04a_sc01,LS61_s04c_sc01,LS61,151,0,0,0.8507,-0.0299,high,
+LS61_s04a_sc02,LS61_s04c_sc02,LS61,270,0,0,0.7943,-0.0404,high,
+LS61_s04a_sc03,LS61_s04c_sc04,LS61,186,0,0,0.6351,0.0178,high,
+LS61_s04a_sc04,LS61_s04c_sc05,LS61,265,0,0,0.4344,0.0003,low,
+LS61_s04a_sc05,LS61_s04c_sc06,LS61,275,0,0,0.5261,0.0013,low,
+LS61_s04a_sc06,LS61_s04c_sc07,LS61,314,0,0,0.8956,-0.0329,high,
+LS61_s04a_sc07,LS61_s04c_sc08,LS61,99,0,0,0.9679,-0.0262,high,
+LS61_s04a_sc08,LS61_s04c_sc09,LS61,344,0,0,0.8829,-0.0087,high,
+LS61_s04a_sc09,LS61_s04c_sc10,LS61,9,0,0,0.909,-0.0215,high,
+LS61_s04a_sc10,LS61_s04c_sc11,LS61,351,0,0,0.6145,0.0102,high,
+LS61_s05a_sc00,LS61_s05b_sc00,LS61,307,0,0,0.8387,0.0044,high,
+LS61_s05a_sc01,LS61_s05b_sc01,LS61,221,0,0,0.8241,0.0187,high,
+LS61_s05a_sc02,LS61_s05b_sc02,LS61,252,0,0,0.874,0.0109,high,
+LS61_s05a_sc03,LS61_s05b_sc03,LS61,346,0,0,0.6626,0.0057,high,
+LS61_s05a_sc07,LS61_s05b_sc07,LS61,278,0,0,0.5843,0.0536,high,
+LS61_s05a_sc08,LS61_s05b_sc08,LS61,123,0,0,0.9341,-0.008,high,
+LS61_s06a_sc00,LS61_s06b_sc00,LS61,204,0,0,0.9698,-0.0381,high,
+LS61_s06a_sc01,LS61_s06b_sc01,LS61,124,0,0,0.94,-0.0038,high,
+LS61_s06a_sc02,LS61_s06b_sc02,LS61,343,0,0,0.9455,-0.0915,high,
+LS61_s06a_sc05,LS61_s06b_sc06,LS61,115,0,0,0.7268,-0.0139,high,
+LS61_s06a_sc07,LS61_s06b_sc08,LS61,45,0,0,0.7703,0.0102,high,
+LS61_s07a_sc05,LS61_s07b_sc05,LS61,188,0,0,0.6261,-0.0003,high,
+LS61_s07a_sc06,LS61_s07b_sc06,LS61,23,0,0,0.9114,-0.0611,high,
+LS61_s07a_sc07,LS61_s07b_sc07,LS61,37,0,0,0.5264,-0.0008,low,
+LS61_s08a_sc00,LS61_s08b_sc00,LS61,322,0,0,0.9085,-0.0957,high,
+LS61_s08a_sc03,LS61_s08b_sc07,LS61,305,0,0,0.2634,-0.0104,low,
+LS61_s09a_sc01,LS61_s09b_sc02,LS61,94,0,0,0.8552,-0.0518,high,
+LS61_s09a_sc02,LS61_s09b_sc03,LS61,283,0,0,0.9006,-0.1016,high,
+LS61_s09a_sc03,LS61_s09b_sc04,LS61,79,0,0,0.8576,-0.1081,high,
+LS61_s09a_sc04,LS61_s09b_sc05,LS61,93,0,0,0.6431,-0.0726,high,
+LS61_s09a_sc05,LS61_s09b_sc06,LS61,279,0,0,0.7849,-0.0836,high,
+LS61_s09a_sc06,LS61_s09b_sc07,LS61,87,0,0,0.785,-0.1293,high,
+LS69_s01a_sc01,LS69_s01b_sc00,LS69,239,0,0,0.4624,-0.0622,low,
+LS69_s01a_sc00,LS69_s01b_sc01,LS69,95,0,0,0.8526,-0.0075,high,
+LS69_s01a_sc03,LS69_s01b_sc03,LS69,27,0,0,0.7214,0.0278,high,
+LS69_s01a_sc02,LS69_s01b_sc04,LS69,12,0,0,0.9015,-0.1673,high,
+LS69_s01a_sc04,LS69_s01b_sc05,LS69,32,0,0,0.8967,-0.1308,high,
+LS69_s01a_sc05,LS69_s01b_sc06,LS69,24,0,0,0.9272,-0.0935,high,
+LS69_s01a_sc06,LS69_s01b_sc07,LS69,78,0,0,0.7053,-0.0601,high,
+LS69_s01a_sc08,LS69_s01b_sc09,LS69,292,0,0,0.8308,-0.096,high,
+LS69_s01a_sc10,LS69_s01b_sc11,LS69,325,0,0,0.8466,-0.0183,high,
+LS69_s01a_sc11,LS69_s01b_sc12,LS69,168,0,0,0.8553,-0.0728,high,
+LS69_s01a_sc12,LS69_s01b_sc13,LS69,166,0,0,0.6722,-0.0144,high,
+LS69_s01a_sc13,LS69_s01b_sc14,LS69,108,0,0,0.8639,-0.1067,high,
+LS69_s02a_sc00,LS69_s02b_sc00,LS69,142,0,0,0.8064,-0.0763,high,
+LS69_s02a_sc01,LS69_s02b_sc01,LS69,243,0,0,0.7327,-0.0309,high,
+LS69_s02a_sc02,LS69_s02b_sc03,LS69,356,0,0,0.7727,-0.0312,high,
+LS69_s02a_sc04,LS69_s02b_sc05,LS69,230,0,0,0.9,-0.0323,high,
+LS69_s02a_sc06,LS69_s02b_sc07,LS69,105,0,0,0.8369,-0.0194,high,
+LS69_s02a_sc08,LS69_s02b_sc10,LS69,156,0,0,0.7479,-0.0358,high,
+LS69_s03a_sc04,LS69_s03b_sc04,LS69,340,0,0,0.8739,-0.089,high,
+LS69_s03a_sc06,LS69_s03b_sc06,LS69,173,0,0,0.8694,-0.0379,high,
+LS69_s03a_sc07,LS69_s03b_sc07,LS69,219,0,0,0.8827,-0.0313,high,
+LS69_s03a_sc08,LS69_s03b_sc08,LS69,183,0,0,0.8885,-0.0355,high,
+LS69_s04a_sc02,LS69_s04b_sc02,LS69,186,0,0,0.8995,-0.0349,high,
+LS69_s04a_sc03,LS69_s04b_sc03,LS69,2,0,0,0.9133,-0.0559,high,
+LS69_s04a_sc05,LS69_s04b_sc05,LS69,6,0,0,0.969,-0.0309,high,
+LS69_s04a_sc06,LS69_s04b_sc06,LS69,160,0,0,0.2322,0.0005,low,
+LS69_s04a_sc08,LS69_s04b_sc07,LS69,212,0,0,0.6485,-0.002,high,
+LS69_s04a_sc09,LS69_s04b_sc08,LS69,21,0,0,0.7139,0.0123,high,
+LS69_s04a_sc10,LS69_s04b_sc09,LS69,305,0,0,0.9604,-0.0375,high,
+LS69_s04a_sc11,LS69_s04b_sc10,LS69,204,0,0,0.9086,-0.0181,high,
+LS69_s05a_sc01,LS69_s05b_sc03,LS69,325,0,0,0.5611,-0.0076,high,
+LS69_s05a_sc03,LS69_s05b_sc05,LS69,298,0,0,0.4001,-0.0011,low,
+LS69_s05a_sc04,LS69_s05b_sc06,LS69,51,0,0,0.434,0.0045,low,
+LS69_s05a_sc05,LS69_s05b_sc07,LS69,139,0,0,0.6029,-0.01,high,
+LS69_s06a_sc00,LS69_s06b_sc00,LS69,290,0,0,0.9217,-0.0124,high,
+LS69_s06a_sc01,LS69_s06b_sc01,LS69,42,0,0,0.8781,-0.0423,high,
+LS69_s06a_sc02,LS69_s06b_sc02,LS69,88,0,0,0.7797,-0.0024,high,
+LS69_s06a_sc03,LS69_s06b_sc03,LS69,351,0,0,0.9399,-0.0429,high,
+LS69_s06a_sc04,LS69_s06b_sc04,LS69,218,0,0,0.7857,0.0129,high,
+LS69_s06a_sc05,LS69_s06b_sc05,LS69,202,0,0,0.9318,-0.0358,high,
+LS69_s07a_sc01,LS69_s07b_sc01,LS69,345,0,0,0.9501,-0.0409,high,
+LS69_s07a_sc02,LS69_s07b_sc02,LS69,155,0,0,0.8931,-0.036,high,
+LS69_s07a_sc03,LS69_s07b_sc03,LS69,157,0,0,0.961,-0.0646,high,
+LS69_s07a_sc05,LS69_s07b_sc05,LS69,147,0,0,0.6862,0.0093,high,
+LS69_s07a_sc06,LS69_s07b_sc06,LS69,168,0,0,0.7682,0.0032,high,
+LS69_s07a_sc07,LS69_s07b_sc07,LS69,358,0,0,0.9109,-0.0022,high,
+LS69_s07a_sc08,LS69_s07b_sc08,LS69,337,0,0,0.9268,-0.0352,high,
+LS69_s07a_sc09,LS69_s07b_sc09,LS69,224,0,0,0.7432,0.0009,high,
+LS69_s08a_sc00,LS69_s08b_sc00,LS69,94,0,0,0.9515,-0.0393,high,
+LS69_s08a_sc03,LS69_s08b_sc03,LS69,197,0,0,0.8159,-0.008,high,
+LS69_s08a_sc04,LS69_s08b_sc04,LS69,267,0,0,0.891,-0.0546,high,
+LS69_s08a_sc05,LS69_s08b_sc05,LS69,348,0,0,0.7442,-0.011,high,
+LS69_s08a_sc06,LS69_s08b_sc07,LS69,53,0,0,0.6941,-0.0055,high,
+LS69_s08a_sc07,LS69_s08b_sc08,LS69,77,0,0,0.7848,0.0034,high,
+LS69_s09a_sc00,LS69_s09b_sc02,LS69,266,0,0,0.8859,-0.0232,high,
+LS69_s09a_sc04,LS69_s09b_sc06,LS69,59,0,0,0.6154,-0.0312,high,
+LS69_s09a_sc05,LS69_s09b_sc07,LS69,76,0,0,0.8899,-0.1306,high,
+LS69_s09a_sc07,LS69_s09b_sc09,LS69,68,0,0,0.8759,-0.0966,high,
+LS85_s10a_sc00,LS85_s10b_sc00,LS85,197,0,0,0.8927,-0.0134,high,
+LS85_s10a_sc01,LS85_s10b_sc01,LS85,184,0,0,0.9027,-0.0398,high,
+LS85_s10a_sc06,LS85_s10b_sc06,LS85,217,0,0,0.888,-0.1358,high,
+LS85_s10a_sc07,LS85_s10b_sc07,LS85,59,0,0,0.837,-0.1368,high,
+LS85_s01a_sc00,LS85_s01b_sc00,LS85,192,0,0,0.6994,-0.1836,high,
+LS85_s01a_sc04,LS85_s01b_sc04,LS85,214,0,0,0.6892,-0.2628,high,
+LS85_s01a_sc06,LS85_s01b_sc06,LS85,190,0,0,0.5193,-0.0339,low,
+LS85_s02a_sc05,LS85_s02b_sc05,LS85,171,0,0,0.6283,-0.0429,high,
+LS85_s02a_sc06,LS85_s02b_sc06,LS85,167,0,0,0.5979,-0.0548,high,
+LS85_s02a_sc09,LS85_s02b_sc09,LS85,134,0,0,0.6832,-0.0677,high,
+LS85_s03a_sc01,LS85_s03b_sc01,LS85,254,0,0,0.6644,-0.0897,high,
+LS85_s03a_sc03,LS85_s03b_sc03,LS85,177,0,0,0.5689,-0.0437,high,
+LS85_s03a_sc05,LS85_s03b_sc05,LS85,175,0,0,0.7573,-0.1467,high,
+LS85_s03a_sc06,LS85_s03b_sc06,LS85,269,0,0,0.4625,-0.0226,low,
+LS85_s03a_sc07,LS85_s03b_sc07,LS85,154,0,0,0.6157,-0.0659,high,
+LS85_s03a_sc09,LS85_s03b_sc09,LS85,220,0,0,0.6691,-0.1479,high,
+LS85_s04a_sc02,LS85_s04b_sc02,LS85,209,0,0,0.6072,-0.0049,high,
+LS85_s04a_sc03,LS85_s04b_sc03,LS85,184,0,0,0.8402,-0.0531,high,
+LS85_s04a_sc04,LS85_s04b_sc04,LS85,118,0,0,0.8683,-0.0931,high,
+LS85_s04a_sc06,LS85_s04b_sc06,LS85,151,0,0,0.9246,-0.0894,high,
+LS85_s04a_sc07,LS85_s04b_sc07,LS85,181,0,0,0.8942,-0.1352,high,
+LS85_s04a_sc08,LS85_s04b_sc08,LS85,175,0,0,0.758,-0.0646,high,
+LS85_s04a_sc10,LS85_s04b_sc10,LS85,125,0,0,0.5176,0.0066,low,
+LS85_s04a_sc09,LS85_s04b_sc11,LS85,84,0,0,0.7258,0.0075,high,
+LS85_s05a_sc00,LS85_s05b_sc00,LS85,1,0,0,0.9025,-0.0572,high,
+LS85_s05a_sc01,LS85_s05b_sc01,LS85,314,0,0,0.9555,-0.1167,high,
+LS85_s05a_sc02,LS85_s05b_sc02,LS85,357,0,0,0.9052,-0.0553,high,
+LS85_s05a_sc03,LS85_s05b_sc03,LS85,347,0,0,0.8989,-0.0142,high,
+LS85_s05a_sc04,LS85_s05b_sc04,LS85,249,0,0,0.9048,-0.0751,high,
+LS85_s05a_sc05,LS85_s05b_sc05,LS85,338,0,0,0.9125,-0.0689,high,
+LS85_s05a_sc06,LS85_s05b_sc06,LS85,6,0,0,0.8521,-0.0112,high,
+LS85_s05a_sc07,LS85_s05b_sc07,LS85,143,0,0,0.8645,-0.0039,high,
+LS85_s06a_sc00,LS85_s06b_sc00,LS85,277,0,0,0.9104,-0.0095,high,
+LS85_s06a_sc01,LS85_s06b_sc01,LS85,77,0,0,0.8906,0.0077,high,
+LS85_s06a_sc02,LS85_s06b_sc02,LS85,0,0,0,0.9735,-0.0449,high,
+LS85_s06a_sc03,LS85_s06b_sc04,LS85,136,0,0,0.4817,0.0084,low,
+LS85_s06a_sc05,LS85_s06b_sc07,LS85,147,0,0,0.9477,-0.0653,high,
+LS85_s06a_sc06,LS85_s06b_sc08,LS85,15,0,0,0.4501,0.0058,low,
+LS85_s06a_sc07,LS85_s06b_sc09,LS85,9,0,0,0.9055,-0.0257,high,
+LS85_s07a_sc00,LS85_s07c_sc00,LS85,5,0,0,0.911,0.0183,high,
+LS85_s07a_sc01,LS85_s07c_sc01,LS85,351,0,0,0.5447,0.0087,low,
+LS85_s07a_sc02,LS85_s07c_sc02,LS85,295,0,0,0.4371,-0.0018,low,
+LS85_s07a_sc03,LS85_s07c_sc03,LS85,342,0,0,0.4893,0.0002,low,
+LS85_s07a_sc04,LS85_s07c_sc04,LS85,184,0,0,0.9428,-0.0336,high,
+LS85_s07a_sc05,LS85_s07c_sc05,LS85,200,0,0,0.5687,0.0074,high,
+LS85_s07a_sc06,LS85_s07c_sc06,LS85,5,0,0,0.4644,-0.0096,low,
+LS85_s07a_sc07,LS85_s07c_sc07,LS85,199,0,0,0.6595,-0.0053,high,
+LS85_s07a_sc08,LS85_s07c_sc08,LS85,339,0,0,0.6479,0.0166,high,
+LS85_s08a_sc01,LS85_s08b_sc01,LS85,356,0,0,0.6969,-0.0149,high,
+LS85_s08a_sc03,LS85_s08b_sc03,LS85,5,0,0,0.6137,-0.0001,high,
+LS85_s08a_sc04,LS85_s08b_sc04,LS85,213,0,0,0.6473,-0.0057,high,
+LS85_s08a_sc05,LS85_s08b_sc05,LS85,201,0,0,0.5339,-0.0008,low,
+LS85_s08a_sc07,LS85_s08b_sc07,LS85,38,0,0,0.6368,0.0001,high,
+LS85_s08a_sc08,LS85_s08b_sc08,LS85,44,0,0,0.8668,-0.1122,high,
+LS85_s08a_sc09,LS85_s08b_sc09,LS85,194,0,0,0.3409,0.0037,low,
+LS85_s09a_sc05,LS85_s09b_sc05,LS85,202,0,0,0.9363,-0.0628,high,
+LS85_s09a_sc06,LS85_s09b_sc06,LS85,195,0,0,0.8098,-0.0256,high,
+LS85_s09a_sc07,LS85_s09b_sc07,LS85,223,0,0,0.8953,-0.0273,high,
+LS87_s01a_sc00,LS87_s01b_sc00,LS87,325,0,0,0.5747,-0.0109,high,
+LS87_s01a_sc01,LS87_s01b_sc01,LS87,100,0,0,0.8304,-0.0342,high,
+LS87_s01a_sc02,LS87_s01b_sc02,LS87,103,0,0,0.4224,0.0067,low,
+LS87_s01a_sc04,LS87_s01b_sc04,LS87,57,0,0,0.8589,-0.0111,high,
+LS87_s01a_sc05,LS87_s01b_sc05,LS87,243,0,0,0.4325,0.0,low,
+LS87_s01a_sc10,LS87_s01b_sc10,LS87,70,0,0,0.3623,0.0,low,
+LS87_s01a_sc11,LS87_s01b_sc11,LS87,200,0,0,0.3797,-0.0,low,
+LS87_s01a_sc14,LS87_s01b_sc15,LS87,175,0,0,0.8133,-0.1087,high,
+LS87_s02a_sc05,LS87_s02b_sc07,LS87,84,0,0,0.547,-0.0213,low,
+LS87_s02a_sc06,LS87_s02b_sc08,LS87,296,0,0,0.5339,-0.0095,low,
+LS87_s02a_sc07,LS87_s02b_sc09,LS87,2,0,0,0.6851,-0.1067,high,
+LS87_s03a_sc05,LS87_s03b_sc07,LS87,43,0,0,0.7712,-0.0161,high,
+LS87_s04a_sc00,LS87_s04b_sc00,LS87,186,0,0,0.7767,-0.0077,high,
+LS87_s04a_sc01,LS87_s04b_sc01,LS87,131,0,0,0.5227,-0.0001,low,
+LS87_s04a_sc02,LS87_s04b_sc02,LS87,110,0,0,0.9618,-0.0248,high,
+LS87_s04a_sc03,LS87_s04b_sc03,LS87,212,0,0,0.491,-0.0014,low,
+LS87_s04a_sc04,LS87_s04b_sc04,LS87,14,0,0,0.97,-0.0337,high,
+LS87_s04a_sc05,LS87_s04b_sc05,LS87,212,0,0,0.4991,-0.0006,low,
+LS87_s04a_sc06,LS87_s04b_sc06,LS87,14,0,0,0.9377,-0.0465,high,
+LS87_s04a_sc07,LS87_s04b_sc07,LS87,206,0,0,0.4641,0.0017,low,
+LS87_s04a_sc08,LS87_s04b_sc08,LS87,211,0,0,0.9165,-0.0233,high,
+LS87_s04a_sc09,LS87_s04b_sc09,LS87,68,0,0,0.6087,-0.038,high,
+LS87_s05a_sc00,LS87_s05b_sc00,LS87,118,0,0,0.6479,-0.0059,high,
+LS87_s05a_sc01,LS87_s05b_sc01,LS87,225,0,0,0.7947,-0.0042,high,
+LS87_s05a_sc02,LS87_s05b_sc02,LS87,264,0,0,0.9791,-0.0348,high,
+LS87_s05a_sc03,LS87_s05b_sc03,LS87,331,0,0,0.6804,0.0045,high,
+LS87_s05a_sc04,LS87_s05b_sc04,LS87,41,0,0,0.6064,-0.0008,high,
+LS87_s05a_sc05,LS87_s05b_sc05,LS87,134,0,0,0.7305,0.0128,high,
+LS87_s05a_sc07,LS87_s05b_sc07,LS87,57,0,0,0.9224,-0.0157,high,
+LS87_s05a_sc09,LS87_s05b_sc09,LS87,208,0,0,0.6314,0.0045,high,
+LS87_s06a_sc00,LS87_s06b_sc00,LS87,291,0,0,0.6353,0.0005,high,
+LS87_s06a_sc01,LS87_s06b_sc01,LS87,131,0,0,0.504,0.0033,low,
+LS87_s06a_sc02,LS87_s06b_sc02,LS87,348,0,0,0.5784,-0.0001,high,
+LS87_s06a_sc03,LS87_s06b_sc03,LS87,169,0,0,0.6575,-0.0002,high,
+LS87_s06a_sc04,LS87_s06b_sc04,LS87,356,0,0,0.5453,0.0014,low,
+LS87_s06a_sc05,LS87_s06b_sc05,LS87,93,0,0,0.3655,-0.0,low,
+LS87_s06a_sc06,LS87_s06b_sc06,LS87,215,0,0,0.6602,-0.0083,high,
+LS87_s07a_sc01,LS87_s07b_sc01,LS87,190,0,0,0.7968,-0.0486,high,
+LS87_s08a_sc02,LS87_s08b_sc02,LS87,298,0,0,0.7528,0.0042,high,
+LS87_s08a_sc03,LS87_s08b_sc03,LS87,213,0,0,0.8575,-0.0125,high,
+LS87_s08a_sc05,LS87_s08b_sc05,LS87,167,0,0,0.8228,0.0194,high,
+LS87_s08a_sc06,LS87_s08b_sc06,LS87,257,0,0,0.8675,0.0093,high,
+LS87_s08a_sc07,LS87_s08b_sc07,LS87,289,0,0,0.5468,0.0097,low,
+LS87_s09a_sc00,LS87_s09b_sc00,LS87,208,0,0,0.5521,-0.0183,high,
+LS87_s09a_sc01,LS87_s09b_sc01,LS87,24,0,0,0.8074,-0.0147,high,
+LS87_s09a_sc02,LS87_s09b_sc02,LS87,132,0,0,0.8621,-0.1123,high,
+LS87_s09a_sc03,LS87_s09b_sc03,LS87,319,0,0,0.5931,-0.0396,high,
+LS87_s09a_sc04,LS87_s09b_sc04,LS87,176,0,0,0.9175,-0.0207,high,
+LS87_s09a_sc05,LS87_s09b_sc05,LS87,15,0,0,0.7572,0.0104,high,

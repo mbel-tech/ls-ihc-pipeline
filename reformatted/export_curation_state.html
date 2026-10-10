@@ -1,0 +1,41 @@
+<!doctype html>
+<meta charset="utf-8"><title>Export curation state</title>
+<style>
+ body{background:#0e1014;color:#e6e6e6;font:15px system-ui;padding:32px;max-width:760px}
+ h1{font-size:19px} code{background:#1c2027;padding:1px 5px;border-radius:4px}
+ button{background:#4da3ff;border:0;color:#04121f;font:600 15px system-ui;
+        padding:10px 18px;border-radius:8px;cursor:pointer}
+ .none{color:#f85149} .found{color:#3fb950} li{margin:3px 0}
+</style>
+<h1>Export curation state</h1>
+<p>This reads the curation decisions this browser is holding and saves them to one
+file, so the desktop app can take them over. Open it in <b>the same browser you
+have been curating in</b>.</p>
+<ul id=list></ul>
+<p><button id=go>Save curation_state.json</button></p>
+<p id=note></p>
+<script>
+const KEYS = ["ls_roi_curator_v1", "ls_rotation_curator_v3", "ls_rotation_curator_v2", "ls_level_curator_v1", "ls_plate_reframe_v1", "ls_roi_curator_v1_backup", "ls_roi_curator_v1_size", "ls_atlas_curator_v1"];
+const found = {};
+for (const k of KEYS) {
+  const v = localStorage.getItem(k);
+  const li = document.createElement("li");
+  if (v === null) { li.innerHTML = `<span class=none>not present</span> &nbsp; ${k}`; }
+  else { found[k] = v;
+         li.innerHTML = `<span class=found>${(v.length/1024).toFixed(1)} KB</span> &nbsp; ${k}`; }
+  document.getElementById("list").appendChild(li);
+}
+if (!Object.keys(found).length) {
+  document.getElementById("note").innerHTML =
+    "<span class=none>Nothing found in this browser's storage.</span> Pages opened " +
+    "from <code>file://</code> may keep storage per file. Open the curator you " +
+    "actually use, press F12, and run <code>copy(JSON.stringify(Object.fromEntries(" +
+    "Object.keys(localStorage).map(k=>[k,localStorage.getItem(k)]))))</code> " +
+    "to put the same JSON on your clipboard.";
+}
+document.getElementById("go").onclick = () => {
+  const b = new Blob([JSON.stringify(found, null, 1)], {type: "application/json"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(b); a.download = "curation_state.json"; a.click();
+};
+</script>

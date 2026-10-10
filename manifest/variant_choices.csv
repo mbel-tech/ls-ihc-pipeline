@@ -1,0 +1,6 @@
+animal,slide,marker_channel,chosen_variant,candidates,source
+LS45,8,AF488,b,b(12)|c(12),most_scenes
+LS45,9,AF488,b,b(11)|c(10),most_scenes
+LS61,2,AF488,b,b(16)|c(16),most_scenes
+LS61,4,AF488,c,b(11)|c(12),most_scenes
+LS85,7,AF568,a,a(10)|b(10),most_scenes

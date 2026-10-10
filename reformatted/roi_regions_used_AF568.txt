@@ -1,0 +1,4 @@
+source   : C:\Users\marti\AppData\Local\Temp\claude\D--SLIDES-HE-DEC-2025-LS\3bccb7c6-2e99-4ecf-ab06-319ee9750b94\scratchpad\roi_regions_07.09.2026_11.27_AF568.csv
+modified : 2026-09-07 11:33:04
+consumed : 2026-09-07 11:34:09
+produced : 1236 boxes over 135 sections
