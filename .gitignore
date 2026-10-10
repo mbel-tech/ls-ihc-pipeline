@@ -66,3 +66,27 @@ tests/build/
 # Generated from the .md by pandoc; the markdown is the source.
 docs/*.docx
 docs/*.pdf
+
+# Virtual environments and compiled binaries
+work/czienv/
+**/czienv/
+*.pyd
+*.exe
+*.dll
+*.lib
+*.pyc
+__pycache__/
+
+# Image and array data (too large for git)
+*.tif
+*.tiff
+*.npy
+*.npz
+*.png
+
+# Local backups, logs and keys
+*.backup
+*.pre_new_atlas
+*.log
+*.pfx
+*.pem

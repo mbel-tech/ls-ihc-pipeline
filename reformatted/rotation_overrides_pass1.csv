@@ -1,0 +1,1355 @@
+scene_uid,extra_rotation,flip,excluded,rotation_source,decision,reason
+LS105_s01b_sc00,266,0,0,manual_overrode_auto,,
+LS105_s01b_sc01,0,0,1,,manual,no tissue piece larger than 1.46 mm2 (threshold 2.5)
+LS105_s01b_sc02,7,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS105_s01b_sc03,0,0,1,,manual,no tissue piece larger than 1.57 mm2 (threshold 2.5)
+LS105_s01b_sc04,0,0,1,,manual,no tissue piece larger than 0.21 mm2 (threshold 2.5)
+LS105_s01b_sc05,8,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS105_s01b_sc06,1,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS105_s01b_sc07,8,0,0,auto_symmetry,,
+LS105_s01b_sc08,330,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS105_s01b_sc09,0,0,1,,auto,"no resolvable nuclear detail (focus 0.048, threshold 0.070)"
+LS105_s01b_sc10,215,0,0,manual_overrode_auto,,
+LS105_s01b_sc11,0,0,1,,manual,no tissue piece larger than 0.07 mm2 (threshold 2.5)
+LS105_s01b_sc12,1,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS105_s01b_sc13,6,0,0,manual_overrode_auto,,
+LS105_s01b_sc14,0,0,1,,manual,"no resolvable nuclear detail (focus 0.036, threshold 0.070)"
+LS105_s02b_sc00,343,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS105_s02b_sc01,0,0,1,,auto,"no tissue piece larger than 0.10 mm2 (threshold 2.5); no resolvable nuclear detail (focus 0.048, threshold 0.070)"
+LS105_s02b_sc02,14,0,0,manual_overrode_auto,,
+LS105_s02b_sc03,208,0,0,manual_overrode_auto,,
+LS105_s02b_sc04,354,0,0,manual_overrode_auto,,
+LS105_s02b_sc05,-6,0,0,auto_symmetry,,
+LS105_s02b_sc06,3,0,0,auto_symmetry,,
+LS105_s02b_sc07,2,0,0,auto_symmetry,,
+LS105_s02b_sc10,185,0,0,manual_overrode_auto,,
+LS105_s02b_sc11,0,0,1,,manual,no tissue piece larger than 1.78 mm2 (threshold 2.5)
+LS105_s03b_sc00,-2,0,0,auto_symmetry,,
+LS105_s03b_sc01,1,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS105_s03b_sc02,24,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS105_s03b_sc03,1,0,0,auto_symmetry,,
+LS105_s03b_sc04,4,0,0,auto_symmetry,,
+LS105_s03b_sc05,16,0,0,auto_symmetry,,
+LS105_s03b_sc06,347,0,0,manual_overrode_auto,,
+LS105_s03b_sc07,8,0,0,auto_symmetry,,
+LS105_s03b_sc08,0,0,1,,manual,"no resolvable nuclear detail (focus 0.060, threshold 0.070)"
+LS105_s03b_sc09,-2,0,0,auto_symmetry,,
+LS105_s03b_sc10,342,0,0,manual_overrode_auto,,
+LS105_s03b_sc11,341,0,0,manual_overrode_auto,,
+LS105_s04b_sc00,0,0,1,,manual,"no tissue piece larger than 2.00 mm2 (threshold 2.5); no resolvable nuclear detail (focus 0.062, threshold 0.070)"
+LS105_s04b_sc01,7,0,0,auto_symmetry,,
+LS105_s04b_sc02,0,0,1,,manual,manually excluded: tissue too damaged to measure
+LS105_s04b_sc03,5,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS105_s04b_sc04,149,0,0,manual_overrode_auto,,
+LS105_s04b_sc05,347,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS105_s04b_sc06,8,0,0,auto_symmetry,,
+LS105_s04b_sc07,344,0,0,manual_overrode_auto,,
+LS105_s04b_sc08,352,0,0,manual_overrode_auto,,
+LS105_s04b_sc09,2,0,0,auto_symmetry,,
+LS105_s04b_sc10,10,0,0,manual_overrode_auto,,
+LS105_s04b_sc11,173,0,0,manual_overrode_auto,,
+LS105_s04b_sc12,0,0,1,,manual,no tissue piece larger than 0.17 mm2 (threshold 2.5)
+LS105_s05b_sc00,359,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS105_s05b_sc01,9,0,0,auto_symmetry,,
+LS105_s05b_sc02,168,0,0,manual_overrode_auto,,
+LS105_s05b_sc03,164,0,0,manual_overrode_auto,,
+LS105_s05b_sc04,-1,0,0,auto_symmetry,,
+LS105_s05b_sc05,194,0,0,manual_overrode_auto,,
+LS105_s05b_sc06,188,0,0,manual_overrode_auto,,
+LS105_s05b_sc07,179,0,0,manual_overrode_auto,,
+LS105_s05b_sc08,170,0,0,manual_overrode_auto,,
+LS105_s05b_sc09,178,0,0,manual_overrode_auto,,
+LS105_s05b_sc10,7,0,0,auto_symmetry,,
+LS105_s05b_sc11,-15,0,0,auto_symmetry,,
+LS105_s06b_sc00,173,0,0,manual_overrode_auto,,
+LS105_s06b_sc01,175,0,0,manual,,
+LS105_s06b_sc02,218,0,0,manual_overrode_auto,,
+LS105_s06b_sc03,333,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS105_s06b_sc04,101,0,0,manual_overrode_auto,,
+LS105_s06b_sc05,126,0,0,manual_overrode_auto,,
+LS105_s06b_sc08,185,0,0,manual_overrode_auto,,
+LS105_s06b_sc09,358,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS105_s06b_sc10,354,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS105_s06b_sc11,11,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS105_s07b_sc00,1,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS105_s07b_sc01,189,0,0,manual_overrode_auto,,
+LS105_s07b_sc02,161,0,0,manual_overrode_auto,,
+LS105_s07b_sc03,91,0,0,manual_overrode_auto,,
+LS105_s07b_sc04,344,0,0,manual_overrode_auto,,
+LS105_s07b_sc05,30,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS105_s07b_sc06,140,0,0,manual,,
+LS105_s07b_sc07,351,0,0,manual_overrode_auto,,
+LS105_s07b_sc08,176,0,0,manual_overrode_auto,,
+LS105_s07b_sc09,178,0,0,manual,,
+LS105_s07b_sc10,357,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS105_s08b_sc00,4,0,0,auto_symmetry,,
+LS105_s08b_sc01,358,0,0,manual_overrode_auto,,
+LS105_s08b_sc02,178,0,0,manual_overrode_auto,,
+LS105_s08b_sc03,174,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS105_s08b_sc04,148,0,0,manual_overrode_auto,,
+LS105_s08b_sc05,157,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS105_s08b_sc06,208,0,0,manual_overrode_auto,,
+LS105_s08b_sc07,357,0,0,manual_overrode_auto,,
+LS105_s08b_sc08,340,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS105_s08b_sc09,8,0,0,manual_overrode_auto,,
+LS105_s09b_sc00,351,0,0,manual_overrode_auto,,
+LS105_s09b_sc01,343,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS105_s09b_sc02,44,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS105_s09b_sc03,-25,0,0,auto_symmetry,,
+LS105_s09b_sc04,25,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS105_s09b_sc05,353,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS105_s09b_sc06,-10,0,0,auto_symmetry,,
+LS105_s09b_sc07,348,0,0,manual_overrode_auto,,
+LS105_s09b_sc08,301,0,0,manual_overrode_auto,,
+LS105_s09b_sc09,291,0,0,manual_overrode_auto,,
+LS105_s09b_sc10,283,0,0,manual_overrode_auto,,
+LS105_s09b_sc11,121,0,0,manual_overrode_auto,,
+LS105_s09b_sc12,4,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS105_s09b_sc13,0,0,1,,manual,"no resolvable nuclear detail (focus 0.060, threshold 0.070)"
+LS105_s10b_sc00,350,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS105_s10b_sc01,91,0,0,manual_overrode_auto,,
+LS105_s10b_sc02,3,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS105_s10b_sc03,282,0,0,manual_overrode_auto,,
+LS105_s10b_sc04,99,0,0,manual_overrode_auto,,
+LS105_s10b_sc05,279,0,0,manual_overrode_auto,,
+LS105_s10b_sc06,296,0,0,manual_overrode_auto,,
+LS105_s10b_sc07,263,0,0,manual_overrode_auto,,
+LS105_s10b_sc08,293,0,0,manual_overrode_auto,,
+LS105_s10b_sc09,6,0,0,manual_overrode_auto,,
+LS120_s01b_sc00,42,0,0,manual_overrode_auto,,
+LS120_s01b_sc01,5,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS120_s01b_sc02,-7,0,0,auto_symmetry,,
+LS120_s01b_sc05,-14,0,0,auto_symmetry,,
+LS120_s01b_sc06,1,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS120_s01b_sc07,252,0,0,manual_overrode_auto,,
+LS120_s01b_sc08,24,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS120_s01b_sc09,18,0,1,manual,auto,no tissue piece larger than 2.48 mm2 (threshold 2.5)
+LS120_s01b_sc10,240,0,0,manual_overrode_auto,,
+LS120_s01b_sc11,291,0,0,manual_overrode_auto,,
+LS120_s01b_sc12,159,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS120_s01b_sc13,49,0,0,manual_overrode_auto,,
+LS120_s01b_sc14,47,0,0,manual_overrode_auto,,
+LS120_s01b_sc15,32,0,0,manual_overrode_auto,,
+LS120_s01b_sc16,54,0,0,manual_overrode_auto,,
+LS120_s01b_sc17,283,0,0,manual_overrode_auto,,
+LS120_s01b_sc18,307,0,0,manual_overrode_auto,,
+LS120_s02b_sc00,30,0,0,auto_symmetry,,
+LS120_s02b_sc01,293,0,0,manual_overrode_auto,,
+LS120_s02b_sc02,305,0,0,manual_overrode_auto,,
+LS120_s02b_sc03,293,0,0,manual_overrode_auto,,
+LS120_s02b_sc04,94,0,0,manual_overrode_auto,,
+LS120_s02b_sc05,301,0,1,manual,manual,no tissue piece larger than 2.13 mm2 (threshold 2.5)
+LS120_s02b_sc06,301,0,0,manual_overrode_auto,,
+LS120_s02b_sc07,296,0,0,manual_overrode_auto,,
+LS120_s02b_sc08,79,0,0,manual_overrode_auto,,
+LS120_s02b_sc09,276,0,0,manual_overrode_auto,,
+LS120_s02b_sc10,296,0,1,manual,auto,no tissue piece larger than 1.12 mm2 (threshold 2.5)
+LS120_s02b_sc11,277,0,0,manual_overrode_auto,,
+LS120_s02b_sc12,354,0,0,manual_overrode_auto,,
+LS120_s02b_sc13,331,0,0,manual_overrode_auto,,
+LS120_s03b_sc00,91,0,0,manual_overrode_auto,,
+LS120_s03b_sc01,341,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS120_s03b_sc02,345,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS120_s03b_sc03,12,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS120_s03b_sc04,358,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS120_s03b_sc05,351,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS120_s03b_sc06,258,0,0,manual_overrode_auto,,
+LS120_s03b_sc07,14,0,0,manual_overrode_auto,,
+LS120_s03b_sc08,13,0,0,manual_overrode_auto,,
+LS120_s03b_sc09,15,0,0,manual_overrode_auto,,
+LS120_s03b_sc11,182,0,1,manual,auto,no tissue piece larger than 2.13 mm2 (threshold 2.5)
+LS120_s03b_sc12,165,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS120_s04b_sc00,198,0,0,manual_overrode_auto,,
+LS120_s04b_sc01,187,0,0,manual_overrode_auto,,
+LS120_s04b_sc02,227,0,0,manual_overrode_auto,,
+LS120_s04b_sc03,11,0,0,manual_overrode_auto,,
+LS120_s04b_sc04,185,0,0,manual_overrode_auto,,
+LS120_s04b_sc05,191,0,0,manual_overrode_auto,,
+LS120_s04b_sc06,199,0,0,manual_overrode_auto,,
+LS120_s04b_sc07,349,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS120_s04b_sc08,10,0,0,manual_overrode_auto,,
+LS120_s04b_sc09,7,0,0,auto_symmetry,,
+LS120_s04b_sc10,29,0,0,manual_overrode_auto,,
+LS120_s04b_sc11,28,0,0,manual_overrode_auto,,
+LS120_s05b_sc00,191,0,0,manual_overrode_auto,,
+LS120_s05b_sc01,188,0,0,manual_overrode_auto,,
+LS120_s05b_sc02,231,0,0,manual_overrode_auto,,
+LS120_s05b_sc03,340,0,0,manual_overrode_auto,,
+LS120_s05b_sc04,42,0,0,manual_overrode_auto,,
+LS120_s05b_sc05,2,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS120_s05b_sc06,335,0,0,manual_overrode_auto,,
+LS120_s05b_sc07,41,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS120_s05b_sc08,72,0,0,manual_overrode_auto,,
+LS120_s05b_sc09,62,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS120_s05b_sc10,344,0,0,manual_overrode_auto,,
+LS120_s05b_sc11,265,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS120_s06b_sc00,-21,0,0,auto_symmetry,,
+LS120_s06b_sc01,7,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS120_s06b_sc02,261,0,0,manual_overrode_auto,,
+LS120_s06b_sc03,13,0,0,auto_symmetry,,
+LS120_s06b_sc04,173,0,0,manual_overrode_auto,,
+LS120_s06b_sc05,21,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS120_s06b_sc06,359,0,0,manual_overrode_auto,,
+LS120_s06b_sc07,349,0,0,manual_overrode_auto,,
+LS120_s06b_sc08,-26,0,0,auto_symmetry,,
+LS120_s06b_sc09,9,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS120_s07b_sc00,133,0,0,manual_overrode_auto,,
+LS120_s07b_sc01,0,0,1,,auto,no tissue piece larger than 2.10 mm2 (threshold 2.5)
+LS120_s07b_sc02,144,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS120_s07b_sc03,16,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS120_s07b_sc04,2,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS120_s07b_sc05,304,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS120_s07b_sc06,291,0,0,manual_overrode_auto,,
+LS120_s07b_sc07,289,0,0,manual_overrode_auto,,
+LS120_s07b_sc08,164,0,0,manual_overrode_auto,,
+LS120_s07b_sc09,277,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS120_s07b_sc10,10,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS120_s08b_sc00,63,0,0,manual_overrode_auto,,
+LS120_s08b_sc01,78,0,0,manual_overrode_auto,,
+LS120_s08b_sc02,104,0,0,manual_overrode_auto,,
+LS120_s08b_sc03,78,0,0,manual_overrode_auto,,
+LS120_s08b_sc04,24,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS120_s08b_sc05,5,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS120_s08b_sc06,96,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS120_s08b_sc07,83,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS120_s08b_sc08,3,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS120_s08b_sc09,13,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS120_s08b_sc10,0,0,1,,manual,no tissue piece larger than 1.53 mm2 (threshold 2.5)
+LS120_s09b_sc00,104,0,0,manual_overrode_auto,,
+LS120_s09b_sc01,0,0,1,,manual,"no resolvable nuclear detail (focus 0.069, threshold 0.070)"
+LS120_s09b_sc02,103,0,0,manual_overrode_auto,,
+LS120_s09b_sc03,95,0,0,manual_overrode_auto,,
+LS120_s09b_sc04,283,0,0,manual_overrode_auto,,
+LS120_s09b_sc05,274,0,0,manual_overrode_auto,,
+LS120_s09b_sc06,288,0,0,manual_overrode_auto,,
+LS120_s09b_sc07,305,0,0,manual_overrode_auto,,
+LS136_s01b_sc00,0,0,1,,auto,"no resolvable nuclear detail (focus 0.065, threshold 0.070)"
+LS136_s01b_sc01,352,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS136_s01b_sc02,358,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS136_s01b_sc03,357,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS136_s01b_sc04,-6,0,0,auto_symmetry,,
+LS136_s01b_sc05,-2,0,0,auto_symmetry,,
+LS136_s01b_sc06,354,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS136_s01b_sc07,1,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS136_s01b_sc08,4,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS136_s01b_sc09,0,0,1,,manual,no tissue piece larger than 0.71 mm2 (threshold 2.5)
+LS136_s01b_sc10,162,0,0,manual_overrode_auto,,
+LS136_s01b_sc11,0,0,1,,manual,no tissue piece larger than 0.30 mm2 (threshold 2.5)
+LS136_s01b_sc12,175,0,0,manual_overrode_auto,,
+LS136_s01b_sc13,9,0,0,auto_symmetry,,
+LS136_s01b_sc14,165,0,0,manual_overrode_auto,,
+LS136_s01b_sc15,19,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS136_s01b_sc16,169,0,0,manual_overrode_auto,,
+LS136_s01b_sc17,5,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS136_s01b_sc18,349,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS136_s02b_sc00,163,0,0,manual_overrode_auto,,
+LS136_s02b_sc01,7,0,0,auto_symmetry,,
+LS136_s02b_sc02,0,0,1,,manual,no tissue piece larger than 1.49 mm2 (threshold 2.5)
+LS136_s02b_sc03,356,0,0,manual_overrode_auto,,
+LS136_s02b_sc04,198,0,0,manual_overrode_auto,,
+LS136_s02b_sc05,359,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS136_s02b_sc06,247,0,0,manual_overrode_auto,,
+LS136_s02b_sc07,185,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS136_s02b_sc08,229,0,0,manual_overrode_auto,,
+LS136_s02b_sc09,6,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS136_s02b_sc10,182,0,0,manual_overrode_auto,,
+LS136_s02b_sc11,1,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS136_s02b_sc12,179,0,0,manual_overrode_auto,,
+LS136_s02b_sc13,178,0,1,manual,manual,manually excluded: tissue too damaged to measure
+LS136_s02b_sc15,174,0,0,manual,,
+LS136_s02b_sc16,0,0,1,,auto,"no resolvable nuclear detail (focus 0.037, threshold 0.070)"
+LS136_s03b_sc00,359,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS136_s03b_sc01,0,0,1,,manual,no tissue piece larger than 0.94 mm2 (threshold 2.5)
+LS136_s03b_sc02,11,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS136_s03b_sc04,-3,0,0,auto_symmetry,,
+LS136_s03b_sc05,359,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS136_s03b_sc06,0,0,1,,manual,no tissue piece larger than 1.87 mm2 (threshold 2.5)
+LS136_s03b_sc07,355,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS136_s03b_sc08,3,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS136_s03b_sc09,205,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS136_s03b_sc10,0,0,1,,manual,no tissue piece larger than 0.80 mm2 (threshold 2.5)
+LS136_s03b_sc11,0,0,1,,manual,no tissue piece larger than 0.49 mm2 (threshold 2.5)
+LS136_s04b_sc00,13,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS136_s04b_sc01,11,0,0,auto_symmetry,,
+LS136_s04b_sc02,187,0,0,manual_overrode_auto,,
+LS136_s04b_sc03,7,0,0,manual_overrode_auto,,
+LS136_s04b_sc04,167,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS136_s04b_sc05,173,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS136_s04b_sc06,172,0,0,manual_overrode_auto,,
+LS136_s04b_sc07,0,0,1,,manual,"no resolvable nuclear detail (focus 0.069, threshold 0.070)"
+LS136_s04b_sc08,173,0,0,manual_overrode_auto,,
+LS136_s04b_sc09,180,0,0,manual_overrode_auto,,
+LS136_s04b_sc10,181,0,0,manual_overrode_auto,,
+LS136_s04b_sc11,184,0,0,manual_overrode_auto,,
+LS136_s04b_sc12,177,0,0,manual_overrode_auto,,
+LS136_s04b_sc13,0,0,1,,auto,"no tissue piece larger than 0.19 mm2 (threshold 2.5); no resolvable nuclear detail (focus 0.066, threshold 0.070)"
+LS136_s05b_sc00,204,0,0,manual_overrode_auto,,
+LS136_s05b_sc01,193,0,0,manual_overrode_auto,,
+LS136_s05b_sc02,3,0,0,auto_symmetry,,
+LS136_s05b_sc03,83,0,0,manual_overrode_auto,,
+LS136_s05b_sc04,189,0,0,manual_overrode_auto,,
+LS136_s05b_sc05,98,0,0,manual_overrode_auto,,
+LS136_s05b_sc06,228,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS136_s05b_sc07,8,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS136_s05b_sc08,356,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS136_s05b_sc09,173,0,0,manual_overrode_auto,,
+LS136_s05b_sc10,353,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS136_s06b_sc00,21,0,0,manual_overrode_auto,,
+LS136_s06b_sc01,356,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS136_s06b_sc02,351,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS136_s06b_sc03,5,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS136_s06b_sc04,4,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS136_s06b_sc05,16,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS136_s06b_sc06,352,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS136_s06b_sc07,330,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS136_s06b_sc08,0,0,1,,manual,"no tissue piece larger than 0.80 mm2 (threshold 2.5); no resolvable nuclear detail (focus 0.062, threshold 0.070)"
+LS136_s06b_sc09,1,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS136_s07b_sc00,23,0,0,manual_overrode_auto,,
+LS136_s07b_sc01,20,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS136_s07b_sc02,347,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS136_s07b_sc03,3,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS136_s07b_sc04,0,0,1,,manual,no tissue piece larger than 1.35 mm2 (threshold 2.5)
+LS136_s07b_sc05,346,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS136_s07b_sc06,3,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS136_s07b_sc07,355,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS136_s07b_sc08,332,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS136_s07b_sc09,330,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS136_s07b_sc10,4,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS136_s07b_sc11,358,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS136_s08b_sc00,28,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS136_s08b_sc01,344,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS136_s08b_sc02,337,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS136_s08b_sc03,357,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS136_s08b_sc04,352,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS136_s08b_sc05,71,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS136_s08b_sc06,354,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS136_s08b_sc07,358,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS136_s08b_sc08,309,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS136_s08b_sc09,202,0,0,manual_overrode_auto,,
+LS136_s08b_sc10,281,0,0,manual_overrode_auto,,
+LS136_s08b_sc11,0,0,1,,manual,no tissue piece larger than 0.22 mm2 (threshold 2.5)
+LS136_s09b_sc00,92,0,0,manual_overrode_auto,,
+LS136_s09b_sc01,103,0,0,manual_overrode_auto,,
+LS136_s09b_sc02,102,0,0,manual_overrode_auto,,
+LS136_s09b_sc03,112,0,0,manual_overrode_auto,,
+LS136_s09b_sc04,122,0,0,manual_overrode_auto,,
+LS136_s09b_sc05,96,0,0,manual_overrode_auto,,
+LS136_s09b_sc06,110,0,0,manual_overrode_auto,,
+LS136_s09b_sc07,96,0,0,manual_overrode_auto,,
+LS136_s09b_sc08,89,0,0,manual_overrode_auto,,
+LS138_s01b_sc00,0,0,1,,auto,no tissue piece larger than 2.43 mm2 (threshold 2.5)
+LS138_s01b_sc01,4,0,0,auto_symmetry,,
+LS138_s01b_sc02,5,0,0,auto_symmetry,,
+LS138_s01b_sc04,0,0,1,,manual,manually excluded: tissue too damaged to measure
+LS138_s01b_sc05,0,0,1,,auto,no tissue piece larger than 0.19 mm2 (threshold 2.5)
+LS138_s01b_sc07,4,0,0,auto_symmetry,,
+LS138_s01b_sc08,-4,0,0,auto_symmetry,,
+LS138_s01b_sc10,-9,0,0,auto_symmetry,,
+LS138_s01b_sc11,-19,0,0,auto_symmetry,,
+LS138_s02b_sc00,0,0,1,,auto,no tissue piece larger than 2.23 mm2 (threshold 2.5)
+LS138_s02b_sc01,-30,0,0,auto_symmetry,,
+LS138_s02b_sc02,-17,0,0,auto_symmetry,,
+LS138_s02b_sc03,-18,0,0,auto_symmetry,,
+LS138_s02b_sc04,0,0,1,,manual,no tissue piece larger than 0.98 mm2 (threshold 2.5)
+LS138_s02b_sc05,0,0,1,,manual,no tissue piece larger than 1.43 mm2 (threshold 2.5)
+LS138_s02b_sc06,12,0,0,manual_overrode_auto,,
+LS138_s02b_sc07,12,0,0,auto_symmetry,,
+LS138_s02b_sc08,184,0,0,manual_overrode_auto,,
+LS138_s02b_sc09,0,0,1,,auto,"no resolvable nuclear detail (focus 0.051, threshold 0.070)"
+LS138_s02b_sc10,0,0,1,,auto,no tissue piece larger than 0.30 mm2 (threshold 2.5)
+LS138_s03b_sc00,0,0,1,,auto,no tissue piece larger than 1.93 mm2 (threshold 2.5)
+LS138_s03b_sc01,-1,0,0,auto_symmetry,,
+LS138_s03b_sc02,27,0,0,auto_symmetry,,
+LS138_s03b_sc03,0,0,1,,auto,no tissue piece larger than 0.71 mm2 (threshold 2.5)
+LS138_s03b_sc04,192,0,0,manual_overrode_auto,,
+LS138_s03b_sc05,165,0,0,manual_overrode_auto,,
+LS138_s03b_sc06,335,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS138_s03b_sc07,16,0,0,manual_overrode_auto,,
+LS138_s03b_sc08,24,0,0,manual_overrode_auto,,
+LS138_s03b_sc09,3,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS138_s03b_sc10,2,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS138_s03b_sc11,9,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS138_s04b_sc00,328,0,0,manual_overrode_auto,,
+LS138_s04b_sc01,-2,0,0,auto_symmetry,,
+LS138_s04b_sc02,3,0,0,auto_symmetry,,
+LS138_s04b_sc03,1,0,0,auto_symmetry,,
+LS138_s04b_sc04,176,0,0,manual_overrode_auto,,
+LS138_s04b_sc05,-2,0,0,auto_symmetry,,
+LS138_s04b_sc06,171,0,0,manual_overrode_auto,,
+LS138_s04b_sc07,-3,0,0,auto_symmetry,,
+LS138_s05b_sc00,217,0,0,manual_overrode_auto,,
+LS138_s05b_sc01,358,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS138_s05b_sc02,9,0,0,manual_overrode_auto,,
+LS138_s05b_sc03,-1,0,0,auto_symmetry,,
+LS138_s05b_sc04,179,0,0,manual_overrode_auto,,
+LS138_s05b_sc05,192,0,0,manual_overrode_auto,,
+LS138_s05b_sc06,0,0,1,,manual,"no resolvable nuclear detail (focus 0.068, threshold 0.070)"
+LS138_s05b_sc07,352,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS138_s05b_sc08,0,0,1,,manual,"no resolvable nuclear detail (focus 0.036, threshold 0.070)"
+LS138_s05b_sc09,0,0,1,,manual,"no resolvable nuclear detail (focus 0.052, threshold 0.070)"
+LS138_s06b_sc00,197,0,0,manual,,
+LS138_s06b_sc01,10,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS138_s06b_sc02,207,0,0,manual_overrode_auto,,
+LS138_s06b_sc03,-5,0,0,auto_symmetry,,
+LS138_s06b_sc04,8,0,0,manual_overrode_auto,,
+LS138_s06b_sc05,8,0,0,manual_overrode_auto,,
+LS138_s06b_sc06,-11,0,0,auto_symmetry,,
+LS138_s06b_sc07,-7,0,0,auto_symmetry,,
+LS138_s06b_sc09,356,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS138_s07b_sc00,358,0,0,manual,,
+LS138_s07b_sc01,359,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS138_s07b_sc02,187,0,0,manual_overrode_auto,,
+LS138_s07b_sc03,180,0,0,manual_overrode_auto,,
+LS138_s07b_sc04,9,0,0,manual_overrode_auto,,
+LS138_s07b_sc05,182,0,0,manual_overrode_auto,,
+LS138_s07b_sc06,172,0,0,manual,,
+LS138_s07b_sc07,1,0,0,auto_symmetry,,
+LS138_s07b_sc08,11,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS138_s07b_sc09,341,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS138_s08b_sc00,283,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS138_s08b_sc01,354,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS138_s08b_sc02,0,0,1,,manual,"no resolvable nuclear detail (focus 0.061, threshold 0.070)"
+LS138_s08b_sc03,176,0,0,manual_overrode_auto,,
+LS138_s08b_sc04,23,0,0,manual_overrode_auto,,
+LS138_s08b_sc05,17,0,0,manual_overrode_auto,,
+LS138_s08b_sc06,21,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS138_s08b_sc07,353,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS138_s08b_sc08,5,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS138_s08b_sc09,182,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS138_s08b_sc10,347,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS138_s08b_sc11,0,0,1,,manual,"no resolvable nuclear detail (focus 0.067, threshold 0.070)"
+LS138_s09b_sc00,25,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS138_s09b_sc01,348,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS138_s09b_sc02,16,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS138_s09b_sc03,1,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS138_s09b_sc04,11,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS138_s09b_sc05,6,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS138_s09b_sc06,357,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS138_s09b_sc07,15,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS138_s09b_sc08,4,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS22_s01b_sc00,-9,0,0,auto_symmetry,,
+LS22_s01b_sc01,-4,0,0,auto_symmetry,,
+LS22_s01b_sc02,143,0,0,manual_overrode_auto,,
+LS22_s01b_sc03,160,0,1,manual,auto,"no resolvable nuclear detail (focus 0.040, threshold 0.070)"
+LS22_s01b_sc04,-24,0,0,auto_symmetry,,
+LS22_s01b_sc05,13,0,0,auto_symmetry,,
+LS22_s01b_sc06,30,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS22_s01b_sc07,154,0,0,manual_overrode_auto,,
+LS22_s01b_sc08,11,0,0,auto_symmetry,,
+LS22_s01b_sc09,161,0,0,manual_overrode_auto,,
+LS22_s01b_sc10,0,0,1,,auto,"no tissue piece larger than 1.93 mm2 (threshold 2.5); no resolvable nuclear detail (focus 0.067, threshold 0.070)"
+LS22_s01b_sc11,61,0,0,manual_overrode_auto,,
+LS22_s01b_sc12,24,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS22_s02b_sc00,204,0,0,manual_overrode_auto,,
+LS22_s02b_sc01,309,0,0,manual_overrode_auto,,
+LS22_s02b_sc02,18,0,0,manual_overrode_auto,,
+LS22_s02b_sc03,136,0,0,manual_overrode_auto,,
+LS22_s02b_sc04,3,0,0,manual_overrode_auto,,
+LS22_s02b_sc05,18,0,0,manual_overrode_auto,,
+LS22_s02b_sc06,135,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS22_s02b_sc07,230,0,0,manual_overrode_auto,,
+LS22_s02b_sc08,66,0,0,manual_overrode_auto,,
+LS22_s02b_sc09,40,0,0,manual_overrode_auto,,
+LS22_s02b_sc10,62,0,0,manual_overrode_auto,,
+LS22_s02b_sc11,74,0,0,manual_overrode_auto,,
+LS22_s03b_sc00,71,0,0,manual_overrode_auto,,
+LS22_s03b_sc01,353,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS22_s03b_sc02,0,0,1,,auto,"no tissue piece larger than 1.49 mm2 (threshold 2.5); no resolvable nuclear detail (focus 0.046, threshold 0.070)"
+LS22_s03b_sc03,343,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS22_s03b_sc04,343,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS22_s03b_sc05,342,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS22_s03b_sc06,40,0,0,manual_overrode_auto,,
+LS22_s03b_sc07,198,0,0,manual_overrode_auto,,
+LS22_s03b_sc08,23,0,0,manual_overrode_auto,,
+LS22_s03b_sc09,22,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS22_s04b_sc01,-4,0,0,auto_symmetry,,
+LS22_s04b_sc02,4,0,0,auto_symmetry,,
+LS22_s04b_sc03,181,0,0,manual_overrode_auto,,
+LS22_s04b_sc04,339,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS22_s04b_sc05,337,0,0,manual_overrode_auto,,
+LS22_s04b_sc06,307,0,0,manual_overrode_auto,,
+LS22_s04b_sc07,356,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS22_s04b_sc08,343,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS22_s04b_sc09,13,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS22_s04b_sc10,0,0,1,,manual,"no resolvable nuclear detail (focus 0.059, threshold 0.070)"
+LS22_s05b_sc00,338,0,0,manual_overrode_auto,,
+LS22_s05b_sc01,2,0,0,auto_symmetry,,
+LS22_s05b_sc02,3,0,0,auto_symmetry,,
+LS22_s05b_sc03,0,0,1,,manual,no tissue piece larger than 0.80 mm2 (threshold 2.5)
+LS22_s05b_sc04,357,0,0,manual_overrode_auto,,
+LS22_s05b_sc05,8,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS22_s05b_sc06,347,0,1,manual,auto,"no resolvable nuclear detail (focus 0.066, threshold 0.070)"
+LS22_s05b_sc07,0,0,1,,auto,"no resolvable nuclear detail (focus 0.061, threshold 0.070)"
+LS22_s05b_sc08,168,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS22_s05b_sc09,0,0,1,,manual,"no resolvable nuclear detail (focus 0.052, threshold 0.070)"
+LS22_s06b_sc00,56,0,0,manual_overrode_auto,,
+LS22_s06b_sc01,10,0,0,auto_symmetry,,
+LS22_s06b_sc02,2,0,0,auto_symmetry,,
+LS22_s06b_sc03,212,0,0,manual_overrode_auto,,
+LS22_s06b_sc04,6,0,0,auto_symmetry,,
+LS22_s06b_sc05,-10,0,0,auto_symmetry,,
+LS22_s06b_sc06,185,0,0,manual_overrode_auto,,
+LS22_s06b_sc07,350,0,0,manual_overrode_auto,,
+LS22_s06b_sc08,196,0,0,manual_overrode_auto,,
+LS22_s06b_sc09,183,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS22_s07b_sc00,191,0,0,manual_overrode_auto,,
+LS22_s07b_sc01,48,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS22_s07b_sc02,177,0,0,manual_overrode_auto,,
+LS22_s07b_sc03,8,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS22_s07b_sc04,9,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS22_s07b_sc05,7,0,0,auto_symmetry,,
+LS22_s07b_sc06,357,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS22_s07b_sc07,347,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS22_s07b_sc08,0,0,1,,manual,"no resolvable nuclear detail (focus 0.030, threshold 0.070)"
+LS22_s07b_sc09,0,0,1,,manual,"no resolvable nuclear detail (focus 0.036, threshold 0.070)"
+LS22_s07b_sc10,20,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS22_s07b_sc11,0,0,1,,manual,"no resolvable nuclear detail (focus 0.054, threshold 0.070)"
+LS22_s08b_sc01,123,0,0,manual_overrode_auto,,
+LS22_s08b_sc02,-27,0,0,auto_symmetry,,
+LS22_s08b_sc03,102,0,0,manual_overrode_auto,,
+LS22_s08b_sc04,108,0,0,manual_overrode_auto,,
+LS22_s08b_sc05,107,0,0,manual_overrode_auto,,
+LS22_s08b_sc06,91,0,0,manual_overrode_auto,,
+LS22_s08b_sc07,85,0,0,manual_overrode_auto,,
+LS22_s08b_sc08,90,0,0,manual_overrode_auto,,
+LS22_s08b_sc09,330,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS22_s08b_sc10,355,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS22_s08b_sc11,356,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS22_s09b_sc00,1,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS22_s09b_sc01,95,0,0,manual,,
+LS22_s09b_sc02,278,0,0,manual_overrode_auto,,
+LS22_s09b_sc03,276,0,0,manual_overrode_auto,,
+LS22_s09b_sc04,96,0,0,manual_overrode_auto,,
+LS22_s09b_sc05,101,0,0,manual_overrode_auto,,
+LS22_s09b_sc06,-1,0,0,auto_symmetry,,
+LS22_s09b_sc07,340,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS22_s09b_sc08,356,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS22_s09b_sc09,355,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS22_s09b_sc10,6,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS22_s09b_sc11,0,0,1,,manual,"no tissue piece larger than 0.10 mm2 (threshold 2.5); no resolvable nuclear detail (focus 0.048, threshold 0.070)"
+LS37_s01b_sc00,343,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS37_s01b_sc01,188,0,0,manual_overrode_auto,,
+LS37_s01b_sc02,166,0,0,manual_overrode_auto,,
+LS37_s01b_sc03,172,0,0,manual_overrode_auto,,
+LS37_s01b_sc04,150,0,0,manual_overrode_auto,,
+LS37_s01b_sc05,168,0,0,manual_overrode_auto,,
+LS37_s01b_sc06,173,0,0,manual_overrode_auto,,
+LS37_s01b_sc07,174,0,0,manual_overrode_auto,,
+LS37_s01b_sc08,166,0,0,manual_overrode_auto,,
+LS37_s01b_sc09,168,0,0,manual_overrode_auto,,
+LS37_s01b_sc10,178,0,0,manual_overrode_auto,,
+LS37_s01b_sc11,172,0,0,manual_overrode_auto,,
+LS37_s02b_sc00,131,0,0,manual_overrode_auto,,
+LS37_s02b_sc01,12,0,0,manual_overrode_auto,,
+LS37_s02b_sc02,257,0,0,manual_overrode_auto,,
+LS37_s02b_sc03,20,0,0,manual_overrode_auto,,
+LS37_s02b_sc04,249,0,0,manual_overrode_auto,,
+LS37_s02b_sc05,183,0,0,manual_overrode_auto,,
+LS37_s02b_sc06,353,0,0,manual_overrode_auto,,
+LS37_s02b_sc07,170,0,0,manual_overrode_auto,,
+LS37_s02b_sc08,154,0,0,manual_overrode_auto,,
+LS37_s02b_sc09,210,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS37_s02b_sc10,169,0,0,manual_overrode_auto,,
+LS37_s02b_sc11,351,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS37_s03b_sc00,344,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS37_s03b_sc01,19,0,0,manual_overrode_auto,,
+LS37_s03b_sc02,18,0,0,manual_overrode_auto,,
+LS37_s03b_sc03,189,0,0,manual_overrode_auto,,
+LS37_s03b_sc04,174,0,0,manual_overrode_auto,,
+LS37_s03b_sc05,203,0,0,manual_overrode_auto,,
+LS37_s03b_sc06,2,0,0,manual_overrode_auto,,
+LS37_s03b_sc07,181,0,0,manual_overrode_auto,,
+LS37_s03b_sc08,173,0,0,manual_overrode_auto,,
+LS37_s03b_sc09,346,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS37_s03b_sc10,17,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS37_s03b_sc11,0,0,1,,manual,no tissue piece larger than 0.54 mm2 (threshold 2.5)
+LS37_s04b_sc00,160,0,0,manual_overrode_auto,,
+LS37_s04b_sc01,2,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS37_s04b_sc02,179,0,0,manual,,
+LS37_s04b_sc03,172,0,0,manual_overrode_auto,,
+LS37_s04b_sc04,169,0,0,manual,,
+LS37_s04b_sc05,165,0,0,manual_overrode_auto,,
+LS37_s04b_sc06,176,0,0,manual_overrode_auto,,
+LS37_s04b_sc07,0,0,1,,manual,"no resolvable nuclear detail (focus 0.033, threshold 0.070)"
+LS37_s04b_sc08,182,0,0,manual_overrode_auto,,
+LS37_s04b_sc09,180,0,0,manual_overrode_auto,,
+LS37_s04b_sc10,189,0,0,manual_overrode_auto,,
+LS37_s04b_sc11,189,0,0,manual_overrode_auto,,
+LS37_s05b_sc00,0,0,1,,manual,"no resolvable nuclear detail (focus 0.040, threshold 0.070)"
+LS37_s05b_sc01,172,0,0,manual,,
+LS37_s05b_sc02,2,0,0,auto_symmetry,,
+LS37_s05b_sc03,-4,0,0,auto_symmetry,,
+LS37_s05b_sc04,-6,0,0,auto_symmetry,,
+LS37_s05b_sc06,1,0,0,auto_symmetry,,
+LS37_s05b_sc07,188,0,0,manual,,
+LS37_s05b_sc08,177,0,0,manual_overrode_auto,,
+LS37_s05b_sc09,-2,0,0,auto_symmetry,,
+LS37_s05b_sc10,184,0,1,manual,auto,"no resolvable nuclear detail (focus 0.048, threshold 0.070)"
+LS37_s05b_sc11,-3,0,0,auto_symmetry,,
+LS37_s06b_sc00,1,0,0,auto_symmetry,,
+LS37_s06b_sc01,163,0,0,manual_overrode_auto,,
+LS37_s06b_sc02,-1,0,0,auto_symmetry,,
+LS37_s06b_sc03,175,0,0,manual_overrode_auto,,
+LS37_s06b_sc04,-6,0,0,auto_symmetry,,
+LS37_s06b_sc05,177,0,0,manual_overrode_auto,,
+LS37_s06b_sc07,177,0,0,manual_overrode_auto,,
+LS37_s06b_sc08,177,0,0,manual_overrode_auto,,
+LS37_s06b_sc09,359,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS37_s06b_sc10,338,0,1,manual,manual,"no resolvable nuclear detail (focus 0.028, threshold 0.070)"
+LS37_s06b_sc11,150,0,1,manual,auto,"no resolvable nuclear detail (focus 0.042, threshold 0.070)"
+LS37_s07b_sc00,351,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS37_s07b_sc01,173,0,0,manual_overrode_auto,,
+LS37_s07b_sc02,180,0,0,manual_overrode_auto,,
+LS37_s07b_sc04,179,0,0,manual_overrode_auto,,
+LS37_s07b_sc05,182,0,0,manual_overrode_auto,,
+LS37_s07b_sc06,177,0,0,manual_overrode_auto,,
+LS37_s07b_sc07,30,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS37_s07b_sc08,355,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS37_s08b_sc00,1,0,0,auto_symmetry,,
+LS37_s08b_sc01,327,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS37_s08b_sc02,186,0,0,manual_overrode_auto,,
+LS37_s08b_sc03,187,0,0,manual,,
+LS37_s08b_sc04,358,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS37_s08b_sc05,186,0,0,manual_overrode_auto,,
+LS37_s08b_sc06,0,0,1,,manual,"no resolvable nuclear detail (focus 0.060, threshold 0.070)"
+LS37_s08b_sc07,3,0,0,auto_symmetry,,
+LS37_s08b_sc08,-2,0,0,auto_symmetry,,
+LS37_s08b_sc09,357,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS37_s08b_sc10,0,0,1,,manual,no tissue piece larger than 1.43 mm2 (threshold 2.5)
+LS37_s08b_sc11,0,0,1,,manual,"no resolvable nuclear detail (focus 0.049, threshold 0.070)"
+LS37_s09b_sc00,357,0,0,manual_overrode_auto,,
+LS37_s09b_sc01,186,0,0,manual_overrode_auto,,
+LS37_s09b_sc02,3,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS37_s09b_sc03,235,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS37_s09b_sc04,176,0,0,manual_overrode_auto,,
+LS37_s09b_sc05,330,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS37_s09b_sc06,71,0,0,manual_overrode_auto,,
+LS37_s09b_sc07,1,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS37_s09b_sc08,271,0,0,manual_overrode_auto,,
+LS37_s09b_sc09,356,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS37_s10b_sc00,265,0,0,manual_overrode_auto,,
+LS37_s10b_sc01,72,0,0,manual_overrode_auto,,
+LS37_s10b_sc02,256,0,0,manual_overrode_auto,,
+LS37_s10b_sc03,238,0,0,manual_overrode_auto,,
+LS37_s10b_sc04,274,0,0,manual_overrode_auto,,
+LS37_s10b_sc05,86,0,0,manual_overrode_auto,,
+LS37_s10b_sc06,69,0,0,manual_overrode_auto,,
+LS37_s10b_sc07,65,0,0,manual_overrode_auto,,
+LS37_s10b_sc08,28,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS37_s10b_sc09,357,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS37_s10b_sc10,355,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS37_s10b_sc11,350,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS45_s01b_sc00,-6,0,0,auto_symmetry,,
+LS45_s08c_sc00,4,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS45_s01b_sc01,351,0,0,manual_overrode_auto,,
+LS45_s08c_sc01,2,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS45_s01b_sc02,354,0,0,manual_overrode_auto,,
+LS45_s08c_sc02,357,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS45_s01b_sc03,11,0,0,auto_symmetry,,
+LS45_s08c_sc03,14,0,0,auto_symmetry,,
+LS45_s01b_sc04,177,0,0,manual_overrode_auto,,
+LS45_s08c_sc04,27,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS45_s01b_sc05,11,0,0,manual_overrode_auto,,
+LS45_s08c_sc05,73,0,0,manual_overrode_auto,,
+LS45_s01b_sc06,203,0,0,manual_overrode_auto,,
+LS45_s08c_sc06,330,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS45_s01b_sc07,19,0,0,manual_overrode_auto,,
+LS45_s08c_sc07,330,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS45_s01b_sc08,255,0,0,manual_overrode_auto,,
+LS45_s08c_sc08,79,0,0,manual_overrode_auto,,
+LS45_s01b_sc09,-1,0,0,auto_symmetry,,
+LS45_s08c_sc09,69,0,0,manual_overrode_auto,,
+LS45_s08c_sc10,330,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS45_s01b_sc11,15,0,0,manual_overrode_auto,,
+LS45_s08c_sc11,5,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS45_s01b_sc12,180,0,0,manual_overrode_auto,,
+LS45_s09c_sc00,67,0,0,manual_overrode_auto,,
+LS45_s01b_sc13,221,0,0,manual,,
+LS45_s09c_sc01,246,0,0,manual_overrode_auto,,
+LS45_s02b_sc00,181,0,0,manual_overrode_auto,,
+LS45_s09c_sc02,337,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS45_s02b_sc01,-5,0,0,auto_symmetry,,
+LS45_s09c_sc03,128,0,0,manual,,
+LS45_s02b_sc02,201,0,0,manual_overrode_auto,,
+LS45_s09c_sc04,70,0,0,manual_overrode_auto,,
+LS45_s02b_sc03,0,0,1,,manual,no tissue piece larger than 0.20 mm2 (threshold 2.5)
+LS45_s09c_sc05,85,0,0,manual_overrode_auto,,
+LS45_s02b_sc04,262,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS45_s09c_sc06,0,0,1,,manual,manually excluded: tissue too damaged to measure
+LS45_s02b_sc05,23,0,0,manual_overrode_auto,,
+LS45_s09c_sc07,330,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS45_s02b_sc06,169,0,0,manual_overrode_auto,,
+LS45_s09c_sc08,5,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS45_s02b_sc07,0,0,1,,manual,no tissue piece larger than 0.30 mm2 (threshold 2.5)
+LS45_s09c_sc09,0,0,1,,manual,no tissue piece larger than 1.53 mm2 (threshold 2.5)
+LS45_s02b_sc08,242,0,0,manual_overrode_auto,,
+LS45_s02b_sc09,65,0,0,manual_overrode_auto,,
+LS45_s02b_sc10,0,0,1,,auto,no tissue piece larger than 0.46 mm2 (threshold 2.5)
+LS45_s02b_sc11,80,0,0,manual_overrode_auto,,
+LS45_s02b_sc12,70,0,0,manual_overrode_auto,,
+LS45_s03b_sc00,0,0,1,,manual,"no resolvable nuclear detail (focus 0.060, threshold 0.070)"
+LS45_s03b_sc01,6,0,0,manual_overrode_auto,,
+LS45_s03b_sc02,133,0,0,manual_overrode_auto,,
+LS45_s03b_sc03,151,0,0,manual_overrode_auto,,
+LS45_s03b_sc04,162,0,0,manual_overrode_auto,,
+LS45_s03b_sc05,172,0,0,manual_overrode_auto,,
+LS45_s03b_sc06,133,0,0,manual_overrode_auto,,
+LS45_s03b_sc07,179,0,0,manual_overrode_auto,,
+LS45_s03b_sc08,176,0,0,manual_overrode_auto,,
+LS45_s03b_sc09,37,0,0,manual_overrode_auto,,
+LS45_s03b_sc10,191,0,0,manual_overrode_auto,,
+LS45_s03b_sc11,0,0,1,,manual,"no resolvable nuclear detail (focus 0.052, threshold 0.070)"
+LS45_s03b_sc12,158,0,0,manual_overrode_auto,,
+LS45_s03b_sc13,74,0,0,manual_overrode_auto,,
+LS45_s04b_sc00,202,0,0,manual_overrode_auto,,
+LS45_s04b_sc01,42,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS45_s04b_sc02,342,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS45_s04b_sc03,185,0,0,manual_overrode_auto,,
+LS45_s04b_sc04,359,0,0,manual_overrode_auto,,
+LS45_s04b_sc05,168,0,0,manual,,
+LS45_s04b_sc06,187,0,0,manual_overrode_auto,,
+LS45_s04b_sc07,195,0,0,manual_overrode_auto,,
+LS45_s04b_sc08,1,0,0,auto_symmetry,,
+LS45_s04b_sc09,3,0,0,auto_symmetry,,
+LS45_s04b_sc10,30,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS45_s04b_sc11,0,0,1,,manual,no tissue piece larger than 2.03 mm2 (threshold 2.5)
+LS45_s04b_sc12,0,0,1,,manual,no tissue piece larger than 1.15 mm2 (threshold 2.5)
+LS45_s04b_sc13,8,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS45_s05b_sc00,22,0,0,manual_overrode_auto,,
+LS45_s05b_sc01,26,0,0,manual_overrode_auto,,
+LS45_s05b_sc02,229,0,0,manual_overrode_auto,,
+LS45_s05b_sc03,3,0,0,manual_overrode_auto,,
+LS45_s05b_sc04,331,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS45_s05b_sc05,334,0,0,manual_overrode_auto,,
+LS45_s05b_sc06,339,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS45_s05b_sc07,355,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS45_s05b_sc08,344,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS45_s05b_sc09,6,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS45_s06b_sc00,354,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS45_s06b_sc01,13,0,0,manual_overrode_auto,,
+LS45_s06b_sc02,194,0,0,manual_overrode_auto,,
+LS45_s06b_sc03,34,0,0,manual_overrode_auto,,
+LS45_s06b_sc04,238,0,0,manual_overrode_auto,,
+LS45_s06b_sc05,77,0,0,manual_overrode_auto,,
+LS45_s06b_sc06,38,0,0,manual_overrode_auto,,
+LS45_s06b_sc07,134,0,0,manual_overrode_auto,,
+LS45_s06b_sc08,20,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS45_s06b_sc09,1,0,0,auto_symmetry,,
+LS45_s07b_sc00,194,0,0,manual_overrode_auto,,
+LS45_s07b_sc01,15,0,0,manual_overrode_auto,,
+LS45_s07b_sc02,330,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS45_s07b_sc03,203,0,0,manual_overrode_auto,,
+LS45_s07b_sc04,186,0,0,manual_overrode_auto,,
+LS45_s07b_sc05,344,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS45_s07b_sc06,0,0,1,,manual,"no resolvable nuclear detail (focus 0.067, threshold 0.070)"
+LS45_s07b_sc07,334,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS45_s07b_sc08,0,0,1,,manual,manually excluded: tissue too damaged to measure
+LS45_s07b_sc09,0,0,1,,manual,"no resolvable nuclear detail (focus 0.034, threshold 0.070)"
+LS45_s07b_sc10,23,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS45_s08b_sc00,264,0,0,manual_overrode_auto,,
+LS45_s08b_sc01,208,0,0,manual_overrode_auto,,
+LS45_s08b_sc02,53,0,0,manual_overrode_auto,,
+LS45_s08b_sc03,21,0,0,manual_overrode_auto,,
+LS45_s08b_sc04,225,0,0,manual_overrode_auto,,
+LS45_s08b_sc05,256,0,0,manual_overrode_auto,,
+LS45_s08b_sc06,259,0,0,manual_overrode_auto,,
+LS45_s08b_sc07,234,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS45_s08b_sc08,270,0,0,manual_overrode_auto,,
+LS45_s08b_sc09,358,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS45_s08b_sc10,30,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS45_s08b_sc11,13,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS45_s09b_sc00,0,0,1,,auto,no tissue piece larger than 1.73 mm2 (threshold 2.5)
+LS45_s09b_sc01,100,0,0,manual_overrode_auto,,
+LS45_s09b_sc02,118,0,0,manual_overrode_auto,,
+LS45_s09b_sc03,105,0,0,manual_overrode_auto,,
+LS45_s09b_sc04,260,0,0,manual_overrode_auto,,
+LS45_s09b_sc05,102,0,0,manual_overrode_auto,,
+LS45_s09b_sc06,100,0,0,manual_overrode_auto,,
+LS45_s09b_sc07,302,0,0,manual_overrode_auto,,
+LS45_s09b_sc08,278,0,0,manual_overrode_auto,,
+LS45_s09b_sc09,357,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS45_s09b_sc10,267,0,0,manual_overrode_auto,,
+LS45_s10b_sc00,86,0,0,manual_overrode_auto,,
+LS45_s10b_sc01,357,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS45_s10b_sc02,296,0,0,manual_overrode_auto,,
+LS45_s10b_sc03,116,0,0,manual_overrode_auto,,
+LS45_s10b_sc04,298,0,0,manual_overrode_auto,,
+LS45_s10b_sc05,102,0,0,manual_overrode_auto,,
+LS45_s10b_sc06,85,0,0,manual_overrode_auto,,
+LS45_s10b_sc07,78,0,0,manual_overrode_auto,,
+LS45_s10b_sc08,264,0,0,manual_overrode_auto,,
+LS45_s10b_sc09,115,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS53_s01b_sc00,0,0,1,,auto,no tissue piece larger than 1.00 mm2 (threshold 2.5)
+LS53_s02c_sc00,20,0,0,auto_symmetry,,
+LS53_s01b_sc01,0,0,1,,auto,no tissue piece larger than 1.04 mm2 (threshold 2.5)
+LS53_s02c_sc01,183,0,0,manual_overrode_auto,,
+LS53_s01b_sc02,0,0,1,,manual,"no resolvable nuclear detail (focus 0.059, threshold 0.070)"
+LS53_s02c_sc02,1,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS53_s01b_sc03,129,0,0,manual_overrode_auto,,
+LS53_s02c_sc03,-7,0,0,auto_symmetry,,
+LS53_s01b_sc04,30,0,0,auto_symmetry,,
+LS53_s02c_sc04,10,0,0,auto_symmetry,,
+LS53_s01b_sc05,0,0,1,,manual,manually excluded: tissue too damaged to measure
+LS53_s02c_sc05,0,0,1,,manual,no tissue piece larger than 1.27 mm2 (threshold 2.5)
+LS53_s01b_sc06,177,0,0,manual_overrode_auto,,
+LS53_s02c_sc06,359,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS53_s01b_sc07,3,0,0,auto_symmetry,,
+LS53_s02c_sc07,0,0,1,,manual,no tissue piece larger than 0.54 mm2 (threshold 2.5)
+LS53_s01b_sc08,157,0,0,manual_overrode_auto,,
+LS53_s02c_sc08,0,0,1,,manual,no tissue piece larger than 1.15 mm2 (threshold 2.5)
+LS53_s01b_sc09,187,0,0,manual_overrode_auto,,
+LS53_s02c_sc09,0,0,1,,manual,no tissue piece larger than 0.68 mm2 (threshold 2.5)
+LS53_s01b_sc10,179,0,0,manual_overrode_auto,,
+LS53_s02c_sc10,0,0,1,,manual,no tissue piece larger than 0.92 mm2 (threshold 2.5)
+LS53_s01b_sc11,180,0,0,manual_overrode_auto,,
+LS53_s02c_sc11,13,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS53_s01b_sc12,359,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS53_s05c_sc00,10,0,0,manual_overrode_auto,,
+LS53_s01b_sc13,0,0,1,,manual,no tissue piece larger than 2.23 mm2 (threshold 2.5)
+LS53_s05c_sc01,12,0,0,manual_overrode_auto,,
+LS53_s01b_sc14,-6,0,0,auto_symmetry,,
+LS53_s05c_sc02,1,0,0,manual_overrode_auto,,
+LS53_s01b_sc15,-10,0,0,auto_symmetry,,
+LS53_s05c_sc03,1,0,0,auto_symmetry,,
+LS53_s01b_sc16,-4,0,0,auto_symmetry,,
+LS53_s05c_sc04,175,0,0,manual_overrode_auto,,
+LS53_s03b_sc00,0,0,1,,manual,no tissue piece larger than 2.39 mm2 (threshold 2.5)
+LS53_s05c_sc05,178,0,0,manual_overrode_auto,,
+LS53_s03b_sc01,216,0,0,manual_overrode_auto,,
+LS53_s05c_sc06,2,0,0,auto_symmetry,,
+LS53_s03b_sc02,0,0,1,,manual,no tissue piece larger than 1.85 mm2 (threshold 2.5)
+LS53_s05c_sc07,1,0,0,manual_overrode_auto,,
+LS53_s03b_sc03,233,0,0,manual,,
+LS53_s05c_sc08,-11,0,0,auto_symmetry,,
+LS53_s03b_sc04,54,0,0,manual_overrode_auto,,
+LS53_s03b_sc05,25,0,0,manual_overrode_auto,,
+LS53_s03b_sc06,348,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS53_s03b_sc07,310,0,0,manual_overrode_auto,,
+LS53_s03b_sc08,0,0,1,,manual,no tissue piece larger than 0.51 mm2 (threshold 2.5)
+LS53_s03b_sc09,6,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS53_s03b_sc10,180,0,0,manual_overrode_auto,,
+LS53_s03b_sc11,-2,0,0,auto_symmetry,,
+LS53_s04b_sc00,-11,0,0,auto_symmetry,,
+LS53_s04b_sc01,201,0,1,manual,auto,"no resolvable nuclear detail (focus 0.057, threshold 0.070)"
+LS53_s04b_sc02,1,0,0,auto_symmetry,,
+LS53_s04b_sc03,165,0,0,manual_overrode_auto,,
+LS53_s04b_sc04,160,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS53_s04b_sc05,177,0,0,manual_overrode_auto,,
+LS53_s04b_sc06,-2,0,0,auto_symmetry,,
+LS53_s04b_sc07,182,0,0,manual_overrode_auto,,
+LS53_s04b_sc08,-5,0,0,auto_symmetry,,
+LS53_s04b_sc09,-3,0,0,auto_symmetry,,
+LS53_s04b_sc10,0,0,1,,manual,"no resolvable nuclear detail (focus 0.062, threshold 0.070)"
+LS53_s06b_sc00,174,0,0,manual,,
+LS53_s06b_sc01,1,0,0,auto_symmetry,,
+LS53_s06b_sc02,-14,0,0,auto_symmetry,,
+LS53_s06b_sc03,121,0,0,manual_overrode_auto,,
+LS53_s06b_sc04,203,0,0,manual_overrode_auto,,
+LS53_s06b_sc05,189,0,0,manual_overrode_auto,,
+LS53_s06b_sc06,-6,0,0,auto_symmetry,,
+LS53_s06b_sc07,-10,0,0,auto_symmetry,,
+LS53_s06b_sc08,176,0,0,manual_overrode_auto,,
+LS53_s06b_sc09,0,0,1,,auto,"no resolvable nuclear detail (focus 0.058, threshold 0.070)"
+LS53_s07b_sc00,50,0,0,manual_overrode_auto,,
+LS53_s07b_sc01,139,0,0,manual_overrode_auto,,
+LS53_s07b_sc02,235,0,0,manual_overrode_auto,,
+LS53_s07b_sc03,135,0,0,manual_overrode_auto,,
+LS53_s07b_sc04,261,0,0,manual_overrode_auto,,
+LS53_s07b_sc05,0,0,1,,manual,no tissue piece larger than 0.16 mm2 (threshold 2.5)
+LS53_s07b_sc06,276,0,0,manual_overrode_auto,,
+LS53_s07b_sc07,356,0,0,manual_overrode_auto,,
+LS53_s07b_sc08,14,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS53_s07b_sc09,141,0,0,manual_overrode_auto,,
+LS53_s08b_sc00,349,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS53_s08b_sc01,174,0,0,manual_overrode_auto,,
+LS53_s08b_sc02,224,0,0,manual_overrode_auto,,
+LS53_s08b_sc03,334,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS53_s08b_sc04,353,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS53_s08b_sc05,338,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS53_s08b_sc06,0,0,1,,manual,no tissue piece larger than 0.18 mm2 (threshold 2.5)
+LS53_s08b_sc07,22,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS53_s08b_sc08,0,0,1,,manual,"no resolvable nuclear detail (focus 0.055, threshold 0.070)"
+LS53_s08b_sc09,0,0,1,,manual,manually excluded: tissue too damaged to measure
+LS53_s09b_sc00,359,0,0,manual_overrode_auto,,
+LS53_s09b_sc01,344,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS53_s09b_sc02,270,0,0,manual_overrode_auto,,
+LS53_s09b_sc03,14,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS53_s09b_sc04,266,0,0,manual_overrode_auto,,
+LS53_s09b_sc05,273,0,0,manual_overrode_auto,,
+LS53_s09b_sc06,165,0,0,manual_overrode_auto,,
+LS53_s09b_sc07,29,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS53_s09b_sc08,2,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS53_s09b_sc09,283,0,0,manual_overrode_auto,,
+LS53_s09b_sc10,98,0,0,manual_overrode_auto,,
+LS53_s10b_sc00,78,0,0,manual_overrode_auto,,
+LS53_s10b_sc01,86,0,0,manual_overrode_auto,,
+LS53_s10b_sc02,353,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS53_s10b_sc03,5,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS53_s10b_sc04,356,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS53_s10b_sc05,330,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS53_s10b_sc06,255,0,0,manual_overrode_auto,,
+LS53_s10b_sc07,86,0,0,manual_overrode_auto,,
+LS53_s10b_sc08,92,0,0,manual_overrode_auto,,
+LS53_s10b_sc09,85,0,0,manual_overrode_auto,,
+LS53_s10b_sc10,107,0,0,manual_overrode_auto,,
+LS53_s10b_sc11,358,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS61_s01b_sc00,316,0,1,manual,auto,no tissue piece larger than 1.40 mm2 (threshold 2.5)
+LS61_s02c_sc00,358,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS61_s01b_sc01,341,0,1,manual,auto,no tissue piece larger than 2.11 mm2 (threshold 2.5)
+LS61_s02c_sc01,18,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS61_s01b_sc02,330,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS61_s02c_sc02,263,0,0,manual_overrode_auto,,
+LS61_s01b_sc03,189,0,0,manual_overrode_auto,,
+LS61_s02c_sc03,4,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS61_s01b_sc04,0,0,1,,manual,no tissue piece larger than 0.48 mm2 (threshold 2.5)
+LS61_s02c_sc04,217,0,1,manual,auto,no tissue piece larger than 2.28 mm2 (threshold 2.5)
+LS61_s01b_sc05,56,0,1,manual,auto,no tissue piece larger than 0.93 mm2 (threshold 2.5)
+LS61_s02c_sc05,284,0,0,manual_overrode_auto,,
+LS61_s01b_sc06,0,0,1,,manual,manually excluded: tissue too damaged to measure
+LS61_s02c_sc06,192,0,0,manual_overrode_auto,,
+LS61_s01b_sc07,2,0,0,auto_symmetry,,
+LS61_s02c_sc07,0,0,1,,auto,no tissue piece larger than 2.41 mm2 (threshold 2.5)
+LS61_s01b_sc08,357,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS61_s02c_sc08,0,0,1,,manual,no tissue piece larger than 2.39 mm2 (threshold 2.5)
+LS61_s01b_sc09,187,0,0,manual_overrode_auto,,
+LS61_s02c_sc09,0,0,1,,manual,no tissue piece larger than 1.54 mm2 (threshold 2.5)
+LS61_s01b_sc10,4,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS61_s02c_sc10,8,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS61_s01b_sc11,262,0,0,manual_overrode_auto,,
+LS61_s02c_sc11,291,0,0,manual_overrode_auto,,
+LS61_s01b_sc12,0,0,1,,manual,no tissue piece larger than 1.19 mm2 (threshold 2.5)
+LS61_s02c_sc12,301,0,0,manual_overrode_auto,,
+LS61_s01b_sc13,0,0,1,,manual,no tissue piece larger than 1.28 mm2 (threshold 2.5)
+LS61_s02c_sc13,357,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS61_s01b_sc14,0,0,1,,manual,no tissue piece larger than 1.52 mm2 (threshold 2.5)
+LS61_s02c_sc14,248,0,0,manual_overrode_auto,,
+LS61_s02b_sc00,15,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS61_s02c_sc15,271,0,0,manual_overrode_auto,,
+LS61_s02b_sc01,249,0,0,manual_overrode_auto,,
+LS61_s04c_sc00,14,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS61_s02b_sc02,0,0,1,,manual,no tissue piece larger than 2.16 mm2 (threshold 2.5)
+LS61_s04c_sc01,132,0,0,manual_overrode_auto,,
+LS61_s02b_sc03,257,0,0,manual_overrode_auto,,
+LS61_s04c_sc02,344,0,0,manual_overrode_auto,,
+LS61_s02b_sc04,3,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS61_s04c_sc03,6,0,0,auto_symmetry,,
+LS61_s02b_sc05,267,0,1,manual,auto,no tissue piece larger than 2.37 mm2 (threshold 2.5)
+LS61_s04c_sc04,336,0,0,manual_overrode_auto,,
+LS61_s02b_sc06,356,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS61_s04c_sc05,328,0,0,manual_overrode_auto,,
+LS61_s02b_sc07,229,0,0,manual_overrode_auto,,
+LS61_s04c_sc06,341,0,0,manual_overrode_auto,,
+LS61_s02b_sc08,-30,0,0,auto_symmetry,,
+LS61_s04c_sc07,174,0,0,manual_overrode_auto,,
+LS61_s02b_sc09,349,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS61_s04c_sc08,330,0,0,manual_overrode_auto,,
+LS61_s02b_sc10,350,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS61_s04c_sc09,180,0,0,manual,,
+LS61_s02b_sc11,358,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS61_s04c_sc10,5,0,0,auto_symmetry,,
+LS61_s02b_sc12,343,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS61_s04c_sc11,180,0,0,manual_overrode_auto,,
+LS61_s02b_sc13,9,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS61_s02b_sc14,0,0,1,,manual,no tissue piece larger than 0.98 mm2 (threshold 2.5)
+LS61_s02b_sc15,333,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS61_s03b_sc00,52,0,0,manual_overrode_auto,,
+LS61_s03b_sc01,233,0,0,manual_overrode_auto,,
+LS61_s03b_sc02,141,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS61_s03b_sc03,133,0,0,manual_overrode_auto,,
+LS61_s03b_sc04,348,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS61_s03b_sc05,133,0,0,manual_overrode_auto,,
+LS61_s03b_sc06,177,0,0,manual_overrode_auto,,
+LS61_s03b_sc07,172,0,0,manual_overrode_auto,,
+LS61_s03b_sc08,166,0,0,manual_overrode_auto,,
+LS61_s03b_sc09,105,0,0,manual_overrode_auto,,
+LS61_s03b_sc10,174,0,0,manual,,
+LS61_s03b_sc11,149,0,0,manual_overrode_auto,,
+LS61_s03b_sc12,146,0,0,manual_overrode_auto,,
+LS61_s03b_sc13,103,0,0,manual_overrode_auto,,
+LS61_s03b_sc14,30,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS61_s04b_sc00,4,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS61_s04b_sc01,2,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS61_s04b_sc02,164,0,0,manual_overrode_auto,,
+LS61_s04b_sc03,135,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS61_s04b_sc04,298,0,0,manual_overrode_auto,,
+LS61_s04b_sc05,150,0,0,manual_overrode_auto,,
+LS61_s04b_sc06,5,0,0,manual_overrode_auto,,
+LS61_s04b_sc07,157,0,0,manual_overrode_auto,,
+LS61_s04b_sc08,171,0,0,manual_overrode_auto,,
+LS61_s04b_sc09,-5,0,0,auto_symmetry,,
+LS61_s04b_sc10,357,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS61_s05b_sc01,15,0,0,manual_overrode_auto,,
+LS61_s05b_sc02,340,0,0,manual_overrode_auto,,
+LS61_s05b_sc03,2,0,0,auto_symmetry,,
+LS61_s05b_sc04,330,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS61_s05b_sc05,344,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS61_s05b_sc06,28,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS61_s05b_sc07,143,0,0,manual_overrode_auto,,
+LS61_s05b_sc08,189,0,0,manual_overrode_auto,,
+LS61_s05b_sc09,5,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS61_s05b_sc10,0,0,1,,manual,"no resolvable nuclear detail (focus 0.061, threshold 0.070)"
+LS61_s05b_sc11,337,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS61_s06b_sc00,1,0,0,auto_symmetry,,
+LS61_s06b_sc01,20,0,0,manual_overrode_auto,,
+LS61_s06b_sc02,1,0,0,manual_overrode_auto,,
+LS61_s06b_sc03,142,0,0,manual_overrode_auto,,
+LS61_s06b_sc04,336,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS61_s06b_sc05,354,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS61_s06b_sc06,309,0,0,manual_overrode_auto,,
+LS61_s06b_sc07,232,0,0,manual_overrode_auto,,
+LS61_s06b_sc08,140,0,0,manual_overrode_auto,,
+LS61_s06b_sc09,40,0,0,manual_overrode_auto,,
+LS61_s06b_sc10,354,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS61_s06b_sc11,24,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS61_s07b_sc00,359,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS61_s07b_sc01,347,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS61_s07b_sc02,357,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS61_s07b_sc03,10,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS61_s07b_sc04,298,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS61_s07b_sc05,200,0,0,manual_overrode_auto,,
+LS61_s07b_sc06,74,0,0,manual_overrode_auto,,
+LS61_s07b_sc07,211,0,0,manual_overrode_auto,,
+LS61_s07b_sc08,293,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS61_s07b_sc09,330,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS61_s07b_sc10,0,0,1,,manual,no tissue piece larger than 0.79 mm2 (threshold 2.5)
+LS61_s07b_sc11,0,0,1,,manual,no tissue piece larger than 0.90 mm2 (threshold 2.5)
+LS61_s08b_sc00,44,0,0,manual_overrode_auto,,
+LS61_s08b_sc01,252,0,0,manual_overrode_auto,,
+LS61_s08b_sc02,30,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS61_s08b_sc03,56,0,0,manual_overrode_auto,,
+LS61_s08b_sc04,263,0,0,manual_overrode_auto,,
+LS61_s08b_sc05,352,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS61_s08b_sc06,270,0,0,manual_overrode_auto,,
+LS61_s08b_sc07,93,0,0,manual_overrode_auto,,
+LS61_s08b_sc08,68,0,0,manual_overrode_auto,,
+LS61_s08b_sc09,24,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS61_s08b_sc10,7,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS61_s08b_sc11,7,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS61_s08b_sc12,5,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS61_s09b_sc00,355,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS61_s09b_sc01,14,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS61_s09b_sc02,267,0,0,manual_overrode_auto,,
+LS61_s09b_sc03,88,0,0,manual_overrode_auto,,
+LS61_s09b_sc04,268,0,0,manual_overrode_auto,,
+LS61_s09b_sc05,268,0,0,manual_overrode_auto,,
+LS61_s09b_sc06,270,0,0,manual_overrode_auto,,
+LS61_s09b_sc07,263,0,0,manual_overrode_auto,,
+LS69_s01b_sc00,255,0,0,manual_overrode_auto,,
+LS69_s01b_sc01,262,0,0,manual_overrode_auto,,
+LS69_s01b_sc02,72,0,0,manual_overrode_auto,,
+LS69_s01b_sc03,81,0,0,manual_overrode_auto,,
+LS69_s01b_sc04,188,0,0,manual_overrode_auto,,
+LS69_s01b_sc05,195,0,0,manual_overrode_auto,,
+LS69_s01b_sc06,183,0,0,manual_overrode_auto,,
+LS69_s01b_sc07,202,0,0,manual_overrode_auto,,
+LS69_s01b_sc08,0,0,1,,manual,"no tissue piece larger than 2.41 mm2 (threshold 2.5); no resolvable nuclear detail (focus 0.052, threshold 0.070)"
+LS69_s01b_sc10,30,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS69_s01b_sc11,15,0,0,auto_symmetry,,
+LS69_s01b_sc12,-4,0,0,auto_symmetry,,
+LS69_s01b_sc13,1,0,0,auto_symmetry,,
+LS69_s01b_sc14,1,0,0,auto_symmetry,,
+LS69_s01b_sc15,0,0,1,,auto,no tissue piece larger than 0.46 mm2 (threshold 2.5)
+LS69_s01b_sc16,0,0,1,,manual,no tissue piece larger than 1.61 mm2 (threshold 2.5)
+LS69_s02b_sc00,-29,0,0,auto_symmetry,,
+LS69_s02b_sc01,5,0,0,auto_symmetry,,
+LS69_s02b_sc02,330,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS69_s02b_sc03,128,0,0,manual_overrode_auto,,
+LS69_s02b_sc04,346,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS69_s02b_sc05,316,0,0,manual_overrode_auto,,
+LS69_s02b_sc06,0,0,1,,manual,no tissue piece larger than 1.81 mm2 (threshold 2.5)
+LS69_s02b_sc07,335,0,0,manual_overrode_auto,,
+LS69_s02b_sc08,5,0,0,auto_symmetry,,
+LS69_s02b_sc09,134,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS69_s02b_sc10,161,0,0,manual_overrode_auto,,
+LS69_s02b_sc11,6,0,0,auto_symmetry,,
+LS69_s02b_sc12,7,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS69_s02b_sc13,359,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS69_s02b_sc14,5,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS69_s02b_sc15,21,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS69_s03b_sc00,352,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS69_s03b_sc01,18,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS69_s03b_sc02,6,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS69_s03b_sc03,195,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS69_s03b_sc04,166,0,0,manual_overrode_auto,,
+LS69_s03b_sc05,6,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS69_s03b_sc06,164,0,0,manual,,
+LS69_s03b_sc07,-1,0,0,auto_symmetry,,
+LS69_s03b_sc08,1,0,0,auto_symmetry,,
+LS69_s03b_sc09,358,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS69_s03b_sc10,3,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS69_s04b_sc00,12,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS69_s04b_sc01,199,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS69_s04b_sc02,5,0,0,auto_symmetry,,
+LS69_s04b_sc03,5,0,0,auto_symmetry,,
+LS69_s04b_sc04,-27,0,0,auto_symmetry,,
+LS69_s04b_sc05,7,0,0,auto_symmetry,,
+LS69_s04b_sc06,-26,0,0,auto_symmetry,,
+LS69_s04b_sc07,318,0,0,manual_overrode_auto,,
+LS69_s04b_sc08,287,0,0,manual_overrode_auto,,
+LS69_s04b_sc09,338,0,0,manual_overrode_auto,,
+LS69_s04b_sc10,183,0,0,manual_overrode_auto,,
+LS69_s05b_sc00,62,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS69_s05b_sc01,39,0,0,manual_overrode_auto,,
+LS69_s05b_sc02,13,0,0,auto_symmetry,,
+LS69_s05b_sc03,171,0,0,manual_overrode_auto,,
+LS69_s05b_sc04,-26,0,0,auto_symmetry,,
+LS69_s05b_sc05,10,0,0,manual_overrode_auto,,
+LS69_s05b_sc06,240,0,0,manual_overrode_auto,,
+LS69_s05b_sc08,353,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS69_s05b_sc09,7,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS69_s06b_sc00,259,0,0,manual_overrode_auto,,
+LS69_s06b_sc01,204,0,0,manual_overrode_auto,,
+LS69_s06b_sc02,326,0,0,manual_overrode_auto,,
+LS69_s06b_sc03,-9,0,0,auto_symmetry,,
+LS69_s06b_sc04,-1,0,0,auto_symmetry,,
+LS69_s06b_sc05,-1,0,0,auto_symmetry,,
+LS69_s06b_sc06,346,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS69_s06b_sc07,30,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS69_s06b_sc08,359,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS69_s06b_sc09,17,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS69_s06b_sc10,0,0,1,,auto,no tissue piece larger than 0.13 mm2 (threshold 2.5)
+LS69_s07b_sc00,15,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS69_s07b_sc01,4,0,0,auto_symmetry,,
+LS69_s07b_sc02,192,0,0,manual_overrode_auto,,
+LS69_s07b_sc04,16,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS69_s07b_sc05,200,0,0,manual_overrode_auto,,
+LS69_s07b_sc06,4,0,0,auto_symmetry,,
+LS69_s07b_sc07,236,0,0,manual_overrode_auto,,
+LS69_s07b_sc08,237,0,0,manual_overrode_auto,,
+LS69_s07b_sc09,64,0,0,manual,,
+LS69_s07b_sc10,0,0,1,,manual,"no resolvable nuclear detail (focus 0.052, threshold 0.070)"
+LS69_s07b_sc11,6,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS69_s08b_sc00,43,0,0,manual_overrode_auto,,
+LS69_s08b_sc01,23,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS69_s08b_sc02,330,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS69_s08b_sc03,108,0,0,manual_overrode_auto,,
+LS69_s08b_sc04,256,0,0,manual_overrode_auto,,
+LS69_s08b_sc05,110,0,0,manual_overrode_auto,,
+LS69_s08b_sc06,8,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS69_s08b_sc07,272,0,0,manual_overrode_auto,,
+LS69_s08b_sc08,143,0,0,manual_overrode_auto,,
+LS69_s08b_sc09,5,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS69_s08b_sc10,103,0,0,manual_overrode_auto,,
+LS69_s08b_sc11,1,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS69_s08b_sc12,14,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS69_s08b_sc13,341,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS69_s09b_sc00,244,0,0,manual_overrode_auto,,
+LS69_s09b_sc01,254,0,0,manual_overrode_auto,,
+LS69_s09b_sc02,270,0,0,manual_overrode_auto,,
+LS69_s09b_sc03,0,0,1,,auto,no tissue piece larger than 2.39 mm2 (threshold 2.5)
+LS69_s09b_sc04,357,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS69_s09b_sc05,359,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS69_s09b_sc06,85,0,0,manual_overrode_auto,,
+LS69_s09b_sc07,84,0,0,manual_overrode_auto,,
+LS69_s09b_sc08,274,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS69_s09b_sc09,85,0,0,manual_overrode_auto,,
+LS85_s01b_sc00,296,0,0,manual_overrode_auto,,
+LS85_s07c_sc00,9,0,0,auto_symmetry,,
+LS85_s01b_sc01,0,0,1,,manual,no tissue piece larger than 0.36 mm2 (threshold 2.5)
+LS85_s07c_sc01,15,0,0,manual_overrode_auto,,
+LS85_s01b_sc02,6,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS85_s07c_sc02,-3,0,0,auto_symmetry,,
+LS85_s01b_sc03,0,0,1,,manual,no tissue piece larger than 1.91 mm2 (threshold 2.5)
+LS85_s07c_sc03,171,0,0,manual_overrode_auto,,
+LS85_s01b_sc04,135,0,0,manual_overrode_auto,,
+LS85_s07c_sc04,181,0,0,manual_overrode_auto,,
+LS85_s01b_sc05,0,0,1,,manual,no tissue piece larger than 1.88 mm2 (threshold 2.5)
+LS85_s07c_sc05,2,0,0,auto_symmetry,,
+LS85_s01b_sc06,321,0,0,manual_overrode_auto,,
+LS85_s02b_sc00,0,0,1,,manual,"no resolvable nuclear detail (focus 0.045, threshold 0.070)"
+LS85_s07c_sc07,-5,0,0,auto_symmetry,,
+LS85_s02b_sc01,0,0,1,,manual,"no resolvable nuclear detail (focus 0.044, threshold 0.070)"
+LS85_s07c_sc08,164,0,0,manual_overrode_auto,,
+LS85_s02b_sc02,342,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS85_s07c_sc09,0,0,1,,manual,manually excluded: tissue too damaged to measure
+LS85_s02b_sc03,0,0,1,,manual,no tissue piece larger than 0.54 mm2 (threshold 2.5)
+LS85_s02b_sc04,7,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS85_s02b_sc05,167,0,0,manual_overrode_auto,,
+LS85_s02b_sc06,130,0,0,manual_overrode_auto,,
+LS85_s02b_sc07,146,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS85_s02b_sc08,0,0,1,,manual,"no resolvable nuclear detail (focus 0.061, threshold 0.070)"
+LS85_s02b_sc09,124,0,0,manual,,
+LS85_s03b_sc00,14,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS85_s03b_sc01,-20,0,0,auto_symmetry,,
+LS85_s03b_sc02,24,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS85_s03b_sc03,133,0,0,manual_overrode_auto,,
+LS85_s03b_sc04,8,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS85_s03b_sc05,173,0,0,manual_overrode_auto,,
+LS85_s03b_sc06,285,0,0,manual_overrode_auto,,
+LS85_s03b_sc07,165,0,0,manual_overrode_auto,,
+LS85_s03b_sc08,0,0,1,,manual,"no resolvable nuclear detail (focus 0.063, threshold 0.070)"
+LS85_s03b_sc09,187,0,0,manual_overrode_auto,,
+LS85_s03b_sc10,334,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS85_s03b_sc11,353,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS85_s04b_sc00,0,0,1,,manual,manually excluded: tissue too damaged to measure
+LS85_s04b_sc01,18,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS85_s04b_sc02,9,0,0,auto_symmetry,,
+LS85_s04b_sc03,1,0,0,auto_symmetry,,
+LS85_s04b_sc04,338,0,0,manual_overrode_auto,,
+LS85_s04b_sc05,0,0,1,,manual,manually excluded: tissue too damaged to measure
+LS85_s04b_sc06,169,0,0,manual_overrode_auto,,
+LS85_s04b_sc07,183,0,0,manual_overrode_auto,,
+LS85_s04b_sc08,-3,0,0,auto_symmetry,,
+LS85_s04b_sc09,5,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS85_s04b_sc10,-1,0,0,auto_symmetry,,
+LS85_s04b_sc11,180,0,0,manual_overrode_auto,,
+LS85_s05b_sc00,9,0,0,auto_symmetry,,
+LS85_s05b_sc01,164,0,0,manual_overrode_auto,,
+LS85_s05b_sc02,-7,0,0,auto_symmetry,,
+LS85_s05b_sc03,6,0,0,auto_symmetry,,
+LS85_s05b_sc04,-8,0,0,auto_symmetry,,
+LS85_s05b_sc05,172,0,0,manual_overrode_auto,,
+LS85_s05b_sc06,1,0,0,auto_symmetry,,
+LS85_s05b_sc07,179,0,0,manual_overrode_auto,,
+LS85_s05b_sc08,350,0,0,manual_overrode_auto,,
+LS85_s05b_sc09,7,0,0,manual_overrode_auto,,
+LS85_s06b_sc00,339,0,0,manual_overrode_auto,,
+LS85_s06b_sc01,146,0,0,manual_overrode_auto,,
+LS85_s06b_sc02,3,0,0,auto_symmetry,,
+LS85_s06b_sc03,174,0,0,manual_overrode_auto,,
+LS85_s06b_sc04,2,0,0,auto_symmetry,,
+LS85_s06b_sc05,168,0,0,manual_overrode_auto,,
+LS85_s06b_sc06,341,0,0,manual_overrode_auto,,
+LS85_s06b_sc07,177,0,0,manual_overrode_auto,,
+LS85_s06b_sc08,2,0,0,auto_symmetry,,
+LS85_s06b_sc09,187,0,0,manual_overrode_auto,,
+LS85_s08b_sc00,349,0,1,manual,manual,"no resolvable nuclear detail (focus 0.041, threshold 0.070)"
+LS85_s08b_sc01,4,0,0,auto_symmetry,,
+LS85_s08b_sc02,336,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS85_s08b_sc03,179,0,0,manual_overrode_auto,,
+LS85_s08b_sc04,348,0,0,manual_overrode_auto,,
+LS85_s08b_sc05,135,0,0,manual_overrode_auto,,
+LS85_s08b_sc06,357,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS85_s08b_sc07,127,0,0,manual,,
+LS85_s08b_sc08,130,0,0,manual,,
+LS85_s08b_sc09,145,0,0,manual_overrode_auto,,
+LS85_s09b_sc00,0,0,1,,manual,"no resolvable nuclear detail (focus 0.051, threshold 0.070)"
+LS85_s09b_sc01,340,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS85_s09b_sc02,148,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS85_s09b_sc03,337,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS85_s09b_sc04,0,0,1,,manual,no tissue piece larger than 0.74 mm2 (threshold 2.5)
+LS85_s09b_sc05,347,0,0,manual_overrode_auto,,
+LS85_s09b_sc06,333,0,0,manual_overrode_auto,,
+LS85_s09b_sc07,122,0,0,manual_overrode_auto,,
+LS85_s09b_sc08,358,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS85_s09b_sc09,1,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS85_s09b_sc10,347,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS85_s09b_sc11,0,0,1,,manual,no tissue piece larger than 0.08 mm2 (threshold 2.5)
+LS85_s10b_sc00,57,0,0,manual_overrode_auto,,
+LS85_s10b_sc01,42,0,0,manual_overrode_auto,,
+LS85_s10b_sc02,53,0,0,manual_overrode_auto,,
+LS85_s10b_sc03,3,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS85_s10b_sc04,75,0,0,manual,,
+LS85_s10b_sc05,62,0,0,manual_overrode_auto,,
+LS85_s10b_sc06,79,0,0,manual_overrode_auto,,
+LS85_s10b_sc07,254,0,0,manual_overrode_auto,,
+LS85_s10b_sc08,0,0,1,,manual,"no resolvable nuclear detail (focus 0.061, threshold 0.070)"
+LS85_s10b_sc09,351,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS87_s01b_sc00,27,0,0,auto_symmetry,,
+LS87_s01b_sc01,1,0,0,auto_symmetry,,
+LS87_s01b_sc02,20,0,0,manual_overrode_auto,,
+LS87_s01b_sc03,0,0,1,,auto,no tissue piece larger than 1.06 mm2 (threshold 2.5)
+LS87_s01b_sc04,3,0,0,auto_symmetry,,
+LS87_s01b_sc06,0,0,1,,manual,no tissue piece larger than 0.35 mm2 (threshold 2.5)
+LS87_s01b_sc07,0,0,1,,manual,no tissue piece larger than 0.15 mm2 (threshold 2.5)
+LS87_s01b_sc08,0,0,1,,auto,"no resolvable nuclear detail (focus 0.058, threshold 0.070)"
+LS87_s01b_sc09,0,0,1,,auto,no tissue piece larger than 0.31 mm2 (threshold 2.5)
+LS87_s01b_sc10,-5,0,0,auto_symmetry,,
+LS87_s01b_sc11,-13,0,0,auto_symmetry,,
+LS87_s01b_sc12,0,0,1,,manual,no tissue piece larger than 0.16 mm2 (threshold 2.5)
+LS87_s01b_sc13,0,0,1,,manual,no tissue piece larger than 1.31 mm2 (threshold 2.5)
+LS87_s01b_sc14,17,0,0,auto_symmetry,,
+LS87_s01b_sc15,-5,0,0,auto_symmetry,,
+LS87_s01b_sc16,0,0,1,,manual,no tissue piece larger than 0.20 mm2 (threshold 2.5)
+LS87_s01b_sc17,30,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS87_s01b_sc18,0,0,1,,manual,no tissue piece larger than 0.84 mm2 (threshold 2.5)
+LS87_s01b_sc19,0,0,1,,manual,no tissue piece larger than 0.23 mm2 (threshold 2.5)
+LS87_s02b_sc00,0,0,1,,manual,no tissue piece larger than 0.66 mm2 (threshold 2.5)
+LS87_s02b_sc01,0,0,1,,manual,no tissue piece larger than 0.94 mm2 (threshold 2.5)
+LS87_s02b_sc02,4,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS87_s02b_sc03,355,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS87_s02b_sc04,354,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS87_s02b_sc05,330,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS87_s02b_sc06,12,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS87_s02b_sc07,16,0,0,manual_overrode_auto,,
+LS87_s02b_sc08,172,0,0,manual_overrode_auto,,
+LS87_s02b_sc09,-6,0,0,auto_symmetry,,
+LS87_s02b_sc10,0,0,1,,manual,no tissue piece larger than 0.31 mm2 (threshold 2.5)
+LS87_s02b_sc11,0,0,1,,manual,no tissue piece larger than 0.30 mm2 (threshold 2.5)
+LS87_s02b_sc12,164,0,0,manual_overrode_auto,,
+LS87_s03b_sc00,1,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS87_s03b_sc01,224,0,0,manual_overrode_auto,,
+LS87_s03b_sc02,1,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS87_s03b_sc03,198,0,0,manual_overrode_auto,,
+LS87_s03b_sc04,0,0,1,,manual,"no resolvable nuclear detail (focus 0.056, threshold 0.070)"
+LS87_s03b_sc05,0,0,1,,manual,no tissue piece larger than 0.26 mm2 (threshold 2.5)
+LS87_s03b_sc06,0,0,1,,manual,no tissue piece larger than 0.82 mm2 (threshold 2.5)
+LS87_s03b_sc07,177,0,0,manual_overrode_auto,,
+LS87_s03b_sc08,8,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS87_s03b_sc09,0,0,1,,manual,"no resolvable nuclear detail (focus 0.057, threshold 0.070)"
+LS87_s03b_sc10,0,0,1,,manual,no tissue piece larger than 0.11 mm2 (threshold 2.5)
+LS87_s04b_sc00,35,0,0,manual_overrode_auto,,
+LS87_s04b_sc01,128,0,0,manual_overrode_auto,,
+LS87_s04b_sc02,332,0,0,manual_overrode_auto,,
+LS87_s04b_sc03,9,0,0,auto_symmetry,,
+LS87_s04b_sc04,176,0,0,manual_overrode_auto,,
+LS87_s04b_sc05,177,0,0,manual_overrode_auto,,
+LS87_s04b_sc06,184,0,0,manual_overrode_auto,,
+LS87_s04b_sc07,-2,0,0,auto_symmetry,,
+LS87_s04b_sc08,-3,0,0,auto_symmetry,,
+LS87_s04b_sc09,22,0,0,manual_overrode_auto,,
+LS87_s05b_sc00,299,0,0,manual_overrode_auto,,
+LS87_s05b_sc01,-6,0,0,auto_symmetry,,
+LS87_s05b_sc02,-30,0,0,auto_symmetry,,
+LS87_s05b_sc04,182,0,0,manual_overrode_auto,,
+LS87_s05b_sc05,183,0,0,manual_overrode_auto,,
+LS87_s05b_sc06,135,0,0,manual_overrode_auto,,
+LS87_s05b_sc07,150,0,0,manual_overrode_auto,,
+LS87_s05b_sc08,346,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS87_s05b_sc09,21,0,0,auto_symmetry,,
+LS87_s05b_sc10,0,0,1,,manual,"no resolvable nuclear detail (focus 0.042, threshold 0.070)"
+LS87_s06b_sc00,35,0,0,manual_overrode_auto,,
+LS87_s06b_sc01,121,0,0,manual_overrode_auto,,
+LS87_s06b_sc02,177,0,0,manual_overrode_auto,,
+LS87_s06b_sc03,175,0,0,manual_overrode_auto,,
+LS87_s06b_sc04,-1,0,0,auto_symmetry,,
+LS87_s06b_sc05,197,0,0,manual_overrode_auto,,
+LS87_s06b_sc06,204,0,0,manual_overrode_auto,,
+LS87_s06b_sc07,350,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS87_s06b_sc08,7,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS87_s06b_sc09,359,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS87_s06b_sc10,19,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS87_s06b_sc11,352,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS87_s07b_sc00,359,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS87_s07b_sc01,14,0,0,manual_overrode_auto,,
+LS87_s07b_sc02,342,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS87_s07b_sc03,-8,0,0,auto_symmetry,,
+LS87_s07b_sc04,159,0,0,manual_overrode_auto,,
+LS87_s07b_sc05,15,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS87_s07b_sc06,2,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS87_s07b_sc07,194,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS87_s07b_sc08,3,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS87_s07b_sc09,15,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS87_s07b_sc10,30,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS87_s08b_sc00,17,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS87_s08b_sc01,124,0,0,manual_overrode_auto,,
+LS87_s08b_sc02,87,0,0,manual_overrode_auto,,
+LS87_s08b_sc03,14,0,0,manual_overrode_auto,,
+LS87_s08b_sc04,144,0,0,manual_overrode_auto,,
+LS87_s08b_sc05,61,0,0,manual_overrode_auto,,
+LS87_s08b_sc06,83,0,0,manual,,
+LS87_s08b_sc07,73,0,0,manual_overrode_auto,,
+LS87_s08b_sc08,9,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS87_s08b_sc09,348,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS87_s08b_sc10,339,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS87_s08b_sc11,317,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS87_s09b_sc00,255,0,0,manual_overrode_auto,,
+LS87_s09b_sc01,61,0,0,manual_overrode_auto,,
+LS87_s09b_sc02,40,0,0,manual_overrode_auto,,
+LS87_s09b_sc03,60,0,0,manual_overrode_auto,,
+LS87_s09b_sc04,68,0,0,manual_overrode_auto,,
+LS87_s09b_sc05,73,0,0,manual_overrode_auto,,
+LS87_s09b_sc06,358,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS87_s09b_sc07,8,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS87_s09b_sc08,3,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure
+LS87_s09b_sc09,23,0,1,manual_overrode_auto,manual,manually excluded: tissue too damaged to measure

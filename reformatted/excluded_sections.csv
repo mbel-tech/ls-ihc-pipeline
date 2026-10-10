@@ -1,0 +1,594 @@
+scene_uid,decision,reason
+LS105_s01b_sc01,manual,no tissue piece larger than 1.46 mm2 (threshold 2.5)
+LS105_s01b_sc02,manual,manually excluded: tissue too damaged to measure
+LS105_s01b_sc03,manual,no tissue piece larger than 1.57 mm2 (threshold 2.5)
+LS105_s01b_sc04,manual,no tissue piece larger than 0.21 mm2 (threshold 2.5)
+LS105_s01b_sc05,manual,manually excluded: tissue too damaged to measure
+LS105_s01b_sc06,manual,manually excluded: tissue too damaged to measure
+LS105_s01b_sc08,manual,manually excluded: tissue too damaged to measure
+LS105_s01b_sc09,manual,"no resolvable nuclear detail (focus 0.048, threshold 0.070)"
+LS105_s01b_sc11,manual,no tissue piece larger than 0.07 mm2 (threshold 2.5)
+LS105_s01b_sc12,manual,manually excluded: tissue too damaged to measure
+LS105_s01b_sc14,manual,"no resolvable nuclear detail (focus 0.036, threshold 0.070)"
+LS105_s02b_sc00,manual,manually excluded: tissue too damaged to measure
+LS105_s02b_sc01,manual,"no tissue piece larger than 0.10 mm2 (threshold 2.5); no resolvable nuclear detail (focus 0.048, threshold 0.070)"
+LS105_s02b_sc11,manual,no tissue piece larger than 1.78 mm2 (threshold 2.5)
+LS105_s03b_sc01,manual,manually excluded: tissue too damaged to measure
+LS105_s03b_sc02,manual,manually excluded: tissue too damaged to measure
+LS105_s03b_sc08,manual,"no resolvable nuclear detail (focus 0.060, threshold 0.070)"
+LS105_s04b_sc00,manual,"no tissue piece larger than 2.00 mm2 (threshold 2.5); no resolvable nuclear detail (focus 0.062, threshold 0.070)"
+LS105_s04b_sc02,manual,manually excluded: tissue too damaged to measure
+LS105_s04b_sc03,manual,manually excluded: tissue too damaged to measure
+LS105_s04b_sc05,manual,manually excluded: tissue too damaged to measure
+LS105_s04b_sc12,manual,no tissue piece larger than 0.17 mm2 (threshold 2.5)
+LS105_s05b_sc00,manual,manually excluded: tissue too damaged to measure
+LS105_s05b_sc10,manual,manually excluded: tissue too damaged to measure
+LS105_s06b_sc03,manual,manually excluded: tissue too damaged to measure
+LS105_s06b_sc09,manual,manually excluded: tissue too damaged to measure
+LS105_s06b_sc10,manual,manually excluded: tissue too damaged to measure
+LS105_s06b_sc11,manual,manually excluded: tissue too damaged to measure
+LS105_s07b_sc00,manual,manually excluded: tissue too damaged to measure
+LS105_s07b_sc05,manual,manually excluded: tissue too damaged to measure
+LS105_s07b_sc10,manual,manually excluded: tissue too damaged to measure
+LS105_s08b_sc03,manual,manually excluded: tissue too damaged to measure
+LS105_s08b_sc05,manual,manually excluded: tissue too damaged to measure
+LS105_s08b_sc08,manual,manually excluded: tissue too damaged to measure
+LS105_s09b_sc00,manual,manually excluded: tissue too damaged to measure
+LS105_s09b_sc01,manual,manually excluded: tissue too damaged to measure
+LS105_s09b_sc02,manual,manually excluded: tissue too damaged to measure
+LS105_s09b_sc03,manual,manually excluded: tissue too damaged to measure
+LS105_s09b_sc04,manual,manually excluded: tissue too damaged to measure
+LS105_s09b_sc05,manual,manually excluded: tissue too damaged to measure
+LS105_s09b_sc06,manual,manually excluded: tissue too damaged to measure
+LS105_s09b_sc11,manual,manually excluded: tissue too damaged to measure
+LS105_s09b_sc12,manual,manually excluded: tissue too damaged to measure
+LS105_s09b_sc13,manual,"no resolvable nuclear detail (focus 0.060, threshold 0.070)"
+LS105_s10b_sc00,manual,manually excluded: tissue too damaged to measure
+LS105_s10b_sc02,manual,manually excluded: tissue too damaged to measure
+LS120_s01b_sc01,manual,manually excluded: tissue too damaged to measure
+LS120_s01b_sc06,manual,manually excluded: tissue too damaged to measure
+LS120_s01b_sc08,manual,manually excluded: tissue too damaged to measure
+LS120_s01b_sc09,manual,no tissue piece larger than 2.48 mm2 (threshold 2.5)
+LS120_s01b_sc12,manual,manually excluded: tissue too damaged to measure
+LS120_s02b_sc05,manual,no tissue piece larger than 2.13 mm2 (threshold 2.5)
+LS120_s02b_sc10,manual,no tissue piece larger than 1.12 mm2 (threshold 2.5)
+LS120_s03b_sc01,manual,manually excluded: tissue too damaged to measure
+LS120_s03b_sc02,manual,manually excluded: tissue too damaged to measure
+LS120_s03b_sc03,manual,manually excluded: tissue too damaged to measure
+LS120_s03b_sc04,manual,manually excluded: tissue too damaged to measure
+LS120_s03b_sc05,manual,manually excluded: tissue too damaged to measure
+LS120_s03b_sc11,manual,no tissue piece larger than 2.13 mm2 (threshold 2.5)
+LS120_s03b_sc12,manual,manually excluded: tissue too damaged to measure
+LS120_s04b_sc07,manual,manually excluded: tissue too damaged to measure
+LS120_s05b_sc05,manual,manually excluded: tissue too damaged to measure
+LS120_s05b_sc07,manual,manually excluded: tissue too damaged to measure
+LS120_s05b_sc09,manual,manually excluded: tissue too damaged to measure
+LS120_s05b_sc11,manual,manually excluded: tissue too damaged to measure
+LS120_s06b_sc01,manual,manually excluded: tissue too damaged to measure
+LS120_s06b_sc05,manual,manually excluded: tissue too damaged to measure
+LS120_s06b_sc09,manual,manually excluded: tissue too damaged to measure
+LS120_s07b_sc01,manual,no tissue piece larger than 2.10 mm2 (threshold 2.5)
+LS120_s07b_sc02,manual,manually excluded: tissue too damaged to measure
+LS120_s07b_sc03,manual,manually excluded: tissue too damaged to measure
+LS120_s07b_sc04,manual,manually excluded: tissue too damaged to measure
+LS120_s07b_sc05,manual,manually excluded: tissue too damaged to measure
+LS120_s07b_sc06,manual,manually excluded: tissue too damaged to measure
+LS120_s07b_sc07,manual,manually excluded: tissue too damaged to measure
+LS120_s07b_sc09,manual,manually excluded: tissue too damaged to measure
+LS120_s07b_sc10,manual,manually excluded: tissue too damaged to measure
+LS120_s08b_sc00,manual,manually excluded: tissue too damaged to measure
+LS120_s08b_sc03,manual,manually excluded: tissue too damaged to measure
+LS120_s08b_sc04,manual,manually excluded: tissue too damaged to measure
+LS120_s08b_sc05,manual,manually excluded: tissue too damaged to measure
+LS120_s08b_sc06,manual,manually excluded: tissue too damaged to measure
+LS120_s08b_sc07,manual,manually excluded: tissue too damaged to measure
+LS120_s08b_sc08,manual,manually excluded: tissue too damaged to measure
+LS120_s08b_sc09,manual,manually excluded: tissue too damaged to measure
+LS120_s08b_sc10,manual,no tissue piece larger than 1.53 mm2 (threshold 2.5)
+LS120_s09b_sc01,manual,"no resolvable nuclear detail (focus 0.069, threshold 0.070)"
+LS120_s09b_sc06,manual,manually excluded: tissue too damaged to measure
+LS136_s01b_sc00,manual,"no resolvable nuclear detail (focus 0.065, threshold 0.070)"
+LS136_s01b_sc01,manual,manually excluded: tissue too damaged to measure
+LS136_s01b_sc02,manual,manually excluded: tissue too damaged to measure
+LS136_s01b_sc03,manual,manually excluded: tissue too damaged to measure
+LS136_s01b_sc04,manual,manually excluded: tissue too damaged to measure
+LS136_s01b_sc05,manual,manually excluded: tissue too damaged to measure
+LS136_s01b_sc06,manual,manually excluded: tissue too damaged to measure
+LS136_s01b_sc07,manual,manually excluded: tissue too damaged to measure
+LS136_s01b_sc08,manual,manually excluded: tissue too damaged to measure
+LS136_s01b_sc09,manual,no tissue piece larger than 0.71 mm2 (threshold 2.5)
+LS136_s01b_sc11,manual,no tissue piece larger than 0.30 mm2 (threshold 2.5)
+LS136_s01b_sc15,manual,manually excluded: tissue too damaged to measure
+LS136_s01b_sc17,manual,manually excluded: tissue too damaged to measure
+LS136_s01b_sc18,manual,manually excluded: tissue too damaged to measure
+LS136_s02b_sc02,manual,no tissue piece larger than 1.49 mm2 (threshold 2.5)
+LS136_s02b_sc05,manual,manually excluded: tissue too damaged to measure
+LS136_s02b_sc07,manual,manually excluded: tissue too damaged to measure
+LS136_s02b_sc09,manual,manually excluded: tissue too damaged to measure
+LS136_s02b_sc11,manual,manually excluded: tissue too damaged to measure
+LS136_s02b_sc13,manual,manually excluded: tissue too damaged to measure
+LS136_s02b_sc15,manual,manually excluded: tissue too damaged to measure
+LS136_s02b_sc16,manual,"no resolvable nuclear detail (focus 0.037, threshold 0.070)"
+LS136_s03b_sc00,manual,manually excluded: tissue too damaged to measure
+LS136_s03b_sc01,manual,no tissue piece larger than 0.94 mm2 (threshold 2.5)
+LS136_s03b_sc02,manual,manually excluded: tissue too damaged to measure
+LS136_s03b_sc05,manual,manually excluded: tissue too damaged to measure
+LS136_s03b_sc06,manual,no tissue piece larger than 1.87 mm2 (threshold 2.5)
+LS136_s03b_sc07,manual,manually excluded: tissue too damaged to measure
+LS136_s03b_sc08,manual,manually excluded: tissue too damaged to measure
+LS136_s03b_sc09,manual,manually excluded: tissue too damaged to measure
+LS136_s03b_sc10,manual,no tissue piece larger than 0.80 mm2 (threshold 2.5)
+LS136_s03b_sc11,manual,no tissue piece larger than 0.49 mm2 (threshold 2.5)
+LS136_s04b_sc00,manual,manually excluded: tissue too damaged to measure
+LS136_s04b_sc04,manual,manually excluded: tissue too damaged to measure
+LS136_s04b_sc05,manual,manually excluded: tissue too damaged to measure
+LS136_s04b_sc07,manual,"no resolvable nuclear detail (focus 0.069, threshold 0.070)"
+LS136_s04b_sc13,manual,"no tissue piece larger than 0.19 mm2 (threshold 2.5); no resolvable nuclear detail (focus 0.066, threshold 0.070)"
+LS136_s05b_sc06,manual,manually excluded: tissue too damaged to measure
+LS136_s05b_sc07,manual,manually excluded: tissue too damaged to measure
+LS136_s05b_sc08,manual,manually excluded: tissue too damaged to measure
+LS136_s05b_sc10,manual,manually excluded: tissue too damaged to measure
+LS136_s06b_sc01,manual,manually excluded: tissue too damaged to measure
+LS136_s06b_sc02,manual,manually excluded: tissue too damaged to measure
+LS136_s06b_sc03,manual,manually excluded: tissue too damaged to measure
+LS136_s06b_sc04,manual,manually excluded: tissue too damaged to measure
+LS136_s06b_sc05,manual,manually excluded: tissue too damaged to measure
+LS136_s06b_sc06,manual,manually excluded: tissue too damaged to measure
+LS136_s06b_sc07,manual,manually excluded: tissue too damaged to measure
+LS136_s06b_sc08,manual,"no tissue piece larger than 0.80 mm2 (threshold 2.5); no resolvable nuclear detail (focus 0.062, threshold 0.070)"
+LS136_s06b_sc09,manual,manually excluded: tissue too damaged to measure
+LS136_s07b_sc01,manual,manually excluded: tissue too damaged to measure
+LS136_s07b_sc02,manual,manually excluded: tissue too damaged to measure
+LS136_s07b_sc03,manual,manually excluded: tissue too damaged to measure
+LS136_s07b_sc04,manual,no tissue piece larger than 1.35 mm2 (threshold 2.5)
+LS136_s07b_sc05,manual,manually excluded: tissue too damaged to measure
+LS136_s07b_sc06,manual,manually excluded: tissue too damaged to measure
+LS136_s07b_sc07,manual,manually excluded: tissue too damaged to measure
+LS136_s07b_sc08,manual,manually excluded: tissue too damaged to measure
+LS136_s07b_sc09,manual,manually excluded: tissue too damaged to measure
+LS136_s07b_sc10,manual,manually excluded: tissue too damaged to measure
+LS136_s07b_sc11,manual,manually excluded: tissue too damaged to measure
+LS136_s08b_sc00,manual,manually excluded: tissue too damaged to measure
+LS136_s08b_sc01,manual,manually excluded: tissue too damaged to measure
+LS136_s08b_sc02,manual,manually excluded: tissue too damaged to measure
+LS136_s08b_sc03,manual,manually excluded: tissue too damaged to measure
+LS136_s08b_sc04,manual,manually excluded: tissue too damaged to measure
+LS136_s08b_sc05,manual,manually excluded: tissue too damaged to measure
+LS136_s08b_sc06,manual,manually excluded: tissue too damaged to measure
+LS136_s08b_sc07,manual,manually excluded: tissue too damaged to measure
+LS136_s08b_sc08,manual,manually excluded: tissue too damaged to measure
+LS136_s08b_sc11,manual,no tissue piece larger than 0.22 mm2 (threshold 2.5)
+LS138_s01b_sc00,manual,no tissue piece larger than 2.43 mm2 (threshold 2.5)
+LS138_s01b_sc04,manual,manually excluded: tissue too damaged to measure
+LS138_s01b_sc05,manual,no tissue piece larger than 0.19 mm2 (threshold 2.5)
+LS138_s02b_sc00,manual,no tissue piece larger than 2.23 mm2 (threshold 2.5)
+LS138_s02b_sc04,manual,no tissue piece larger than 0.98 mm2 (threshold 2.5)
+LS138_s02b_sc05,manual,no tissue piece larger than 1.43 mm2 (threshold 2.5)
+LS138_s02b_sc09,manual,"no resolvable nuclear detail (focus 0.051, threshold 0.070)"
+LS138_s02b_sc10,manual,no tissue piece larger than 0.30 mm2 (threshold 2.5)
+LS138_s03b_sc00,manual,no tissue piece larger than 1.93 mm2 (threshold 2.5)
+LS138_s03b_sc02,manual,manually excluded: tissue too damaged to measure
+LS138_s03b_sc03,manual,no tissue piece larger than 0.71 mm2 (threshold 2.5)
+LS138_s03b_sc06,manual,manually excluded: tissue too damaged to measure
+LS138_s03b_sc09,manual,manually excluded: tissue too damaged to measure
+LS138_s03b_sc10,manual,manually excluded: tissue too damaged to measure
+LS138_s03b_sc11,manual,manually excluded: tissue too damaged to measure
+LS138_s05b_sc01,manual,manually excluded: tissue too damaged to measure
+LS138_s05b_sc06,manual,"no resolvable nuclear detail (focus 0.068, threshold 0.070)"
+LS138_s05b_sc07,manual,manually excluded: tissue too damaged to measure
+LS138_s05b_sc08,manual,"no resolvable nuclear detail (focus 0.036, threshold 0.070)"
+LS138_s05b_sc09,manual,"no resolvable nuclear detail (focus 0.052, threshold 0.070)"
+LS138_s06b_sc01,manual,manually excluded: tissue too damaged to measure
+LS138_s06b_sc09,manual,manually excluded: tissue too damaged to measure
+LS138_s07b_sc01,manual,manually excluded: tissue too damaged to measure
+LS138_s07b_sc08,manual,manually excluded: tissue too damaged to measure
+LS138_s07b_sc09,manual,manually excluded: tissue too damaged to measure
+LS138_s08b_sc00,manual,manually excluded: tissue too damaged to measure
+LS138_s08b_sc01,manual,manually excluded: tissue too damaged to measure
+LS138_s08b_sc02,manual,"no resolvable nuclear detail (focus 0.061, threshold 0.070)"
+LS138_s08b_sc03,manual,manually excluded: tissue too damaged to measure
+LS138_s08b_sc06,manual,manually excluded: tissue too damaged to measure
+LS138_s08b_sc07,manual,manually excluded: tissue too damaged to measure
+LS138_s08b_sc08,manual,manually excluded: tissue too damaged to measure
+LS138_s08b_sc09,manual,manually excluded: tissue too damaged to measure
+LS138_s08b_sc10,manual,manually excluded: tissue too damaged to measure
+LS138_s08b_sc11,manual,"no resolvable nuclear detail (focus 0.067, threshold 0.070)"
+LS138_s09b_sc00,manual,manually excluded: tissue too damaged to measure
+LS138_s09b_sc01,manual,manually excluded: tissue too damaged to measure
+LS138_s09b_sc02,manual,manually excluded: tissue too damaged to measure
+LS138_s09b_sc03,manual,manually excluded: tissue too damaged to measure
+LS138_s09b_sc04,manual,manually excluded: tissue too damaged to measure
+LS138_s09b_sc05,manual,manually excluded: tissue too damaged to measure
+LS138_s09b_sc06,manual,manually excluded: tissue too damaged to measure
+LS138_s09b_sc07,manual,manually excluded: tissue too damaged to measure
+LS138_s09b_sc08,manual,manually excluded: tissue too damaged to measure
+LS22_s01b_sc03,manual,"no resolvable nuclear detail (focus 0.040, threshold 0.070)"
+LS22_s01b_sc06,manual,manually excluded: tissue too damaged to measure
+LS22_s01b_sc10,manual,"no tissue piece larger than 1.93 mm2 (threshold 2.5); no resolvable nuclear detail (focus 0.067, threshold 0.070)"
+LS22_s01b_sc12,manual,manually excluded: tissue too damaged to measure
+LS22_s02b_sc06,manual,manually excluded: tissue too damaged to measure
+LS22_s03b_sc01,manual,manually excluded: tissue too damaged to measure
+LS22_s03b_sc02,manual,"no tissue piece larger than 1.49 mm2 (threshold 2.5); no resolvable nuclear detail (focus 0.046, threshold 0.070)"
+LS22_s03b_sc03,manual,manually excluded: tissue too damaged to measure
+LS22_s03b_sc04,manual,manually excluded: tissue too damaged to measure
+LS22_s03b_sc05,manual,manually excluded: tissue too damaged to measure
+LS22_s03b_sc09,manual,manually excluded: tissue too damaged to measure
+LS22_s04b_sc04,manual,manually excluded: tissue too damaged to measure
+LS22_s04b_sc07,manual,manually excluded: tissue too damaged to measure
+LS22_s04b_sc08,manual,manually excluded: tissue too damaged to measure
+LS22_s04b_sc09,manual,manually excluded: tissue too damaged to measure
+LS22_s04b_sc10,manual,"no resolvable nuclear detail (focus 0.059, threshold 0.070)"
+LS22_s05b_sc03,manual,no tissue piece larger than 0.80 mm2 (threshold 2.5)
+LS22_s05b_sc05,manual,manually excluded: tissue too damaged to measure
+LS22_s05b_sc06,manual,"no resolvable nuclear detail (focus 0.066, threshold 0.070)"
+LS22_s05b_sc07,manual,"no resolvable nuclear detail (focus 0.061, threshold 0.070)"
+LS22_s05b_sc08,manual,manually excluded: tissue too damaged to measure
+LS22_s05b_sc09,manual,"no resolvable nuclear detail (focus 0.052, threshold 0.070)"
+LS22_s06b_sc09,manual,manually excluded: tissue too damaged to measure
+LS22_s07b_sc01,manual,manually excluded: tissue too damaged to measure
+LS22_s07b_sc03,manual,manually excluded: tissue too damaged to measure
+LS22_s07b_sc04,manual,manually excluded: tissue too damaged to measure
+LS22_s07b_sc06,manual,manually excluded: tissue too damaged to measure
+LS22_s07b_sc07,manual,manually excluded: tissue too damaged to measure
+LS22_s07b_sc08,manual,"no resolvable nuclear detail (focus 0.030, threshold 0.070)"
+LS22_s07b_sc09,manual,"no resolvable nuclear detail (focus 0.036, threshold 0.070)"
+LS22_s07b_sc10,manual,manually excluded: tissue too damaged to measure
+LS22_s07b_sc11,manual,"no resolvable nuclear detail (focus 0.054, threshold 0.070)"
+LS22_s08b_sc01,manual,manually excluded: tissue too damaged to measure
+LS22_s08b_sc09,manual,manually excluded: tissue too damaged to measure
+LS22_s08b_sc10,manual,manually excluded: tissue too damaged to measure
+LS22_s08b_sc11,manual,manually excluded: tissue too damaged to measure
+LS22_s09b_sc00,manual,manually excluded: tissue too damaged to measure
+LS22_s09b_sc07,manual,manually excluded: tissue too damaged to measure
+LS22_s09b_sc08,manual,manually excluded: tissue too damaged to measure
+LS22_s09b_sc09,manual,manually excluded: tissue too damaged to measure
+LS22_s09b_sc10,manual,manually excluded: tissue too damaged to measure
+LS22_s09b_sc11,manual,"no tissue piece larger than 0.10 mm2 (threshold 2.5); no resolvable nuclear detail (focus 0.048, threshold 0.070)"
+LS37_s01b_sc00,manual,manually excluded: tissue too damaged to measure
+LS37_s02b_sc09,manual,manually excluded: tissue too damaged to measure
+LS37_s02b_sc11,manual,manually excluded: tissue too damaged to measure
+LS37_s03b_sc00,manual,manually excluded: tissue too damaged to measure
+LS37_s03b_sc09,manual,manually excluded: tissue too damaged to measure
+LS37_s03b_sc10,manual,manually excluded: tissue too damaged to measure
+LS37_s03b_sc11,manual,no tissue piece larger than 0.54 mm2 (threshold 2.5)
+LS37_s04b_sc01,manual,manually excluded: tissue too damaged to measure
+LS37_s04b_sc07,manual,"no resolvable nuclear detail (focus 0.033, threshold 0.070)"
+LS37_s05b_sc00,manual,"no resolvable nuclear detail (focus 0.040, threshold 0.070)"
+LS37_s05b_sc03,manual,manually excluded: tissue too damaged to measure
+LS37_s05b_sc10,manual,"no resolvable nuclear detail (focus 0.048, threshold 0.070)"
+LS37_s05b_sc11,manual,manually excluded: tissue too damaged to measure
+LS37_s06b_sc09,manual,manually excluded: tissue too damaged to measure
+LS37_s06b_sc10,manual,"no resolvable nuclear detail (focus 0.028, threshold 0.070)"
+LS37_s06b_sc11,manual,"no resolvable nuclear detail (focus 0.042, threshold 0.070)"
+LS37_s07b_sc00,manual,manually excluded: tissue too damaged to measure
+LS37_s07b_sc07,manual,manually excluded: tissue too damaged to measure
+LS37_s07b_sc08,manual,manually excluded: tissue too damaged to measure
+LS37_s08b_sc01,manual,manually excluded: tissue too damaged to measure
+LS37_s08b_sc04,manual,manually excluded: tissue too damaged to measure
+LS37_s08b_sc06,manual,"no resolvable nuclear detail (focus 0.060, threshold 0.070)"
+LS37_s08b_sc09,manual,manually excluded: tissue too damaged to measure
+LS37_s08b_sc10,manual,no tissue piece larger than 1.43 mm2 (threshold 2.5)
+LS37_s08b_sc11,manual,"no resolvable nuclear detail (focus 0.049, threshold 0.070)"
+LS37_s09b_sc02,manual,manually excluded: tissue too damaged to measure
+LS37_s09b_sc03,manual,manually excluded: tissue too damaged to measure
+LS37_s09b_sc05,manual,manually excluded: tissue too damaged to measure
+LS37_s09b_sc07,manual,manually excluded: tissue too damaged to measure
+LS37_s09b_sc09,manual,manually excluded: tissue too damaged to measure
+LS37_s10b_sc08,manual,manually excluded: tissue too damaged to measure
+LS37_s10b_sc09,manual,manually excluded: tissue too damaged to measure
+LS37_s10b_sc10,manual,manually excluded: tissue too damaged to measure
+LS37_s10b_sc11,manual,manually excluded: tissue too damaged to measure
+LS45_s02b_sc03,manual,no tissue piece larger than 0.20 mm2 (threshold 2.5)
+LS45_s02b_sc04,manual,manually excluded: tissue too damaged to measure
+LS45_s02b_sc07,manual,no tissue piece larger than 0.30 mm2 (threshold 2.5)
+LS45_s02b_sc10,manual,no tissue piece larger than 0.46 mm2 (threshold 2.5)
+LS45_s03b_sc00,manual,"no resolvable nuclear detail (focus 0.060, threshold 0.070)"
+LS45_s03b_sc11,manual,"no resolvable nuclear detail (focus 0.052, threshold 0.070)"
+LS45_s04b_sc01,manual,manually excluded: tissue too damaged to measure
+LS45_s04b_sc02,manual,manually excluded: tissue too damaged to measure
+LS45_s04b_sc07,manual,manually excluded: tissue too damaged to measure
+LS45_s04b_sc10,manual,manually excluded: tissue too damaged to measure
+LS45_s04b_sc11,manual,no tissue piece larger than 2.03 mm2 (threshold 2.5)
+LS45_s04b_sc12,manual,no tissue piece larger than 1.15 mm2 (threshold 2.5)
+LS45_s04b_sc13,manual,manually excluded: tissue too damaged to measure
+LS45_s05b_sc04,manual,manually excluded: tissue too damaged to measure
+LS45_s05b_sc06,manual,manually excluded: tissue too damaged to measure
+LS45_s05b_sc07,manual,manually excluded: tissue too damaged to measure
+LS45_s05b_sc08,manual,manually excluded: tissue too damaged to measure
+LS45_s05b_sc09,manual,manually excluded: tissue too damaged to measure
+LS45_s06b_sc00,manual,manually excluded: tissue too damaged to measure
+LS45_s06b_sc07,manual,manually excluded: tissue too damaged to measure
+LS45_s06b_sc08,manual,manually excluded: tissue too damaged to measure
+LS45_s07b_sc02,manual,manually excluded: tissue too damaged to measure
+LS45_s07b_sc03,manual,manually excluded: tissue too damaged to measure
+LS45_s07b_sc04,manual,manually excluded: tissue too damaged to measure
+LS45_s07b_sc05,manual,manually excluded: tissue too damaged to measure
+LS45_s07b_sc06,manual,"no resolvable nuclear detail (focus 0.067, threshold 0.070)"
+LS45_s07b_sc07,manual,manually excluded: tissue too damaged to measure
+LS45_s07b_sc08,manual,manually excluded: tissue too damaged to measure
+LS45_s07b_sc09,manual,"no resolvable nuclear detail (focus 0.034, threshold 0.070)"
+LS45_s07b_sc10,manual,manually excluded: tissue too damaged to measure
+LS45_s08b_sc00,manual,manually excluded: tissue too damaged to measure
+LS45_s08b_sc07,manual,manually excluded: tissue too damaged to measure
+LS45_s08b_sc09,manual,manually excluded: tissue too damaged to measure
+LS45_s08b_sc10,manual,manually excluded: tissue too damaged to measure
+LS45_s08b_sc11,manual,manually excluded: tissue too damaged to measure
+LS45_s08c_sc00,manual,manually excluded: tissue too damaged to measure
+LS45_s08c_sc01,manual,manually excluded: tissue too damaged to measure
+LS45_s08c_sc02,manual,manually excluded: tissue too damaged to measure
+LS45_s08c_sc04,manual,manually excluded: tissue too damaged to measure
+LS45_s08c_sc06,manual,manually excluded: tissue too damaged to measure
+LS45_s08c_sc07,manual,manually excluded: tissue too damaged to measure
+LS45_s08c_sc10,manual,manually excluded: tissue too damaged to measure
+LS45_s08c_sc11,manual,manually excluded: tissue too damaged to measure
+LS45_s09b_sc00,manual,no tissue piece larger than 1.73 mm2 (threshold 2.5)
+LS45_s09b_sc07,manual,manually excluded: tissue too damaged to measure
+LS45_s09b_sc09,manual,manually excluded: tissue too damaged to measure
+LS45_s09c_sc02,manual,manually excluded: tissue too damaged to measure
+LS45_s09c_sc06,manual,manually excluded: tissue too damaged to measure
+LS45_s09c_sc07,manual,manually excluded: tissue too damaged to measure
+LS45_s09c_sc08,manual,manually excluded: tissue too damaged to measure
+LS45_s09c_sc09,manual,no tissue piece larger than 1.53 mm2 (threshold 2.5)
+LS45_s10b_sc01,manual,manually excluded: tissue too damaged to measure
+LS45_s10b_sc04,manual,manually excluded: tissue too damaged to measure
+LS45_s10b_sc09,manual,manually excluded: tissue too damaged to measure
+LS53_s01b_sc00,manual,no tissue piece larger than 1.00 mm2 (threshold 2.5)
+LS53_s01b_sc01,manual,no tissue piece larger than 1.04 mm2 (threshold 2.5)
+LS53_s01b_sc02,manual,"no resolvable nuclear detail (focus 0.059, threshold 0.070)"
+LS53_s01b_sc05,manual,manually excluded: tissue too damaged to measure
+LS53_s01b_sc12,manual,manually excluded: tissue too damaged to measure
+LS53_s01b_sc13,manual,no tissue piece larger than 2.23 mm2 (threshold 2.5)
+LS53_s02c_sc02,manual,manually excluded: tissue too damaged to measure
+LS53_s02c_sc05,manual,no tissue piece larger than 1.27 mm2 (threshold 2.5)
+LS53_s02c_sc06,manual,manually excluded: tissue too damaged to measure
+LS53_s02c_sc07,manual,no tissue piece larger than 0.54 mm2 (threshold 2.5)
+LS53_s02c_sc08,manual,no tissue piece larger than 1.15 mm2 (threshold 2.5)
+LS53_s02c_sc09,manual,no tissue piece larger than 0.68 mm2 (threshold 2.5)
+LS53_s02c_sc10,manual,no tissue piece larger than 0.92 mm2 (threshold 2.5)
+LS53_s02c_sc11,manual,manually excluded: tissue too damaged to measure
+LS53_s03b_sc00,manual,no tissue piece larger than 2.39 mm2 (threshold 2.5)
+LS53_s03b_sc02,manual,no tissue piece larger than 1.85 mm2 (threshold 2.5)
+LS53_s03b_sc06,manual,manually excluded: tissue too damaged to measure
+LS53_s03b_sc08,manual,no tissue piece larger than 0.51 mm2 (threshold 2.5)
+LS53_s03b_sc09,manual,manually excluded: tissue too damaged to measure
+LS53_s04b_sc01,manual,"no resolvable nuclear detail (focus 0.057, threshold 0.070)"
+LS53_s04b_sc04,manual,manually excluded: tissue too damaged to measure
+LS53_s04b_sc10,manual,"no resolvable nuclear detail (focus 0.062, threshold 0.070)"
+LS53_s06b_sc09,manual,"no resolvable nuclear detail (focus 0.058, threshold 0.070)"
+LS53_s07b_sc05,manual,no tissue piece larger than 0.16 mm2 (threshold 2.5)
+LS53_s07b_sc08,manual,manually excluded: tissue too damaged to measure
+LS53_s08b_sc00,manual,manually excluded: tissue too damaged to measure
+LS53_s08b_sc03,manual,manually excluded: tissue too damaged to measure
+LS53_s08b_sc04,manual,manually excluded: tissue too damaged to measure
+LS53_s08b_sc05,manual,manually excluded: tissue too damaged to measure
+LS53_s08b_sc06,manual,no tissue piece larger than 0.18 mm2 (threshold 2.5)
+LS53_s08b_sc07,manual,manually excluded: tissue too damaged to measure
+LS53_s08b_sc08,manual,"no resolvable nuclear detail (focus 0.055, threshold 0.070)"
+LS53_s08b_sc09,manual,manually excluded: tissue too damaged to measure
+LS53_s09b_sc01,manual,manually excluded: tissue too damaged to measure
+LS53_s09b_sc03,manual,manually excluded: tissue too damaged to measure
+LS53_s09b_sc07,manual,manually excluded: tissue too damaged to measure
+LS53_s09b_sc08,manual,manually excluded: tissue too damaged to measure
+LS53_s10b_sc02,manual,manually excluded: tissue too damaged to measure
+LS53_s10b_sc03,manual,manually excluded: tissue too damaged to measure
+LS53_s10b_sc04,manual,manually excluded: tissue too damaged to measure
+LS53_s10b_sc05,manual,manually excluded: tissue too damaged to measure
+LS53_s10b_sc11,manual,manually excluded: tissue too damaged to measure
+LS61_s01b_sc00,manual,no tissue piece larger than 1.40 mm2 (threshold 2.5)
+LS61_s01b_sc01,manual,no tissue piece larger than 2.11 mm2 (threshold 2.5)
+LS61_s01b_sc02,manual,manually excluded: tissue too damaged to measure
+LS61_s01b_sc04,manual,no tissue piece larger than 0.48 mm2 (threshold 2.5)
+LS61_s01b_sc05,manual,no tissue piece larger than 0.93 mm2 (threshold 2.5)
+LS61_s01b_sc06,manual,manually excluded: tissue too damaged to measure
+LS61_s01b_sc08,manual,manually excluded: tissue too damaged to measure
+LS61_s01b_sc10,manual,manually excluded: tissue too damaged to measure
+LS61_s01b_sc12,manual,no tissue piece larger than 1.19 mm2 (threshold 2.5)
+LS61_s01b_sc13,manual,no tissue piece larger than 1.28 mm2 (threshold 2.5)
+LS61_s01b_sc14,manual,no tissue piece larger than 1.52 mm2 (threshold 2.5)
+LS61_s02b_sc00,manual,manually excluded: tissue too damaged to measure
+LS61_s02b_sc02,manual,no tissue piece larger than 2.16 mm2 (threshold 2.5)
+LS61_s02b_sc04,manual,manually excluded: tissue too damaged to measure
+LS61_s02b_sc05,manual,no tissue piece larger than 2.37 mm2 (threshold 2.5)
+LS61_s02b_sc06,manual,manually excluded: tissue too damaged to measure
+LS61_s02b_sc09,manual,manually excluded: tissue too damaged to measure
+LS61_s02b_sc10,manual,manually excluded: tissue too damaged to measure
+LS61_s02b_sc11,manual,manually excluded: tissue too damaged to measure
+LS61_s02b_sc12,manual,manually excluded: tissue too damaged to measure
+LS61_s02b_sc13,manual,manually excluded: tissue too damaged to measure
+LS61_s02b_sc14,manual,no tissue piece larger than 0.98 mm2 (threshold 2.5)
+LS61_s02b_sc15,manual,manually excluded: tissue too damaged to measure
+LS61_s02c_sc00,manual,manually excluded: tissue too damaged to measure
+LS61_s02c_sc01,manual,manually excluded: tissue too damaged to measure
+LS61_s02c_sc03,manual,manually excluded: tissue too damaged to measure
+LS61_s02c_sc04,manual,no tissue piece larger than 2.28 mm2 (threshold 2.5)
+LS61_s02c_sc07,manual,no tissue piece larger than 2.41 mm2 (threshold 2.5)
+LS61_s02c_sc08,manual,no tissue piece larger than 2.39 mm2 (threshold 2.5)
+LS61_s02c_sc09,manual,no tissue piece larger than 1.54 mm2 (threshold 2.5)
+LS61_s02c_sc10,manual,manually excluded: tissue too damaged to measure
+LS61_s02c_sc13,manual,manually excluded: tissue too damaged to measure
+LS61_s03b_sc02,manual,manually excluded: tissue too damaged to measure
+LS61_s03b_sc04,manual,manually excluded: tissue too damaged to measure
+LS61_s03b_sc14,manual,manually excluded: tissue too damaged to measure
+LS61_s04b_sc00,manual,manually excluded: tissue too damaged to measure
+LS61_s04b_sc01,manual,manually excluded: tissue too damaged to measure
+LS61_s04b_sc03,manual,manually excluded: tissue too damaged to measure
+LS61_s04b_sc06,manual,manually excluded: tissue too damaged to measure
+LS61_s04b_sc10,manual,manually excluded: tissue too damaged to measure
+LS61_s04c_sc00,manual,manually excluded: tissue too damaged to measure
+LS61_s05b_sc04,manual,manually excluded: tissue too damaged to measure
+LS61_s05b_sc05,manual,manually excluded: tissue too damaged to measure
+LS61_s05b_sc06,manual,manually excluded: tissue too damaged to measure
+LS61_s05b_sc09,manual,manually excluded: tissue too damaged to measure
+LS61_s05b_sc10,manual,"no resolvable nuclear detail (focus 0.061, threshold 0.070)"
+LS61_s05b_sc11,manual,manually excluded: tissue too damaged to measure
+LS61_s06b_sc04,manual,manually excluded: tissue too damaged to measure
+LS61_s06b_sc05,manual,manually excluded: tissue too damaged to measure
+LS61_s06b_sc07,manual,manually excluded: tissue too damaged to measure
+LS61_s06b_sc09,manual,manually excluded: tissue too damaged to measure
+LS61_s06b_sc10,manual,manually excluded: tissue too damaged to measure
+LS61_s06b_sc11,manual,manually excluded: tissue too damaged to measure
+LS61_s07b_sc00,manual,manually excluded: tissue too damaged to measure
+LS61_s07b_sc01,manual,manually excluded: tissue too damaged to measure
+LS61_s07b_sc02,manual,manually excluded: tissue too damaged to measure
+LS61_s07b_sc03,manual,manually excluded: tissue too damaged to measure
+LS61_s07b_sc04,manual,manually excluded: tissue too damaged to measure
+LS61_s07b_sc08,manual,manually excluded: tissue too damaged to measure
+LS61_s07b_sc09,manual,manually excluded: tissue too damaged to measure
+LS61_s07b_sc10,manual,no tissue piece larger than 0.79 mm2 (threshold 2.5)
+LS61_s07b_sc11,manual,no tissue piece larger than 0.90 mm2 (threshold 2.5)
+LS61_s08b_sc02,manual,manually excluded: tissue too damaged to measure
+LS61_s08b_sc05,manual,manually excluded: tissue too damaged to measure
+LS61_s08b_sc09,manual,manually excluded: tissue too damaged to measure
+LS61_s08b_sc10,manual,manually excluded: tissue too damaged to measure
+LS61_s08b_sc11,manual,manually excluded: tissue too damaged to measure
+LS61_s08b_sc12,manual,manually excluded: tissue too damaged to measure
+LS61_s09b_sc00,manual,manually excluded: tissue too damaged to measure
+LS61_s09b_sc01,manual,manually excluded: tissue too damaged to measure
+LS69_s01b_sc08,manual,"no tissue piece larger than 2.41 mm2 (threshold 2.5); no resolvable nuclear detail (focus 0.052, threshold 0.070)"
+LS69_s01b_sc10,manual,manually excluded: tissue too damaged to measure
+LS69_s01b_sc15,manual,no tissue piece larger than 0.46 mm2 (threshold 2.5)
+LS69_s01b_sc16,manual,no tissue piece larger than 1.61 mm2 (threshold 2.5)
+LS69_s02b_sc02,manual,manually excluded: tissue too damaged to measure
+LS69_s02b_sc04,manual,manually excluded: tissue too damaged to measure
+LS69_s02b_sc06,manual,no tissue piece larger than 1.81 mm2 (threshold 2.5)
+LS69_s02b_sc09,manual,manually excluded: tissue too damaged to measure
+LS69_s02b_sc12,manual,manually excluded: tissue too damaged to measure
+LS69_s02b_sc13,manual,manually excluded: tissue too damaged to measure
+LS69_s02b_sc14,manual,manually excluded: tissue too damaged to measure
+LS69_s02b_sc15,manual,manually excluded: tissue too damaged to measure
+LS69_s03b_sc00,manual,manually excluded: tissue too damaged to measure
+LS69_s03b_sc01,manual,manually excluded: tissue too damaged to measure
+LS69_s03b_sc02,manual,manually excluded: tissue too damaged to measure
+LS69_s03b_sc03,manual,manually excluded: tissue too damaged to measure
+LS69_s03b_sc05,manual,manually excluded: tissue too damaged to measure
+LS69_s03b_sc09,manual,manually excluded: tissue too damaged to measure
+LS69_s03b_sc10,manual,manually excluded: tissue too damaged to measure
+LS69_s04b_sc00,manual,manually excluded: tissue too damaged to measure
+LS69_s04b_sc01,manual,manually excluded: tissue too damaged to measure
+LS69_s04b_sc04,manual,manually excluded: tissue too damaged to measure
+LS69_s05b_sc00,manual,manually excluded: tissue too damaged to measure
+LS69_s05b_sc04,manual,manually excluded: tissue too damaged to measure
+LS69_s05b_sc08,manual,manually excluded: tissue too damaged to measure
+LS69_s05b_sc09,manual,manually excluded: tissue too damaged to measure
+LS69_s06b_sc06,manual,manually excluded: tissue too damaged to measure
+LS69_s06b_sc07,manual,manually excluded: tissue too damaged to measure
+LS69_s06b_sc08,manual,manually excluded: tissue too damaged to measure
+LS69_s06b_sc09,manual,manually excluded: tissue too damaged to measure
+LS69_s06b_sc10,manual,no tissue piece larger than 0.13 mm2 (threshold 2.5)
+LS69_s07b_sc00,manual,manually excluded: tissue too damaged to measure
+LS69_s07b_sc04,manual,manually excluded: tissue too damaged to measure
+LS69_s07b_sc10,manual,"no resolvable nuclear detail (focus 0.052, threshold 0.070)"
+LS69_s07b_sc11,manual,manually excluded: tissue too damaged to measure
+LS69_s08b_sc01,manual,manually excluded: tissue too damaged to measure
+LS69_s08b_sc02,manual,manually excluded: tissue too damaged to measure
+LS69_s08b_sc06,manual,manually excluded: tissue too damaged to measure
+LS69_s08b_sc09,manual,manually excluded: tissue too damaged to measure
+LS69_s08b_sc11,manual,manually excluded: tissue too damaged to measure
+LS69_s08b_sc12,manual,manually excluded: tissue too damaged to measure
+LS69_s08b_sc13,manual,manually excluded: tissue too damaged to measure
+LS69_s09b_sc03,manual,no tissue piece larger than 2.39 mm2 (threshold 2.5)
+LS69_s09b_sc04,manual,manually excluded: tissue too damaged to measure
+LS69_s09b_sc05,manual,manually excluded: tissue too damaged to measure
+LS69_s09b_sc08,manual,manually excluded: tissue too damaged to measure
+LS85_s01b_sc01,manual,no tissue piece larger than 0.36 mm2 (threshold 2.5)
+LS85_s01b_sc02,manual,manually excluded: tissue too damaged to measure
+LS85_s01b_sc03,manual,no tissue piece larger than 1.91 mm2 (threshold 2.5)
+LS85_s01b_sc05,manual,no tissue piece larger than 1.88 mm2 (threshold 2.5)
+LS85_s02b_sc00,manual,"no resolvable nuclear detail (focus 0.045, threshold 0.070)"
+LS85_s02b_sc01,manual,"no resolvable nuclear detail (focus 0.044, threshold 0.070)"
+LS85_s02b_sc02,manual,manually excluded: tissue too damaged to measure
+LS85_s02b_sc03,manual,no tissue piece larger than 0.54 mm2 (threshold 2.5)
+LS85_s02b_sc04,manual,manually excluded: tissue too damaged to measure
+LS85_s02b_sc07,manual,manually excluded: tissue too damaged to measure
+LS85_s02b_sc08,manual,"no resolvable nuclear detail (focus 0.061, threshold 0.070)"
+LS85_s03b_sc00,manual,manually excluded: tissue too damaged to measure
+LS85_s03b_sc02,manual,manually excluded: tissue too damaged to measure
+LS85_s03b_sc04,manual,manually excluded: tissue too damaged to measure
+LS85_s03b_sc08,manual,"no resolvable nuclear detail (focus 0.063, threshold 0.070)"
+LS85_s03b_sc10,manual,manually excluded: tissue too damaged to measure
+LS85_s03b_sc11,manual,manually excluded: tissue too damaged to measure
+LS85_s04b_sc00,manual,manually excluded: tissue too damaged to measure
+LS85_s04b_sc01,manual,manually excluded: tissue too damaged to measure
+LS85_s04b_sc05,manual,manually excluded: tissue too damaged to measure
+LS85_s04b_sc09,manual,manually excluded: tissue too damaged to measure
+LS85_s05b_sc08,manual,manually excluded: tissue too damaged to measure
+LS85_s05b_sc09,manual,manually excluded: tissue too damaged to measure
+LS85_s06b_sc06,manual,manually excluded: tissue too damaged to measure
+LS85_s07c_sc09,manual,manually excluded: tissue too damaged to measure
+LS85_s08b_sc00,manual,"no resolvable nuclear detail (focus 0.041, threshold 0.070)"
+LS85_s08b_sc02,manual,manually excluded: tissue too damaged to measure
+LS85_s08b_sc06,manual,manually excluded: tissue too damaged to measure
+LS85_s09b_sc00,manual,"no resolvable nuclear detail (focus 0.051, threshold 0.070)"
+LS85_s09b_sc01,manual,manually excluded: tissue too damaged to measure
+LS85_s09b_sc02,manual,manually excluded: tissue too damaged to measure
+LS85_s09b_sc03,manual,manually excluded: tissue too damaged to measure
+LS85_s09b_sc04,manual,no tissue piece larger than 0.74 mm2 (threshold 2.5)
+LS85_s09b_sc08,manual,manually excluded: tissue too damaged to measure
+LS85_s09b_sc09,manual,manually excluded: tissue too damaged to measure
+LS85_s09b_sc10,manual,manually excluded: tissue too damaged to measure
+LS85_s09b_sc11,manual,no tissue piece larger than 0.08 mm2 (threshold 2.5)
+LS85_s10b_sc02,manual,manually excluded: tissue too damaged to measure
+LS85_s10b_sc03,manual,manually excluded: tissue too damaged to measure
+LS85_s10b_sc04,manual,manually excluded: tissue too damaged to measure
+LS85_s10b_sc05,manual,manually excluded: tissue too damaged to measure
+LS85_s10b_sc08,manual,"no resolvable nuclear detail (focus 0.061, threshold 0.070)"
+LS85_s10b_sc09,manual,manually excluded: tissue too damaged to measure
+LS87_s01b_sc03,manual,no tissue piece larger than 1.06 mm2 (threshold 2.5)
+LS87_s01b_sc06,manual,no tissue piece larger than 0.35 mm2 (threshold 2.5)
+LS87_s01b_sc07,manual,no tissue piece larger than 0.15 mm2 (threshold 2.5)
+LS87_s01b_sc08,manual,"no resolvable nuclear detail (focus 0.058, threshold 0.070)"
+LS87_s01b_sc09,manual,no tissue piece larger than 0.31 mm2 (threshold 2.5)
+LS87_s01b_sc12,manual,no tissue piece larger than 0.16 mm2 (threshold 2.5)
+LS87_s01b_sc13,manual,no tissue piece larger than 1.31 mm2 (threshold 2.5)
+LS87_s01b_sc16,manual,no tissue piece larger than 0.20 mm2 (threshold 2.5)
+LS87_s01b_sc17,manual,manually excluded: tissue too damaged to measure
+LS87_s01b_sc18,manual,no tissue piece larger than 0.84 mm2 (threshold 2.5)
+LS87_s01b_sc19,manual,no tissue piece larger than 0.23 mm2 (threshold 2.5)
+LS87_s02b_sc00,manual,no tissue piece larger than 0.66 mm2 (threshold 2.5)
+LS87_s02b_sc01,manual,no tissue piece larger than 0.94 mm2 (threshold 2.5)
+LS87_s02b_sc02,manual,manually excluded: tissue too damaged to measure
+LS87_s02b_sc03,manual,manually excluded: tissue too damaged to measure
+LS87_s02b_sc04,manual,manually excluded: tissue too damaged to measure
+LS87_s02b_sc05,manual,manually excluded: tissue too damaged to measure
+LS87_s02b_sc06,manual,manually excluded: tissue too damaged to measure
+LS87_s02b_sc10,manual,no tissue piece larger than 0.31 mm2 (threshold 2.5)
+LS87_s02b_sc11,manual,no tissue piece larger than 0.30 mm2 (threshold 2.5)
+LS87_s02b_sc12,manual,manually excluded: tissue too damaged to measure
+LS87_s03b_sc00,manual,manually excluded: tissue too damaged to measure
+LS87_s03b_sc02,manual,manually excluded: tissue too damaged to measure
+LS87_s03b_sc03,manual,manually excluded: tissue too damaged to measure
+LS87_s03b_sc04,manual,"no resolvable nuclear detail (focus 0.056, threshold 0.070)"
+LS87_s03b_sc05,manual,no tissue piece larger than 0.26 mm2 (threshold 2.5)
+LS87_s03b_sc06,manual,no tissue piece larger than 0.82 mm2 (threshold 2.5)
+LS87_s03b_sc08,manual,manually excluded: tissue too damaged to measure
+LS87_s03b_sc09,manual,"no resolvable nuclear detail (focus 0.057, threshold 0.070)"
+LS87_s03b_sc10,manual,no tissue piece larger than 0.11 mm2 (threshold 2.5)
+LS87_s05b_sc06,manual,manually excluded: tissue too damaged to measure
+LS87_s05b_sc08,manual,manually excluded: tissue too damaged to measure
+LS87_s05b_sc10,manual,"no resolvable nuclear detail (focus 0.042, threshold 0.070)"
+LS87_s06b_sc07,manual,manually excluded: tissue too damaged to measure
+LS87_s06b_sc08,manual,manually excluded: tissue too damaged to measure
+LS87_s06b_sc09,manual,manually excluded: tissue too damaged to measure
+LS87_s06b_sc10,manual,manually excluded: tissue too damaged to measure
+LS87_s06b_sc11,manual,manually excluded: tissue too damaged to measure
+LS87_s07b_sc00,manual,manually excluded: tissue too damaged to measure
+LS87_s07b_sc02,manual,manually excluded: tissue too damaged to measure
+LS87_s07b_sc03,manual,manually excluded: tissue too damaged to measure
+LS87_s07b_sc04,manual,manually excluded: tissue too damaged to measure
+LS87_s07b_sc05,manual,manually excluded: tissue too damaged to measure
+LS87_s07b_sc06,manual,manually excluded: tissue too damaged to measure
+LS87_s07b_sc07,manual,manually excluded: tissue too damaged to measure
+LS87_s07b_sc08,manual,manually excluded: tissue too damaged to measure
+LS87_s07b_sc09,manual,manually excluded: tissue too damaged to measure
+LS87_s07b_sc10,manual,manually excluded: tissue too damaged to measure
+LS87_s08b_sc00,manual,manually excluded: tissue too damaged to measure
+LS87_s08b_sc01,manual,manually excluded: tissue too damaged to measure
+LS87_s08b_sc04,manual,manually excluded: tissue too damaged to measure
+LS87_s08b_sc08,manual,manually excluded: tissue too damaged to measure
+LS87_s08b_sc09,manual,manually excluded: tissue too damaged to measure
+LS87_s08b_sc10,manual,manually excluded: tissue too damaged to measure
+LS87_s08b_sc11,manual,manually excluded: tissue too damaged to measure
+LS87_s09b_sc06,manual,manually excluded: tissue too damaged to measure
+LS87_s09b_sc07,manual,manually excluded: tissue too damaged to measure
+LS87_s09b_sc08,manual,manually excluded: tissue too damaged to measure
+LS87_s09b_sc09,manual,manually excluded: tissue too damaged to measure
